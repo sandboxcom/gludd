@@ -3,13 +3,39 @@
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: release-candidate/v012-git-mutex-20261022 eb772a658a01db4485087813e4478eb6c59cc328.
 Previously recorded development publication: 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 129348 selected / 129372 collected, 24 deselected, zero collection errors in46.23s/native51.4s during the native guarded6387304ef5edc1b38ad8a2062c27e92ba430e344 commit preflight. Native receipt: .gate-logs/observed/test-count/20261022T221903Z-62261-afdf4695.json. This collection matches the coherent clean638 candidate before its actual original-budget failure. Earlier ef41 intermediate and clean64 collections retain their original scopes and receipts in the runtime record. Collection is separate from behavioral, runtime, hosted and final-gate proof. Prior refs keep their original receipts; each normal source commit retains fresh collection without a receipt-only commit.
+Total tests: 129355 selected / 129379 collected, 24 deselected, zero collection errors in55.65s/native61.3s during the native guarded23b96a98bdcff7143f30596d50d67acdd1faebce commit preflight. Native receipt: .gate-logs/observed/test-count/20261022T230240Z-24620-adc48150.json. This is retained fixed23b source evidence, not a collection measurement of later caller receiving. Earlier638/ef41/64 collections keep their original scopes and receipts in the runtime record. Collection is separate from behavioral, runtime, hosted and final-gate proof. Each normal source commit retains fresh collection without a receipt-only commit.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 bounded native cohort receiving from6387304
+## Current S98.4 publication-caller receiving after23b96a9
+
+Clean23b96a98bdcff7143f30596d50d67acdd1faebce has consumed independent
+source-only review. Actual original312 repair passes84.936s and normal
+publication311 runtime passes78.838s, both unchanged90/60, all2395/1/11 cases.
+Native transport then rejects the changed Pages workflow for missing OAuth
+workflow scope; Git1/Make2/no success, fresh expected23b remote mismatch2.
+Remote remains full eb772a658a01db4485087813e4478eb6c59cc328; fourteen newer
+commits are local and no successor GHA exists. Account consent is pending;
+no unchanged push retry, token request or interactive credential setup.
+The [runtime record](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md) and
+[HTTPS history](docs/features/GITHUB_PUBLICATION_HTTPS.md) own exact receipts.
+
+Root repairs the omitted complete publication consumer's stale shell envelope,
+eight-pin and schedule inputs while preserving exact assertions. Added native
+failed-push guidance and cheap family177 have failing-first controls. Complete
+twelve-owner receiving passes609 each311/312,152.84s/native154.026s and
+160.17s/native161.723s, exact terminal receipts passed/inactive/0 at matching
+source digest before this manual handoff/source commit. Normal collection,
+new-source review and the changed177-family original90/60 remain pending at
+this pre-commit record in the [caller record](docs/features/PUBLICATION_CALLER_CONFORMANCE.md).
+Native23b pipeline state is pending/missing exact workflows, open0/repaired6;
+disk97percent/7.1GiBfree still blocks final capacity. HumanTodo remains UNFILED
+because canonical service/config/store/auth facts are unavailable. No task tick,
+full-gate/global coverage/deployment/promotion authority follows local repairs.
+
+## Retained S98.4 bounded native cohort receiving from6387304
 
 Root receives MAIN2 beside sequential fresh HELP1/TAIL1 in the existing owner,
 with original raw selectors/flags/90-60 and PID-owned scratch via literal ID=.

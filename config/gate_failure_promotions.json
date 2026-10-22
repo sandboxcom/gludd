@@ -1391,6 +1391,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_git_status_readonly.py::test_status_never_refreshes_native_index[inherited-one]",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "publication-native-command-envelope",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_runtime_publish_admission.py::test_green_runtime_owner_runs_once_before_normal_transport[False]",
+      "full_gate_phase": "test"
     }
   ]
 }

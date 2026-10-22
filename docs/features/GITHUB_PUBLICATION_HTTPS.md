@@ -1,6 +1,35 @@
 # Repository-local GitHub HTTPS publication
 
-## Workflow-write authorization diagnostic (2026-10-22 UTC)
+## Actual publication denial at23b96a9 (2026-10-22 UTC)
+
+The normal guarded batch-push at clean
+23b96a98bdcff7143f30596d50d67acdd1faebce reaches native Git transport after
+all eight prerequisite pins and the original311 runtime pass. Git rejects
+HEAD -> release-candidate/v012-git-mutex-20261022 because the OAuth login
+cannot create or update .github/workflows/pages.yml without workflow scope.
+Git returns1; enclosing Make returns2 and records no success. A fresh native
+verify-remote expects full23b and returns2/mismatch: actual remote remains
+eb772a658a01db4485087813e4478eb6c59cc328. Fourteen local commits remain
+unpublished at this observation. No successor GHA or deployment proof exists.
+
+The active sandboxcom/keyring/HTTPS login reports gist,read:org,repo and no
+workflow scope, with its token redacted. No credential is extracted, requested
+in chat or changed. The user has been asked asynchronously for existing-account
+reauthorization; interactive consent is pending under AGENTS.md's no-prompt rule.
+Do not retry unchanged publication, discard the required Pages repair, bypass
+hooks or treat older remote evidence as the intended candidate. Source repairs
+remain useful while this external prerequisite is pending.
+
+After actual authorization changes, use verify-state, the same guarded
+batch-push with explicit canonical runtime/observer variables, full expected-SHA
+verify-remote, then native pipeline-status/ci-await for that exact candidate.
+The [clean-SHA record](RUNTIME_ADMISSION_CLEAN_SHA.md) retains original local
+passes and their proof limits. Manual terminal history is preserved at
+/tmp/gludd-v012-23b96a9-publication-blocked.md. The
+[caller receiving record](PUBLICATION_CALLER_CONFORMANCE.md) owns the added
+failure guidance and controlled regression; it cannot grant authorization.
+
+## Retained pre-operation authorization diagnostic (2026-10-22 UTC)
 
 Remote read verification does not establish permission to write workflow files.
 The actual earlier gh auth status reports repo,gist,read:org with no workflow

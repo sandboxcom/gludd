@@ -1,6 +1,7 @@
 {
   "version": 1,
   "targets": [
+    {"name": "batch-push", "make_variables": ["COMMIT_THRESHOLD", "SSH_KEY"], "behavior": "make batch-push COMMIT_THRESHOLD=1 SSH_KEY=/tmp/gludd-contract-absent-key", "expected_result": "Nonzero refusal; threshold 1 is forbidden. Earlier clean-tree/history/admission refusal also grants no runtime, publication or CI evidence."},
     {"name": "git-configure-sandboxcom-https", "make_variables": ["SANDBOXCOM_HTTPS_VALIDATE_ONLY"], "behavior": "make git-configure-sandboxcom-https SANDBOXCOM_HTTPS_VALIDATE_ONLY=1"},
     {"name": "verify-remote", "make_variables": ["BRANCH", "SHA", "SSH_KEY"], "behavior": "make verify-remote BRANCH=gludd-contract-absent SHA=0000000000000000000000000000000000000000 SSH_KEY=/tmp/gludd-contract-absent-key"},
     {"name": "_local-model-ollama-install-check", "make_variables": ["_OLLAMA_BIN"], "behavior": "make _local-model-ollama-install-check _OLLAMA_BIN="},

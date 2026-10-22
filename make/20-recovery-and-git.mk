@@ -1354,7 +1354,11 @@ batch-push: check-clean-tree _no-bypass-guard _stash-before-push-guard _pull-bef
 	echo "$$COUNT unpushed commits, threshold met. Pushing..."; \
 	$(MAKE) --no-print-directory _runtime-publish-admission RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY=0 || exit $$?; \
 	BRANCH=$$(git branch --show-current); \
-	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom HEAD:$$BRANCH || { PUSH_RC=$$?; echo "Push failed for $$BRANCH (exit $$PUSH_RC); success was not recorded." >&2; exit $$PUSH_RC; }; \
+	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom HEAD:$$BRANCH || { \
+		PUSH_RC=$$?; echo "Push failed for $$BRANCH (exit $$PUSH_RC); success was not recorded." >&2; \
+		echo "AGENT_NEXT target=batch-push outcome=failed phase=transport native_status=$$PUSH_RC gate_evidence=false release_ready=false: Preserve the native Git reason and intended candidate SHA. Missing workflow scope requires actual credential authorization; do not retry unchanged publication or adopt an older remote as candidate proof. After the prerequisite changes, run make verify-state then normal make batch-push and exact-SHA remote/CI verification." >&2; \
+		exit "$$PUSH_RC"; \
+	}; \
 	echo "Pushed $$BRANCH to sandboxcom/gludd ($$COUNT commits)"; \
 	$(MAKE) --no-print-directory _record-push-verdict
 

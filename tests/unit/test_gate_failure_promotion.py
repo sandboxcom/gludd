@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 176
+EXPECTED_FAMILY_COUNT = 177
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -1015,9 +1015,7 @@ def test_repaired_failures_execute_as_exact_nodes_before_fanout(
     assert selectors.count(node) == 1
     assert node.split("::", 1)[0] not in selectors
     assert all(node not in recipe for recipe in recipes[2:])
-    assert (
-        EXPECTED_MAIN_MAKE_INVOCATION
-    ) in recipes[1]
+    assert EXPECTED_MAIN_MAKE_INVOCATION in recipes[1]
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     phases = payload["runtime_contract"]["phases"]
@@ -1833,6 +1831,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "release-candidate-push-workflow-triggers",
         "pytest-native-trace-protocol", "trace-summary-result-guidance",
         "presentation-hosted-apt-literal-mode", "git-status-native-index-readonly",
+        "publication-native-command-envelope",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2162,12 +2161,12 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_code_intelligence_import_boundary.py::"
         "test_extractor_import_does_not_load_introspection_or_database "
         "tests/unit/test_list_files_target.py::test_listing_missing_input_preserves_native_failure "
-        "tests/unit/test_import_time_deep.py::"
-        "test_measurement_contract_parses_native_numeric_rows "
-        "tests/unit/test_import_time_deep.py::"
-        "test_measurement_contract_rejects_failed_children "
-        "tests/unit/test_import_time_deep.py::"
-        "test_measurement_contract_consumers_fail_for_missing_data\"" in runtime_compatibility_owner
+        "tests/unit/test_import_time_deep.py::test_measurement_contract_parses_native_numeric_rows "
+        "tests/unit/test_import_time_deep.py::test_measurement_contract_rejects_failed_children "
+        "tests/unit/test_import_time_deep.py::test_measurement_contract_consumers_fail_for_missing_data "
+        "tests/unit/test_runtime_publish_admission.py::"
+        "test_green_runtime_owner_runs_once_before_normal_transport[False]\""
+        in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner
     assert "-n 0" in runtime_compatibility_owner

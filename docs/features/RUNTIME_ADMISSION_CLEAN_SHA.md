@@ -1,6 +1,58 @@
 # Clean-SHA runtime admission
 
-## Current bounded cohort receiving from6387304
+## Current publication-caller receiving after clean23b96a9
+
+Clean source23b96a98bdcff7143f30596d50d67acdd1faebce has fully consumed
+independent APPROVE SOURCE ONLY review at
+/tmp/gludd-v012-23b96a9-source-review.md. Normal guarded collection selects
+129355/129379,24deselected/zero errors55.65s/native61.3s; receipt
+.gate-logs/observed/test-count/20261022T230240Z-24620-adc48150.json.
+This fixed-source collection is not a later receiving/commit measurement.
+
+Its actual original312 ci-failure-repair passes2395MAIN81.19s,1HELP1.08s
+and11TAIL9.26s, all joined0, native0/84.936s under unchanged90total/60quiet.
+Receipt:.gate-logs/observed/runtime-repair-23b96a9/v012-runtime-repair-23b96a9-312.json.
+The native ledger records family
+dc864ae9899fce43a978cb71e9ffc5898adaaa3b1b40a1d474dc93d3ad8646f5 repaired
+at exact23b; this is local repair, not hosted resolution or a full gate.
+
+One normal batch-push then passes all eight pins1.69s/native3.2s and original311
+runtime2395MAIN75.79s/1HELP0.54s/11TAIL8.43s, joined0/native0/78.838s.
+Receipts:.gate-logs/observed/batch-push-prerequisite-admission/batch-push-prerequisite-admission-38984.json
+and .gate-logs/observed/batch-push-runtime-admission/batch-push-runtime-admission-38984.json.
+Both runtime observations bind source digest
+a74b1a40c80a3139c61c4230932ed7de6629afce1a0d087d180da95789399c7d.
+Normal pre-push lint/typing/secrets/collection hooks pass; no separate collection
+count was printed, so the earlier commit count is not that hook's measurement.
+All model/test readers quiesced before proof; no watchdog was disabled.
+
+Native transport then rejects the changed Pages workflow for missing OAuth
+workflow scope: Git1/Make2/no success. Fresh full-SHA remote verification returns
+2/mismatch and still names eb772a658a01db4485087813e4478eb6c59cc328.
+Fourteen newer commits remain local; no successor GHA or deployment exists.
+The [HTTPS record](GITHUB_PUBLICATION_HTTPS.md) preserves actual denial, retrieved
+scope/forum context and pending account consent. Do not retry unchanged auth.
+Native pipeline-status for23b reports open0/repaired6/resolved49/runs160 and
+missing Build+Molecule, pending/release_ready=false. The old local full gate
+remains FAIL; disk97percent/7.1GiBfree still blocks expensive final proof.
+HumanTodo stays UNFILED: canonical service/config/store/auth facts remain missing;
+no invented endpoint/ID or unchanged service retry. The user-input request is
+not represented as a filed HumanTodo.
+
+Root now owns one substantive publication-caller repair and its shared guidance.
+The omitted whole consumer exposes43FAIL/29PASS58.17s/native59.2s from old
+shell-envelope/six-pin/serial expectations. Preserve exact original assertions
+while conforming inputs. Additive AGENT_NEXT and family177 first fail before
+source edits. The [caller record](PUBLICATION_CALLER_CONFORMANCE.md) retains
+REDs and complete twelve-owner609PASS each311/312,152.84s/native154.026s
+and160.17s/native161.723s, exact terminal receipts passed/inactive/0 at the
+same tested source digest before this manual handoff/source commit. All176 predecessors,
+eight pins, original2395 cases and2/1/1 bounds remain, plus one cheap caller
+selector. New clean-source original90/60, full gate/global85-75 BOTH, exact-SHA
+hosted/deployed-head and promotion remain pending; all seven tasks stay unchecked.
+No local pass is a hosted throughput measurement. Current JSON remains native-owned.
+
+## Retained bounded cohort receiving from6387304
 
 Root owns Main/shared/Git on release-candidate/v012-git-mutex-20261022; HEAD
 remains6387304ef5edc1b38ad8a2062c27e92ba430e344 while the changed working

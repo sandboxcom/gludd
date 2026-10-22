@@ -778,6 +778,7 @@ help:
 		"  ci-cancel             Plan an emergency single-run request (RUN, CI_CANCEL_VALIDATE_ONLY=1; explicit apply=0)" \
 		"  (Single-source policy: features land on development first, then merge to master)" \
 		"  git-status            Show git status" \
+		"  batch-push            Publish a guarded candidate (default COMMIT_THRESHOLD=5; contract threshold=1 refuses; SSH_KEY)" \
 		"  git-merge-nc           Prepare a clean no-commit ort merge (BR; refuses unsafe state)" \
 		"  git-owned-checkpoint-push     Checkpoint explicit owned files (FILES, GIT_CHECKPOINT_LABEL, GIT_CHECKPOINT_VALIDATE_ONLY)" \
 		"  git-owned-checkpoint-restore  Restore exact top checkpoint, retaining evidence (FILES, GIT_CHECKPOINT_LABEL, GIT_CHECKPOINT_SHA, GIT_CHECKPOINT_VALIDATE_ONLY)" \

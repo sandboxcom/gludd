@@ -94,6 +94,15 @@ measurements, rejected approaches and the missing release proofs.
    and native124/143 controls establish no performance improvement.
    Route tests inspect the literal child command independently of recipe-line
    prefix, retaining exact three-child counts, selectors, flags and mutation checks.
+   Changes to the observer command envelope, prerequisite pins or cohort schedule
+   require the complete tests/unit/test_runtime_publish_admission.py consumer in
+   the receiving union, alongside changed routing owners. Its native envelope and
+   exact target/assignment assertions remain; inventory order is separate from
+   actual barrier, status and descendant-drain proof.
+   On a batch-push transport refusal, retain the native reason and intended SHA.
+   Missing workflow scope requires real account authorization; no unchanged retry
+   or older-remote substitution. After that input changes, use verify-state,
+   normal batch-push, full-SHA verify-remote and native exact-SHA CI observation.
 
 Native status readers must preserve the index as well as working bytes. The
 existing git-status owner uses Git's no-optional-locks mode, retains native

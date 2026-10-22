@@ -39,6 +39,7 @@ def _publish(
     count: int = 5,
     threshold: int = 5,
     push_status: int = 0,
+    push_message: str = "",
     goal: str = "batch-push",
     validate_only: int = 0,
     runtime_state: str = "valid",
@@ -106,6 +107,7 @@ def _publish(
         "elif args[0] == 'rev-parse': print('a' * 40)\n"
         "elif args[0] == 'push':\n"
         "    with trace.open('a') as stream: stream.write(json.dumps(dict(kind='transport', args=args)) + '\\n')\n"
+        f"    if {push_message!r}: print({push_message!r}, file=sys.stderr)\n"
         f"    raise SystemExit({push_status})\n"
         "else: raise AssertionError(args)\n",
         encoding="utf-8",
@@ -247,7 +249,7 @@ def _assert_owned_once(rows: list[dict[str, object]], phases: list[tuple[str, st
         ("--heartbeat-secs", "10"),
     ):
         assert arguments[arguments.index(name) + 1] == value
-    assert arguments[-1] == OWNER
+    assert _observed_make_arguments(arguments) == [OWNER]
     identity = [row for row in rows if row["kind"] == "runtime-identity"]
     assert len(identity) == 1
     assert "sys.version_info[:2] == (3, 11)" in str(identity[0]["args"])
@@ -261,6 +263,8 @@ def _assert_owned_once(rows: list[dict[str, object]], phases: list[tuple[str, st
         "1", "3.11", "never",
     )
     runtime = [row for row in rows if row["kind"] == "runtime"]
+    # Inventory order is canonical; native overlap barriers check physical order.
+    runtime.sort(key=lambda row: 0 if row["workers"] == "2" else 1 if row["phase"] == "help" else 2)
     assert [(row["phase"], row["workers"]) for row in runtime] == phases
     for row in runtime:
         workers = row["workers"]
@@ -282,7 +286,8 @@ def test_red_runtime_owner_blocks_transport_even_when_forced(
     assert result.returncode != 0, result.stdout + result.stderr
     _assert_owned_once(
         rows,
-        [("full", "2")] if failure == "full" else [("full", "2"), ("help", "1")],
+        [("full", "2"), ("help", "1"), ("full", "1")] if failure == "full"
+        else [("full", "2"), ("help", "1")],
     )
     assert not any(row["kind"] in {"transport", "verdict"} for row in rows)
     assert "Runtime publication admission failed" in result.stdout + result.stderr
@@ -326,8 +331,15 @@ def test_nonpublication_does_not_run_runtime_or_transport(
     assert rows == []
 
 
-def test_transport_failure_after_green_admission_never_records_success(tmp_path: Path) -> None:
-    result, rows, _ = _publish(tmp_path, push_status=43)
+@pytest.mark.parametrize(
+    ("push_status", "push_message"),
+    [(43, ""), (1, "refusing to update .github/workflows/pages.yml without workflow scope")],
+    ids=["native-failure", "workflow-authorization"],
+)
+def test_transport_failure_after_green_admission_never_records_success(
+    tmp_path: Path, push_status: int, push_message: str,
+) -> None:
+    result, rows, _ = _publish(tmp_path, push_status=push_status, push_message=push_message)
     assert result.returncode != 0
     _assert_owned_once(rows, [("full", "2"), ("help", "1"), ("full", "1")])
     assert [row["kind"] for row in rows] == [
@@ -342,7 +354,15 @@ def test_transport_failure_after_green_admission_never_records_success(tmp_path:
         "runtime",
         "transport",
     ]
-    assert "success was not recorded" in result.stdout + result.stderr
+    output = result.stdout + result.stderr
+    assert "success was not recorded" in output
+    if push_message:
+        assert push_message in output
+    assert f"AGENT_NEXT target=batch-push outcome=failed phase=transport native_status={push_status}" in output
+    assert "gate_evidence=false release_ready=false" in output
+    assert "actual credential authorization" in output and "workflow scope" in output
+    assert "make verify-state" in output and "unchanged publication" in output
+    assert "Pushed gludd-test-runtime-publish" not in output
 
 
 @pytest.mark.parametrize(
@@ -370,7 +390,7 @@ def test_legacy_and_forced_publication_cannot_skip_or_duplicate_runtime(
     result, rows, _ = _publish(tmp_path, goal=goal, failure=failure, forced=True, validate_only=1)
     _assert_owned_once(
         rows,
-        [("full", "2")] if failure else [("full", "2"), ("help", "1"), ("full", "1")],
+        [("full", "2"), ("help", "1"), ("full", "1")],
     )
     assert (result.returncode == 0) is (not failure), result.stdout + result.stderr
     transports = [row for row in rows if row["kind"] == "transport"]
@@ -440,6 +460,11 @@ def test_runtime_publish_owner_has_documented_mutation_free_contract(tmp_path: P
         encoding="utf-8",
     )
     assert validate_contract(standalone, {"targets": [entry]}) == []
+    publication = next(row for row in contract["targets"] if row["name"] == "batch-push")
+    assert publication["make_variables"] == ["COMMIT_THRESHOLD", "SSH_KEY"]
+    assert publication["behavior"] == (
+        "make batch-push COMMIT_THRESHOLD=1 SSH_KEY=/tmp/gludd-contract-absent-key"
+    )
 
 
 @pytest.mark.parametrize("manifest_status", (1, 2, 124))
@@ -458,13 +483,15 @@ def test_unavailable_exact_manifest_stops_before_runtime_and_transport(
     assert "Git transport was not attempted" in result.stdout + result.stderr
 
 
-SIX_PREREQUISITE_PINS = [
+EIGHT_PREREQUISITE_PINS = [
     "tests/unit/test_gate_failure_promotion.py::test_repository_manifest_seeds_each_promoted_failure_family",
     "tests/unit/test_gate_failure_promotion.py::test_make_wiring_and_target_contract_are_explicit",
     "tests/unit/test_runtime_admission_scheduling.py::test_runtime_admission_retains_entire_roster_and_fresh_help",
     "tests/unit/test_admission_cold_start_selection.py::test_real_admission_filters_only_never_selected_main_siblings",
     "tests/unit/test_runtime_admission_scheduling.py::test_native_git_metadata_query_count_executes_once_in_first_cohort",
     "tests/unit/test_gate_failure_promotion.py::test_async_canonical_profile_contract_fails_in_compatibility_admission_first",
+    "tests/unit/test_make_target_contract.py::test_key_make_targets_recommends_guarded_release_owners",
+    "tests/unit/test_makefile_targets_deep.py::TestVariableConsistency::test_no_bare_equals",
 ]
 
 
@@ -479,6 +506,21 @@ def _observer_arguments(rows: list[dict[str, object]], label: str) -> list[str]:
     return cast(list[str], arguments)
 
 
+def _observed_make_arguments(arguments: list[str]) -> list[str]:
+    """Retain exact argv checks inside the existing shell command envelope."""
+    command = arguments[arguments.index("--") + 1:]
+    assert len(command) == 3 and command[:2] == ["/bin/sh", "-c"]
+    native = shlex.split(command[2])
+    assert native[:3] == ["make", "--no-print-directory", "-f"]
+    assert 5 <= len(native) <= 7
+    assert Path(native[3]).name == "Makefile" and Path(native[3]).is_file()
+    label = arguments[arguments.index("--label") + 1]
+    if label.startswith("batch-push-"):
+        assert native[4] == "--no-print-directory"
+        return native[5:]
+    return native[4:]
+
+
 def _assert_prerequisite_once(
     rows: list[dict[str, object]], *, label: str = "batch-push-prerequisite-admission",
 ) -> None:
@@ -488,7 +530,7 @@ def _assert_prerequisite_once(
         ("--heartbeat-secs", "10"),
     ):
         assert arguments[arguments.index(name) + 1] == value
-    assert arguments[-2:] == [
+    assert _observed_make_arguments(arguments) == [
         "check-gate-failure-promotions",
         "GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json",
     ]
@@ -499,7 +541,7 @@ def _assert_prerequisite_once(
     assert isinstance(metadata, list)
     assert metadata[:3] == ["--manifest", "config/gate_failure_promotions.json", "--repository-root"]
     assert len(metadata) == 4 and Path(str(metadata[3])).is_absolute()
-    assert pins[0]["files"] == SIX_PREREQUISITE_PINS
+    assert pins[0]["files"] == EIGHT_PREREQUISITE_PINS
     assert (pins[0]["nproc"], pins[0]["workers"]) == ("1", "1")
     assert shlex.split(str(pins[0]["flags"])) == [
         "-W", "error", "-q", "-n", "0", "--maxprocesses", "1", "--timeout=30",
@@ -666,20 +708,20 @@ def test_hosted_native_stages_stop_at_first_failure(
         if stage != "manifest-parser":
             expected += ["prerequisite-pins"]
             if stage != "six-pins":
-                expected += ["observer", "runtime"]
+                expected += ["observer", "runtime", "runtime", "runtime"]
                 if stage != "runtime":
-                    expected += ["runtime", "runtime", "verify-remote"]
+                    expected += ["verify-remote"]
     assert [row["kind"] for row in rows] == expected
     if stage in {"", "runtime"}:
         _assert_prerequisite_once(rows, label="ci-gate-failure-promotions")
         arguments = _observer_arguments(rows, "ci-runtime-regression-admission")
-        assert arguments[-1] == OWNER
+        assert _observed_make_arguments(arguments) == [OWNER]
         assert arguments[arguments.index("--max-secs") + 1] == "90"
         assert arguments[arguments.index("--quiet-secs") + 1] == "60"
         runtime = [row for row in rows if row["kind"] == "runtime"]
-        assert [(row["nproc"], row["workers"]) for row in runtime] == (
-            [("2", "2")] if stage == "runtime" else [("2", "2"), ("1", "1"), ("1", "1")]
-        )
+        assert sorted((str(row["nproc"]), str(row["workers"])) for row in runtime) == [
+            ("1", "1"), ("1", "1"), ("2", "2"),
+        ]
         assert list((observed / "ci-gate-failure-promotions").rglob("*.json"))
         for row in rows:
             if row["kind"] in {"promotions", "prerequisite-pins"}:
@@ -741,5 +783,5 @@ def test_failed_publication_observer_retains_its_owned_native_trace(
     assert Path(trace_path).name == status["run_id"] + ".pytest.jsonl"
     assert Path(trace_path).parent == observed / "batch-push-runtime-admission"
     runtime = [row for row in rows if row["kind"] == "runtime"]
-    assert len(runtime) == (1 if watched_trace_failure == "full" else 2)
+    assert len(runtime) == (3 if watched_trace_failure == "full" else 2)
     assert all(row["trace_path"] == trace_path for row in runtime)

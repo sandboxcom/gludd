@@ -698,6 +698,19 @@ fence can restore authority. Use the same ledger owner, not manual JSON edits.
 The [attempt incident](../../docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#failed-new-repair-must-invalidate-older-authority-2026-10-21)
 retains the real zero-open/stale-receipt contradiction and proof limits.
 
+Changes to observer CMD envelopes, prerequisite pins or native cohort scheduling
+require the complete tests/unit/test_runtime_publish_admission.py consumer in
+receiving, retaining exact argv/assignment/status assertions. The
+[publication caller record](../../docs/features/PUBLICATION_CALLER_CONFORMANCE.md)
+names its failing-first controls and one early native guard. Its batch-push
+contract example is make batch-push COMMIT_THRESHOLD=1
+SSH_KEY=/tmp/gludd-contract-absent-key: expected nonzero refusal, never publication.
+Earlier clean-tree/history guards may refuse first; the controlled native caller
+also proves threshold1 starts neither runtime nor transport. A failed real push
+now emits AGENT_NEXT with its native status and no gate/release authority.
+Missing workflow permission needs actual credential authorization before another
+normal push; a newer local SHA alone does not change that prerequisite.
+
 Keep batch-push's default COMMIT_THRESHOLD=5. For a coherent genuine CI repair
 batch below five, release rule6 permits the existing ordinary git-push-sandboxcom
 owner with all native guards and normal Git hooks. First obtain the actual
