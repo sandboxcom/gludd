@@ -1231,11 +1231,8 @@
       ],
       "behavior": "make disk-reclaim DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=1 DISK_CLEANUP_PREFLIGHT_DRY_RUN=0 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800"
     },
-    {
-      "name": "uv-cache-prune-status",
-      "make_variables": [],
-      "behavior": "make uv-cache-prune-status"
-    },
+    {"name": "uv-cache-prune", "make_variables": ["UV_CACHE_PRUNE_TIMEOUT", "UV_CACHE_PRUNE_FORCE", "UV_CACHE_PRUNE_VALIDATE_ONLY", "UV_CACHE_PRUNE_OBSERVED_ROOT"], "behavior": "make uv-cache-prune UV_CACHE_PRUNE_TIMEOUT=300 UV_CACHE_PRUNE_FORCE=0 UV_CACHE_PRUNE_VALIDATE_ONLY=1 UV_CACHE_PRUNE_OBSERVED_ROOT=/tmp/gludd-uv-prune-contract/observed"},
+    {"name": "uv-cache-prune-status", "make_variables": [], "behavior": "make uv-cache-prune-status"},
     {
       "name": "gate-refresh",
       "make_variables": [

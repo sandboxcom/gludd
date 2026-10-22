@@ -686,6 +686,25 @@ Do not create a real host-cache fixture or turn a policy refusal into an apply
 retry. The [cache feature](../../docs/features/CACHE_RESOURCE_INVENTORY.md#native-cache-policy-alignment-2026-10-21)
 retains upstream cache-safety evidence, failing controls and precise proof limits.
 
+### Watched native UV cleanup
+
+Use the registered offline contract before considering a real operation:
+
+~~~console
+make uv-cache-prune UV_CACHE_PRUNE_TIMEOUT=300 UV_CACHE_PRUNE_FORCE=0 UV_CACHE_PRUNE_VALIDATE_ONLY=1 UV_CACHE_PRUNE_OBSERVED_ROOT=/tmp/gludd-uv-prune-contract/observed
+~~~
+
+Mode1 creates no cache or observation and proves parsing only. Mode0 reuses
+stream_command.py through an already installed trusted PYTHON, native300s total,
+heartbeat5, quiet0 and retention20. The default process guard skips active UV;
+inspection/classification failure refuses. FORCE1 overrides only that guard,
+never UV's lock or ownership policy. Native failures17/124 remain in receipts;
+enclosing Make is nonzero. Capture all four prune-only data fields before startup
+exports for direct and dependency callers; keep generic OBSERVED_ROOT unchanged.
+The [owning cache record](../../docs/features/CACHE_RESOURCE_INVENTORY.md#native-uv-prune-status-and-model-contract-2026-10-22-utc)
+retains confined actual0/17/124/skip, literal-input controls, upstream reports
+and proof limits. Never use real-cache pruning as the contract example.
+
 ### Other supported work
 
 Use `make search PATTERN=regex SEARCH_PATH=directory-or-file` for bounded

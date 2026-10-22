@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
+import shlex
+import signal
 import subprocess
+import sys
+import time
+from contextlib import suppress
 from pathlib import Path
 
+import pytest
 from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -75,3 +82,210 @@ def test_uv_cache_prune_has_timeout_or_force_skip_guard() -> None:
         assert not bare_prune_pattern.match(line), (
             f"uv-cache-prune must not invoke a bare $(UV) cache prune that can block forever: {line!r}"
         )
+
+
+def _native_prune(
+    tmp_path: Path, *, native_status: int = 0, blocked_child: bool = False,
+    force: bool = True, launch_expected: bool = True,
+) -> tuple[subprocess.CompletedProcess[str], dict[str, object]]:
+    """Execute the actual Make owner against a fixture-only native UV child."""
+    cache = tmp_path / "cache"
+    cache.mkdir(parents=True)
+    (cache / "keep").write_bytes(b"owned fixture cache remains")
+    (cache / "keep").chmod(0o600)
+    capture = tmp_path / "native-uv.json"
+    child_pid = tmp_path / "descendant.pid"
+    shim = tmp_path / "fixture uv"
+    shim.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, signal, subprocess, sys, time\n"
+        "from pathlib import Path\n"
+        f"capture = Path({str(capture)!r})\n"
+        "capture.write_text(json.dumps({'argv': sys.argv[1:], 'cache': os.environ['UV_CACHE_DIR']}))\n"
+        "print('fixture UV stdout', flush=True)\n"
+        "print('fixture UV stderr', file=sys.stderr, flush=True)\n"
+        f"if {blocked_child!r}:\n"
+        "    signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+        "    child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        f"    Path({str(child_pid)!r}).write_text(str(child.pid))\n"
+        "    child.wait()\n"
+        "    time.sleep(60)\n"
+        f"raise SystemExit({native_status})\n",
+        encoding="utf-8",
+    )
+    shim.chmod(0o700)
+    environment = {
+        key: value for key, value in os.environ.items()
+        if key not in {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES"}
+    }
+    command = [
+        "make", "--no-print-directory", "uv-cache-prune",
+        f"UV={shlex.quote(str(shim))}", f"PYTHON={shlex.quote(sys.executable)}",
+        f"GLUDD_UV_CACHE_DIR={cache}", f"UV_CACHE_PRUNE_OBSERVED_ROOT={tmp_path / 'observed'}",
+        f"UV_CACHE_PRUNE_FORCE={int(force)}", "UV_CACHE_PRUNE_TIMEOUT=1",
+    ]
+    process = subprocess.Popen(
+        command, cwd=ROOT, env=environment, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, start_new_session=True,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=12)
+    finally:
+        # The test owns this entire Make session. Old broken implementations
+        # must not leave fixture descendants behind after a failing control.
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        process.communicate(timeout=5)
+    assert process.returncode is not None
+    result = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+    if launch_expected:
+        assert json.loads(capture.read_text()) == {"argv": ["cache", "prune", "--ci"], "cache": str(cache)}
+    else:
+        assert not capture.exists()
+    assert (cache / "keep").read_bytes() == b"owned fixture cache remains"
+    assert (cache / "keep").stat().st_mode & 0o777 == 0o600
+    if child_pid.exists():
+        with pytest.raises(ProcessLookupError):
+            os.kill(int(child_pid.read_text()), 0)
+    receipt_path = tmp_path / "observed/uv-cache-prune/current.json"
+    receipt = json.loads(receipt_path.read_text()) if receipt_path.exists() else {}
+    assert isinstance(receipt, dict)
+    return result, receipt
+
+
+@pytest.mark.parametrize("native_status", [0, 17], ids=["success", "native-failure"])
+def test_native_prune_preserves_real_child_status(
+    tmp_path: Path, native_status: int,
+) -> None:
+    result, receipt = _native_prune(tmp_path, native_status=native_status)
+    assert result.returncode == (0 if native_status == 0 else 2), result.stdout + result.stderr
+    assert receipt["exit_code"] == native_status
+    assert receipt["state"] == ("passed" if native_status == 0 else "failed")
+    assert "fixture UV stdout" in result.stdout
+    assert "fixture UV stderr" in result.stdout + result.stderr
+    assert receipt["termination_reason"] is None
+    assert Path(str(receipt["log_path"])).read_text().count("fixture UV stdout") == 1
+
+
+def test_native_prune_timeout_is_124_and_drains_owned_descendants(tmp_path: Path) -> None:
+    result, receipt = _native_prune(tmp_path, blocked_child=True)
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert receipt["exit_code"] == 124
+    assert receipt["state"] == "timed_out"
+    assert receipt["termination_reason"] == "max-runtime-timeout"
+
+
+
+def _prune_plan(
+    tmp_path: Path, options: tuple[str, ...] = (), *, indirect: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    """Run a confined offline plan through the actual public Make owner."""
+    makefile = ROOT / "Makefile"
+    goal = "uv-cache-prune"
+    if indirect:
+        makefile = tmp_path / "caller.mk"
+        makefile.write_text(
+            f"include {ROOT / 'Makefile'}\n.PHONY: fixture-prune\nfixture-prune: uv-cache-prune\n",
+            encoding="utf-8",
+        )
+        goal = "fixture-prune"
+    environment = {
+        key: value for key, value in os.environ.items()
+        if key not in {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES"}
+    }
+    result = subprocess.run(
+        [
+            "make", "--no-print-directory", "-f", str(makefile), goal,
+            "UV_CACHE_PRUNE_VALIDATE_ONLY=1", "UV_CACHE_PRUNE_TIMEOUT=300",
+            "UV_CACHE_PRUNE_FORCE=0", f"UV_CACHE_PRUNE_OBSERVED_ROOT={tmp_path / 'observed'}",
+            "UV=false", "PYTHON=false", f"GLUDD_UV_CACHE_DIR={tmp_path / 'cache'}", *options,
+        ],
+        cwd=ROOT, env=environment, capture_output=True, text=True, timeout=10,
+    )
+    assert not (tmp_path / "cache").exists()
+    assert not (tmp_path / "observed").exists()
+    return result
+
+
+@pytest.mark.parametrize("indirect", [False, True], ids=["explicit", "dependency"])
+def test_native_prune_offline_plan_uses_literal_root_without_launch(
+    tmp_path: Path, indirect: bool,
+) -> None:
+    result = _prune_plan(tmp_path, indirect=indirect)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == (
+        f"UV_CACHE_PRUNE_PLAN max_seconds=300 force=0 observed_root={tmp_path / 'observed'} "
+        "heartbeat=5 quiet=0 retain=20\n"
+    )
+    assert result.stderr == ""
+
+
+@pytest.mark.parametrize(
+    "option",
+    [
+        "UV_CACHE_PRUNE_TIMEOUT=0", "UV_CACHE_PRUNE_TIMEOUT=-1",
+        "UV_CACHE_PRUNE_TIMEOUT=invalid", "UV_CACHE_PRUNE_TIMEOUT=",
+        "UV_CACHE_PRUNE_FORCE=2", "UV_CACHE_PRUNE_VALIDATE_ONLY=2",
+        "UV_CACHE_PRUNE_OBSERVED_ROOT=",
+    ],
+)
+def test_native_prune_refuses_invalid_policy_before_launch(tmp_path: Path, option: str) -> None:
+    result = _prune_plan(tmp_path, (option,))
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "UV_CACHE_PRUNE_PLAN" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "UV_CACHE_PRUNE_TIMEOUT", "UV_CACHE_PRUNE_FORCE",
+        "UV_CACHE_PRUNE_VALIDATE_ONLY", "UV_CACHE_PRUNE_OBSERVED_ROOT",
+    ],
+)
+@pytest.mark.parametrize("syntax", ["make", "shell", "backtick"])
+@pytest.mark.parametrize("indirect", [False, True], ids=["explicit", "dependency"])
+def test_native_prune_policy_is_literal_before_startup(
+    tmp_path: Path, field: str, syntax: str, indirect: bool,
+) -> None:
+    marker = tmp_path / "injected"
+    payload = f"printf injected > {shlex.quote(str(marker))}"
+    value = {"make": f"$(shell {payload})", "shell": f"$({payload})", "backtick": f"\x60{payload}\x60"}[syntax]
+    result = _prune_plan(tmp_path, (f"{field}={value}",), indirect=indirect)
+    assert not marker.exists(), result.stdout + result.stderr
+    if field == "UV_CACHE_PRUNE_OBSERVED_ROOT":
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert f"observed_root={value} heartbeat=5 quiet=0 retain=20" in result.stdout
+    else:
+        assert result.returncode == 2, result.stdout + result.stderr
+
+
+
+def test_native_prune_busy_guard_skips_and_force_preserves_failure(tmp_path: Path) -> None:
+    """A real command-shaped fixture exercises native process admission."""
+    busy_uv = tmp_path / "uv"
+    ready = tmp_path / "ready"
+    busy_uv.write_text(
+        f"#!{sys.executable}\nimport time\nfrom pathlib import Path\n"
+        f"Path({str(ready)!r}).write_text('ready')\ntime.sleep(60)\n",
+        encoding="utf-8",
+    )
+    busy_uv.chmod(0o700)
+    busy = subprocess.Popen([str(busy_uv), "run"], start_new_session=True)
+    try:
+        deadline = time.monotonic() + 5
+        while not ready.exists() and busy.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert ready.read_text() == "ready"
+        result, receipt = _native_prune(
+            tmp_path / "skip", force=False, launch_expected=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "UV_CACHE_PRUNE_SKIP active uv processes detected" in result.stdout
+        assert receipt == {}
+        result, receipt = _native_prune(tmp_path / "force", native_status=17)
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert receipt["exit_code"] == 17 and receipt["state"] == "failed"
+    finally:
+        with suppress(ProcessLookupError):
+            os.killpg(busy.pid, signal.SIGKILL)
+        busy.wait(timeout=5)

@@ -455,7 +455,7 @@ def test_admission_fixture_requires_one_real_binding_before_native_children(
             assert result.returncode == 0, result.stdout + result.stderr
             assert (tmp_path / "phases.log").read_text().splitlines() == list(PHASES)
             assert (tmp_path / "runtime-watch").exists()
-            assert (tmp_path / "Makefile").read_text().count(declaration) == 1
+            assert native_compose(tmp_path / "Makefile").count(declaration) == 1
             if runner_binding_native_focus:
                 assert (tmp_path / ".gludd/item-progress.json").exists()
         else:

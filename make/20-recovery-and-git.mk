@@ -49,27 +49,30 @@ disk-check:
 uv-cache-prune-status:
 	@/bin/ps -ax -o pid=,ppid=,etime=,command= | /usr/bin/awk '/[u]v cache prune/ { found=1; print } END { if (!found) print "UV_CACHE_PRUNE_IDLE" }'
 
-UV_CACHE_PRUNE_TIMEOUT ?= 300
-UV_CACHE_PRUNE_FORCE ?= 0
-
 uv-cache-prune:
-	@if [ "$(UV_CACHE_PRUNE_FORCE)" = "1" ]; then \
-		echo "UV_CACHE_PRUNE_FORCE=1: pruning uv cache with $(UV_CACHE_PRUNE_TIMEOUT)s timeout"; \
-	elif /bin/ps -ax -o command= | /usr/bin/awk '/[u]v[[:space:]]+(run|sync|pip|build|add)/ { found=1 } END { exit !found }'; then \
-		echo "UV_CACHE_PRUNE_SKIP active uv processes detected; skipping prune (set UV_CACHE_PRUNE_FORCE=1 to override)"; \
+	@case "$$GLUDD_UV_CACHE_PRUNE_VALIDATE_ONLY:$$GLUDD_UV_CACHE_PRUNE_FORCE" in 0:0|0:1|1:0|1:1) ;; *) echo "UV_CACHE_PRUNE_VALIDATE_ONLY and UV_CACHE_PRUNE_FORCE must be 0 or 1" >&2; exit 2;; esac; \
+	case "$$GLUDD_UV_CACHE_PRUNE_TIMEOUT" in ''|*[!0-9]*) echo "UV_CACHE_PRUNE_TIMEOUT must be a positive integer" >&2; exit 2;; esac; \
+	[ "$$GLUDD_UV_CACHE_PRUNE_TIMEOUT" -gt 0 ] 2>/dev/null || { echo "UV_CACHE_PRUNE_TIMEOUT must be a positive integer" >&2; exit 2; }; \
+	[ -n "$$GLUDD_UV_CACHE_PRUNE_ROOT" ] || { echo "UV_CACHE_PRUNE_OBSERVED_ROOT must not be empty" >&2; exit 2; }; \
+	if [ "$$GLUDD_UV_CACHE_PRUNE_VALIDATE_ONLY" = "1" ]; then \
+		printf 'UV_CACHE_PRUNE_PLAN max_seconds=%s force=%s observed_root=%s heartbeat=5 quiet=0 retain=20\n' "$$GLUDD_UV_CACHE_PRUNE_TIMEOUT" "$$GLUDD_UV_CACHE_PRUNE_FORCE" "$$GLUDD_UV_CACHE_PRUNE_ROOT"; \
 		exit 0; \
-	else \
-		echo "Pruning uv cache (timeout $(UV_CACHE_PRUNE_TIMEOUT)s)..."; \
 	fi; \
-	$(UV) cache prune --ci & _pid=$$!; _elapsed=0; _hb=5; \
-	while kill -0 $$_pid 2>/dev/null; do \
-		sleep $$_hb; _elapsed=$$((_elapsed + _hb)); \
-		echo "UV_CACHE_PRUNE_HEARTBEAT pid=$$_pid elapsed_s=$$_elapsed max_s=$(UV_CACHE_PRUNE_TIMEOUT)"; \
-		if [ $$_elapsed -ge "$(UV_CACHE_PRUNE_TIMEOUT)" ]; then \
-			echo "UV_CACHE_PRUNE_TIMEOUT pid=$$_pid elapsed_s=$$_elapsed"; kill $$_pid 2>/dev/null || true; wait $$_pid 2>/dev/null || true; break; \
+	if [ "$$GLUDD_UV_CACHE_PRUNE_FORCE" = "1" ]; then \
+		echo "UV_CACHE_PRUNE_FORCE=1: pruning uv cache with $$GLUDD_UV_CACHE_PRUNE_TIMEOUT s timeout"; \
+	else \
+		PRUNE_PROCESSES=$$(/bin/ps -ax -o command=) || { echo "UV_CACHE_PRUNE_REFUSED process inspection failed" >&2; exit 2; }; \
+		if printf '%s\n' "$$PRUNE_PROCESSES" | /usr/bin/awk '/[u]v[[:space:]]+(run|sync|pip|build|add)/ { found=1 } END { exit !found }'; then \
+			echo "UV_CACHE_PRUNE_SKIP active uv processes detected; skipping prune (set UV_CACHE_PRUNE_FORCE=1 to override)"; \
+			exit 0; \
+		else \
+			PRUNE_SCAN_STATUS=$$?; \
+			[ "$$PRUNE_SCAN_STATUS" -eq 1 ] || { echo "UV_CACHE_PRUNE_REFUSED process classification failed" >&2; exit 2; }; \
 		fi; \
-	done; \
-	wait $$_pid 2>/dev/null || true
+	fi; \
+	$(PYTHON) scripts/stream_command.py --root "$$GLUDD_UV_CACHE_PRUNE_ROOT" --label uv-cache-prune \
+		--heartbeat-secs 5 --quiet-secs 0 --max-secs "$$GLUDD_UV_CACHE_PRUNE_TIMEOUT" --retain-runs 20 \
+		-- $(UV) cache prune --ci
 
 # Automatic disk preflight: clean only generated caches in completed/inactive
 # Gludd worktrees, then fail closed unless both canonical limits are healthy.

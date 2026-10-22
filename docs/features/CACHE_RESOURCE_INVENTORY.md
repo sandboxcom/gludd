@@ -692,3 +692,205 @@ because a historical handoff predates this receipt. Capacity96>95 and the origin
 publication60907 failure still block final admission/proof. All seven S98 tasks
 stay unchecked; no push, full gate, exact-SHA hosted/deployment, promotion or
 release is supplied by this source review or collection.
+
+
+## Native UV prune status and model contract (2026-10-22 UTC)
+
+S98.4 found a separate defect in the existing uv-cache-prune facade. Its
+background wait and timeout branches ended in ||true. A real child exit17
+became Make0, and kill-0 polling misclassified completed children as running.
+A SIGTERM-ignoring fixture plus descendant exceeded the fixture's12s bound.
+The fixture killed its owned Make session; this was not a returned124.
+No real cache was pruned. This defect does not establish the cause of
+publication60907 or the natural watchdog timeouts.
+
+### Existing owner and precise bindings
+
+The facade now invokes scripts/stream_command.py directly with the selected
+installed PYTHON, then the exact native UV argv cache prune --ci. It reuses
+native receipts, merged visible output, heartbeat5s, quiet0, automatic identities,
+retention20 and a positive total runtime, default300s. Native termination grace
+drains the owned process group after child work stops. Native17 remains failed17
+and timeout remains timed_out124 in producer-owned JSON; enclosing Make returns
+nonzero, normally2 with Error17/Error124. Do not confuse those two exit layers.
+The observer implementation and retention rules are unchanged.
+
+Default FORCE=0 retains the native process guard. An unavailable ps snapshot
+or failed classification refuses before pruning; unknown process state cannot
+become idle. FORCE=1 overrides only that existing guard. It never appends UV's
+native --force and never grants broader ownership or cache-removal authority.
+The complete busy control starts a real fixture executable named uv with argv
+run, verifies skip with no prune receipt, then verifies forced child17 failure
+with exact argv and no added --force. All fixture children are drained.
+
+Keep direct installed Python here. The
+[UV cache documentation](https://docs.astral.sh/uv/concepts/cache/#clearing-the-cache)
+says cleanup waits for active UV users; the
+[native prune reference](https://docs.astral.sh/uv/reference/cli/#uv-cache-prune)
+says its own --force skips the lock. Wrapping the observer in UV run adds an
+avoidable UV lifetime around pruning. This is a design inference from the
+documented lock, not an observed explanation for this host's failures.
+Do not add a shell timer, external timeout utility, runner or status cache.
+
+Four target-specific public data fields are captured literally before startup
+exports: UV_CACHE_PRUNE_TIMEOUT, UV_CACHE_PRUNE_FORCE,
+UV_CACHE_PRUNE_VALIDATE_ONLY and UV_CACHE_PRUNE_OBSERVED_ROOT. Their dedicated
+raw exports work for direct goals and native dependency callers. A dedicated
+prune root avoids changing the generic OBSERVED_ROOT behavior of other owners.
+Timeout must be a positive decimal integer;0 would make the observer unbounded.
+Mode and force must be0|1, root nonempty. Invalid policy refuses before a child.
+Trusted PYTHON/UV command selectors retain their existing meaning.
+
+Mode1 prints an offline plan before the recipe's ps, cache command or observer.
+It creates no cache or observer directory and supplies no idle, cleanup, capacity
+or release proof. Normal Make startup still occurs. The executable contract and
+help declare all four inputs; the actual safe behavior is:
+
+~~~console
+make uv-cache-prune UV_CACHE_PRUNE_TIMEOUT=300 UV_CACHE_PRUNE_FORCE=0 UV_CACHE_PRUNE_VALIDATE_ONLY=1 UV_CACHE_PRUNE_OBSERVED_ROOT=/tmp/gludd-uv-prune-contract/observed
+~~~
+
+The measured result is Make0 and one UV_CACHE_PRUNE_PLAN line naming
+300/0/heartbeat5/quiet0/retain20 and that exact root. Use this plan for contract
+validation, never a real-cache apply example. The contract checker requires the
+behavior to start with its named public target; substituting test-files is not
+supported. Real lifecycle acceptance uses the existing confined test-files owner:
+
+~~~console
+make test-files TESTFILES=tests/unit/test_make_uv_cache_sandbox.py PYTEST_ARGS='-q -W error -n 0 -o verbosity_test_cases=-2' GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
+~~~
+
+Use the authorized host Make boundary for native process inspection. A sandbox
+ps denial remains a failed receipt, never a mocked empty inventory or a reason
+to weaken descendant cleanup. Fixtures select their already installed interpreter,
+private cache/observer roots and actual executable argv. Success0, failure17,
+timeout124, busy skip/force, offline direct/dependency plans, invalid fields and
+24 Make/shell/backtick literal controls retain every original assertion. A cache
+sentinel's bytes and0600 mode remain intact. A SIGTERM-ignoring parent reaps its
+terminated child before the native observer kills the parent; both are checked
+absent. The plan poisons recipe UV/PYTHON selectors, proving neither is launched.
+
+### Failing-first and current source receipts
+
+The immutable starting point is development
+bd3d2a8235f5e19e9baeff23414cf7275fa44cc0. Root fully reads the concrete independent
+design at /tmp/gludd-v012-uv-prune-design.md and receives the implementation inline.
+This choice uses its direct-Python/native-observer/literal-root recommendation;
+the existing outer run-watched owns milestone progress, while this direct cleanup
+target's observations remain cleanup evidence only.
+
+- Original native RED:3FAIL/3PASS22.93s/native24.0s,
+  /tmp/gludd-v012-uv-prune-red311.{log,xml}. Child17 was swallowed, child0 lacked
+  a receipt and the timeout fixture required its own12s session teardown.
+  Native ps then showed only the two controllers, no fixture survivors.
+- Initial observer repair:6PASS3.15s/native4.1s,
+  /tmp/gludd-v012-uv-prune-green311.{log,xml}.
+- Additional public-plan/literal RED:6FAIL/15PASS/6deselected1.73s/native2.9s,
+  /tmp/gludd-v012-uv-prune-policy-red311.{log,xml}. It retained ignored/empty root,
+  dependency binding, startup injection and a literal backslash-n output defect.
+  Dedicated unconditional prune-only capture and the real printf newline repair
+  those actual bindings; no assertion was removed.
+- Intermediate28PASS4.75s/native5.7s,
+  /tmp/gludd-v012-uv-prune-policy-green311.{log,xml}. Extending literal tests to
+  dependency callers brings the complete original owner to40cases.
+- Mixed canonical/source sandbox attempt:2FAIL/45PASS5.70s/native6.6s,
+  /tmp/gludd-v012-uv-prune-canonical311.{log,xml}. Preserve ps Operation not
+  permitted and a descendant-presence failure. No empty-inventory substitution.
+- Exact same complete source owner at the authorized host boundary:
+  40PASS4.96s/native5.8s, /tmp/gludd-v012-uv-prune-host311.{log,xml}.
+  Ruff and all three separate strict scopes pass. A transport-only JavaScript
+  syntax error performed no edit; native Make edits applied only after correction.
+- Routing RED:1FAIL.78s/native1.5s,
+  /tmp/gludd-v012-uv-prune-route-red311.{log,xml}, actual first-child count0
+  versus required1. Family152 appends one exact child17 witness after all151
+  predecessors. It does not select the whole file. The unchanged six canonical
+  pins pass1.58s and the promotion owner reports152families/21phases/2850s.
+  Original three children2/1/1 and90total/60quiet remain unchanged.
+- Native check-make-target-contract passes277 entries; actual mode1 above and
+  lint-make pass1157targets/zero duplicates and existing gate parity. Complete
+  source/consumer and routing receipts follow below after terminal verification.
+
+
+The complete nine-owner compatibility RED remains
+/tmp/gludd-v012-uv-prune-receiving311.{log,xml}:2FAIL/249PASS34.37s/native35.4s.
+The old release-proof fixture now reads its generated unsplit Makefile through
+the already captured native composer, retaining the identical exactly-one real
+production binding assertion and every missing/duplicate refusal. This conforms
+to the existing logical-Makefile rule. Three separating blank lines make existing
+trace target-specific assignments conform to the unchanged syntax test; all four
+bindings retain their bytes. The dated136-family timing synopsis now points to
+the native manifest for the current roster instead of presenting history as current.
+
+The new contract entry initially makes the file2509lines, refused by the existing
+strict<2500 checker. Compacting just the prune and prune-status JSON entries
+preserves every field and example and passes the unchanged guard. No allowance
+or checker is relaxed. Complete12-owner receiving controls add both trace owners
+and the production-binding fixture to the original nine; native terminal receipts
+are required before this source is committed.
+
+The first normal guarded commit stops before collection when TASKS reaches2501
+lines. Removing only the two blank separators introduced with the new startup
+pointer preserves all ledger text and restores strict<2500; neither a task nor
+historical evidence is dropped. The source remains uncommitted until fresh normal
+guards and collection actually finish.
+
+### Complete source and consumer acceptance
+
+Both complete12-file cohorts pass392cases:311 in48.19s/native49.4s and312 in
+50.94s/native52.1s. Preserve
+/tmp/gludd-v012-uv-prune-complete311.{log,xml} and
+/tmp/gludd-v012-uv-prune-complete312.{log,xml}. Native terminal JSON under
+.gate-logs/observed/uv-prune-complete311 and uv-prune-complete312 retains exact
+commands, roots, original flags and statuses. These are focused180s cohort
+envelopes, not a change or pass of the original90/60 publication owner.
+
+The12 complete owners are test_make_uv_cache_sandbox,
+test_observability_guardrails, test_automatic_disk_cleanup,
+test_automatic_disk_cleanup_resources, test_make_target_contract,
+test_makefile_layout, test_makefile_syntax, test_make_help_audit,
+test_makefile_audit_deep, test_release_proof_admission_target,
+test_trace_summary_make_inputs and test_run_watched_trace under tests/unit.
+The last three retain native binding mutation, trace dependency contexts and
+CMD positional arguments. No old assertion or worker/runtime bound is removed.
+
+Five complete routing/workflow owners pass373each:311 in92.44s/native93.6s and
+312 in83.38s/native84.6s. Preserve
+/tmp/gludd-v012-uv-prune-routing311.{log,xml} and
+/tmp/gludd-v012-uv-prune-routing312.{log,xml}. Native manifest/checker owns the
+current152-family roster; older136/151 figures remain dated history. The first
+child adds only the real17 witness; all predecessors, three children2/1/1,
+90/60 phase,21phases/2850s and required full gate remain unchanged.
+
+All124 complete handoff/contract/Markdown/branch-policy checks pass7.72s/native8.8s
+in /tmp/gludd-v012-uv-prune-docs311.{log,xml}. All four separate strict scopes,
+Ruff, seven-file Markdown, native277contracts, status-snapshot validation, task
+registration of16changed paths and full264-resource ownership inventory pass.
+Normal collection and exact-source independent review remain separate requirements.
+
+Native system-load measurement is3.63 on8CPUs,0.45x/OK; only two testing owners
+ran concurrently. Native disk remains96percent with8.0GiB available. No cache
+mutation or cleanup authority is inferred from either measurement. Production
+Python is unchanged, so no reduced coverage profile is introduced; global85/75
+for both line and branch stays required at final proof.
+
+### Practitioner context and retained release boundary
+
+The firsthand [UV issue5731](https://github.com/astral-sh/uv/issues/5731), opened
+2024-08-02, reports about40GB on self-hosted CI. Later operators describe
+multi-project growth and a July2026 cache exceeding1TB. These reports support
+bounded native lifecycle work; they do not identify this machine's pressure or
+authorize shared-cache deletion. The upstream thread's evolving automatic-prune
+proposal supplies no local policy or permission change.
+
+No actual cache operation was performed for this repair. Last native disk remains
+96percent/8.0GiB, above95; earlier cleanup remains711.7MB scratch/no-progress.
+Capacity HumanTodo is still UNFILED after API refusal, with host input unanswered.
+Original publication60907/124/90.554s/nulltrace/no transport remains unresolved.
+New source, plans, focused tests or another SHA permit no unchanged retry.
+
+Source acceptance and independent review remain separate from the complete
+canonical gate/global85aggregate75each-file line AND branch floors, exact-SHA
+all-shard CI, deployment acceptance, reviewed-head and promotion. No production
+Python coverage scope was narrowed or substituted for those requirements.
+ZDD, native locks, namespacing, retained failed evidence and cleanup/retention
+guards remain. All seven S98 tasks stay unchecked.

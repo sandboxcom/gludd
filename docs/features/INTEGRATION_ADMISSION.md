@@ -9,8 +9,9 @@ manifest. The target composes existing repository checks; it does not add
 another linter, test runner, timer, YAML parser, browser launcher, or
 task-ledger implementation.
 
-Current S98.4 diagnostics retain136families and the original runtime policy.
-The checker preserves its four established pins and adds both full-command
+The dated S98.4 timing diagnostic retains136families and the original policy.
+The native manifest/checker owns the current roster and bounds; later repairs
+append their exact witnesses. The checker preserves its four established pins and both full-command
 expectations; main emits bounded native phase timings. The
 [measured decision and failure history](PIPELINE_STATUS_PROCESS_BOUNDARY.md#bounded-native-admission-phase-timings-2026-10-21)
 own current commands, negative controls and proof limits.

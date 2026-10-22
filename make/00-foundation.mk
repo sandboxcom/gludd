@@ -41,6 +41,21 @@ export GLUDD_CACHE_RESOURCE_VALIDATE_ONLY := $(value CACHE_RESOURCE_VALIDATE_ONL
 unexport CACHE_RESOURCE_ROOT CACHE_RESOURCE_LIMIT CACHE_RESOURCE_CANDIDATE CACHE_RESOURCE_VALIDATE_ONLY
 endif
 
+# Capture prune-only data for explicit and dependency callers before exports.
+UV_CACHE_PRUNE_TIMEOUT ?= 300
+UV_CACHE_PRUNE_FORCE ?= 0
+UV_CACHE_PRUNE_VALIDATE_ONLY ?= 0
+UV_CACHE_PRUNE_OBSERVED_ROOT ?= .gate-logs/observed
+override GLUDD_UV_CACHE_PRUNE_TIMEOUT := $(value UV_CACHE_PRUNE_TIMEOUT)
+override GLUDD_UV_CACHE_PRUNE_FORCE := $(value UV_CACHE_PRUNE_FORCE)
+override GLUDD_UV_CACHE_PRUNE_VALIDATE_ONLY := $(value UV_CACHE_PRUNE_VALIDATE_ONLY)
+override GLUDD_UV_CACHE_PRUNE_ROOT := $(value UV_CACHE_PRUNE_OBSERVED_ROOT)
+export GLUDD_UV_CACHE_PRUNE_TIMEOUT := $(value UV_CACHE_PRUNE_TIMEOUT)
+export GLUDD_UV_CACHE_PRUNE_FORCE := $(value UV_CACHE_PRUNE_FORCE)
+export GLUDD_UV_CACHE_PRUNE_VALIDATE_ONLY := $(value UV_CACHE_PRUNE_VALIDATE_ONLY)
+export GLUDD_UV_CACHE_PRUNE_ROOT := $(value UV_CACHE_PRUNE_OBSERVED_ROOT)
+unexport UV_CACHE_PRUNE_TIMEOUT UV_CACHE_PRUNE_FORCE UV_CACHE_PRUNE_VALIDATE_ONLY UV_CACHE_PRUNE_OBSERVED_ROOT
+
 # Keep the opt-in watcher flag literal before native startup/export expansion.
 RUN_WATCHED_PYTEST_TRACE ?= 0
 override RUN_WATCHED_PYTEST_TRACE := $(value RUN_WATCHED_PYTEST_TRACE)
@@ -964,6 +979,7 @@ help:
 		"  cache-resource-inventory  List largest children of one allowlisted cache root" \
 		"  cache-resource-remove     Validate or remove one exact allowlisted cache child" \
 		"  native-temp-artifact-inspect  Read-only exact native-cache identity (NATIVE_TEMP_ARTIFACT_PATH, NATIVE_TEMP_ARTIFACT_VALIDATE_ONLY=0|1); no cleanup authority" \
+		"  uv-cache-prune        Watched native cleanup; UV_CACHE_PRUNE_TIMEOUT=300, UV_CACHE_PRUNE_FORCE=0|1, UV_CACHE_PRUNE_VALIDATE_ONLY=0|1, UV_CACHE_PRUNE_OBSERVED_ROOT" \
 		"  uv-cache-prune-status List uv cache-prune PID, parent, age, and command" \
 		"  tmp-gludd-usage       Print largest /tmp/gludd-* entries sorted by size" \
 		"  tmp-gludd-worktree-usage  Print largest generated entries under /tmp/gludd-worktrees" \

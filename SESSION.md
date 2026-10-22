@@ -1,12 +1,48 @@
 # Current release handoff
 
-Last Updated: 2026-10-21 (local; receipts retain their actual UTC dates).
+Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
 Total tests: 128623 selected / 128647 collected, 24 deselected, zero collection errors in 48.50s/native 54.0s during normal e5acbad56eba25af0d8633074d4dd9a671ca0b06 source hooks. Native receipt: .gate-logs/observed/test-count/20261022T004337Z-26836-0b5e4352.{log,json}. Collection is separate from behavioral and final-gate proof; older f36/815 collections remain history.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and Main/shared/Git/proof mutations on development. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
+
+## Current S98.4 UV cleanup facade repair
+
+Root's current source starts at development
+bd3d2a8235f5e19e9baeff23414cf7275fa44cc0. The
+[cache feature](docs/features/CACHE_RESOURCE_INVENTORY.md#native-uv-prune-status-and-model-contract-2026-10-22-utc)
+owns the design, actual REDs, upstream practitioner evidence, commands and limits.
+The existing uv-cache-prune target now uses the native observer through installed
+Python, with300s total/5s heartbeat/quiet0/retention20 and preserved failure17/
+timeout124/descendant cleanup. Dedicated literal prune inputs also bind dependency
+callers. The documented mode1 plans without cache or observer IO. FORCE1 overrides
+only the old process guard, never UV's lock or resource ownership.
+
+Original3FAIL/3PASS22.93s/native24.0s precedes6PASS3.15s/native4.1s. Plan/literal
+controls reproduce6FAIL/15PASS1.73s/native2.9s before repair; actual host complete
+40PASS4.96s/native5.8s retains the sandbox's two failed controls separately.
+One routing RED precedes family152 and the unchanged six canonical pins.
+Five complete routing owners pass373each:311 in92.44s/native93.6s and312 in
+83.38s/native84.6s. These focused180s cohort budgets do not change the original
+90/60 runtime owner, three children2/1/1 or21phases/2850s.
+
+Complete compatibility first retains2FAIL/249PASS34.37s/native35.4s: an old
+generated Make fixture used read_text, and three target-specific trace assignments
+lacked required separating blanks. The fixture now uses its captured native
+logical composer with the same exactly-one-binding assertion, and Make whitespace
+conforms without semantic change. The contract's2509-line refusal is repaired by
+compacting two JSON entries with identical fields; the strict<2500 guard passes.
+Both complete12-owner source/consumer cohorts pass392each:311 in48.19s/native49.4s
+and312 in50.94s/native52.1s. Their native receipts retain exact commands and all
+original assertions. Source review, fresh normal collection and final release
+proofs remain distinct; independent review is pending on the eventual exact commit.
+
+Actual disk remains96percent/8.0GiB at the new native measurement. No actual UV
+cache operation, cleanup retry, publication replay, full gate, push, master merge
+or release follows. Capacity and original60907 remain the blockers below.
+No .opencode plugin source changes or controller handoffs are needed.
 
 ## Reviewed coverage source and continuation
 
