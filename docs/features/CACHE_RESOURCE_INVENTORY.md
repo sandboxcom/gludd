@@ -894,3 +894,141 @@ all-shard CI, deployment acceptance, reviewed-head and promotion. No production
 Python coverage scope was narrowed or substituted for those requirements.
 ZDD, native locks, namespacing, retained failed evidence and cleanup/retention
 guards remain. All seven S98 tasks stay unchecked.
+
+### Exact source collection and independent receiving decision
+
+Normal guarded source3e8d325969fb8900f7a7f7c24a2826e5c7828e28, parent
+bd3d2a8235f5e19e9baeff23414cf7275fa44cc0, retains zero new clones, six protected
+checkpoints and128661selected/128685collected,24deselected,zero collection errors
+47.59s/native52.784s. Native test-count receipt:
+.gate-logs/observed/test-count/20261022T045312Z-3274-966c4f9f.{log,json}.
+Worktree-state is clean at that source and native ps shows only57626/57964 after
+the hook drains. These are controller identities, never model-agent PIDs.
+
+Exact3e8 has independent APPROVE SOURCE ONLY against bd3. Root completely reads
+/tmp/gludd-v012-uv-prune-3e8-source-review.md; no blocking correction. The reviewer
+reads every changed path, the three frozen unchanged support owners, both392-case
+source/consumer and both373-case routing receipts and logs, and the normal native
+collection status. The prepared four-document receiving draft records that actual decision. Its
+scope is superseded by the new inherited-policy boundary below; no separate
+receiving commit is claimed. Preserve the immutable3e8 review and source receipts.
+
+Source implementation, focused acceptance, normal collection and independent
+review are evidenced. Every failed receipt and the remaining full-gate/global
+coverage/exact-SHA hosted/deployment/promotion requirements remain separate.
+Source-only approval cannot clear capacity96>95 or original60907, and all seven
+tasks stay unchecked.
+
+A later natural watchdog owner starts scan-2a6dac4e68b541f09a5741e08386acc9 with
+native owner57626/child5652 and scanner descendants. Root waits before further
+Git work. The per-run native terminal receipt reports124/60.564s, timed_out/
+max-runtime-timeout/null trace; subsequent ps shows only57626/57964. Preserve
+.gate-logs/observed/watchdog-secrets/scan-2a6dac4e68b541f09a5741e08386acc9.json.
+This remains unknown scan evidence; no forced scan, budget/cooldown change or
+source/release clearance follows.
+
+Receiving drafts are seeded by git-show-file-to at the exact source. Earlier
+copy-file attempts refused absent destination parents; that target retains cp
+semantics. No Main mutation occurred. The native export owner creates its
+destination parents and preserves exact Git bytes before literal edits.
+
+
+## Honor native inherited UV prune policy (2026-10-22 UTC)
+
+Exact3e8's source-only decision above remains immutable and scoped to its reviewed
+controls. Before committing the prepared receiving draft, Root probes a new native
+boundary: an alias overrides UV_CACHE_PRUNE_TIMEOUT to0 but receives plan300.
+Early global capture preserved raw CLI data while losing inherited target-specific
+public settings. Consequently a shorter/invalid timeout, force, mode or root could
+be ignored. This is a real facade regression, not a capacity or publication cause.
+
+Preserve /tmp/gludd-uv-prune-policy-probe.mk and its native output: original Make0
+prints max_seconds=300 despite the alias override0. After the production repair,
+the exact same native command returns Make2 with the positive-integer refusal.
+Both use the documented offline mode, false UV/PYTHON selectors and no real prune.
+
+The23 additive controls reproduce23FAIL/40PASS6.27s/native7.2s in
+/tmp/gludd-v012-uv-prune-target-policy-red311.{log,xml}. Four valid inherited fields,
+seven invalid policies and twelve literal Make/shell/backtick settings fail while
+all40 predecessor cases still pass. Original assertions remain byte-equivalent;
+their repeated literal checks move to a shared helper, invoked by the same24
+original test IDs and the twelve new inherited cases. Fixtures still execute
+the actual production Makefile and retain their private cache/evidence roots.
+
+Reuse the established trace facade pattern rather than inventing a parser or
+suppressing the failure. Keep foundation's early raw capture/unexport to prevent
+startup evaluation. At the native uv-cache-prune target, override its four already
+exported private fields with deferred value(public field) in that target context.
+This honors native inherited policy and Make precedence without evaluating data.
+Keep separating blank lines required by the existing syntax checker. The native
+observer and all timeout/status/cleanup/lock/retention policy stay unchanged.
+
+The complete source owner then passes63 in6.76s/native7.7s:
+ /tmp/gludd-v012-uv-prune-target-policy-green311.{log,xml}.
+The inherited zero-timeout witness first has a genuine routing failure,
+1FAIL1.51s/native2.5s, in
+/tmp/gludd-v012-uv-prune-target-route-red311.{log,xml}. Append family153 only after
+all152 predecessors, selecting that exact node once in the first child. Keep the
+native17 witness, entire predecessor roster, three children2/1/1,90/60,
+21phases/2850s, fatal warnings and required full gate. The native promotion checker
+and its unchanged six canonical pins pass1.67s. Two new overlong test lines are
+reflowed without suppression; two exact-match replacements preserve existing
+independent cardinality assertions. No checker or old assertion is weakened.
+
+Model-facing lesson: startup literal protection and native target-context binding
+are separate obligations. A direct goal and a dependency caller supplied only
+with command-line settings cannot prove inherited target-specific policy. Test
+actual native callers with valid, invalid and literal inherited values, alongside
+the original direct/dependency argv controls. Reuse the already tested trace owner
+pattern; keep trusted command selectors distinct from literal policy data.
+
+The pending receiving draft for3e8 is folded into this new boundary repair;
+there is no separate four-document receiving commit. Source3e8 approval, normal
+collection128661/128685 and392/373 predecessor passes remain historical receipts.
+The successor requires its own complete415-case source/consumer and374-case routing
+cohorts on both installed runtimes, normal zero-error collection and independent
+exact-source review. These are being verified, not predicted from3e8 approval.
+
+Capacity96/8.0GiB and original60907/124/90.554s/nulltrace/no transport remain blocked.
+Natural scan2a's124/60.564s is unknown scanning evidence. No real cache operation,
+new runner, changed coverage scope, unchanged expensive replay, full gate or
+exact-SHA hosted/deployment/promotion proof follows. All seven tasks stay unchecked.
+
+
+The primary [GNU target-specific manual](https://www.gnu.org/software/make/manual/html_node/Target_002dspecific.html)
+describes prerequisite inheritance and override precedence. Its
+[established value function](https://ftp.gnu.org/old-gnu/Manuals/make-3.80/html_node/make_86.html)
+returns stored text without expansion and cannot undo earlier evaluation.
+That supports the two distinct bindings; the native controls establish actual
+behavior on the installed Make. Both direct manual fetches time out; indexed
+primary manual text supplies this research, without a new dependency or parser.
+
+Complete five-owner routing acceptance passes374each:311 in83.01s/native84.2s
+and312 in86.96s/native88.2s. Preserve
+/tmp/gludd-v012-uv-prune-inherited-routing311.{log,xml} and
+/tmp/gludd-v012-uv-prune-inherited-routing312.{log,xml}, with corresponding native
+JSON under .gate-logs/observed/uv-prune-inherited-routing311 and routing312.
+Both native receipts are passed/0; their exact commands and focused180s envelopes
+do not establish or alter original90/60 publication proof. All predecessor count,
+order, worker, deadline and required full-gate assertions remain.
+
+
+Complete twelve-owner source/consumer acceptance passes415each:311 in53.49s/
+native54.7s and312 in56.64s/native57.8s. Preserve
+/tmp/gludd-v012-uv-prune-inherited-complete311.{log,xml} and
+/tmp/gludd-v012-uv-prune-inherited-complete312.{log,xml}, plus native JSON under
+.gate-logs/observed/uv-prune-inherited-complete311 and complete312. These retain
+every prior lifecycle, cache, Make layout/syntax, help, contract, production-binding
+and trace/positional assertion alongside all23 new inherited-policy cases.
+
+All three changed Python test scopes pass separate strict checks and Ruff.
+Native277contracts, actual mode1, unchanged1157targets/zero duplicates and Make
+gate parity pass after the target-context change. Global85/75 line AND branch
+remains required; no production Python or coverage profile changes. Fresh normal
+collection and independent exact-successor review still need their actual receipts.
+
+All124 complete documentation/handoff/contract/branch checks pass7.24s/native8.3s
+in /tmp/gludd-v012-uv-prune-inherited-docs311.{log,xml}. Full264-resource ownership,
+12-path task registration, SESSION region validation and strict<2500 limits pass.
+Historical e5 and3e8 collection paragraphs now name their own counts/source receipt,
+so a refreshed current header cannot silently reattribute old measurements.

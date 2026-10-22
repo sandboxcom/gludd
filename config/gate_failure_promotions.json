@@ -1223,6 +1223,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_make_uv_cache_sandbox.py::test_native_prune_preserves_real_child_status[native-failure]",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "uv-prune-inherited-policy-context",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_make_uv_cache_sandbox.py::test_native_prune_target_policy_refuses_invalid[UV_CACHE_PRUNE_TIMEOUT=0]",
+      "full_gate_phase": "test"
     }
   ]
 }

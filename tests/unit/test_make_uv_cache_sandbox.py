@@ -178,14 +178,16 @@ def test_native_prune_timeout_is_124_and_drains_owned_descendants(tmp_path: Path
 
 def _prune_plan(
     tmp_path: Path, options: tuple[str, ...] = (), *, indirect: bool = False,
+    bindings: tuple[str, ...] = (),
 ) -> subprocess.CompletedProcess[str]:
     """Run a confined offline plan through the actual public Make owner."""
     makefile = ROOT / "Makefile"
     goal = "uv-cache-prune"
     if indirect:
         makefile = tmp_path / "caller.mk"
+        policy = "".join(f"fixture-prune: override {binding}\n" for binding in bindings)
         makefile.write_text(
-            f"include {ROOT / 'Makefile'}\n.PHONY: fixture-prune\nfixture-prune: uv-cache-prune\n",
+            f"include {ROOT / 'Makefile'}\n.PHONY: fixture-prune\n{policy}fixture-prune: uv-cache-prune\n",
             encoding="utf-8",
         )
         goal = "fixture-prune"
@@ -247,10 +249,20 @@ def test_native_prune_refuses_invalid_policy_before_launch(tmp_path: Path, optio
 def test_native_prune_policy_is_literal_before_startup(
     tmp_path: Path, field: str, syntax: str, indirect: bool,
 ) -> None:
+    _assert_literal_prune_policy(tmp_path, field, syntax, indirect=indirect)
+
+
+def _assert_literal_prune_policy(
+    tmp_path: Path, field: str, syntax: str, *, indirect: bool, target_policy: bool = False,
+) -> None:
     marker = tmp_path / "injected"
     payload = f"printf injected > {shlex.quote(str(marker))}"
     value = {"make": f"$(shell {payload})", "shell": f"$({payload})", "backtick": f"\x60{payload}\x60"}[syntax]
-    result = _prune_plan(tmp_path, (f"{field}={value}",), indirect=indirect)
+    options = (f"{field}={value}",)
+    result = _prune_plan(
+        tmp_path, () if target_policy else options, indirect=indirect,
+        bindings=options if target_policy else (),
+    )
     assert not marker.exists(), result.stdout + result.stderr
     if field == "UV_CACHE_PRUNE_OBSERVED_ROOT":
         assert result.returncode == 0, result.stdout + result.stderr
@@ -289,3 +301,62 @@ def test_native_prune_busy_guard_skips_and_force_preserves_failure(tmp_path: Pat
         with suppress(ProcessLookupError):
             os.killpg(busy.pid, signal.SIGKILL)
         busy.wait(timeout=5)
+
+
+
+@pytest.mark.parametrize(
+    ("prune_policy_field", "prune_policy_value", "prune_plan_fragment"),
+    [
+        ("UV_CACHE_PRUNE_TIMEOUT", "7", "max_seconds=7"),
+        ("UV_CACHE_PRUNE_FORCE", "1", "force=1"),
+        ("UV_CACHE_PRUNE_VALIDATE_ONLY", "1", "UV_CACHE_PRUNE_PLAN"),
+        ("UV_CACHE_PRUNE_OBSERVED_ROOT", "private-root", "observed_root="),
+    ],
+)
+def test_native_prune_target_policy_preserves_native_context(
+    tmp_path: Path, prune_policy_field: str, prune_policy_value: str, prune_plan_fragment: str,
+) -> None:
+    if prune_policy_field == "UV_CACHE_PRUNE_OBSERVED_ROOT":
+        prune_policy_value = str(tmp_path / "owned observed")
+        prune_plan_fragment += prune_policy_value
+    options = ("UV_CACHE_PRUNE_VALIDATE_ONLY=0",) if prune_policy_field == "UV_CACHE_PRUNE_VALIDATE_ONLY" else ()
+    result = _prune_plan(
+        tmp_path, options, indirect=True,
+        bindings=(f"{prune_policy_field} = {prune_policy_value}",),
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert prune_plan_fragment in result.stdout
+    assert not (tmp_path / "owned observed").exists()
+
+
+@pytest.mark.parametrize(
+    "prune_policy_binding",
+    [
+        "UV_CACHE_PRUNE_TIMEOUT=0", "UV_CACHE_PRUNE_TIMEOUT=-1",
+        "UV_CACHE_PRUNE_TIMEOUT=invalid", "UV_CACHE_PRUNE_TIMEOUT=",
+        "UV_CACHE_PRUNE_FORCE=2", "UV_CACHE_PRUNE_VALIDATE_ONLY=2",
+        "UV_CACHE_PRUNE_OBSERVED_ROOT=",
+    ],
+)
+def test_native_prune_target_policy_refuses_invalid(
+    tmp_path: Path, prune_policy_binding: str,
+) -> None:
+    result = _prune_plan(tmp_path, indirect=True, bindings=(prune_policy_binding,))
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "UV_CACHE_PRUNE_PLAN" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    "prune_policy_field",
+    [
+        "UV_CACHE_PRUNE_TIMEOUT", "UV_CACHE_PRUNE_FORCE",
+        "UV_CACHE_PRUNE_VALIDATE_ONLY", "UV_CACHE_PRUNE_OBSERVED_ROOT",
+    ],
+)
+@pytest.mark.parametrize("prune_policy_syntax", ["make", "shell", "backtick"])
+def test_native_prune_target_policy_is_literal(
+    tmp_path: Path, prune_policy_field: str, prune_policy_syntax: str,
+) -> None:
+    _assert_literal_prune_policy(
+        tmp_path, prune_policy_field, prune_policy_syntax, indirect=True, target_policy=True,
+    )

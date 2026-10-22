@@ -49,6 +49,15 @@ disk-check:
 uv-cache-prune-status:
 	@/bin/ps -ax -o pid=,ppid=,etime=,command= | /usr/bin/awk '/[u]v cache prune/ { found=1; print } END { if (!found) print "UV_CACHE_PRUNE_IDLE" }'
 
+# Resolve raw public values again in the inherited native target context.
+uv-cache-prune: override GLUDD_UV_CACHE_PRUNE_TIMEOUT = $(value UV_CACHE_PRUNE_TIMEOUT)
+
+uv-cache-prune: override GLUDD_UV_CACHE_PRUNE_FORCE = $(value UV_CACHE_PRUNE_FORCE)
+
+uv-cache-prune: override GLUDD_UV_CACHE_PRUNE_VALIDATE_ONLY = $(value UV_CACHE_PRUNE_VALIDATE_ONLY)
+
+uv-cache-prune: override GLUDD_UV_CACHE_PRUNE_ROOT = $(value UV_CACHE_PRUNE_OBSERVED_ROOT)
+
 uv-cache-prune:
 	@case "$$GLUDD_UV_CACHE_PRUNE_VALIDATE_ONLY:$$GLUDD_UV_CACHE_PRUNE_FORCE" in 0:0|0:1|1:0|1:1) ;; *) echo "UV_CACHE_PRUNE_VALIDATE_ONLY and UV_CACHE_PRUNE_FORCE must be 0 or 1" >&2; exit 2;; esac; \
 	case "$$GLUDD_UV_CACHE_PRUNE_TIMEOUT" in ''|*[!0-9]*) echo "UV_CACHE_PRUNE_TIMEOUT must be a positive integer" >&2; exit 2;; esac; \

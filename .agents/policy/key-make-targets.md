@@ -33,7 +33,9 @@ A seven-line active-task search can still truncate because each line contains a
 large evidence history. These windows establish navigation, not a changed task
 definition or proof. Read the selected task's full criteria and owning feature
 before implementation/closure; complete native guards still evaluate the ledger.
-Use the existing work-item status with explicit WORK_ITEM_ACTION=status,
+An older collection paragraph keeps its own source/ref and native artifact;
+a later header refresh cannot recertify it. Use the existing work-item status
+with explicit WORK_ITEM_ACTION=status,
 WORK_ITEM_ID=S98.4, WORK_ITEM_REASON='' and WORK_ITEM_VALIDATE_ONLY=0 after
 selecting the installed runtime below. It reports observations, not acceptance.
 Use make active-work-status ACTIVE_WORK_STATUS_PID= for current scope/ownership.
@@ -700,7 +702,10 @@ heartbeat5, quiet0 and retention20. The default process guard skips active UV;
 inspection/classification failure refuses. FORCE1 overrides only that guard,
 never UV's lock or ownership policy. Native failures17/124 remain in receipts;
 enclosing Make is nonzero. Capture all four prune-only data fields before startup
-exports for direct and dependency callers; keep generic OBSERVED_ROOT unchanged.
+exports before startup, then rebind raw private exports in the native target context
+so inherited target-specific public policy keeps Make precedence. Direct/dependency
+CLI controls alone do not prove that context; retain valid/invalid/literal inherited
+controls too. Keep generic OBSERVED_ROOT unchanged.
 The [owning cache record](../../docs/features/CACHE_RESOURCE_INVENTORY.md#native-uv-prune-status-and-model-contract-2026-10-22-utc)
 retains confined actual0/17/124/skip, literal-input controls, upstream reports
 and proof limits. Never use real-cache pruning as the contract example.

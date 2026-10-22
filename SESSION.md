@@ -2,13 +2,39 @@
 
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 128623 selected / 128647 collected, 24 deselected, zero collection errors in 48.50s/native 54.0s during normal e5acbad56eba25af0d8633074d4dd9a671ca0b06 source hooks. Native receipt: .gate-logs/observed/test-count/20261022T004337Z-26836-0b5e4352.{log,json}. Collection is separate from behavioral and final-gate proof; older f36/815 collections remain history.
+Total tests: 128661 selected / 128685 collected, 24 deselected, zero collection errors in 47.59s/native 52.784s during normal 3e8d325969fb8900f7a7f7c24a2826e5c7828e28 source hooks. Native receipt: .gate-logs/observed/test-count/20261022T045312Z-3274-966c4f9f.{log,json}. Collection is separate from behavioral and final-gate proof; older e5/bd3 and f36/815 collections remain history.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and Main/shared/Git/proof mutations on development. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 UV cleanup facade repair
+## Current S98.4 inherited prune-policy correction
+
+Root's new repair starts at development3e8d325969fb8900f7a7f7c24a2826e5c7828e28.
+Its source-only approval remains scoped to the predecessor controls below.
+A new native alias overrides timeout0 but receives plan300: early global capture
+lost target-specific public policy. The [owning cache record](docs/features/CACHE_RESOURCE_INVENTORY.md#honor-native-inherited-uv-prune-policy-2026-10-22-utc)
+retains this actual probe,23FAIL/40PASS6.27s/native7.2s and63PASS6.76s/native7.7s.
+The production target now rebinds all four raw private exports in native context
+using the established trace pattern. Every original test ID/assertion remains.
+
+One routing RED1FAIL1.51s/native2.5s precedes appended family153 after all152
+predecessors. Original three2/1/1 children,90/60,21/2850, full gate, fatal warnings,
+ZDD, native UV locks and85/75 line AND branch requirements remain unchanged.
+Complete374-case routing owners pass both runtimes:31183.01s/native84.2s and
+31286.96s/native88.2s. Complete415-case source/consumer cohorts pass both runtimes:
+31153.49s/native54.7s and31256.64s/native57.8s. Three changed strict scopes/Ruff,
+277contracts/actual mode1,1157targets/zero duplicates and Make parity pass.
+Fresh normal collection and independent exact-successor review are being verified.
+The prepared3e8 receiving draft is folded into this repair; it was never committed
+as a separate four-document receipt. Do not infer successor approval from3e8.
+
+Capacity96percent/8.0GiB, unfiled HumanTodo/API refusal, unanswered host input,
+original60907 and natural scan failures remain. No expensive unchanged replay,
+actual cache pruning, final gate, push, master merge or release follows.
+All seven tasks remain unchecked.
+
+## Reviewed UV lifecycle predecessor 3e8
 
 Root's current source starts at development
 bd3d2a8235f5e19e9baeff23414cf7275fa44cc0. The
@@ -37,14 +63,24 @@ compacting two JSON entries with identical fields; the strict<2500 guard passes.
 Both complete12-owner source/consumer cohorts pass392each:311 in48.19s/native49.4s
 and312 in50.94s/native52.1s. Their native receipts retain exact commands and all
 original assertions. Source review, fresh normal collection and final release
-proofs remain distinct; independent review is pending on the eventual exact commit.
+proofs remain distinct.
+
+The normal source hooks produce exact development
+3e8d325969fb8900f7a7f7c24a2826e5c7828e28 against parentbd3d2a8, with zero new
+clones, six retained checkpoints and128661selected/128685collected,24deselected,
+zero collection errors47.59s/native52.784s in its named native receipt.
+Independent APPROVE SOURCE ONLY applies to exact3e8 against bd3. Root fully
+reads /tmp/gludd-v012-uv-prune-3e8-source-review.md; no blocking correction.
+The prepared receiving draft is retained as predecessor evidence and folded into
+the new inherited-policy repair above. Its scope does not certify that successor.
+Final release proof remains pending; preserve the immutable3e8 decision.
 
 Actual disk remains96percent/8.0GiB at the new native measurement. No actual UV
 cache operation, cleanup retry, publication replay, full gate, push, master merge
 or release follows. Capacity and original60907 remain the blockers below.
 No .opencode plugin source changes or controller handoffs are needed.
 
-## Reviewed coverage source and continuation
+## Previously reviewed coverage source
 
 Exact development e5acbad56eba25af0d8633074d4dd9a671ca0b06 has independent
 APPROVE SOURCE ONLY against 815cd5dff5bf337eda518f9d1ff04673145a043c.
@@ -75,7 +111,8 @@ scopes, native Ruff/manual script docstrings/Markdown/SESSION structure,
 Original three children 2/1/1, 90/60, 21 phases/2850 and full gate remain.
 
 Normal e5 source hooks retain zero new clones, six protected checkpoints and
-the fresh collection above. All source research and annotation deliverables
+128623selected/128647collected,24deselected0errors48.50s/native54.0s. Those prior
+receipts remain in the coverage contract. All source research and annotation deliverables
 are integrated; the independent decision is retained. Only native producers
 own current observations. Source implementation/acceptance/collection/review
 do not establish final gate or release readiness.
@@ -99,9 +136,11 @@ The [watchdog record](docs/features/WATCHDOG_SECRETS_LIFECYCLE.md) retains revie
 9ac source and acknowledged sequential handoffs:39922/29001 drained,57626/57964
 acknowledged with registered311 while the other guard stayed. Query native ps for
 current processes; those are controller identities, not model-agent PIDs.
-Natural scan-e60b7ebb522d49809c16801192c9f64b returns124/60.555s, inactive/
+Natural scan-2a6dac4e68b541f09a5741e08386acc9 returns124/60.564s, timed_out/
 max-runtime-timeout/null trace; native ps then shows only the two controllers.
-It remains unknown scanning evidence. New Make/helper bodies load in each child;
+Earlier e60/60.555s and e10/60.533s remain failed history. This is unknown scanning
+evidence, not source or release clearance. Root did not force or repeat the scan.
+New Make/helper bodies load in each child;
 no controller restart, forced scan or60scan/300cooldown alteration is needed.
 
 Native312 inspection verifies CPython3.12.15/ci/mismatches[]. Registered311
