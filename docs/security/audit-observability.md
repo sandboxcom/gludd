@@ -414,3 +414,27 @@ audit_public_secrets import/bootstrap pattern supports direct-script and package
 entrypoints without loading detect-secrets in default hook mode. The complete
 canonical manager test file joins the receiving cohort; no manager code,
 clone baseline, detector threshold or test assertion is changed.
+
+### Exact-source receiving boundary
+
+Exact development f36d2dc362dfe7676b1ea51239aa1f8b2a28e24f, parent
+e946b08e2535e4fe325378a09a569bd3f8da840b, has independent APPROVE SOURCE ONLY.
+Root fully read /tmp/gludd-v012-native-scan-source-review.md; all17 changed
+frozen paths and the unchanged manager/hook companions have no blocking
+source correction. The reviewer did not rerun acceptance or supply gate/CI proof.
+
+Normal f36 hooks report zero new clones after canonical-function reuse, retain
+all six owned checkpoints and pass fresh collection128608selected/128632collected,
+24deselected/zero errors48.41s/native53.8s. Preserve native receipt
+.gate-logs/observed/test-count/20261022T001203Z-5279-80a22172.{log,json}.
+Explicit manual script docstrings PASS and the native hook's script-classification
+SKIP remain distinct. Older e946 collection stays history.
+
+This separate four-document receiving receipt records the accepted source and
+shortens the next model's decision path; the code, assertions, native budgets,
+TASKS criteria/checkboxes and failed artifacts stay frozen. Native HEAD owns
+the tracking tip, while f36 owns the accepted code boundary. Capacity96>95/
+8.1GiB, counted scratch711.7MB and original60907/124/90.554s/nulltrace/no transport
+still require actual changed inputs. HumanTodo remains UNFILED after API refusal.
+No unchanged cleanup or publication retry, full-gate/global-coverage waiver,
+hosted/deployment claim, task tick, push or promotion follows from this receipt.

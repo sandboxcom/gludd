@@ -2,7 +2,7 @@
 
 Last Updated: 2026-10-21 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 128537 selected / 128561 collected,24 deselected,zero collection errors48.53s/native54.0s during normal e946b08e2535e4fe325378a09a569bd3f8da840b hooks. Native receipt: .gate-logs/observed/test-count/20261021T233503Z-84623-bed68e04.{log,json}. This historical collection is not behavioral or final-gate proof.
+Total tests: 128608 selected / 128632 collected,24 deselected,zero collection errors48.41s/native53.8s during normal f36d2dc362dfe7676b1ea51239aa1f8b2a28e24f source hooks. Native receipt: .gate-logs/observed/test-count/20261022T001203Z-5279-80a22172.{log,json}. Collection is separate from behavioral and final-gate proof; older e946 collection remains history.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
@@ -43,9 +43,12 @@ Six canonical pins pass1.81s; all four routing/workflow files pass298 each:
 90/60 and21phases2850/full gate remain. Preserve every RED and older intermediate
 receipt; details, commands and actual public-target behavior belong to the feature.
 
-Normal receiving commit/source review must be read through native HEAD and
-/tmp/gludd-v012-native-scan-source-review.md before repeating finished source work.
-Source acceptance, source review, collection, final gate and release remain separate.
+Exact source f36d2dc362dfe7676b1ea51239aa1f8b2a28e24f has independent APPROVE
+SOURCE ONLY; Root fully read /tmp/gludd-v012-native-scan-source-review.md.
+Normal source hooks report zero new clones after the retained14-line refusal,
+six retained checkpoints and the fresh collection above. This separate receiving
+receipt changes four documents only; do not restart the accepted code repair.
+Source acceptance/review/collection, final gate and release remain separate.
 
 ## Previously accepted source and controller state
 
