@@ -135,7 +135,7 @@ passes or repeat accepted41b mid-repair; changed shared foundation inputs still
 require affected consumers at stable receiving. The [throughput research decisions](RELEASE_PROOF_THROUGHPUT.md#research-decisions-for-this-pipeline)
 support fast feedback/WIP limits, not a proven optimum. Native result prompts
 in [the result contract](MAKE_RESULT_GUIDANCE.md) name that next action while
-preserving statuses, six required child pins and pending final proof.
+preserving statuses, all eight current child pins and pending final proof.
 
 ## Complete receiving measurements
 
@@ -167,6 +167,33 @@ files,26-path registration, native SESSION mode1, strict scopes/Ruff and the
 less-than2500 limit. Node compatibility uses its existing installed3.14 owner:
 six cases pass9.46s; it is separate from the311/312 acceptance above.
 
+## Normal guarded source receipt
+
+Exact6bc6981413c5c1f5b042043cc04f793f17b6841c is committed locally on
+release-candidate/v012-git-mutex-20261022. Normal hooks retain zero new clones,
+six owned checkpoints and128881selected/128905collected,24deselected0errors
+48.65s/native53.765s. The native receipt is
+.gate-logs/observed/test-count/20261022T104837Z-32263-e7ef01c1.{json,log,pytest.jsonl}.
+Independent APPROVE SOURCE ONLY against41b is fully read at
+/tmp/gludd-v012-native-make-review-decision.md. The review accepts all26 frozen
+paths and ten native receipts; it preserves literal/native merge state, original
+statuses, terminal child ordering, canonical full-file coverage,162 additive
+families/eight pins and unchanged runtime/full-gate floors. It does not recertify
+prior mutex source or arbitrary hooks/filters/concurrent writers. Its two exact
+nonblocking six-to-eight wording corrections are applied in this documentation
+receiving; historical six-pin measurements stay intact. The reviewer and all
+reader sessions are quiescent. This record supplies no full-gate, exact-SHA
+hosted/deployment or release-completion claim.
+
+The documentation receiving runs only its five complete operating/guide owners,
+not the accepted840-case source union:133PASS on3117.23s/native8.138s and312
+7.85s/native8.820s. Native receipts are
+.gate-logs/observed/make-guidance-handoff{311,312}/v012-make-guidance-handoff{311,312}.json;
+logs/XML are /tmp/gludd-v012-make-guidance-handoff{311,312}.{log,xml}. Both preserve
+fatal warnings/no skips or errors. Seven-file Markdown, registration, SESSION,
+line-limit and278-contract checks pass. Normal per-commit collection remains
+mandatory; consume its native hook result without a recursive receipt-only commit.
+
 ## Receiving sequence and release limits
 
 Run cheap lint, separate strict scopes, target contract, documented behavior,
@@ -184,7 +211,8 @@ and independent exact-source review. The earlier41b441-case acceptance and
 APPROVE SOURCE ONLY remain history, not new proof of changed Make inputs.
 The native Make guide and AGENTS.md codify the same sequence.
 
-Capacity97percent/7.8GiB, original60907/124/90.554s/nulltrace/no transport,
+The source review retains capacity97percent/7.8GiB as its frozen input. Latest
+native disk96percent/7.9GiB still exceeds95. Original60907/124/90.554s/nulltrace/no transport,
 original runtime replay, canonical full gate/global coverage and all exact-SHA
 hosted/deployment/reviewed-head/promotion proofs remain pending. The seven S98
 items stay open. A new prompt, source commit or elapsed time repairs none of

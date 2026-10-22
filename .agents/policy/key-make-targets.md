@@ -244,7 +244,7 @@ Make wiring pins plus both exact roster pins. Run that cheap owner to terminal
 exit0 before launching the complete routing cohort after an additive family edit.
 Update independent family-ID seeds, expected counts and literal child rosters
 additively with the manifest/Make selector, retaining every prior entry and bound.
-Its first structural PASS line is not its terminal six-pin result; a stale seed
+Its first structural PASS line is not its terminal eight-pin result; a stale seed
 can still fail the required child and enclosing Make. Its documented example
 exposes that mismatch before the bounded runtime replay. The complete
 runtime-admission-scheduling and cold-start-selection owners also retain mutation
@@ -793,8 +793,12 @@ replacement are validated before the destination is opened. Invalid transport
 leaves existing bytes untouched. Make requires nonempty encoded fields and
 replacement requires exactly one match. The existing native text owner preserves
 write bytes and replacement newline behavior; it creates no temporary decoder
-files. For a line range, use make replace-lines FILE=path START=1 END=1
-NEW_FILE=path-to-replacement; the existing wrapper preserves mode and reports
+files. write-text-b64 and copy-file require an existing destination parent; native
+ENOENT leaves no result to consume. Use an existing temporary directory or the
+owner whose documented operation creates that specific artifact directory; the
+immutable git-show-file-to export creates its output parents. Do not infer a
+successful export from a failed write. For a line range, use make replace-lines
+FILE=path START=1 END=1 NEW_FILE=path-to-replacement; the wrapper preserves mode and reports
 native failures before publishing. Do not place shell interpolation in Make arguments.
 
 Setup through `make init`, dependency synchronization, packaging, Ansible,

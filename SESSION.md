@@ -2,7 +2,7 @@
 
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 128738 selected / 128762 collected, 24 deselected, zero collection errors in51.42s/native57.111s during normal41b8ea255b23dc309f8d0114ff56ea3174ba2ee6 hooks. Native receipt: .gate-logs/observed/test-count/20261022T094532Z-66298-af7e9c5f.{log,json}. Collection is separate from behavioral and final-gate proof;49bb, rejected621 and older collections retain their own refs. Uncommitted Make/helper receiving work requires its own normal collection.
+Total tests: 128881 selected / 128905 collected, 24 deselected, zero collection errors in48.65s/native53.765s during normal6bc6981413c5c1f5b042043cc04f793f17b6841c hooks. Native receipt: .gate-logs/observed/test-count/20261022T104837Z-32263-e7ef01c1.{log,json,pytest.jsonl}. Collection is separate from behavioral and final-gate proof;41b,49bb, rejected621 and older collections retain their own refs. The next guarded commit owns its fresh native collection receipt; consume that result without another receipt-only commit or repeating accepted source acceptance.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
@@ -10,8 +10,8 @@ Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch name
 
 ## Reviewed mutex source and current S98.4 Make receiving
 
-Root owns release-candidate/v012-git-mutex-20261022 at reviewed exact
-41b8ea255b23dc309f8d0114ff56ea3174ba2ee6, descending from reviewed49bb and rejected
+The implementation source on release-candidate/v012-git-mutex-20261022 is exact
+6bc6981413c5c1f5b042043cc04f793f17b6841c, descending from reviewed41b/49bb and rejected
 62151e62d048c2f425cdc016f682da86ab9e15f6 against development
 82db11b57b254c1ca1e035975b5cc86253e2fed5, using the existing canonical checkout.
 The [mutex record](docs/features/GIT_REPOSITORY_MUTEX.md#task-handoff-correction-after-independent-rejection-2026-10-22-utc)
@@ -29,7 +29,7 @@ Seven complete source/consumer owners pass266 on31115.42s/native17.6s with the
 unchanged profile at96.8line/90.7branch and85/75 BOTH. The same266 cases pass312
 in14.90s/native16.1s at /tmp/gludd-v012-git-mutex-handoff-312.{log,xml}; separate
 strict source/test scopes and Ruff pass. Four operating owners pass124/6.92s/
-native7.8s. Normal49bb collection is recorded above; independent APPROVE SOURCE
+native7.8s. Normal49bb collection is retained in the mutex record; independent APPROVE SOURCE
 ONLY against rejected621 is fully read at
 /tmp/gludd-v012-git-mutex-49-source-review.md. Accepted source stays frozen.
 Receiving early-admission routes155/156 retain154 predecessors; two routing
@@ -46,13 +46,15 @@ files,12-path registration, native SESSION mode1 and unchanged line ceiling pass
 The operating scope retains sandbox2FAIL/122PASS from native process-inspection
 refusal, then passes124/10.45s/native12.0s through authorized host Make at
 /tmp/gludd-v012-git-handoff-admission-docs-host.{log,xml}; no fence is weakened.
-Normal41b collection is recorded above. Independent APPROVE SOURCE ONLY against
+Normal41b collection retains128738selected/128762collected,24deselected0errors51.42s/native57.111s. Independent APPROVE SOURCE ONLY against
 49bb is fully read at /tmp/gludd-v012-git-handoff-admission-41-source-review.md.
 This441-case diagnostic never certifies original90/60. Accepted source stays frozen.
-Root now receives the coupled native merge/helper and outcome-guidance repair;
-publication_repair_design and watchdog_coverage_source_decision model owners
-returned concrete private code/decision artifacts and are quiescent. No agent PID
-is inferred. Root remains the sole Main/shared/Git writer.
+Root committed the coupled native merge/helper and outcome-guidance repair at6bc.
+The publication_repair_design model owner returned concrete private source artifacts
+and is quiescent. The watchdog_coverage_source_decision model owner returned an
+independent APPROVE SOURCE ONLY for frozen6bc against41b and is quiescent.
+Root fully read /tmp/gludd-v012-native-make-review-decision.md and its literal
+wording proposal. No agent PID is inferred; Root is the sole Main/shared/Git writer.
 The [merge feature](docs/features/GIT_MERGE_NO_COMMIT.md) retains unknown index.lock
 cause, private38/57/74 controls, receiving28FAIL/namesake1FAIL and87PASS each runtime.
 Git guidance retains5FAIL->5PASS; the [result feature](docs/features/MAKE_RESULT_GUIDANCE.md)
@@ -75,11 +77,21 @@ across both complete canonical checkers, each above75 BOTH. Operating passes122
 per runtime,3115.68s/native6.5s and3129.68s/native10.8s. The result feature retains the
 actual receipt paths and separate diagnostic envelopes. Cheap contracts/Make/
 Markdown/registration/SESSION/line checks and strict scopes/Ruff pass; the native
-installed314 Node owner passes6/9.46s separately. Next: finish receiving evidence,
-normal guarded source commit, freeze/readback and independent exact-source review. Do not replay accepted41b
-mid-repair or mint current proof from historical receipts. The documented
+installed314 Node owner passes6/9.46s separately. Normal6bc guarded hooks retain
+zero new clones/six owned checkpoints and the fresh collection recorded above.
+Independent APPROVE SOURCE ONLY is fully read at
+/tmp/gludd-v012-native-make-review-decision.md; its two nonblocking wording
+corrections are applied. This documentation receiving corrects the stale six-pin
+instructions, documents native export-parent
+preconditions and refreshes the [staging inventory](docs/releases/v0.1.2-staging-inventory-eb6.md#receiving-continuation-at6bc-2026-10-22)
+against development82db without rerunning accepted source owners. Five complete
+operating/guide owners pass133 per runtime,3117.23s/native8.138s and3127.85s/
+native8.820s, under make-guidance-handoff{311,312} in .gate-logs/observed.
+All seven Markdown/registration/SESSION/line checks and278 contracts pass.
+Do not mint current gate/CI proof from historical receipts. The documented
 git-merge-nc BR='' behavior deliberately refuses2 and makes no mutation.
-Capacity97percent/7.8GiB, original60907, original runtime replay, canonical full
+Latest native disk96percent/7.9GiB still exceeds95; no actual cleanup follows.
+Original60907, original runtime replay, canonical full
 gate/global coverage and every exact-SHA release proof remain pending; all seven
 task states stay open. No lock deletion, real cleanup or unchanged failed retry.
 

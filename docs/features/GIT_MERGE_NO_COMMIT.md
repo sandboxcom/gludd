@@ -132,6 +132,12 @@ batch. Normal per-commit collection, independent exact-source review, original
 runtime90/60, canonical full gate/global85/75 BOTH and exact-SHA hosted/deployment/
 reviewed-head/promotion proof remain separate. All seven S98 items stay open.
 
+Normal guarded source6bc6981413c5c1f5b042043cc04f793f17b6841c retains zero new
+clones, six owned checkpoints and128881selected/128905collected,24deselected,
+0errors48.65s/native53.765s. The [result record](MAKE_RESULT_GUIDANCE.md#normal-guarded-source-receipt)
+owns its exact native collection path and separate independent-review state.
+The source remains local; no development/master integration or final proof follows.
+
 ## Upstream research and decisions
 
 [Native merge-tree](https://git-scm.com/docs/git-merge-tree) supplies the result
