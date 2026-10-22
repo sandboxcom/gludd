@@ -2,7 +2,7 @@
 
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 128661 selected / 128685 collected, 24 deselected, zero collection errors in 47.59s/native 52.784s during normal 3e8d325969fb8900f7a7f7c24a2826e5c7828e28 source hooks. Native receipt: .gate-logs/observed/test-count/20261022T045312Z-3274-966c4f9f.{log,json}. Collection is separate from behavioral and final-gate proof; older e5/bd3 and f36/815 collections remain history.
+Total tests: 128685 selected / 128709 collected, 24 deselected, zero collection errors in 51.49s/native 56.769s during normal eb6e1c616bb1ff8845836a5091af77397d40f5ea source hooks. Native receipt: .gate-logs/observed/test-count/20261022T051321Z-24570-5fa35e7d.{log,json}. Collection is separate from behavioral and final-gate proof; older 3e8, e5/bd3 and f36/815 collections remain history.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
@@ -25,14 +25,16 @@ Complete374-case routing owners pass both runtimes:31183.01s/native84.2s and
 31286.96s/native88.2s. Complete415-case source/consumer cohorts pass both runtimes:
 31153.49s/native54.7s and31256.64s/native57.8s. Three changed strict scopes/Ruff,
 277contracts/actual mode1,1157targets/zero duplicates and Make parity pass.
-Fresh normal collection and independent exact-successor review are being verified.
+Normal hooks retain exact eb6e1c616bb1ff8845836a5091af77397d40f5ea, zero new clones/six checkpoints and the collection receipt above. Independent APPROVE SOURCE ONLY against3e8 is fully read at /tmp/gludd-v012-uv-prune-eb6-source-review.md; no blocking correction. The four-document receiving receipt records this scope without changing source. Final gate, exact-SHA hosted/deployment and promotion remain pending.
 The prepared3e8 receiving draft is folded into this repair; it was never committed
 as a separate four-document receipt. Do not infer successor approval from3e8.
 
-Capacity96percent/8.0GiB, unfiled HumanTodo/API refusal, unanswered host input,
+Fresh native disk now97percent/7.0GiB, unfiled HumanTodo/API refusal, unanswered host input,
 original60907 and natural scan failures remain. No expensive unchanged replay,
 actual cache pruning, final gate, push, master merge or release follows.
 All seven tasks remain unchecked.
+
+The [dated staging inventory](docs/releases/v0.1.2-staging-inventory-eb6.md) separates46 ledger entries, confirmed pending source deltas, integrated support, uncommitted drafts and missing final proof. Its native all-branch diagnostic fails2/124.267s with81heads/83branches, evidence_complete=false/null completed totals because current/historical ledgers have duplicate IDs and status disagreements; preserve unknown meaning and immutable refs. It is not an exhaustive semantic inventory.
 
 ## Reviewed UV lifecycle predecessor 3e8
 
@@ -150,7 +152,7 @@ prefix from that diagnostic; intended-profile/ownership and native handoff come 
 
 ## Actual release blockers and retained proof
 
-Post-e5 native disk measurement remains 96 percent >95, with 8.0 GiB free. Native cleanup changes97to96 and
+Fresh post-eb6 native disk measurement is97percent >95, with7.0GiB free; no new cleanup attempt follows. The earlier native cleanup changes97to96 and
 768.1to711.7MB scratch, then removes0/skips403 and exits Make2/no-progress.
 The [capacity record](docs/features/CACHE_RESOURCE_INVENTORY.md#native-capacity-cleanup-and-direct-owner-2026-10-21)
 retains actual16-resource reclamation and all ownership/idle/grace refusals.

@@ -987,7 +987,7 @@ there is no separate four-document receiving commit. Source3e8 approval, normal
 collection128661/128685 and392/373 predecessor passes remain historical receipts.
 The successor requires its own complete415-case source/consumer and374-case routing
 cohorts on both installed runtimes, normal zero-error collection and independent
-exact-source review. These are being verified, not predicted from3e8 approval.
+exact-source review. Their actual terminal receipts and scoped decision are retained below; none is inferred from3e8 approval.
 
 Capacity96/8.0GiB and original60907/124/90.554s/nulltrace/no transport remain blocked.
 Natural scan2a's124/60.564s is unknown scanning evidence. No real cache operation,
@@ -1025,10 +1025,46 @@ All three changed Python test scopes pass separate strict checks and Ruff.
 Native277contracts, actual mode1, unchanged1157targets/zero duplicates and Make
 gate parity pass after the target-context change. Global85/75 line AND branch
 remains required; no production Python or coverage profile changes. Fresh normal
-collection and independent exact-successor review still need their actual receipts.
+collection and independent exact-successor review now have their actual scoped receipts below.
 
 All124 complete documentation/handoff/contract/branch checks pass7.24s/native8.3s
 in /tmp/gludd-v012-uv-prune-inherited-docs311.{log,xml}. Full264-resource ownership,
 12-path task registration, SESSION region validation and strict<2500 limits pass.
 Historical e5 and3e8 collection paragraphs now name their own counts/source receipt,
 so a refreshed current header cannot silently reattribute old measurements.
+
+## Exact eb6 source acceptance and receiving scope (2026-10-22 UTC)
+
+Normal guarded hooks retain development eb6e1c616bb1ff8845836a5091af77397d40f5ea
+against3e8, zero new clones/six checkpoints and128685selected/128709collected,
+24deselected/zeroerrors51.49s/native56.769s. Native collection receipt:
+.gate-logs/observed/test-count/20261022T051321Z-24570-5fa35e7d.json.
+The first EOF hook normalizes the feature EOF; the ordinary retry follows that
+changed input, without bypass. Historical3e8/e5 collections retain their own refs.
+
+Independent APPROVE SOURCE ONLY applies exclusively to exacteb6 against3e8.
+Root fully reads /tmp/gludd-v012-uv-prune-eb6-source-review.md; no blocking
+correction. It verifies all four415/374 native JSON/log pairs, all40 predecessor
+controls plus23 inherited cases, family153 and unchanged original lifecycle/bounds.
+This receiving receipt changes documentation only; source acceptance is not gate,
+hosted, deployment, reviewed-head, release promotion or task-completion authority.
+
+Fresh native disk measures97percent/7.0GiB, still above95. The earlier capacity
+record, unfiled HumanTodo/API refusal and unanswered host input remain. Preserve
+original60907/124/90.554s/nulltrace/no transport and natural scan2a/124/60.564s as
+failed/unknown. No new cleanup, actual UV operation or unchanged expensive retry
+follows. All seven tasks stay unchecked; final proof remains pending.
+
+Receiving acceptance passes all124 complete documentation/handoff/contract/branch
+cases in7.50s/native8.5s, with fatal warnings and serial pytest. Preserve
+/tmp/gludd-v012-eb6-inventory-receiving311.{log,xml} and native JSON under
+.gate-logs/observed/eb6-inventory-receiving. Markdown validates all five documents;
+strict line limits, changed-path registration and SESSION mode1 also pass.
+An attempted multi-goal Markdown call refuses at Make parsing2; the documented
+owners are then invoked separately. A malformed literal Base64 transport refuses
+before mutation; corrected encoding supplies the intended readability edits.
+The [dated staging inventory](../releases/v0.1.2-staging-inventory-eb6.md) retains
+all46 ledger memberships, four individually confirmed pending source groups,
+S83.169 integrated-but-unassigned scope, uncommitted drafts and native all-branch
+failure2/124.267s with unknown/null completion totals. No proof claim is inferred
+from the failed diagnostic, historical labels or source-only approval.
