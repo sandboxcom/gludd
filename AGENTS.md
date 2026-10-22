@@ -72,7 +72,9 @@ missing gate/exact-SHA proof. Emit terminal-success guidance only after all
 required children finish successfully. Preserve exit codes, original assertions,
 fatal warnings, coverage, cleanup and promotion gates. Guidance is advisory
 context for the model; native measurements and the established gates remain
-authoritative. The [result contract](docs/features/MAKE_RESULT_GUIDANCE.md)
+authoritative. A zero integration plan validates only its documented inputs;
+unchanged ancestry runs no new gate. Repair failed capacity/ownership before
+applying, and retain missing exact-SHA proofs after an applied merge. The [result contract](docs/features/MAKE_RESULT_GUIDANCE.md)
 and [native merge contract](docs/features/GIT_MERGE_NO_COMMIT.md) retain the
 actual output branches, negative controls, decisions and proof limits.
 

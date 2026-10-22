@@ -1293,6 +1293,20 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_makefile_targets_deep.py::TestVariableConsistency::test_no_bare_equals",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "development-merge-forward-plan-guidance",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_development_merge_forward_targets.py::test_merge_forward_plan_guidance_does_not_admit_integration[True-content]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "development-merge-forward-namesake",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_development_merge_forward_targets.py::test_merge_forward_guidance_runs_despite_namesake_file",
+      "full_gate_phase": "test"
     }
   ]
 }

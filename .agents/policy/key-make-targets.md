@@ -184,6 +184,9 @@ action; they do not execute it or create gate/release proof.
 | Promotion manifest/input/child failure | Retain the actual failed receipt; repair its reported input before rerunning that owner. |
 | git-merge-nc passed | Inspect owned FILES with git-diff-full and retain affected tests/collection before commit. |
 | git-merge-nc refused/failed | Inspect worktree-state and preserve owned state; repair the actual prerequisite before retrying. |
+| development-merge-forward planned/unchanged | SOURCE/mode admission or unchanged ancestry supplies no new gate. Inspect worktree-state, repair capacity/ownership, then run documented release-proof-admission mode0 before APPLY=1. |
+| development-merge-forward refused/failed | Retain native reason/status, wait for native transaction cleanup and inspect worktree-state; repair the reported input before retrying. |
+| development-merge-forward passed | Retain native merged-tree gate evidence and obtain exact-SHA CI/deployment/reviewed-head proof before guarded promotion. |
 
 See [native result guidance](../../docs/features/MAKE_RESULT_GUIDANCE.md) for
 output ordering, native exit codes and controls, and the

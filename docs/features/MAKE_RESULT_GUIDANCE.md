@@ -6,6 +6,97 @@ check-gate-failure-promotions and git-merge-nc. Existing native owners, statuses
 and artifacts remain authoritative; no second observer, runner, cache or proof
 schema is introduced.
 
+## Development integration results, 2026-10-22 UTC
+
+The next coupled S98.4 delta starts at local65cb7fb481f95fc3ef18a9808927140ed2ebd128;
+development stays82db11b57b254c1ca1e035975b5cc86253e2fed5. The native watched plan
+v012-development-integration-plan65cb returns0 and resolves SOURCE to exact65cb,
+but executes no merge, branch/clean check, collection or gate. That successful
+plan therefore cannot clear capacity96percent/7.9GiB against95 or authorize an
+unchanged failed publication replay. Actual APPLY=1 retains its native collection,
+secrets, lint, merged-tree gate-refresh, pre-commit and gate-freshness sequence.
+
+The existing development-merge-forward owner now prints planned, refused, failed,
+unchanged or passed guidance on stderr. Original reasons/stdout and explicit
+refusal2/failure1/success0 stay intact; enclosing Make retains its native failure
+meaning. A plan names SOURCE/mode validation after APPLY validation and the
+unverified branch/clean/capacity/test inputs. It directs worktree-state and the
+documented release-proof-admission mode0 only after repairing failed prerequisites.
+An unchanged-ancestry result says no source applied/no new gate. Failed guidance
+asks the model to wait for native transaction cleanup and inspect state; it never
+claims cleanup succeeded. Applied guidance follows actual git commit and still
+requires exact-SHA CI/deployment/reviewed-head evidence. PHONY prevents a namesake
+file from suppressing this administrative owner.
+
+Fourteen additive real-Make/Git controls retain all33 predecessor cases/assertions:
+four clean/staged plans across content/ancestry-only on a feature branch, seven
+original refusal reasons/statuses with exact state, an already-ancestor no-op,
+a namesake file and a real external-driver conflict. The first13 fail in4.75s/
+native6.0s; the separate native conflict fails0.99s/native1.9s before its guidance.
+No configured external driver is installed in Main. The private conflict verifies
+its real rollback state without promising arbitrary hooks/concurrent-writer safety.
+This change preserves the existing merge options, transaction trap and gates;
+it is not a new certification of those other boundaries.
+
+Two routing controls fail0.95s/native1.8s before additive families163/164. Both
+new exact nodes run once in the existing first child after162 predecessors;
+independent counts, ordered IDs and both literal rosters retain every old entry.
+Eight cheap pins, three2/1/1 children,90total/60quiet,21phases/2850 and required
+full gate stay intact. No new phase, script, runner, daemon or proof cache exists.
+
+Cheap feedback catches one127-character line and a2502-line fixture before broad
+acceptance. Wrapping the new expression and compacting unchanged literal data
+preserve all assertions and the strict less-than2500 ceiling. Native exact-once
+edit guards reject ambiguous matches before mutation. Native diff inspection
+also catches a literal JavaScript replacement collapsing Make dollar escaping;
+the exact native byte replacement restores the original SOURCE refspec before
+execution. Literal transports must encode the intended bytes: JavaScript string
+replacement interprets double dollars unless its replacement is returned literally.
+
+The complete18-owner receiving union passes747 per runtime with fatal warnings,
+zero skips/errors:311131.59s/native133.094s and312124.25s/native125.917s. Native
+receipts are .gate-logs/observed/merge-forward-receiving{311,312}/
+v012-merge-forward-receiving{311,312}.json; each progress_identity.command retains
+the entire deduplicated test-path roster, argv and installed runtime. Logs/XML
+are /tmp/gludd-v012-merge-forward-receiving{311,312}.{log,xml}. Both native
+receipts bind identical tested source99f8c2fbe3ea051eae32b9a1db98fccf78dd31ec35e2f388b2ebc66810721958.
+The240total/180quiet diagnostic envelope is not the original runtime90/60 proof.
+
+All three separate strict scopes/Ruff,278 target contracts,1157 targets/zero
+duplicates/parity, six Markdown files,12-path registration, SESSION structure
+and strict line ceiling pass. Eight current promotion pins pass1.83s/terminal0;
+the actual documented SOURCE=HEAD/MODE=content/APPLY=0 behavior returns0 with
+explicit non-authority guidance. Source/test/manifest inputs remain stable.
+The subsequent documentation additions record only these received measurements.
+The first normal ship-commit-files attempt returns Make2 before collection:
+pre-commit returns3 because native git write-tree returns128 with index.lock
+already present. The existing show-lines owner refuses the external pre-commit
+cache-log path; no alternate external read is attempted. The actual console
+failure is retained here rather than fabricated as a generated observation.
+Exact make list-files DIR=.git/index.lock later returns native find1/Make2 with
+No such file or directory. Native worktree-state still names65cb and all12 owned
+paths staged, no unstaged/untracked changes. This observed absence permits
+normal guarded re-evaluation; it proves no original cause or stale/dead owner.
+No lock deletion, abort, restoration, checkpoint removal or bypass occurs.
+The next guarded invocation uses make -j1 to serialize its Make jobs; this
+scheduling choice is not a demonstrated cause repair. Do not repeat it if the
+same failure recurs without a newly observed prerequisite change.
+
+Normal guarded collection remains mandatory and its native hook receipt owns
+the next commit's result; no recursive receipt-only commit or unchanged
+acceptance replay follows. Normal65cb hooks retain128881selected/128905collected,
+24deselected0errors54.53s/native59.849s at
+.gate-logs/observed/test-count/20261022T110241Z-40296-fc8e9206.json.
+
+Historical6bc source approval/840-case acceptance/95.2line90.2branch canonical
+checker coverage retain their actual source; no Python production owner changes
+here and those figures never become this delta's final/global coverage proof.
+New exact-source review and final release proof remain separate. Latest native
+disk is97percent/7.7GiB against95; only the two existing controllers remain after
+the terminal test owners. No new daemon or cleanup is started. Original60907,
+complete canonical/global coverage, exact-SHA hosted/deployment/reviewed-head/
+promotion and all seven release tasks remain pending.
+
 ## Result-to-action contract
 
 Keep the original summary/reasons on their established stream. Follow with a

@@ -8,6 +8,36 @@ Total tests: 128881 selected / 128905 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
+## Current S98.4 integration-result guidance delta
+
+Root owns the coupled change from local65cb7fb481f95fc3ef18a9808927140ed2ebd128
+on the same release-candidate branch; development stays82db. The native watched
+integration plan returns0 without branch/clean/capacity/test or merge proof.
+Fourteen additive real-Make/Git controls retain33 predecessors:13 RED4.75s/
+native6.0s plus native conflict1RED0.99s/native1.9s. Outcome prompts preserve
+old reasons/statuses/merge options/transaction gates; PHONY prevents suppression.
+Two routing REDs0.95s/native1.8s precede163/164 after162 predecessors, exact
+first-child nodes, eight pins and unchanged2/1/1,90/60,21/2850/full gate.
+The [result record](docs/features/MAKE_RESULT_GUIDANCE.md#development-integration-results-2026-10-22-utc)
+owns decisions, failures and exact native receipt paths/argv. Complete18-owner
+receiving passes747 per runtime,311131.59s/native133.094s and312124.25s/
+native125.917s, fatal warnings/zero skips or errors. All three strict scopes/Ruff,
+278 contracts/actual safe plan,1157 targets/zero duplicates/parity, six Markdown,
+12-path registration/SESSION/line checks and eight pins1.83s terminal0 pass.
+Normal65cb collection retains128881selected/128905collected,24deselected0errors
+54.53s/native59.849s at .gate-logs/observed/test-count/20261022T110241Z-40296-fc8e9206.json.
+Consume the next guarded commit's actual native collection without another
+receipt-only commit or accepted-suite replay. New exact-source review remains
+separate; prior source approval never certifies changed inputs. Latest native
+disk97percent/7.7GiB still exceeds95; only existing controllers remain after tests.
+The first guarded commit stops before collection: Make2/pre-commit3/native
+write-tree128/index.lock exists. Exact native listing later returns ENOENT/find1/
+Make2 and worktree-state confirms65cb/all12 owned paths staged, no other changes.
+Only that observed prerequisite change permits normal guarded re-evaluation with
+serial make -j1; no cause/staleness is inferred and no lock or guard is removed.
+No unchanged original60907/full-gate replay, integration, task tick or release
+proof follows. Other model owners are quiescent; Root remains the sole writer.
+
 ## Reviewed mutex source and current S98.4 Make receiving
 
 The implementation source on release-candidate/v012-git-mutex-20261022 is exact

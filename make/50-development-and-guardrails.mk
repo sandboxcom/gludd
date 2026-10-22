@@ -91,25 +91,30 @@ development-fast-forward: _gate-mutation-guard main-worktree-guard
 # required so an ancestry-only (-s ours) decision remains visible and auditable.
 # APPLY defaults to 0; APPLY=1 is fail-closed outside a clean development tree.
 # Usage: make development-merge-forward SOURCE=<ref> MODE=content|ancestry-only APPLY=0|1
+.PHONY: development-merge-forward
 development-merge-forward:
-	@SOURCE_VALUE='$(SOURCE)'; MODE_VALUE='$(MODE)'; APPLY_VALUE='$(APPLY)'; \
+	@agent_next() { printf '%s\n' "AGENT_NEXT target=development-merge-forward outcome=$$1 phase=$$2 gate_evidence=false release_ready=false: $$3" >&2; }; \
+	refuse() { agent_next refused "$$1" 'Use worktree-state; repair the reported SOURCE/MODE/APPLY or branch/clean prerequisite before retrying; no gate or release proof.'; exit 2; }; \
+	fail() { agent_next failed "$$1" 'Retain the failure, wait for native transaction cleanup, inspect worktree-state and repair the actual input before retrying; cleanup and release proof remain unverified.'; exit 1; }; \
+	SOURCE_VALUE='$(SOURCE)'; MODE_VALUE='$(MODE)'; APPLY_VALUE='$(APPLY)'; \
 	if [ -z "$$APPLY_VALUE" ]; then APPLY_VALUE=0; fi; \
-	if [ -z "$$SOURCE_VALUE" ]; then echo "Usage: make development-merge-forward SOURCE=<ref> MODE=content|ancestry-only APPLY=0|1"; exit 2; fi; \
-	case "$$MODE_VALUE" in content|ancestry-only) ;; *) echo "MODE must be explicitly set to content or ancestry-only"; exit 2 ;; esac; \
-	case "$$APPLY_VALUE" in 0|1) ;; *) echo "APPLY must be 0 or 1"; exit 2 ;; esac; \
+	if [ -z "$$SOURCE_VALUE" ]; then echo "Usage: make development-merge-forward SOURCE=<ref> MODE=content|ancestry-only APPLY=0|1"; refuse source; fi; \
+	case "$$MODE_VALUE" in content|ancestry-only) ;; *) echo "MODE must be explicitly set to content or ancestry-only"; refuse mode ;; esac; \
+	case "$$APPLY_VALUE" in 0|1) ;; *) echo "APPLY must be 0 or 1"; refuse apply ;; esac; \
 	if [ "$$MODE_VALUE" = ancestry-only ]; then \
-		case "$$SOURCE_VALUE" in master|refs/heads/master|*/master) echo "ancestry-only mode is forbidden for master"; exit 2 ;; esac; \
+		case "$$SOURCE_VALUE" in master|refs/heads/master|*/master) echo "ancestry-only mode is forbidden for master"; refuse mode ;; esac; \
 		echo "WARNING: mode=ancestry-only strategy=ours records ancestry while preserving development content"; \
 	fi; \
-	if ! SOURCE_SHA=$$(git rev-parse --verify "$${SOURCE_VALUE}^{commit}" 2>/dev/null); then echo "Invalid SOURCE ref: $$SOURCE_VALUE"; exit 2; fi; \
+	if ! SOURCE_SHA=$$(git rev-parse --verify "$${SOURCE_VALUE}^{commit}" 2>/dev/null); then echo "Invalid SOURCE ref: $$SOURCE_VALUE"; refuse source; fi; \
 	if [ "$$APPLY_VALUE" = 0 ]; then \
 		echo "MERGE_FORWARD_DRY_RUN source=$$SOURCE_VALUE mode=$$MODE_VALUE apply=0 sha=$$SOURCE_SHA"; \
 		echo "no repository changes were made"; \
+		agent_next planned inputs 'After validating APPLY, this plan checks only SOURCE and mode; branch, clean state, capacity and tests are unverified. Before APPLY=1, use worktree-state and make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0 with documented variables; repair failed prerequisites first.'; \
 		exit 0; \
 	fi; \
 	CURRENT_BRANCH="$$(git branch --show-current)"; \
-	if [ "$$CURRENT_BRANCH" != "development" ]; then echo "APPLY=1 requires current branch development (found: $$CURRENT_BRANCH)"; exit 2; fi; \
-	if [ -n "$$(git status --porcelain)" ]; then echo "APPLY=1 requires a clean development worktree"; exit 2; fi; \
+	if [ "$$CURRENT_BRANCH" != "development" ]; then echo "APPLY=1 requires current branch development (found: $$CURRENT_BRANCH)"; refuse branch; fi; \
+	if [ -n "$$(git status --porcelain)" ]; then echo "APPLY=1 requires a clean development worktree"; refuse clean-state; fi; \
 	MERGE_STARTED=1; \
 	abort_merge() { if [ "$$MERGE_STARTED" -eq 1 ]; then git restore --worktree -- . >/dev/null 2>&1 || true; git merge --abort >/dev/null 2>&1 || true; fi; }; \
 	trap abort_merge EXIT HUP INT TERM; \
@@ -117,31 +122,34 @@ development-merge-forward:
 		if ! git merge --no-ff --no-commit -X ours "$$SOURCE_SHA"; then \
 			echo "Structural conflict while merging $$SOURCE_VALUE; aborting transaction"; \
 			git diff --name-only --diff-filter=U; \
-			exit 1; \
+			fail merge; \
 		fi; \
 	else \
-		if ! git merge --no-ff -s ours --no-commit "$$SOURCE_SHA"; then echo "Ancestry-only merge failed; aborting transaction"; exit 1; fi; \
+		if ! git merge --no-ff -s ours --no-commit "$$SOURCE_SHA"; then echo "Ancestry-only merge failed; aborting transaction"; fail merge; fi; \
 	fi; \
 	if ! git rev-parse --verify -q MERGE_HEAD >/dev/null; then \
 		MERGE_STARTED=0; trap - EXIT HUP INT TERM; \
 		echo "MERGE_FORWARD_NOOP source=$$SOURCE_VALUE is already an ancestor of development"; \
+		agent_next unchanged ancestry 'No source was applied and no new gate ran. Inspect current native observations and obtain missing exact-SHA gate, CI, deployment and reviewed-head proof through their existing owners.'; \
 		exit 0; \
 	fi; \
 	UNMERGED="$$(git diff --name-only --diff-filter=U)"; \
-	if [ -n "$$UNMERGED" ]; then echo "Structural conflict remains; aborting transaction"; echo "$$UNMERGED"; exit 1; fi; \
+	if [ -n "$$UNMERGED" ]; then echo "Structural conflict remains; aborting transaction"; echo "$$UNMERGED"; fail merge; fi; \
 	if ! $(UV) run pre-commit run detect-secrets --all-files; then \
-		if git diff --quiet -- .secrets.baseline; then echo "Secret scan failed without a baseline metadata update; aborting transaction"; exit 1; fi; \
+		if git diff --quiet -- .secrets.baseline; then echo "Secret scan failed without a baseline metadata update; aborting transaction"; fail secrets; fi; \
 		git add .secrets.baseline; \
-		if ! $(UV) run pre-commit run detect-secrets --all-files; then echo "Secret scan still fails after baseline metadata refresh; aborting transaction"; exit 1; fi; \
+		if ! $(UV) run pre-commit run detect-secrets --all-files; then echo "Secret scan still fails after baseline metadata refresh; aborting transaction"; fail secrets; fi; \
 	fi; \
-	if ! $(MAKE) --no-print-directory collect-check; then echo "Collection check failed; aborting transaction"; exit 1; fi; \
-	if ! $(MAKE) --no-print-directory _commit-lint-guard; then echo "Lint guard failed; aborting transaction"; exit 1; fi; \
-	if ! $(MAKE) --no-print-directory gate-refresh GATE_REFRESH_VALIDATE_ONLY=0; then echo "Merged-tree gate refresh failed; aborting transaction"; exit 1; fi; \
-	if ! git diff --cached --name-only -z | xargs -0 $(UV) run pre-commit run --files; then echo "Merged-tree pre-commit checks failed; aborting transaction"; exit 1; fi; \
-	if ! $(MAKE) --no-print-directory _gate-fresh-check; then echo "Gate freshness check failed; aborting transaction"; exit 1; fi; \
-	if ! git commit -n -m "merge-forward: MODE=$$MODE_VALUE SOURCE=$$SOURCE_VALUE SHA=$$SOURCE_SHA into development"; then echo "Merge commit failed; aborting transaction"; exit 1; fi; \
+	if ! $(MAKE) --no-print-directory collect-check; then echo "Collection check failed; aborting transaction"; fail collection; fi; \
+	if ! $(MAKE) --no-print-directory _commit-lint-guard; then echo "Lint guard failed; aborting transaction"; fail lint; fi; \
+	if ! $(MAKE) --no-print-directory gate-refresh GATE_REFRESH_VALIDATE_ONLY=0; then echo "Merged-tree gate refresh failed; aborting transaction"; fail gate; fi; \
+	if ! git diff --cached --name-only -z | xargs -0 $(UV) run pre-commit run --files; then echo "Merged-tree pre-commit checks failed; aborting transaction"; fail pre-commit; fi; \
+	if ! $(MAKE) --no-print-directory _gate-fresh-check; then echo "Gate freshness check failed; aborting transaction"; fail gate; fi; \
+	if ! git commit -n -m "merge-forward: MODE=$$MODE_VALUE SOURCE=$$SOURCE_VALUE SHA=$$SOURCE_SHA into development"; then echo "Merge commit failed; aborting transaction"; fail commit; fi; \
 	MERGE_STARTED=0; trap - EXIT HUP INT TERM; \
-	echo "MERGE_FORWARD_APPLIED source=$$SOURCE_VALUE mode=$$MODE_VALUE sha=$$SOURCE_SHA"
+	echo "MERGE_FORWARD_APPLIED source=$$SOURCE_VALUE mode=$$MODE_VALUE sha=$$SOURCE_SHA"; \
+	agent_next passed commit 'Retain the native merged-tree gate receipt and obtain missing exact-SHA CI, deployment and reviewed-head proof through existing owners before guarded promotion; this prompt is not release evidence.'; \
+	exit 0
 
 # Reconcile several already-reviewed, semantically superseded refs in one
 # ancestry-only transaction. The octopus ours merge records every parent while
