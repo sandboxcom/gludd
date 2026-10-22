@@ -1,219 +1,133 @@
 # Current release handoff
 
-Last Updated: 2026-10-21 (local and UTC; receipts retain their actual dates).
+Last Updated: 2026-10-21 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 128537 selected / 128561 collected,24 deselected,zero collection errors in49.16s/native54.324s during normal41013b302decef572cb119bea5eeffef33c2a6e6 source hooks; the raw collection retains4 skips. Native receipt: .gate-logs/observed/test-count/20261021T232605Z-79835-b3d0bee0.{log,json}. Collection is not test acceptance.
+Total tests: 128537 selected / 128561 collected,24 deselected,zero collection errors48.53s/native54.0s during normal e946b08e2535e4fe325378a09a569bd3f8da840b hooks. Native receipt: .gate-logs/observed/test-count/20261021T233503Z-84623-bed68e04.{log,json}. This historical collection is not behavioral or final-gate proof.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
-Root owns S98.4 and all Main/shared/Git/proof mutations. All seven S98.1-S98.7 remain unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff supplies no gate/release authority. Model-agent names/status come from the live conversation, never OS PIDs. Contributor states are supplied by the live conversation at each receiving boundary; quiesce every Main reader, model owner, test and observer before Git hooks may stash.
+Root owns S98.4 and Main/shared/Git/proof mutations on development. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current scratch permission repair
+## Current full-scan finding repair
 
-Root owns S98.4 on development. Exact source41013b302decef572cb119bea5eeffef33c2a6e6
-against0ab4ae6050728348e53abc19ac248669a57197bf has independent APPROVE SOURCE ONLY
-at /tmp/gludd-v012-scratch-permissions-41013b3-source-review.md, fully read by Root.
-All14 source paths were reviewed. The reviewer independently read both193-case
-native receipts, both86.7line/89.0branch audits and the fresh410 collection above.
-No source repair remains from that decision; release proofs remain pending.
-The [native scratch record](docs/features/CACHE_RESOURCE_INVENTORY.md#scratch-permission-repair-through-owned-directory-descriptors-2026-10-21)
-retains measured byte-unchanged mode changes, their scoped native restore and
-public-cleaner REDs: two link failures, then 8 failures/40 passes across the
-complete old owner plus ten new controls. The existing production helper now
-uses native fwalk directory descriptors/fchmod and capability-checked rmtree.
-Its Generator close interface is explicitly typed; no custom walker or fallback
-is introduced. Original assertions and ownership/retention checks remain;
-the permission fault control injects through the actual fchmod adapter.
-Four complete source/caller owners pass 193 on each installed runtime:
-311 5.64s/native7.7s and312 6.83s/native9.4s. Both native audits retain
-86.7% line/89.0% branch overall, every measured file above75 BOTH.
-Family149 adds the real file-link witness once after148 predecessors; original
-three2/1/1 children,90/60,21/2850/full gate remain. Preserve routing RED and the
-first full replay2FAIL/295PASS caused by one outdated independent selector pin.
-Expected data now includes the new node with all old assertions/order intact;
-six canonical pins pass1.83s. Complete four-owner routing passes297 each:
-31142.35s/native43.3s and31249.30s/native50.5s, fatal warnings/zero skips/errors.
-Retain /tmp/gludd-v012-scratch-routing-repaired{311,312}.{log,xml}.
-The five complete documentation/handoff/ledger owners pass98/4.13s/native5.0s,
-v012-scratch-handoff-docs311; Ruff4, four strict scopes, docstrings,276contracts,
-Make1157/zero duplicates, full264 resource inventory and Markdown8 pass.
-Exact receiving commit/review belongs to native HEAD and the manual receiving
-record; read that boundary before repeating finished source work. Capacity
-96>95, original60907 publication and final gate/exactSHA CI/deployment remain.
+The receiving base is source-approved e946b08e2535e4fe325378a09a569bd3f8da840b.
+The [owning security record](docs/security/audit-observability.md#full-scan-refresh-and-finding-admission-2026-10-21)
+retains the actual native2FAIL1.92s/native3.1s: upstream scan refreshes its
+private inventory and can return0 with a new finding or malformed output.
+Both Make scan targets reuse the readonly owner and canonical manager's Counter.
+The first normal content guard reports one14-line clone; the readonly loader now
+reuses existing finding_counts with content-free BaselineError-to-ValueError mapping.
+The optional --scan-cores mode snapshots the private copy before native scan
+and rejects new filename/detector/hash occurrences after native0. Native
+nonzero statuses retain precedence; malformed inventory refuses with cleanup.
+Canonical bytes/mode/inode and existing default-hook kwargs remain protected.
 
-## Receiving correction and current capacity
+Pinned native raw grammar checks baseline routing before builder postprocessors.
+Four actual override REDs/.81s/native1.8s precede rejection of exact/equals/
+abbreviated overrides, while literal filenames/option values stay valid.
+Three parse-exit REDs1.29s/native2.4s precede content-free refusal for help,
+invalid and ambiguous input. Custom plugin/filter import markers remain absent;
+a real import fence proves default hook mode does not import the scan grammar.
+Eight non-inventory controls fail first/.91s/native2.0s with five valid controls;
+the same namespace now refuses early-success display/string modes. Empty
+--string=, regex values and literal filenames retain upstream inventory meaning.
+No detector, verification, selected file, five-worker ceiling or baseline changes.
 
-Documentation-only0ab4ae6050728348e53abc19ac248669a57197bf has CHANGES REQUIRED
-at /tmp/gludd-v012-handoff-profile-0ab4ae6-source-review.md, fully read by Root.
-The one stale present-tense PID sentence is now explicitly pre-handoff history,
-using the exact independent repair proposal; other source decisions stand.
-Normal0ab hooks retain128526selected/128550collected,24deselected/zero errors,
-47.64s/native52.8s, with six checkpoints. That prior0ab commit changes only prose;
-the separate native helper repair and its receiving evidence are recorded above.
-Current capacity after native cleanup is96percent/8.1GiB free and711.7MB counted
-scratch;96 still exceeds95. The later capacity subsection and owning cache
-feature retain plan/apply evidence, the direct native Make route and all refusals.
-Native current HEAD and the manual receiving decision own this correction
-commit/review boundary; do not repeat finished source steps from older prose.
+Ten complete source/caller files pass257 each:31124.64s/native26.4s and
+31225.27s/native27.7s. Both native audits retain99.0% line/96.4% branch for
+the one canonical changed owner, with85 aggregate/75 per-file BOTH unchanged.
+These are focused profile receipts, not global coverage. Family150 appends one
+real new-finding witness after149 predecessors in the existing first child.
+Six canonical pins pass1.81s; all four routing/workflow files pass298 each:
+31152.05s/native53.2s and31246.21s/native47.2s. Original three2/1/1 children,
+90/60 and21phases2850/full gate remain. Preserve every RED and older intermediate
+receipt; details, commands and actual public-target behavior belong to the feature.
 
-## Current control-plane handoff and bounded diagnostic
+Normal receiving commit/source review must be read through native HEAD and
+/tmp/gludd-v012-native-scan-source-review.md before repeating finished source work.
+Source acceptance, source review, collection, final gate and release remain separate.
 
-Reviewed development 9ac03d9f32f81c53ffcca842c2132d470919fb2c has independent
-APPROVE SOURCE ONLY against49 at
-/tmp/gludd-v012-watchdog-history-9ac03d9-source-review.md, fully read by Root.
-Its normal12-path hooks retain128526selected/128550collected,24deselected/zeroerrors
-47.92s/native53.2s at20261021T224329Z-55885-b5b48fcd, zero new clones
-(two existing clone records)/six checkpoints. These decisions remain immutable.
-The subsequent0ab handoff changes prose; the later scratch helper repair is
-separately recorded above.
+## Previously accepted source and controller state
 
-Actual owned agent plan1/apply0 drains39922, then auto acknowledges57626 while
-task29001 remains. Actual task plan1/apply0 drains29001, then auto acknowledges
-57964 while57626 remains. Both new guards use the registered311 executable,
-with acknowledged PID=PGID=SID. Native start plan1 reuses57626/57964 without
-writes/signals; exact old39922/29001 diagnostics report missing. Native ps shows
-only those two watchdogs after this handoff, with no audit/test processes.
-Model-agent names/status are separately quiescent, not inferred from those PIDs.
-The [lifecycle record](docs/features/WATCHDOG_SECRETS_LIFECYCLE.md) keeps proof.
-The first natural successor scan, scan-801b14b84dbf4538bdf543d3bd6bab08,
-starts2026-10-21T22:50:58.994740Z under owner57626/child59561. Its native
-watchdog-secrets receipt is inactive/timed_out,124/60.552s,
-max-runtime-timeout, trace_path:null. Exact child59561 is subsequently missing;
-native ps shows only57626/57964 and no test/audit/scanner processes. This
-measures the bounded live lifecycle, not a successful secrets scan or its cause.
-Old scan-a004eb6d stays failed history. The60-second scan/300-second cooldown
-and native current JSON are unchanged; no check is forced.
-At the0ab receiving boundary, five documentation/handoff/ledger owners pass98/
-5.82s/native7.0s, v012-reviewed-watchdog-profile-docs311, fatal warnings/no skips.
-The later scratch-unit documentation receipt is recorded in the current section.
+Exact41013b302decef572cb119bea5eeffef33c2a6e6 scratch descriptor repair and
+e946b08 documentation have independent APPROVE SOURCE ONLY decisions, fully read.
+The [cache record](docs/features/CACHE_RESOURCE_INVENTORY.md#exact-source-receiving-boundary)
+retains193 source/caller passes per runtime at86.7line89.0branch and all controls.
+The0ab CHANGES REQUIRED and427 negative decisions remain immutable history;
+their receiving corrections are recorded, never relabeled as original approval.
 
-The [bounded readonly-scanner decision](docs/features/PUBLICATION_READONLY_SCANNER_PROFILE.md)
-records a new exact-case question at clean9ac:1PASS3.48s/native4.534s through the
-existing45total/30quiet profiler. A single subprocess call2.357s mostly waits in
-poll2.353s; parent totals overlap and child/grandchild CPU is unobserved.
-The profiler's own five-event trace has one2.832465s protocol pair/zero issues;
-the separate allocated outer trace has zero events. Stop this wrapper proposal:
-no redundant parent work, optimization or60907 attribution is established.
-Original90/60 publication, current capacity96>95, full gate/exactSHA CI/deployment and
-promotion remain blocked. No task is ticked or code transported to GitHub.
+The [watchdog record](docs/features/WATCHDOG_SECRETS_LIFECYCLE.md) retains reviewed
+9ac source and acknowledged sequential handoffs:39922/29001 drained,57626/57964
+acknowledged with registered311 while the other guard stayed. Query native ps for
+current processes; those are controller identities, not model-agent PIDs.
+Natural scan-e60b7ebb522d49809c16801192c9f64b returns124/60.555s, inactive/
+max-runtime-timeout/null trace; native ps then shows only the two controllers.
+It remains unknown scanning evidence. New Make/helper bodies load in each child;
+no controller restart, forced scan or60scan/300cooldown alteration is needed.
 
-## Reviewed empty-observer projection source
+Native312 inspection verifies CPython3.12.15/ci/mismatches[]. Registered311
+compatibility tests remain distinct from its known requested-ci jsonpointer3.1.1
+versus direct3.2.0 refusal. Do not infer corruption or overwrite the live shared
+prefix from that diagnostic; intended-profile/ownership and native handoff come first.
 
-Exact reviewed development 49a373b1ae2081e7209e4be5253d3ce270d58e09 and its425
-parent have independent APPROVE SOURCE ONLY at
-/tmp/gludd-v012-watchdog-coverage-49a373b-source-review.md, fully read by Root.
-All19 paths, combined392/89.2line85.9branch, both478 routing receipts and236
-operating passes are retained. Normal49 hooks retain their own128520/128544 collection,24deselected/zeroerrors
-46.46s/native51.7s, zero new clones/six checkpoints. Source approval does not activate either daemon.
+## Actual release blockers and retained proof
 
-Root owns the later scripts/task_watchdog.py repair. Historical64-current
-pointers block the native stop plan even when the process view has no observer.
-The existing producer's necessary stream_command.py token proves that metadata
-projection empty; skip only that case while preserving gate PID/lock checks and
-all original live-observer64/128 caps/refusals, identities and drain policy.
-Six original-cap REDs1.33s precede12 focused safeguards/.91s; whole159PASS311
-5.54s/native7.2s at92.8line85.2branch, audit20261021T223430Z passed=true, and159PASS
-3124.83s/native6.1s. Ruff/strict pass; correct full-scope resource ownership passes
-264 after a retained mistaken partial-scan/full-manifest request. Native stop
-plan1 now verifies apply=False/old_tree_drained=False; actual activation remains
-separate from source acceptance. Exact9ac normal commit/review and the actual
-[owned sequential handoffs](docs/features/WATCHDOG_SECRETS_LIFECYCLE.md#terminal-pointers-and-native-handoff)
-are recorded above. The natural successor scan's terminal timeout and measured
-child absence are also recorded above; successful scanning remains unproved.
-Family148 keeps147 predecessors; routing RED5FAIL/1PASS1.19s precedes six pins1.59s. Nine complete routing/lifecycle owners pass533 each311130.22s/native131.9s and312127.71s/native129.1s, fatal warnings/zero skips/errors. Five complete documentation/handoff/ledger owners pass98/4.40s/native5.7s; Ruff4/four strict scopes/docstrings/276contracts/Make1157/zero duplicates/Markdown6/SESSION structure/12-path registration/lineguard pass.
-No original90/60 proof is retried. At the9ac source boundary, disk97percent/6.9GiB
-exceeded95; later native cleanup measures96percent/8.1GiB above. Original60907
-publication timeout, full gate/exact-SHA CI/deployment/promotion remain missing.
+Capacity remains96percent>95,8.1GiB free. Native cleanup changes97to96 and
+768.1to711.7MB scratch, then removes0/skips403 and exits Make2/no-progress.
+The [capacity record](docs/features/CACHE_RESOURCE_INVENTORY.md#native-capacity-cleanup-and-direct-owner-2026-10-21)
+retains actual16-resource reclamation and all ownership/idle/grace refusals.
+Protected Pages/Chromium evidence, refs, locks and six checkpoints remain.
+Size, time or a new source SHA supplies no new retirement authority.
+Capacity HumanTodo is UNFILED after API refusal/no ID; the host-space question
+remains unanswered. No unchanged cleanup retry follows.
 
-## Reviewed coverage source support
+Original publication60907 remains124/90.554s after2304PASS83.79s plus HELP1PASS/
+.56s and an unterminated eleven-tail child. Its native receipt has null trace,
+quiet1.247s and inactive/max-runtime-timeout; no Git transport occurred.
+Earlier exact3cbb standalone2316 passes/native81.9s311 and85.7s312 and later
+main-only2304/native70.9s diagnostic do not clear this different failed run.
+The [publication record](docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#reviewed-source-blocked-at-publication-deadline-2026-10-21)
+retains them and all eight immutable hosted timing rows. No cause/speed repair
+for60907 is established by the scan semantics repair or the negative wrapper profile.
 
-Root's receiving base is reviewed development0a302b8eacfaeeae90149abca5d144a324110169. The [source-identity record](docs/features/COVERAGE_SOURCE_IDENTITY.md) retains the failed38percent measurement from seven altered temporary copies and canonical9FAIL/98deselected1.82s/native2.7s before the existing-owner physical-root export/same-profile repair. The full original98 cases plus9 additive controls pass107 on311 in3.52s/native4.3s and312 in4.11s/native5.0s. Ruff/strict,276contracts and Make1157/zero duplicates/9CI12local pass. The unchanged ten-owner contract passes472 cases in62.66s/native64.8s at91.3line/85.6branch, all four files above75 BOTH, native audit .gate-logs/coverage-20261021T164052Z.json. Normal source commit425e47444284a555a2211db13988edae6ed82b61 retains its own128520selected/128544collected,24deselected/zeroerrors48.63s/native54.1s, zero new clones and six checkpoints. Its first hook attempt corrects one EOF blank before the normal retry; no bypass or transport follows. Independent combined49-against0a source review is now APPROVE SOURCE ONLY, fully read above; no task tick follows.
+Published2f Build39587418003 remains FAILURE:30jobs/25success/1fail/4skip;
+only unit-3a119185158396 fails. Local3cbb addresses its production-binding and
+forwarding-pin assertions; ledger open0/repaired4/resolved49/runs157 is local
+repair evidence. Molecule39587418143/all6 succeeds. Pages39587418149/3success+
+1skip is validation, not deployment. Coverage/release_source_proof skip.
+No exact-successor hosted/deployment or canonical release proof exists.
 
-Preserve the corrected-profile failure:376PASS25.10s/native26.9s but88.7line/84.7branch and enforcement74.6branch at .gate-logs/coverage-20261021T163633Z.json. Sixteen additive actual heartbeat/latch controls then pass inside all13 complete owners:392PASS31125.31s/native26.9s,89.2line/85.9branch, all nine nonempty canonical files above75 BOTH; audit .gate-logs/coverage-20261021T164644Z.json passed=true. The identical392 cases pass31220.30s/native21.7s through the authorized host Make boundary after the retained sandbox25FAIL/367PASS/3ERROR process-inspection denial. The [watchdog repair](docs/features/WATCHDOG_SECRETS_LIFECYCLE.md) is committed and source-approved at49a373b; its12 native lifecycle/signal controls and one CWD guard also retain48PASS per runtime. Family146 timeout and147 fixture confinement follow145 unchanged predecessors; independent routing controls retain5FAIL/1PASS1.17s/native2.6s before all six pins pass2.13s. Whole eight-owner routing passes478 on311128.82s/native130.2s and312125.84s/native127.2s, zero skips/errors and fatal warnings. Native276contracts, Make1157/zero duplicates/9CI12local, Ruff6, source/routing strict scopes, docstrings, Markdown7,lineguard,SESSION structure,15-path registration and Node26six/10.97s pass. The first236-case operating attempt incorrectly uses60quiet rather than the prior helper180/240 and fails124/69.938s/quiet60.554s, with captured native collection20261021T222634Z-9931-22171430 orphaned. Native prior operating status proves180/240; restoring that caller input yields236PASS84.51s/native85.5s, preserving the failed run and original publication90/60. The49 source commit/review is evidenced above; actual daemon activation remains separate. These392 receipts cover the combined receiving bytes, not partial425 exact-commit proof. At the historical49 boundary,39922 still needed the owned handoff and stop plan1 refused observer inventory at its display cap (scripts/task_watchdog.py:422); preserve that failure. The later9ac source commit/review, verified plan and actual sequential activation are evidenced above. Do not repeat that completed source/handoff work. Capacity/publication blockers remain below.
+## Native continuation and preserved history
 
-## Reviewed disk attribution support
+Use Make only, explicit installed runtime tuples from the mandatory guide and
+the native work-item/active-work-status owners. Drain every yielded session before
+dependent operations. Quiesce all Main readers, model owners, tests, observers
+and scanners before normal Git hooks may stash. Keep strict scopes separate;
+do not sync or download implicitly. No .opencode plugin source is changed.
 
-Exact0a302b8eacfaeeae90149abca5d144a324110169 is independently APPROVE SOURCE ONLY at /tmp/gludd-v012-disk-0a302b8-source-review.md, fully read by Root; its bounded diagnostic repair begins at a4f894c29f982281470d07bf4d78ace5114320cc. The [native disk record](docs/features/CACHE_RESOURCE_INVENTORY.md#native-temporary-size-attribution-2026-10-21) retains1FAIL/2PASS before disk delegates to existing tmp-gludd-usage, complete22PASS per runtime,3FAIL routing RED before144families/six pins,276contracts and actual disk0/6.4s/temp0/3.7s. Original143predecessors,3children2/1/1,90/60,21/2850/full gate,85/75 BOTH,ZDD/cleanup/promotion remain. Complete eight-owner receiving acceptance passes478 on311 in134.26s/native135.5s and312 in139.31s/native140.6s with fatal warnings/zero skips/errors. Ruff three scopes, strict observability, Make lint1157/9CI12local,Markdown6,SESSION structure,registration13 and unchanged line guard pass. The complete eight operating/documentation owners pass235 in83.24s/native84.4s, /tmp/gludd-v012-disk-operating311.{log,xml}. Normal0a hooks retain zero new clones,six checkpoints and their own128482selected/128506collected,24deselected/zeroerrors56.47s/native63.5s; all13 paths have the independent exact-source decision recorded here and in manual receiving history. These completed source steps are not repeated because older prose predates their native terminal receipts.
+Actual capacity must clear95 before release-proof-admission mode0 and expensive
+final proof. Diagnose/change the actual failing runtime input before another
+original publication replay. Then freeze one independently reviewed candidate
+for combined acceptance, complete canonical gate/global85aggregate75each-file
+line AND branch, exact-SHA hosted all-shard CI/deployment, reviewed-head receipt
+and guarded promotion. Original ZDD/cleanup/retention/branch gates remain.
+The gate-background-observed release/0/16/1 owner remains canonical; plan mode
+and focused/source approval never close a task. No master merge/tag/release follows.
 
-The fresh receiving disk view is97percent/6.9GiB; earlier98percent/5.8GiB and98percent/5.7GiB remain historical, without an attributed cause for the change. The unchanged JSON parent inventory stops incomplete at1000entries/3.316s/Make2; largest40 diagnostic shows worktrees1.4G,browsers853M,testfiles115M. No resources are removed and sizes grant no ownership. Preserve39namespace/0reclaimable24h and UNFILED HumanTodo/API refusal/no host answer. Capacity must actually clear95 before release admission mode0; the original60907 publication timeout still requires attribution/change. No unchanged full-gate/publication/startup retry follows. All seven tasks remain unchecked.
-
-## Reviewed source and current watched trace support
-
-Development805b2da6e3520df7ad6333c2f97717801823fe12 is independently APPROVE SOURCE ONLY at /tmp/gludd-v012-watched-trace-805b2da-source-review.md, fully read by Root. It applies the exact two-line argument correction and two additive cases; original35/helper API,143families and all production/proof policy remain. Complete173 cases pass311/83.82s/native85.1s and312/85.75s/native87.0s; final operating235PASS85.37s/native86.7s. Ruff/strict,274contracts/actual behavior,143families/six pins1.59s,Make1157/9CI12local,registration8,lineguard,Markdown6 and SESSION structure pass. Normal eight-path805 source commit retains zero new clones,six checkpoints and its own128479selected/128503collected,24deselected/zeroerrors45.82s/native51.2s; native git-log/worktree-state verify exact SHA clean before this tracking-only handoff. No Git transport. These source steps are already evidenced; do not repeat the repaired investigation because older handoff prose predates its terminal receipt.
-
-Exact tracking-only successor a4f894c29f982281470d07bf4d78ace5114320cc has independent APPROVE SOURCE ONLY at /tmp/gludd-v012-trace-handoff-a4f894c-source-review.md, fully read by Root. Its normal hooks retain six checkpoints and fresh128479selected/128503collected,24deselected/zero errors55.29s/native63.6s; duplicate/Python-check skips are not executed passes. It records that source decision, actual receipts, distinct historical counts and unchanged release blockers. Native worktree-state owns the successor's own metadata SHA; /tmp/gludd-v012-hosted-unit3a-receiving-decision.md retains its normal commit/collection and review receipt. This manual text never supplies a generated observation, full gate or release acceptance.
-
-Immutable427b06c7d3f7ba9139c04961d6c3d9b57fee4c59 follows845 and has CHANGES REQUIRED at /tmp/gludd-v012-watched-trace-427b06c-source-review.md, fully read by Root. All15paths are locally committed with zero new clones,six retained checkpoints and their own128477selected/128501collected,24deselected/zero errors46.19s/native52.8s; no transport. Independent native parent/candidate witness1FAIL/1PASS0.85s shows mode1 set-- leaking --pytest-trace into legitimate CMD shell positional argv. Root receives two additive cases preserving all35/helper API; canonical37 retains1FAIL/36PASS4.56s/native5.4s before a two-line existing-recipe repair. A validated local flag now expands only the constant observer option, preserving CMD parameters. Corrected complete173 cases pass311/83.82s/native85.1s and312/85.75s/native87.0s, with zero skip/collection errors and fatal warnings. Successor805's terminal static/operating, normal collection and exact source re-review are recorded above; do not treat427 as approved. Every prior receipt below is historical source support, not proof for the correction or release.
-
-Development base845d65a3ef3e4ae40c61b144d9ae7718d2ad1506 follows3964002be2b039fc81d94989bf0e818fdc9a6144 and its retained predecessors. Exact source decision APPROVE SOURCE ONLY is /tmp/gludd-v012-cache-policy-845d65a-source-review.md, fully read by Root. Normal guarded commit retains235 operating passes85.01s/native86.0s,zero new clones,six unchanged checkpoints and its own128437selected/128461collected,24deselected/zero errors46.00s/native51.1s. All16 cache-policy paths are committed; remote remains2f. The owning cache feature retains508 compatibility/451 routing passes per runtime,128-case98.8line/94.4branch under unchanged85/75 BOTH and every negative/fixture receipt. Prior396 trace source review remains /tmp/gludd-v012-trace-summary-3964002-source-review.md. No local support establishes release proof.
-
-The current [publication trace unit](docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#retain-a-native-trace-for-publication-admission-2026-10-21) exposes the existing observer's --pytest-trace through literal RUN_WATCHED_PYTEST_TRACE=0|1. Generic0 allocates no new trace and preserves inherited context. Both existing publication watchers own1. Defined-empty/invalid inputs refuse before children; eager Make startup and late literal target/inherited contexts retain native controls. No new observer/parser/runner/cache/daemon or changed worker/deadline is introduced. The guide/AGENTS/contract codify automatic native identities for explicit empty RUN_ID/LOG, actual argv/status, trace ownership and diagnostic limits.
-
-Retain generic baseline1FAIL/1PASS0.60s, Root publication5FAIL6.99s/native8.1s and routing3FAIL0.88s/native1.7s. Root reads/receives the full35-case additive generic artifact and decision /tmp/gludd-v012-watched-trace-receiving-decision.md; all35 pass4.46s/native5.4s311. Publication five then pass5.74s/native6.6s; the complete unchanged publication/observer/observability owners pass136/66.71s/native68.1s311. Canonical promotion passes143families and all six pins1.54s, preserving142 predecessors and original3children2/1/1,90/60,21phases2850/full gate. Only the cheap enabled-argv control joins admission;34 others remain full acceptance.
-
-Whole seven-owner routing passes456/125.49s/native126.7s311. The complete thirteen-owner312 cohort passes679/110.00s/native112.0s, including508 compatibility controls,35 generic and136 publication/observer cases. The separate complete311 compatibility owner passes508/48.43s/native50.303s;312 routing core passes384/86.97s/native88.4s. All72 publication-owner312 cases already pass inside679, so they are not rerun for the routing-core receipt. Final static/operating/commit/source-review evidence belongs to native owners and /tmp/gludd-v012-hosted-unit3a-receiving-decision.md. Never infer a terminal verdict from a launch/session ID. No actual admission/publication is replayed to obtain a trace.
-
-The documented repeatable non-pytest behavior passes0.013s with native generated ID20261021T150054Z-82331-a50b9d31. Its .gate-logs/observed/run-watched/ receipt names the allocated trace. Native summary reports0events/started/finished/issues: allocation/readability only, no pytest or release proof. Earlier allocation and all old null/failed receipts remain immutable. Full acceptance and source review must remain distinct from the deadline's unproved cause.
-
-## Original publication failure and exact published CI
-
-The [publication record](docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#reviewed-source-blocked-at-publication-deadline-2026-10-21) retains exact3cbb original runtime passes2316 on311/native81.9s and312/native85.7s, actual pinned EE/six-node prerequisite and all failures. Initial publication stops at the missing previous2f verdict before runtime/transport. Native pipeline-status records terminal failure itself; enriched unit-3a repair passes125/11.82s/native12.9s, ledger open0/repaired4/resolved49/runs157. Local zero-open is not hosted success.
-
-Next ordinary guarded push passes pull ahead3/behind0, history/CI/stash/restart guards,six checkpoints,pinned EE and prerequisite6/2.18s/native3.9s. Original batch-push-runtime-admission-60907 then times out124/90.554s after2304PASS83.79s plusHELP1PASS0.56s; the eleven-tail child has no terminal result. Native immutable JSON retains trace_path:null,max-runtime-timeout,quiet1.247s,inactive. Git transport never starts. Preserve JSON/log under .gate-logs/observed/batch-push-runtime-admission/. A new source SHA, observer ID, trace binding or elapsed time does not clear this failure.
-
-Separate main-only diagnostic2304PASS68.47s/native70.9s has2304trace timing pairs/zero issues. Worker spans59.045718s/930cases and59.017241s/1374cases overlap, not CPU/combined runtime. RSS194528/192816KiB and import38.917ms are diagnostic-only. Existing reader's TIMINGS1/MEMORY1 view adds no attribution to the DIFFERENT failed run. No source speed optimization or repaired publication is established.
-
-Exact published2f Build39587418003 is terminal FAILURE:30jobs,25success/1failure/4skip/zero active. Only unit-3a119185158396 fails, missing-production-binding batch27 and stale forwarding-pin batch29; local3cbb addresses both. Molecule39587418143 succeeds/all6jobs; Pages39587418149 succeeds/3jobs+1skip, distinct from deployment acceptance. Coverage/release_source_proof skip. Immutable all-eight-shard timing IDs/durations/delays/censored interval remain diagnostic-only in the owning feature. No successor hosted proof exists.
-
-## Capacity and retention prerequisites
-
-Before native cleanup, disk-check fails97percent against95 and separately reports generated scratch766.5MB against100MB with6.9GiB last free. After the actual cleanup below, native recheck is96percent/711.7MB scratch and make disk measures8.1GiB free; capacity still exceeds95. Historical98percent/5.8GiB remains retained. The largest counted scratch roots are three retained v012 Pages/Chromium coverage artifacts near110MB each; size alone gives no retirement authority. Existing namespace plan finds39candidates/0reclaimable at unchanged24-hour grace; no duplicate scan, broader cleanup or shortened grace follows. Last native footprint report (after427) records Main .git555MiB/.gate-logs219MiB/.venv626MiB and scratch worktrees1.4GiB; those sizes do not establish disposable ownership. Last native load2.92/3.61/3.79,8CPU,0.36x,OK supplies no CPU-overload cause. The pre-handoff ps/active-work-status observation identified watchdogs 29001/39922 when tests were idle. The later acknowledged successors 57626/57964 and measured predecessor absence are recorded in the current control-plane handoff above; these are OS process identities, not model-agent PIDs. Capacity HumanTodo remains UNFILED after API refusal/no ID; host-space question is unanswered.
-
-The [native capacity record](docs/features/CACHE_RESOURCE_INVENTORY.md#native-capacity-cleanup-and-direct-owner-2026-10-21)
-retains watched plan20261021T225700Z-62649-ccb94ac1 (exit2/native8.6s):
-395scratch candidates/nine dry-run eligible/386skips, with actual UV consumers.
-The next natural watchdog scan, scan-9a19b82fb09544bdb607a43fb8e418e8,
-terminates124/60.518s; no scan is forced. Direct preflight with the same installed
-SYSTEM_PYTHON and DRY_RUN=1 then reaches would-prune shared UV cache while idle.
-Direct apply0 keeps the1800-second receipt grace and all native checks. Pass1
-removes16 owner-reported resources with401skips/zeroerrors, including6330
-bytecode files/245158682bytes, three peer cache directories, nine stale scratch
-entries, the exact shared Playwright download root and UV-owned cache cleanup.
-UV reports11files/12.3KiB removed. Pass1 changes97to96 and768.1to711.7MB;
-pass2 removes0/skips403/zeroerrors and exits Make2 for no-progress at96/711.7.
-This is partial measured reclamation, never a green capacity or release verdict.
-No protected evidence/ref/lock/checkpoint is removed; no broader retry follows.
-Use the native preflight directly with explicit SYSTEM_PYTHON for its own phase
-streaming; a UV-backed observer also participates in the global UV-idle check.
-Do not ignore active UV PIDs or weaken that refusal to prune.
-
-Preserve locked gate-admission source, protected Pages refs, edc52 unmerged refusal after six checkpoints, dirty old release-note/runbook and legacy merge fixtures. DIFFERENT56d76bc retirement archive remains .git/gludd-release-evidence/79a7b76110a3-56d76bc75d24b6119574680b121563e18bbe550a/manifest.json. Re-reading cleanup/browser/admission failures does not authorize unchanged replay.
-
-## Native continuation and exact proof
-
-Read .agents/policy/key-make-targets.md and full S98.4 criteria. Use Make only and the installed runtime for BOTH outer helper/Git and child work:
-
-~~~text
-UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11
-VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11
-UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
-~~~
-
-Python312 uses sibling python-3.12 and UV_PYTHON=3.12.15. Use work-item WORK_ITEM_ACTION=status WORK_ITEM_ID=S98.4 WORK_ITEM_REASON='' WORK_ITEM_VALIDATE_ONLY=0, active-work-status ACTIVE_WORK_STATUS_PID= and worktree-state for current ownership. At most two execution/testing owners; original runtime runs alone. Set RUN_WATCHED_PYTEST_TRACE explicitly for watched work. Drain every yielded session before sequential replacements. Quiesce ALL Main readers, model owners, tests and observers before normal Git hooks may stash. Keep strict scopes separate; no implicit environment acquisition.
-
-Source805's implementation, complete owning acceptance, normal collection and independent source review are recorded; preserve427/CHANGES REQUIRED and inspect native HEAD/manual receiving history before any repeated step. S98.4's next release action is blocked by actual volume headroom and the original90.554s publication failure. A new SHA, trace binding, observer ID or elapsed time changes no prerequisite. Host capacity must actually clear95; then use the exact native admission below before existing startup/final-proof owners. Diagnose/change the actual failing runtime input before another original publication replay. No unchanged failed startup, cleanup, CI or full-gate retry follows this handoff.
-
-After actual capacity changes, run release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0 WORK_ITEM_ID=S98.4 OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=20 with the installed tuple. Freeze one independently reviewed candidate only if admitted. The canonical final-gate owner remains:
+The complete prior handoff and startup synopses are immutable at e946b08.
+Retrieve only needed history through the native owner:
 
 ~~~console
-make gate-background-observed GATE_TIMEOUT=7200 GATE_POLL_INTERVAL=60 GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=0 GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 WORK_ITEM_ID=S98.4
+make git-show-file-to SHA=e946b08e2535e4fe325378a09a569bd3f8da840b FILE=SESSION.md OUT=/tmp/gludd-v012-session-history-e946b08.md
+make git-show-file-to SHA=e946b08e2535e4fe325378a09a569bd3f8da840b FILE=TASKS.md OUT=/tmp/gludd-v012-task-history-e946b08.md
+make git-show-file-to SHA=e946b08e2535e4fe325378a09a569bd3f8da840b FILE=BUGS.md OUT=/tmp/gludd-v012-bug-history-e946b08.md
 ~~~
 
-Retain85aggregate/75each-file line AND branch,fatal warnings,ZDD,cleanup/checkpoints and exact-SHA promotion. Combined acceptance,complete canonical gate/global coverage,311 all-shard attestation/reviewed-head receipt,hosted CI,deployment and guarded promotion remain unproved. All seven tasks stay unchecked. No master merge/tag/release follows. Keep batch threshold5; coherent CI repair below five uses its guarded owner only after the actual failed input changes. Verify-state precedes transport; verify-remote/exact-new-SHA observations follow actual transport.
-
-Predecessor handoff is immutable at805b2da6e3520df7ad6333c2f97717801823fe12: make git-show-file-to SHA=805b2da6e3520df7ad6333c2f97717801823fe12 FILE=SESSION.md OUT=/tmp/gludd-v012-session-before-accepted-trace-805b2da.md. Its old845 collection cross-reference is clarified here to845's actual128437/128461, distinct from427128477/128501 and805128479/128503. All845/396/3cbb predecessors, criteria, failed receipts and decisions remain retained.
-
-The native region below remains the preserved noncanonical native-profile FAIL, not candidate proof. Only make status-snapshot regenerates it.
+This compaction retains every prior receipt, source decision, criterion and ref
+through immutable history and owning features. It prevents stale pending prose
+from restarting accepted work. The native region below is the preserved
+noncanonical native-profile FAIL, not candidate proof; only status-snapshot
+regenerates that region.
 
 ## Current Gate Status (2026-10-21)
 <!-- gate:begin -->

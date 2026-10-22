@@ -1202,6 +1202,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_clean_ci_shard_scratch.py::test_stale_scratch_nested_symlink_preserves_external_target_modes[file]",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "native-full-scan-success-inventory",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_detect_secrets_full_scan.py::test_successful_full_scan_rejects_added_identity_or_occurrence[new-digest]",
+      "full_gate_phase": "test"
     }
   ]
 }

@@ -18,7 +18,7 @@ from scripts import makefile_layout
 from tests.unit.test_observed_command import _command, _current_status
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 149
+EXPECTED_FAMILY_COUNT = 150
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 EXPECTED_MAIN_PYTEST_FLAGS = (
@@ -97,6 +97,8 @@ ROSTER = (
     "tests/unit/test_watchdog.py::test_watchdog_fixture_confines_command_workspace",
     "tests/unit/test_task_watchdog.py::test_terminal_status_cap_preserves_native_gate_protection[absent-64]",
     "tests/unit/test_clean_ci_shard_scratch.py::test_stale_scratch_nested_symlink_preserves_external_target_modes[file]",
+    "tests/unit/test_detect_secrets_full_scan.py::"
+    "test_successful_full_scan_rejects_added_identity_or_occurrence[new-digest]",
     "tests/unit/test_status_heartbeat_terminal.py",
     "tests/unit/test_task_ledger_validation.py",
     "tests/unit/test_make_readonly_version.py",
@@ -953,8 +955,8 @@ def test_scratch_symlink_permission_failure_has_one_exact_native_route(
         "full_gate_phase": "test",
     }
     assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
-    assert payload["families"][-1] == expected
-    assert payload["families"][-2]["id"] == "watchdog-empty-observer-projection"
+    assert payload["families"][148] == expected
+    assert payload["families"][147]["id"] == "watchdog-empty-observer-projection"
     assert len(payload["families"]) == EXPECTED_FAMILY_COUNT
     selectors = re.findall(r"TESTFILES=\"([^\"]*)\"", _stanza(OWNER))
     assert len(selectors) == 3
@@ -974,3 +976,31 @@ def test_scratch_symlink_permission_failure_has_one_exact_native_route(
     assert len(payload["runtime_contract"]["phases"]) == 21
     assert sum(item["max_seconds"] for item in payload["runtime_contract"]["phases"]) == 2850
     assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
+
+
+def test_full_scan_success_inventory_failure_has_one_exact_native_route(
+    tmp_path: Path,
+) -> None:
+    """Route the real successful-scan finding witness once before fanout."""
+    payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
+    node = (
+        "tests/unit/test_detect_secrets_full_scan.py::"
+        "test_successful_full_scan_rejects_added_identity_or_occurrence[new-digest]"
+    )
+    expected = {
+        "id": "native-full-scan-success-inventory",
+        "owner_target": OWNER, "node_kind": "pytest_node",
+        "node": node, "full_gate_phase": "test",
+    }
+    assert payload["families"][-1] == expected
+    assert payload["families"][-2]["id"] == "scratch-nested-symlink-permissions"
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT
+    selectors = re.findall(r"TESTFILES=\"([^\"]*)\"", _stanza(OWNER))
+    assert len(selectors) == 3
+    arguments = [selector.split() for selector in selectors]
+    assert [selection.count(node) for selection in arguments] == [1, 0, 0]
+    assert all(node.split("::", 1)[0] not in selection for selection in arguments)
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
+    assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]

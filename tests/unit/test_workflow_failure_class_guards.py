@@ -471,10 +471,10 @@ def test_ci_head_compare_reports_bidirectional_divergence() -> None:
 def test_secrets_scan_targets_do_not_dirty_committed_baseline() -> None:
     for target in ("scan-secrets", "secrets-scan"):
         block = _target_block(target)
-        assert "$$(mktemp /tmp/gludd-secrets-baseline." in block
-        assert "cp .secrets.baseline \"$$TMP\"" in block
-        assert "$(UV) run detect-secrets --cores \"$$CORES\" scan --baseline \"$$TMP\"" in block
-        assert "--baseline .secrets.baseline" not in block
+        assert "$(UV) run python scripts/detect_secrets_readonly.py" in block
+        assert '--scan-cores "$$CORES"' in block
+        assert "--baseline .secrets.baseline -- $(ARGS)" in block
+        assert "$(UV) run detect-secrets" not in block
 
 
 def test_git_show_file_to_is_scoped_to_safe_restore_outputs() -> None:

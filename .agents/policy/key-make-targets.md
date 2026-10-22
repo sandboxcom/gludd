@@ -69,6 +69,22 @@ bounded descendants; no test reaches the host scanner. The [lifecycle record](..
 retains original failed receipts and the owned activation sequence. A native
 source test result does not activate a daemon already running older code.
 
+Full-tree scan-secrets/secrets-scan reuse the existing readonly owner with
+--scan-cores N. Native scan --baseline refreshes inventory and can return0 with
+new findings; its exit alone is not admission. Keep the existing private-copy
+Counter through the canonical manager's existing finding_counts; keep raw pinned
+grammar validation before baseline/plugin postprocessing.
+The same namespace must select inventory refresh: plugin listing, truthy string
+and allowlisted-only display return early; empty --string= still scans files.
+The [security record](../../docs/security/audit-observability.md#full-scan-refresh-and-finding-admission-2026-10-21)
+retains both actual public examples, exact source coverage and all REDs.
+Use verified registered312/ci for those current-profile examples;311 compatibility
+acceptance does not clear its known requested-ci jsonpointer refusal. Do not
+sync a live shared prefix from that diagnostic. Tests let the real readonly
+wrapper execute and mock the actual scanner child; capture actual argv at both
+boundaries. Keep native status/cores/ARGS/baseline/cleanup assertions when an
+obsolete shell-transport pin conforms to this owner.
+
 Historical current pointers can exceed the64-status display bound. The cleanup
 owner skips that metadata projection only when the complete native process
 snapshot contains no stream_command.py command, a necessary condition in the

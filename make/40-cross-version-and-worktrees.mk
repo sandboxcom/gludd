@@ -74,12 +74,12 @@ $(PYTHON) -c 'import multiprocessing as mp; import sys; from scripts.active_work
 endef
 
 scan-secrets:
-	@CORES=$$(GLUDD_WORKER_LIMIT="$${GLUDD_WORKER_LIMIT-}" $(_secrets_scan_native_cores)) || exit $$?; TMP=$$(mktemp /tmp/gludd-secrets-baseline.XXXXXX); cp .secrets.baseline "$$TMP"; echo "[scan-secrets] scanning temporary baseline copy $$TMP"; $(UV) run detect-secrets --cores "$$CORES" scan --baseline "$$TMP" $(ARGS); RC=$$?; rm -f "$$TMP"; exit $$RC
+	@CORES=$$(GLUDD_WORKER_LIMIT="$${GLUDD_WORKER_LIMIT-}" $(_secrets_scan_native_cores)) || exit $$?; echo "[scan-secrets] scanning disposable baseline with $$CORES workers"; $(UV) run python scripts/detect_secrets_readonly.py --scan-cores "$$CORES" --baseline .secrets.baseline -- $(ARGS)
 
 # ── Secrets management targets ──
 # secrets-scan: scan for secrets without modifying files (checks against baseline)
 secrets-scan:
-	@CORES=$$(GLUDD_WORKER_LIMIT="$${GLUDD_WORKER_LIMIT-}" $(_secrets_scan_native_cores)) || exit $$?; TMP=$$(mktemp /tmp/gludd-secrets-baseline.XXXXXX); cp .secrets.baseline "$$TMP"; echo "[secrets-scan] scanning temporary baseline copy $$TMP"; $(UV) run detect-secrets --cores "$$CORES" scan --baseline "$$TMP" $(ARGS); RC=$$?; rm -f "$$TMP"; if [ $$RC -ne 0 ]; then echo '{"last_push_blocked":true,"block_reason":"secrets-scan:secrets-found","epoch":'$$(date +%s)'}' > /tmp/gludd-push-state.json; fi; exit $$RC
+	@CORES=$$(GLUDD_WORKER_LIMIT="$${GLUDD_WORKER_LIMIT-}" $(_secrets_scan_native_cores)) || exit $$?; echo "[secrets-scan] scanning disposable baseline with $$CORES workers"; $(UV) run python scripts/detect_secrets_readonly.py --scan-cores "$$CORES" --baseline .secrets.baseline -- $(ARGS); RC=$$?; if [ $$RC -ne 0 ]; then echo '{"last_push_blocked":true,"block_reason":"secrets-scan:secrets-found","epoch":'$$(date +%s)'}' > /tmp/gludd-push-state.json; fi; exit $$RC
 
 # secrets-scrub: find and scrub secrets from the codebase (interactive audit)
 secrets-scrub:

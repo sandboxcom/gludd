@@ -190,3 +190,227 @@ owns its process pool and child settings. The long-lived
 [Python 3.8 multiprocessing report](https://github.com/Yelp/detect-secrets/issues/452)
 shows why preserving that settings initializer matters. This change retains it;
 the report is historical context, not evidence of a current detector failure.
+
+
+## Full scan refresh and finding admission (2026-10-21)
+
+S98.4 source base is reviewed development e946b08. The existing full-tree
+Make owners previously ran detect-secrets scan against a temporary baseline,
+discarded its updated inventory and trusted only the scanner exit code.
+Pinned [v1.5.0 scan](https://github.com/Yelp/detect-secrets/blob/v1.5.0/detect_secrets/main.py#L18-L79)
+merges new findings into the baseline and can return0. That is refresh success,
+not a decision that no new finding exists. The
+[native hook](https://github.com/Yelp/detect-secrets/blob/v1.5.0/detect_secrets/pre_commit_hook.py#L16-L67)
+has a different finding-admission contract; the earlier single-TASKS profile
+does not measure this full-tree workload.
+
+The actual native public-target controls first return2FAIL in1.92s/native3.1s:
+a synthetic new fingerprint and malformed updated inventory are both wrongly
+accepted when the fake upstream scanner returns0. Preserve
+native-scan-semantics-red/v012-native-scan-semantics-red312 and its immutable
+log/XML. No real repository scanner is substituted for those controlled cases.
+
+Both public Make owners now invoke the existing scripts/detect_secrets_readonly.py
+with --scan-cores N. The same existing Counter records filename, detector,
+fingerprint and occurrence multiplicity from the private copy before scan.
+Only after native0 does it compare the updated private copy with that snapshot.
+A positive difference returns1, including equal-total removal/duplicate
+substitution. Malformed initial/final inventory refuses with cleanup; CLI2
+remains fail-closed. All nonzero native scan statuses retain precedence.
+No baseline data, detector or source parser is reimplemented.
+
+The worker calculation and exact inner command remain:
+
+~~~text
+detect-secrets --cores N scan --baseline <private-copy> <original ARGS>
+~~~
+
+The existing min(host CPU, worker_limit - 3) calculation keeps five workers
+on this8-slot host. Both target names, GLUDD_WORKER_LIMIT, ARGS, native status
+propagation and the push-blocking side effect remain. Default hook mode uses
+scan_cores=None and retains its exact CLI forwarding kwargs, native statuses,
+metadata-only status3 normalization and output contracts. No shared environment
+is synced and no controller restart is required for a fresh Make/helper child.
+
+### Bind the private baseline before native postprocessing
+
+Later native arguments can replace --baseline, including equals forms and
+unambiguous --basel abbreviations. Four actual API controls fail before the
+guard, with two literal-token positive controls:4FAIL2PASS/.81s/native1.8s,
+scan-baseline-override-red/v012-scan-baseline-override-red312.
+
+Scan mode lazily reuses the pinned ParserBuilder console grammar through its
+existing _parser accessor. Its
+[public parse_args](https://github.com/Yelp/detect-secrets/blob/v1.5.0/detect_secrets/core/usage/__init__.py#L144-L167)
+also loads baselines and processes custom settings before returning. The helper
+therefore validates the raw namespace first, requiring action scan and the exact
+owned disposable baseline string. It does not resolve an override path or load
+its baseline. The command vector stays unchanged after validation. This is one
+version-pinned private API, already exercised by the native worker controls;
+a future dependency change must retain the actual grammar controls.
+
+Native raw parsing can check path syntax/existence and built-in plugin names.
+It is not described as free of IO/imports. The
+[plugin](https://github.com/Yelp/detect-secrets/blob/v1.5.0/detect_secrets/core/usage/plugins.py)
+and [filter](https://github.com/Yelp/detect-secrets/blob/v1.5.0/detect_secrets/core/usage/filters.py)
+postprocessors remain outside this validation. Two actual extension-file
+tripwires prove custom code stays unexecuted before the mocked child; an import
+finder, with cached modules scoped out/restored, proves default hook invocation
+does not import native scan grammar. No parser or public API is stubbed.
+
+Three actual parse-exit controls first fail1.29s/native2.4s at
+scan-parse-exit-red/v012-scan-parse-exit-red312. Help is not a validated scan;
+invalid/ambiguous native arguments now become content-free ValueError/CLI2
+without a child. Native help/error text and caller values are not published
+from this preflight. Literal -- filenames and baseline-like option values still
+pass unchanged through the maintained grammar. Private copies are removed on
+every tested terminal path; canonical bytes,mode,inode stay unchanged.
+
+### Require an actual inventory scan
+
+Pinned [scan control flow](https://github.com/Yelp/detect-secrets/blob/v1.5.0/detect_secrets/main.py#L37-L79)
+also returns0 before refreshing the inventory for plugin listing, truthy string
+detection and allowlisted-only display. Eight public API controls reproduce
+false acceptance before this guard, alongside five genuine file-scan controls:
+8FAIL5PASS/.91s/native2.0s at
+scan-inventory-mode-red/v012-scan-inventory-mode-red312. Preserve its log/XML
+under /tmp/gludd-v012-scan-inventory-mode-red312.
+
+The same raw namespace now refuses list_all_plugins, truthy string and
+only_allowlisted before the child. Native abbreviations populate those fields;
+no option blacklist or second parse is needed. Match upstream truthiness:
+empty --string= actually falls through to inventory refresh and stays valid.
+Regex values and literal filenames after -- retain their exact argv and
+native meaning. The new controls preserve canonical bytes/mode/inode, private
+copy removal and content-free refusal. No timeout attribution follows.
+
+### Native receiving proof and reproducible owner
+
+The research/test proposals are retained at
+/tmp/gludd-v012-watchdog-native-scan-semantics-decision.md,
+/tmp/gludd-v012-readonly-full-scan-decision.md and
+/tmp/gludd-v012-readonly-parser-isolation-decision.md.
+Root rejected an earlier recorder that invented a run token. The accepted
+fixture records actual scanner sys.argv with executable basename normalization
+and records actual outer UV argv independently. It executes the real readonly
+wrapper and mocks only its detect-secrets child. Existing worker/order/one-flag/
+ARGS/status/baseline/cleanup assertions remain; only obsolete transport indexes
+and an old shell-copy pin conform to the new existing-owner boundary.
+The full old-pin replay1FAIL/66PASS7.64s/native8.6s remains failed evidence.
+
+Ten complete source/caller owners pass257 each:31124.64s/native26.4s and
+31225.27s/native27.7s, fatal warnings/zero test skips/errors. Native coverage
+audits .gate-logs/coverage-20261022T001045Z.json and
+.gate-logs/coverage-20261022T001007Z.json both pass99.0% line/96.4% branch for
+the one canonical measured producer, retaining85 aggregate/75 each-file BOTH.
+The208 passes/99.1line97.4branch remain intermediate history at
+.gate-logs/coverage-20261022T000712Z.json and
+.gate-logs/coverage-20261022T000639Z.json. The earlier195 passes/99.1line97.2branch remain intermediate history at
+.gate-logs/coverage-20261021T235020Z.json and
+.gate-logs/coverage-20261021T234914Z.json. Earlier92/100percent and127/100percent
+receipts also remain intermediate history. These are whole-owner unit/source
+profiles; legacy e2e-labelled audit fields supply no deployment or E2E proof.
+
+The exact312 command is:
+
+~~~console
+make coverage-files COVERAGE_TESTFILES="tests/unit/test_detect_secrets_readonly.py tests/unit/test_detect_secrets_readonly_diagnostics.py tests/unit/test_detect_secrets_full_scan.py tests/unit/test_detect_secrets_parser_isolation.py tests/unit/test_secrets_scan_resources.py tests/unit/test_workflow_failure_class_guards.py tests/unit/test_watchdog.py tests/unit/test_watchdog_secrets_lifecycle.py tests/unit/test_security_audit_observability.py tests/unit/test_secrets_baseline_compaction.py" COVERAGE_CONFIG=config/coverage_detect_secrets_readonly.ini COVERAGE_REPORT=.gate-logs/coverage-v012-native-scan-reuse312.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=5 OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=180 OBSERVED_RETAIN_RUNS=20 GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.12 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.12 UV_NO_SYNC=1 UV_PYTHON=3.12.15 UV_PYTHON_DOWNLOADS=never
+~~~
+
+The311 invocation uses the installed python-3.11 sibling for both environment
+paths, UV_PYTHON=3.11 and its separate reuse311 report. Its known requested-ci
+jsonpointer refusal is distinct from this compatibility acceptance; no profile
+identity or corruption claim follows. Actual registered312 inspection verifies
+CPython3.12.15/ci/mismatches[]. Do not overwrite a shared live311 prefix to hide
+the historical requested-profile diagnostic.
+
+Family150 native-full-scan-success-inventory appends after all149 predecessors.
+Its real new-digest API witness appears exactly once in the existing first
+child, with no whole-owner widening. Native route RED1FAIL/.80s/native1.7s
+precedes six canonical pins1.81s. Complete four routing/workflow files pass298
+each:31152.05s/native53.2s and31246.21s/native47.2s. Preserve
+/tmp/gludd-v012-native-scan-routing{311,312}.{log,xml}.
+Only expected selector/ID data and the fixed149th-family position conform to
+the appended150th record; prior values/order/assertions remain.
+Three children2/1/1,90total60quiet,21phases2850 and full gate authority remain.
+
+The actual full-scan source behavior examples retain the original variables:
+
+~~~console
+make scan-secrets GLUDD_WORKER_LIMIT=8 ARGS=
+make secrets-scan GLUDD_WORKER_LIMIT=8 ARGS=
+~~~
+
+Receiving uses the installed312 tuple for outer run-watched and child Make,
+one real scanner at a time after a natural watchdog drain. These are actual
+tracked-tree behaviors before the later non-inventory guard and documentation
+receiving, not sealed-candidate or timing benchmarks. The final257-case profile
+checks that guard, canonical-manager reuse and both real-Make caller fixtures. Preserve native-full-scan-behavior receipts
+v012-scan-secrets-behavior312 and v012-secrets-scan-behavior312, and their
+/tmp/gludd-v012-<target>-behavior312.log logs. The first passes0/native70.2s.
+Its180quiet/240total focus observer is separate from the unchanged watchdog60
+and original publication90/60. The paired secrets-scan example passes0/native68.7s with its own
+90quiet/120total caller bounds. Both use one real five-worker scanner serially;
+post-behavior native worktree-state reports exactly17 owned changed paths,
+with no canonical baseline or unrelated path changes.
+
+### Firsthand context and release limits
+
+The longstanding [baseline-versus-hook report246](https://github.com/Yelp/detect-secrets/issues/246)
+matches the contract confusion; pinned native source establishes this defect.
+A [2021 report433](https://github.com/Yelp/detect-secrets/issues/433) describes
+full scans varying from minutes to hours. A
+[2024 report868](https://github.com/Yelp/detect-secrets/issues/868) supplies a
+whitespace-heavy nonlinear-cost example. These are historical operator evidence,
+not attribution of either Gludd timeout or permission to disable detection.
+
+This semantic repair supplies no speed optimization or60907 cause.
+Natural scan-e60b7ebb522d49809c16801192c9f64b remains inactive124/60.555s,
+max-runtime-timeout/null trace with drained descendants. Original60907 remains
+124/90.554s/null trace/no transport. Native capacity96>95 and711.7MB scratch
+still block final admission/proof. Full gate/global85aggregate75each-file line
+AND branch, exact-SHA hosted/deployment, source review, reviewed-head receipt
+and guarded promotion remain separate. All seven S98 tasks stay unchecked.
+No baseline, verification, detector/filter/file set, worker budget,60scan/
+300cooldown, original90/60, ZDD, cleanup/retention or promotion gate is weakened.
+
+
+Final receiving static checks retain Ruff for all seven changed Python paths and
+seven separate strict scopes, explicit production docstrings,276 Make contracts,
+1157 targets/zero duplicates and full264 resource ownership. The existing native
+inventory writer refreshes the readonly mkstemp location and two pre-existing
+task_watchdog acquisition coordinates against current tracked source; all264
+ownership classifications remain. The full empty-PATHS check then passes. The first isolated-test import-order failure is
+retained; one blank line conforms to the actual repository import classification.
+Six complete docs/handoff/ledger/parser-isolation files pass101 in5.40s/native6.3s
+with fatal warnings, native-scan-reuse-handoff/v012-native-scan-reuse-handoff312;
+retain /tmp/gludd-v012-native-scan-reuse-handoff312.{log,xml}. Earlier101 passes
+at5.55s/native6.5s and5.53s/native6.7s remain intermediate final-handoff and
+native-scan-handoff history. Markdown6, SESSION native-region
+validation,17-path registration and the unchanged strict line guard pass.
+The startup synopsis is compacted through immutable e946b08 exports; every old
+criterion, source decision and failed receipt remains retrievable. The native
+gate region is preserved. Normal receiving commit/fresh collection and exact
+source review are owned by native HEAD and
+/tmp/gludd-v012-native-scan-source-review.md; read that boundary before repeating
+finished source work. None of these source receipts closes a release item.
+
+### Reuse the existing canonical finding identity
+
+The first normal receiving commit stops in the production duplicate-code guard,
+before fresh collection. Locked jscpd reports one14-line/82-token renamed clone:
+detect_secrets_readonly.py44-57 versus manage_secrets_baseline.py135-148.
+Preserve the native failed hook output and
+/Users/shawnwilson/tmp/gludd-duplicate-code-brtpgxpv/report/jscpd-report.json.
+The finding-validation block already exists in the e946 readonly source;
+no claim about the detector's fingerprint cause follows from the changed file.
+
+The readonly loader now delegates to the existing canonical manager's public
+finding_counts, rather than maintaining another identity validator. It retains
+its JSON/root boundary and maps the manager's content-free BaselineError into
+the public ValueError/CLI2 contract. Existing filename fallback, multiplicity,
+metadata, malformed-data and cleanup assertions stay unchanged. The established
+audit_public_secrets import/bootstrap pattern supports direct-script and package
+entrypoints without loading detect-secrets in default hook mode. The complete
+canonical manager test file joins the receiving cohort; no manager code,
+clone baseline, detector threshold or test assertion is changed.
