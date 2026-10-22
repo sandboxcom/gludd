@@ -12,6 +12,100 @@ import pytest
 from scripts.makefile_layout import compose_makefile
 
 
+@pytest.mark.parametrize(
+    ("trace_role_context", "trace_role_expected"),
+    [(None, "controller"), ({}, "controller"), ({"workerid": "gw2"}, "gw2")],
+    ids=("unbound", "controller", "worker"),
+)
+def test_trace_worker_identity_uses_native_context_and_preserves_carriers(
+    monkeypatch: pytest.MonkeyPatch,
+    trace_role_context: dict[str, str] | None,
+    trace_role_expected: str,
+) -> None:
+    import os
+
+    from scripts import xdist_trace_plugin as trace
+
+    monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw-inherited")
+    monkeypatch.setenv("PYTEST_XDIST_WORKER_COUNT", "73")
+    monkeypatch.setenv("PYTEST_XDIST_TESTRUNUID", "inherited-run")
+    config = (
+        None if trace_role_context is None
+        else SimpleNamespace(workerinput=trace_role_context or None)
+    )
+    monkeypatch.setattr(trace, "_ACTIVE_TRACE_CONFIG", config)
+    assert trace._worker_id() == trace_role_expected
+    assert os.environ["PYTEST_XDIST_WORKER"] == "gw-inherited"
+    assert os.environ["PYTEST_XDIST_WORKER_COUNT"] == "73"
+    assert os.environ["PYTEST_XDIST_TESTRUNUID"] == "inherited-run"
+
+
+@pytest.mark.parametrize("trace_invalid_worker", ["", None, 7, True])
+def test_trace_native_worker_refuses_invalid_identity_without_environment_fallback(
+    monkeypatch: pytest.MonkeyPatch, trace_invalid_worker: object,
+) -> None:
+    from scripts import xdist_trace_plugin as trace
+
+    monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw-inherited")
+    config = SimpleNamespace(workerinput={"workerid": trace_invalid_worker})
+    monkeypatch.setattr(trace, "_ACTIVE_TRACE_CONFIG", config)
+    with pytest.raises(ValueError, match="native xdist worker identity"):
+        trace._worker_id()
+
+
+def test_ordinary_trace_config_unconfigure_releases_only_matching_owner(
+    native_profile_config: pytest.Config, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts import xdist_trace_plugin as trace
+
+    monkeypatch.setattr(trace, "_ACTIVE_TRACE_CONFIG", None)
+    monkeypatch.setattr(trace, "_ACTIVE_TRACE_PATH", tmp_path / "ordinary.jsonl")
+    other = pytest.Config.fromdictargs(
+        {"basetemp": str(tmp_path / "other-base")}, [str(tmp_path / "checkout")],
+    )
+    try:
+        trace._pin_profile_trace(native_profile_config)
+        assert trace._ACTIVE_TRACE_CONFIG is native_profile_config
+        trace.pytest_unconfigure(other)
+        assert trace._ACTIVE_TRACE_CONFIG is native_profile_config
+        trace.pytest_unconfigure(native_profile_config)
+        assert trace._ACTIVE_TRACE_CONFIG is None
+        assert trace._worker_id() == "controller"
+        trace.pytest_unconfigure(native_profile_config)
+        assert trace._ACTIVE_TRACE_CONFIG is None
+    finally:
+        other._ensure_unconfigure()
+
+
+def test_profile_cleanup_restores_previous_ordinary_config_until_its_own_teardown(
+    native_profile_config: pytest.Config, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts import xdist_trace_plugin as trace
+
+    monkeypatch.setattr(trace, "_ACTIVE_TRACE_CONFIG", None)
+    monkeypatch.setattr(trace, "_ACTIVE_TRACE_PATH", tmp_path / "previous.jsonl")
+    previous = pytest.Config.fromdictargs(
+        {"basetemp": str(tmp_path / "previous-base")}, [str(tmp_path / "checkout")],
+    )
+    try:
+        trace._pin_profile_trace(previous)
+        monkeypatch.setenv("_TEST_FILES_CPROFILE", "1")
+        trace._consume_profile_request(native_profile_config)
+        state = trace._profile_state(native_profile_config)
+        assert state is not None
+        assert state.previous_config is previous
+        trace._pin_profile_trace(native_profile_config)
+        assert trace._ACTIVE_TRACE_CONFIG is native_profile_config
+        assert trace._finish_profile(native_profile_config, 1)
+        assert trace._ACTIVE_TRACE_CONFIG is previous
+        trace.pytest_unconfigure(native_profile_config)
+        assert trace._ACTIVE_TRACE_CONFIG is previous
+        trace.pytest_unconfigure(previous)
+        assert trace._ACTIVE_TRACE_CONFIG is None
+    finally:
+        previous._ensure_unconfigure()
+
+
 def test_trace_event_writes_jsonl_with_resource_fields(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -23,6 +117,10 @@ def test_trace_event_writes_jsonl_with_resource_fields(
     monkeypatch.setenv("GLUDD_XDIST_TRACE_LOG", str(log_path))
     monkeypatch.setenv("GLUDD_XDIST_TRACE_RUN_ID", "observed-run-7")
     monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw7")
+    monkeypatch.setattr(
+        trace, "_ACTIVE_TRACE_CONFIG",
+        cast(pytest.Config, SimpleNamespace(workerinput={"workerid": "gw7"})),
+    )
 
     trace.write_event("START", nodeid="tests/demo.py::test_demo")
 
@@ -116,6 +214,7 @@ def test_controller_sessionstart_truncates_trace_once(
     monkeypatch.setenv("GLUDD_XDIST_TRACE_LOG", str(log_path))
     monkeypatch.setenv("GLUDD_XDIST_TRACE_TRUNCATE", "1")
 
+    monkeypatch.setattr(trace, "_ACTIVE_TRACE_CONFIG", None)
     session = SimpleNamespace(config=SimpleNamespace(workerinput=None))
     trace.pytest_sessionstart(cast(pytest.Session, session))
 
@@ -525,6 +624,7 @@ def test_trace_path_is_stable_after_session_start(
     second_log = tmp_path / "second.jsonl"
     monkeypatch.setenv("GLUDD_XDIST_TRACE_LOG", str(first_log))
     monkeypatch.setenv("GLUDD_XDIST_TRACE_TRUNCATE", "1")
+    monkeypatch.setattr(trace, "_ACTIVE_TRACE_CONFIG", None)
     trace._ACTIVE_TRACE_PATH = None
 
     try:
@@ -554,6 +654,7 @@ def native_profile_config(
     monkeypatch.setattr(trace, "_profile_root", lambda: root)
     monkeypatch.setattr(trace, "_ACTIVE_TRACE_PATH", None)
     monkeypatch.setattr(trace, "_ACTIVE_RUN_ID", None)
+    monkeypatch.setattr(trace, "_ACTIVE_TRACE_CONFIG", None)
     config = pytest.Config.fromdictargs({"basetemp": str(base)}, [str(root)])
     try:
         yield config

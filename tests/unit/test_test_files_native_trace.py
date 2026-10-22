@@ -95,13 +95,18 @@ def _fixture(tmp_path: Path) -> Fixture:
         f"    assert Path(config.getoption('confcutdir')).resolve() == Path({str(root)!r})\n"
         f"    assert config.inipath.resolve() == Path({str(FROZEN / 'pyproject.toml')!r})\n"
         "    assert '_TEST_FILES_CPROFILE' not in os.environ\n"
+        "    worker_input = getattr(config, 'workerinput', None)\n"
         "    payload = {'argv':list(config.invocation_params.args), 'pid':os.getpid(),\n"
         "               'prefix':sys.prefix, 'version':list(sys.version_info[:2]),\n"
         "               'rootdir':str(config.rootpath.resolve()),\n"
         "               'confcutdir':str(Path(config.getoption('confcutdir')).resolve()),\n"
         "               'plugin':config.pluginmanager.hasplugin('scripts.xdist_trace_plugin'),\n"
         "               'trace':os.environ.get('GLUDD_XDIST_TRACE_LOG'),\n"
-        "               'run_id':os.environ.get('GLUDD_XDIST_TRACE_RUN_ID')}\n"
+        "               'run_id':os.environ.get('GLUDD_XDIST_TRACE_RUN_ID'),\n"
+        "               'runtime_worker':worker_input['workerid'] if worker_input is not None else None,\n"
+        "               'worker_env':{key:os.environ.get(key) for key in (\n"
+        "                   'PYTEST_XDIST_WORKER','PYTEST_XDIST_WORKER_COUNT','PYTEST_XDIST_TESTRUNUID')},\n"
+        "               'unrelated_carrier':os.environ.get('GLUDD_TRACE_UNRELATED_CARRIER')}\n"
         f"    record = Path({str(root)!r}, 'config-' + str(os.getpid()) + '.json')\n"
         "    record.write_text(json.dumps(payload), encoding='utf-8')\n"
     )
@@ -263,6 +268,50 @@ def test_observer_trace_contains_real_matching_protocol_pairs(
     assert Path(trace_value) == fixture.observed / "pytest/probe.pytest.jsonl"
     _assert_configs(fixture, loaded=True)
     _assert_pairs(fixture, Path(trace_value), "probe", trace_load_workers)
+
+
+@pytest.mark.parametrize("trace_role_workers", [0, 2], ids=("serial", "xdist"))
+def test_native_trace_uses_runtime_worker_role_with_inherited_carriers(
+    tmp_path: Path, trace_role_workers: int,
+) -> None:
+    fixture = _fixture(tmp_path)
+    inherited = {
+        "PYTEST_XDIST_WORKER": "gw-inherited",
+        "PYTEST_XDIST_WORKER_COUNT": "73",
+        "PYTEST_XDIST_TESTRUNUID": "outer-run-carrier",
+        "GLUDD_TRACE_UNRELATED_CARRIER": "preserved",
+    }
+    fixture.environment.update(inherited)
+    result = _observe(fixture, enabled=True, workers=trace_role_workers)
+    assert result.returncode == 0, result.stdout + result.stderr
+    status = _read_json(fixture.observed / "pytest/probe.json")
+    assert status["state"] == "passed"
+    assert status["exit_code"] == 0
+    trace_value = status["trace_path"]
+    assert isinstance(trace_value, str)
+    trace = Path(trace_value)
+    _assert_configs(fixture, loaded=True)
+    _assert_pairs(fixture, trace, "probe", trace_role_workers)
+    events = [_mapping(json.loads(line)) for line in trace.read_text(encoding="utf-8").splitlines()]
+    snapshots = [_read_json(path) for path in fixture.root.glob("config-*.json")]
+    assert len(snapshots) == (3 if trace_role_workers else 1)
+    for snapshot in snapshots:
+        runtime_worker = snapshot["runtime_worker"]
+        assert runtime_worker is None or isinstance(runtime_worker, str)
+        expected = runtime_worker if runtime_worker is not None else "controller"
+        observed = {event["worker"] for event in events if event["pid"] == snapshot["pid"]}
+        assert observed == {expected}
+        worker_environment = _mapping(snapshot["worker_env"])
+        if runtime_worker is None:
+            for key in ("PYTEST_XDIST_WORKER", "PYTEST_XDIST_WORKER_COUNT", "PYTEST_XDIST_TESTRUNUID"):
+                assert worker_environment[key] == inherited[key]
+        else:
+            assert worker_environment["PYTEST_XDIST_WORKER"] == runtime_worker
+            assert worker_environment["PYTEST_XDIST_WORKER_COUNT"] == "2"
+            assert worker_environment["PYTEST_XDIST_TESTRUNUID"]
+        assert snapshot["unrelated_carrier"] == "preserved"
+    for key, value in inherited.items():
+        assert fixture.environment[key] == value
 
 
 @pytest.mark.parametrize("trace_load_empty", [False, True], ids=("absent", "empty"))

@@ -9,7 +9,30 @@ Total tests: 129237 selected / 129261 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 separate source commits
+## Current S98.4 trace source receiving
+
+Source before the last trace commit is
+0f31a44a53552e67088ca8e86e5482659cfc1518 on the candidate branch above.
+Native source/index state names the actual current SHA; Root retains sole
+Main/shared/Git ownership. Status32bb619 and SESSION074e29f are committed,
+followed by this URI correction0f31a44. Its guarded working-checkout preflight
+collects129268selected/129292collected,24deselected/0errors51.93s/native57.7s
+at test-count/20261022T203710Z-86999-d11af7df.json. Three trace code paths remain
+receiving, so this is not an isolated intermediate-tree count.
+The [trace role record](docs/features/XDIST_TRACE_SUMMARY.md#native-session-role-and-lifecycle-boundary-s9842026-10-22-utc)
+retains Root's actual11RED, separate teardown2RED,176focusedPASS, unchanged
+four-source548coveragePASS at91.7line/86.1branch and complete312633PASS.
+The status/Make/routing/handoff complete449-case cohort also passes per311/312.
+These are scoped source results; all85/75BOTH, warnings, cleanup and original
+90/60/2-1-1 bounds remain. Root commits the final trace code with fresh native
+collection, then uses an immutable repair SHA for independent source review,
+selected clean-SHA ci-failure-repair evidence and normal guarded batch-push.
+Use worktree-state and native pipeline-status/ci-await for current observations;
+never hand-edit generated JSON or infer a hosted result from local success.
+Required full gate/capacity admission, exact-SHA hosted/deployment acceptance and
+promotion remain pending; all seven release tasks stay unchecked.
+
+## Retained S98.4 separate source commits
 
 Native status repair is locally committed at
 32bb6190b882c93af422489b4297d5588f7f6e6a on the candidate branch above.
