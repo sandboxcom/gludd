@@ -58,6 +58,15 @@ full capacity/gate/global85/75 BOTH, exact-SHA GHA/deployment and promotion rema
 pending; all seven release tasks stay unchecked. Newer repairs are local only.
 Last hosted eb772 remains Build/PagesFAIL and Molecule all6PASS.
 
+First normal source commit is ef41a2273534fde218a3f9b01a81af287cc6584d:
+Make10/default-and-consumer, additive18-case owner and existing guidance/history.
+Native collection selects129348/129372,24deselected/zero errors48.51s/native53.7s;
+receipt test-count/20261022T221636Z-60852-f5eb7d40.json under .gate-logs/observed.
+This intermediate collection includes unstaged HTTPS Make/Foundation source and
+its untracked test. Its source-only authority is not a coherent clean-candidate
+or isolated ef41 proof. The separate HTTPS source commit follows; all accepted
+source tests remain unchanged. No metadata-only commit or repeated union follows.
+
 ## Current original-budget failure at64bafe6
 
 Reviewed source is64bafe6aab4aefac3205a8cc4348ecf6268e66b1 on

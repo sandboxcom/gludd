@@ -3,7 +3,7 @@
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: release-candidate/v012-git-mutex-20261022 eb772a658a01db4485087813e4478eb6c59cc328.
 Previously recorded development publication: 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 129275 selected / 129299 collected, 24 deselected, zero collection errors in53.35s/native59.7s during the last native guarded64bafe6aab4aefac3205a8cc4348ecf6268e66b1 commit preflight. Native receipt: .gate-logs/observed/test-count/20261022T213702Z-96206-9c09bda0.json. This coherent working-checkout collection matches that clean candidate; earlier intermediate collections retain their disclosed unstaged-path scope. Collection is separate from behavioral, runtime, hosted and final-gate proof. Prior refs keep their original receipts; each normal source commit retains fresh collection without a receipt-only commit.
+Total tests: 129348 selected / 129372 collected, 24 deselected, zero collection errors in48.51s/native53.7s during the native guarded ef41a2273534fde218a3f9b01a81af287cc6584d commit preflight. Native receipt: .gate-logs/observed/test-count/20261022T221636Z-60852-f5eb7d40.json. This intermediate working-checkout collection includes unstaged HTTPS Make/Foundation source and its untracked test; it is not isolated ef41 or a clean final-candidate proof. The prior clean64 collection remains bound to its original receipt in retained history. Collection is separate from behavioral, runtime, hosted and final-gate proof. Prior refs keep their original receipts; each normal source commit retains fresh collection without a receipt-only commit.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 

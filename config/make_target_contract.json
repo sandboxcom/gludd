@@ -1,7 +1,8 @@
 {
   "version": 1,
   "targets": [
-
+    {"name": "git-configure-sandboxcom-https", "make_variables": ["SANDBOXCOM_HTTPS_VALIDATE_ONLY"], "behavior": "make git-configure-sandboxcom-https SANDBOXCOM_HTTPS_VALIDATE_ONLY=1"},
+    {"name": "verify-remote", "make_variables": ["BRANCH", "SHA", "SSH_KEY"], "behavior": "make verify-remote BRANCH=gludd-contract-absent SHA=0000000000000000000000000000000000000000 SSH_KEY=/tmp/gludd-contract-absent-key"},
     {"name": "_local-model-ollama-install-check", "make_variables": ["_OLLAMA_BIN"], "behavior": "make _local-model-ollama-install-check _OLLAMA_BIN="},
     {"name": "git-status", "make_variables": [], "behavior": "make git-status"},
     {"name": "inspect-presentation-browser-dependency-source", "make_variables": [], "behavior": "make inspect-presentation-browser-dependency-source"},

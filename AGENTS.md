@@ -109,6 +109,12 @@ still apply, and source-only approval never clears their refusal.
 Candidate pushes trigger hosted validation; master Pages deployment and version-tag
 release publication have separate required conditions. Use the [trigger/proof map](docs/features/RELEASE_PROOF_THROUGHPUT.md#active-handoff-and-hosted-authority)
 before attributing a GHA result to deployment or release.
+For the measured SSH-remote/HTTPS-login mismatch, use the existing repo-local
+`make git-configure-sandboxcom-https SANDBOXCOM_HTTPS_VALIDATE_ONLY=1` plan,
+then mode0 only within authorized publication work. The [HTTPS owner](docs/features/GITHUB_PUBLICATION_HTTPS.md)
+retains native fail-closed authentication, local helper/remote scope, partial-write
+reconciliation and actual tests. Configuration is not push or CI evidence;
+retain normal batch-push, exact verify-remote and native pipeline-status proofs.
 
 Keep admission dependencies distinct from escalation dependencies. HumanTodo
 service/config/store/auth facts govern filing that request. Actual capacity

@@ -50,12 +50,92 @@ require-sandboxcom-ssh-key:
 	fi; \
 	echo "sandboxcom SSH key available: $$KEY"
 
-verify-remote: require-sandboxcom-ssh-key
-	@SHA=$(or $(SHA),$$(git rev-parse HEAD)); BR=$(or $(BRANCH),master); \
-	REMOTE=$$(GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/$$BR | awk '{print $$1}'); \
+# Repo-local HTTPS publication; Foundation captures the mode before startup.
+# Only this recipe performs local configuration. Plan performs no auth/network IO.
+define _sandboxcom_publication_failure
+gludd_fail() { gludd_status=$$1; gludd_outcome=$$2; \
+	printf '%s\n' "AGENT_NEXT target=$$GLUDD_TARGET outcome=$$gludd_outcome native_status=$$gludd_status gate_evidence=false release_ready=false phase=$$GLUDD_PHASE writes_may_have_started=$$GLUDD_WRITES; preserve the native reason, repair that input and reconcile any partial repo-local configuration before retry; normal batch-push admission and hooks remain required" >&2; \
+	exit "$$gludd_status"; };
+endef
+
+define _sandboxcom_publication_remote_binding
+GLUDD_LOCAL_URL=$$(git config --local --get-all remote.sandboxcom.url) || gludd_fail "$$?" failed; \
+case "$$GLUDD_LOCAL_URL" in git@github.com:sandboxcom/gludd.git|https://github.com/sandboxcom/gludd.git) ;; *) echo "ERROR: sandboxcom requires one canonical repository-local GitHub URL." >&2; gludd_fail 2 refused ;; esac; \
+GLUDD_FETCH_URL=$$(git remote get-url --all sandboxcom) || gludd_fail "$$?" failed; \
+test "$$GLUDD_FETCH_URL" = "$$GLUDD_LOCAL_URL" || { echo "ERROR: sandboxcom fetch URL is rewritten or ambiguous." >&2; gludd_fail 2 refused; }; \
+GLUDD_PUSH_URL=$$(git remote get-url --push --all sandboxcom) || gludd_fail "$$?" failed; \
+case "$$GLUDD_PUSH_URL" in git@github.com:sandboxcom/gludd.git|https://github.com/sandboxcom/gludd.git) ;; *) echo "ERROR: sandboxcom requires one canonical GitHub push URL." >&2; gludd_fail 2 refused ;; esac;
+endef
+
+define _sandboxcom_publication_gh_helper
+GLUDD_GH_BIN=$$(command -v gh) || { echo "ERROR: gh is unavailable in the selected PATH." >&2; gludd_fail 127 failed; }; \
+case "$$GLUDD_GH_BIN" in /*) ;; *) echo "ERROR: gh must resolve to an absolute executable." >&2; gludd_fail 127 refused ;; esac; \
+GLUDD_GH_HELPER=$$("$(SYSTEM_PYTHON)" -c 'import shlex, sys; print("!" + shlex.quote(sys.argv[1]) + " auth git-credential")' "$$GLUDD_GH_BIN") || gludd_fail "$$?" failed;
+endef
+
+.PHONY: git-configure-sandboxcom-https _require-sandboxcom-git-auth verify-remote
+git-configure-sandboxcom-https:
+	@GLUDD_TARGET=git-configure-sandboxcom-https; GLUDD_PHASE=validate-mode; GLUDD_WRITES=false; \
+	$(_sandboxcom_publication_failure) \
+	GLUDD_MODE="$$GLUDD_SANDBOXCOM_HTTPS_VALIDATE_ONLY"; \
+	case "$$GLUDD_MODE" in 0|1) ;; *) echo "SANDBOXCOM_HTTPS_VALIDATE_ONLY must be 0 or 1" >&2; gludd_fail 2 refused ;; esac; \
+	GLUDD_PHASE=remote-binding; $(_sandboxcom_publication_remote_binding) \
+	GLUDD_PROPOSED_URL=$$(git ls-remote --get-url https://github.com/sandboxcom/gludd.git) || gludd_fail "$$?" failed; \
+	test "$$GLUDD_PROPOSED_URL" = https://github.com/sandboxcom/gludd.git || { echo "ERROR: proposed HTTPS URL is rewritten." >&2; gludd_fail 2 refused; }; \
+	if [ "$$GLUDD_MODE" = 1 ]; then \
+		echo "PLAN sandboxcom=https://github.com/sandboxcom/gludd.git repo_local=true credential_helper=gh writes=false auth_checked=false"; \
+		echo "AGENT_NEXT target=git-configure-sandboxcom-https outcome=planned native_status=0 gate_evidence=false release_ready=false; review the repo-local helper/fetch/push changes, then use SANDBOXCOM_HTTPS_VALIDATE_ONLY=0 for native authentication and configuration; plan is no auth, remote, push or CI proof" >&2; \
+		exit 0; \
+	fi; \
+	GLUDD_PHASE=helper-executable; $(_sandboxcom_publication_gh_helper) \
+	GLUDD_PHASE=authentication; "$$GLUDD_GH_BIN" auth status --active --hostname github.com || gludd_fail "$$?" failed; \
+	GLUDD_WRITES=true; GLUDD_PHASE=helper-reset; git config --local --replace-all credential.https://github.com.helper "" || gludd_fail "$$?" failed; \
+	GLUDD_PHASE=helper-install; git config --local --add credential.https://github.com.helper "$$GLUDD_GH_HELPER" || gludd_fail "$$?" failed; \
+	GLUDD_PHASE=fetch-url; git remote set-url sandboxcom https://github.com/sandboxcom/gludd.git || gludd_fail "$$?" failed; \
+	GLUDD_PHASE=push-url; git remote set-url --push sandboxcom https://github.com/sandboxcom/gludd.git || gludd_fail "$$?" failed; \
+	GLUDD_PHASE=postcheck; \
+	GLUDD_FETCH_URL=$$(git remote get-url --all sandboxcom) || gludd_fail "$$?" failed; \
+	GLUDD_PUSH_URL=$$(git remote get-url --push --all sandboxcom) || gludd_fail "$$?" failed; \
+	test "$$GLUDD_FETCH_URL" = https://github.com/sandboxcom/gludd.git && test "$$GLUDD_PUSH_URL" = https://github.com/sandboxcom/gludd.git || { echo "ERROR: native HTTPS remote postcheck failed." >&2; gludd_fail 2 refused; }; \
+	GLUDD_ACTUAL_HELPERS=$$(git config --local --get-all credential.https://github.com.helper) || gludd_fail "$$?" failed; \
+	GLUDD_EXPECTED_HELPERS=$$(printf '\n%s\n' "$$GLUDD_GH_HELPER"); \
+	test "$$GLUDD_ACTUAL_HELPERS" = "$$GLUDD_EXPECTED_HELPERS" || { echo "ERROR: native repo-local helper postcheck failed." >&2; gludd_fail 2 refused; }; \
+	echo "CONFIGURED sandboxcom=https://github.com/sandboxcom/gludd.git repo_local=true credentials_stored=false"; \
+	echo "AGENT_NEXT target=git-configure-sandboxcom-https outcome=configured native_status=0 gate_evidence=false release_ready=false; use verify-remote for an already-published exact branch/SHA; configuration supplies no remote-head, push, CI or deployment evidence and normal batch-push guards remain required" >&2
+
+_require-sandboxcom-git-auth:
+	@GLUDD_TARGET=verify-remote; GLUDD_PHASE=remote-binding; GLUDD_WRITES=false; \
+	$(_sandboxcom_publication_failure) \
+	$(_sandboxcom_publication_remote_binding) \
+	if [ "$$GLUDD_FETCH_URL" = git@github.com:sandboxcom/gludd.git ]; then \
+		GLUDD_PHASE=ssh-key; $(MAKE) --no-print-directory require-sandboxcom-ssh-key || gludd_fail "$$?" failed; \
+	else \
+		GLUDD_PHASE=helper-binding; $(_sandboxcom_publication_gh_helper) \
+		GLUDD_ACTUAL_HELPERS=$$(git config --local --get-all credential.https://github.com.helper) || gludd_fail "$$?" failed; \
+		GLUDD_EXPECTED_HELPERS=$$(printf '\n%s\n' "$$GLUDD_GH_HELPER"); \
+		test "$$GLUDD_ACTUAL_HELPERS" = "$$GLUDD_EXPECTED_HELPERS" || { echo "ERROR: configure the repo-local gh credential helper before HTTPS verification." >&2; gludd_fail 2 refused; }; \
+		GLUDD_PHASE=authentication; "$$GLUDD_GH_BIN" auth status --active --hostname github.com || gludd_fail "$$?" failed; \
+	fi
+
+verify-remote: _require-sandboxcom-git-auth
+	@GLUDD_TARGET=verify-remote; GLUDD_PHASE=expected-head; GLUDD_WRITES=false; \
+	$(_sandboxcom_publication_failure) \
+	SHA=$(or $(SHA),$$(git rev-parse HEAD)) || gludd_fail "$$?" failed; BR=$(or $(BRANCH),master); \
+	case "$$SHA" in ''|*[!0123456789abcdefABCDEF]*) echo "ERROR: SHA must be a nonempty hexadecimal commit identity." >&2; gludd_fail 2 refused ;; esac; \
+	git check-ref-format "refs/heads/$$BR" || gludd_fail "$$?" failed; \
+	GLUDD_PHASE=remote-head; \
+	REMOTE_ROWS=$$(GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git ls-remote --exit-code --heads sandboxcom "refs/heads/$$BR") || gludd_fail "$$?" failed; \
+	REMOTE=$$(printf '%s\n' "$$REMOTE_ROWS" | cut -f1); \
 	echo "remote=$$REMOTE expected=$$SHA"; \
-	REMOTE_SHORT=$$(echo $$REMOTE | cut -c1-$${#SHA}); \
-	if [ "$$SHA" = "$$REMOTE_SHORT" ]; then echo "VERIFIED $$BR@$$SHA"; else echo "REMOTE MISMATCH: remote=$$REMOTE expected=$$SHA" && exit 1; fi
+	SHA_LENGTH=$$(printf '%s' "$$SHA" | wc -c | tr -d ' '); REMOTE_SHORT=$$(printf '%s\n' "$$REMOTE" | cut -c1-$$SHA_LENGTH); \
+	if [ "$$SHA" = "$$REMOTE_SHORT" ]; then \
+		echo "VERIFIED $$BR@$$SHA"; \
+		echo "AGENT_NEXT target=verify-remote outcome=verified native_status=0 gate_evidence=false release_ready=false; this exact heads-ref/SHA comparison is remote evidence only; use pipeline-status for all required exact-SHA workflows and retain normal publication/deployment gates" >&2; \
+	else \
+		echo "REMOTE MISMATCH: remote=$$REMOTE expected=$$SHA"; \
+		echo "AGENT_NEXT target=verify-remote outcome=failed native_status=1 gate_evidence=false release_ready=false; reconcile the actual remote branch and expected SHA before retry; no VERIFIED, CI or deployment claim follows" >&2; \
+		exit 1; \
+	fi
 
 # Create a signed annotated tag and push it to sandboxcom to trigger the tag-gated
 # release job (version -> gate -> builds -> release). Usage:
