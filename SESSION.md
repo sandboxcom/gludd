@@ -8,47 +8,45 @@ Total tests: 128608 selected / 128632 collected,24 deselected,zero collection er
 
 Root owns S98.4 and Main/shared/Git/proof mutations on development. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current full-scan finding repair
+## Current coverage suite provenance repair
 
-The receiving base is source-approved e946b08e2535e4fe325378a09a569bd3f8da840b.
-The [owning security record](docs/security/audit-observability.md#full-scan-refresh-and-finding-admission-2026-10-21)
-retains the actual native2FAIL1.92s/native3.1s: upstream scan refreshes its
-private inventory and can return0 with a new finding or malformed output.
-Both Make scan targets reuse the readonly owner and canonical manager's Counter.
-The first normal content guard reports one14-line clone; the readonly loader now
-reuses existing finding_counts with content-free BaselineError-to-ValueError mapping.
-The optional --scan-cores mode snapshots the private copy before native scan
-and rejects new filename/detector/hash occurrences after native0. Native
-nonzero statuses retain precedence; malformed inventory refuses with cleanup.
-Canonical bytes/mode/inode and existing default-hook kwargs remain protected.
+Receiving base 815cd5dff5bf337eda518f9d1ff04673145a043c has independent
+APPROVE SOURCE ONLY. Root owns this S98.4 source change. Normal source hooks own
+fresh collection; freeze their resulting exact SHA for independent source review.
+Collection, review and final proof have separate authority. The [coverage contract](docs/E2E_COVERAGE_AUDIT_CONTRACT.md#suite-provenance-repair-2026-10-22-utc)
+owns the actual witness, implementation decisions, commands and failed history.
 
-Pinned native raw grammar checks baseline routing before builder postprocessors.
-Four actual override REDs/.81s/native1.8s precede rejection of exact/equals/
-abbreviated overrides, while literal filenames/option values stay valid.
-Three parse-exit REDs1.29s/native2.4s precede content-free refusal for help,
-invalid and ambiguous input. Custom plugin/filter import markers remain absent;
-a real import fence proves default hook mode does not import the scan grammar.
-Eight non-inventory controls fail first/.91s/native2.0s with five valid controls;
-the same namespace now refuses early-success display/string modes. Empty
---string=, regex values and literal filenames retain upstream inventory meaning.
-No detector, verification, selected file, five-worker ceiling or baseline changes.
+Imported JSON/XML previously acquired E2E labels without running any shards.
+Failed native audits could also certify stale percentages or hide their native
+failure behind a decoding error. Genuine pre-repair controls retain 12 FAIL /
+2 PASS in .87s/native 1.7s; the repaired complete owner passes 14 in .75s/native
+1.7s. Only completed owned native execution attaches E2E totals. Native failure
+is recorded before stale input is parsed; generic numeric admission remains.
 
-Ten complete source/caller files pass257 each:31124.64s/native26.4s and
-31225.27s/native27.7s. Both native audits retain99.0% line/96.4% branch for
-the one canonical changed owner, with85 aggregate/75 per-file BOTH unchanged.
-These are focused profile receipts, not global coverage. Family150 appends one
-real new-finding witness after149 predecessors in the existing first child.
-Six canonical pins pass1.81s; all four routing/workflow files pass298 each:
-31152.05s/native53.2s and31246.21s/native47.2s. Original three2/1/1 children,
-90/60 and21phases2850/full gate remain. Preserve every RED and older intermediate
-receipt; details, commands and actual public-target behavior belong to the feature.
+Both complete ten-file source/consumer cohorts pass 251: Python 3.11 in 20.40s/
+native 22.5s and Python 3.12 in 21.24s/native 23.6s. The unchanged complete
+two-source profile measures 94.7% line / 86.7% branch aggregate; both files
+independently exceed 75% on both metrics. These are focused reporting controls,
+including controlled tests under tests/e2e, not live E2E/deployment acceptance.
+All five prior numeric/arcs/context assertions remain; only their unsupported
+imported aliases conform, with the original E2E dictionary retained natively.
 
-Exact source f36d2dc362dfe7676b1ea51239aa1f8b2a28e24f has independent APPROVE
-SOURCE ONLY; Root fully read /tmp/gludd-v012-native-scan-source-review.md.
-Normal source hooks report zero new clones after the retained14-line refusal,
-six retained checkpoints and the fresh collection above. This separate receiving
-receipt changes four documents only; do not restart the accepted code repair.
-Source acceptance/review/collection, final gate and release remain separate.
+Family 151 adds one exact cheap witness after all 150 predecessors. Native route
+RED is 1 FAIL/.77s/native 1.6s; the canonical six pins pass 1.79s. Five complete
+routing/workflow owners pass 372 each: 3.11 in 73.81s/native 75.1s and 3.12 in
+84.31s/native 85.6s. Final typed controls pass 15/.82s/native 1.7s on 3.11.
+All six changed Python paths pass separate strict scopes; 276 Make contracts
+and 1157 targets/zero duplicates pass. Keep three children 2/1/1, 90 total / 60 quiet,
+21 phases / 2850 seconds, full gate and 85/75 LINE AND BRANCH floors unchanged.
+
+Prior f36d2dc362dfe7676b1ea51239aa1f8b2a28e24f full-scan source and the four-doc
+815 receiving receipt have independent APPROVE SOURCE ONLY, fully read by Root.
+The [security record](docs/security/audit-observability.md#full-scan-refresh-and-finding-admission-2026-10-21)
+retains all semantic/grammar REDs, clone repair, 257 source/caller passes per
+runtime at 99.0 line / 96.4 branch and 298 routing passes per runtime. The complete
+prior startup synopsis is immutable at 815; do not redo accepted source work.
+Neither repair establishes the cause of original publication60907 or watchdog
+scan timeouts. All seven S98 tasks stay unchecked.
 
 ## Previously accepted source and controller state
 

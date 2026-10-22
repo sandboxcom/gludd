@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 150
+EXPECTED_FAMILY_COUNT = 151
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -1835,10 +1835,8 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "agent-cleanup-native-delegation", "agent-cleanup-retained-ref-retirement",
         "watchdog-absence-refusal-context",
         "process-inventory-python-module-forms",
-        "code-intelligence-extractor-import-boundary",
-        "native-directory-listing-producer-status",
-        "importtime-native-numeric-columns",
-        "importtime-failed-child-status",
+        "code-intelligence-extractor-import-boundary", "native-directory-listing-producer-status",
+        "importtime-native-numeric-columns", "importtime-failed-child-status",
         "importtime-missing-data-failure",
         "pipeline-observed-job-progress", "ci-cancel-request-contract",
         "release-proof-production-runner-binding",
@@ -1848,7 +1846,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "coverage-native-source-identity",
         "watchdog-secrets-owned-timeout", "watchdog-scan-fixture-workspace",
         "watchdog-empty-observer-projection", "scratch-nested-symlink-permissions",
-        "native-full-scan-success-inventory",
+        "native-full-scan-success-inventory", "coverage-native-suite-provenance",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2064,6 +2062,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "test_stale_scratch_nested_symlink_preserves_external_target_modes[file] "
         "tests/unit/test_detect_secrets_full_scan.py::"
         "test_successful_full_scan_rejects_added_identity_or_occurrence[new-digest] "
+        "tests/unit/test_audit_coverage_suite_provenance.py::"
+        "test_imported_cobertura_never_proves_e2e_execution "
         "tests/unit/test_status_heartbeat_terminal.py "
         "tests/unit/test_task_ledger_validation.py "
         "tests/unit/test_make_readonly_version.py "

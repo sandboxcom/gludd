@@ -144,7 +144,6 @@ def _evaluate_coverage_data(
     per_file_threshold: float,
 ) -> tuple[dict[str, object], list[str], bool]:
     """Evaluate normalized coverage.py data against independent release floors."""
-
     files_under: list[str] = []
     files_ok: list[str] = []
     per_file: dict[str, float] = {}
@@ -252,16 +251,6 @@ def _evaluate_coverage_data(
         "branch_coverage": aggregate_branch_pct,
         "total_branches": total_branches,
         "covered_branches": covered_branches,
-        "e2e_branch_coverage": aggregate_branch_pct,
-        "e2e_branch_totals": {
-            "scope": "tests/e2e",
-            "total": total_branches,
-            "covered": covered_branches,
-            "missing": max(total_branches - covered_branches, 0),
-            "coverage_percent": aggregate_branch_pct,
-            "total_branches": total_branches,
-            "covered_branches": covered_branches,
-        },
         "shards": [],
         "failed_shards": [],
         "missing_arcs": dict(sorted(missing_arcs.items())),
@@ -731,46 +720,50 @@ def main() -> None:
         print("ERROR: choose exactly one of --json-file or --xml-file", file=sys.stderr)
         sys.exit(2)
 
-    if json_file is None and xml_file is None:
+    owns_e2e_run = json_file is None and xml_file is None
+    if owns_e2e_run:
         json_file = str(logs_dir / f"coverage-data-{ts}.json")
 
     shard_results: list[dict[str, object]] = []
 
-    # Run pytest with coverage if no existing JSON supplied
-    if json_file is not None and not any(
-        arg.startswith("--json-file=") for arg in sys.argv[1:]
-    ):
-        pyrc = run_pytest_coverage(source, json_file, shard_results)
-    else:
-        pyrc = 0
+    # Run the owned E2E audit only when no existing report was supplied.
+    pyrc = (
+        run_pytest_coverage(source, json_file, shard_results)
+        if owns_e2e_run and json_file is not None
+        else 0
+    )
 
     report_input = xml_file or json_file
     if report_input is None:
         print("ERROR: no coverage report input was selected", file=sys.stderr)
         sys.exit(2)
+    if pyrc != 0:
+        failed_shards = [shard for shard in shard_results if shard["status"] != "passed"]
+        failure_report = {
+            "generated_at": datetime.now(UTC).isoformat(),
+            "threshold": threshold,
+            "branch_threshold": threshold,
+            "per_file_threshold": 75.0,
+            "source": source,
+            "passed": False,
+            "pytest_exit_code": pyrc,
+            "shards": shard_results,
+            "failed_shards": failed_shards,
+            "error": (
+                "coverage audit command did not complete successfully"
+                if Path(report_input).exists()
+                else "coverage JSON was not produced by the audit command"
+            ),
+        }
+        with open(json_out, "w") as output_file:
+            json.dump(failure_report, output_file, indent=2)
+        print(f"Coverage audit failed — report: {json_out}", file=sys.stderr)
+        print(
+            f"  Failed shards: {len(failed_shards)}",
+            file=sys.stderr,
+        )
+        sys.exit(pyrc if pyrc > 1 else 1)
     if not Path(report_input).exists():
-        if pyrc != 0:
-            failed_shards = [shard for shard in shard_results if shard["status"] != "passed"]
-            failure_report = {
-                "generated_at": datetime.now(UTC).isoformat(),
-                "threshold": threshold,
-                "branch_threshold": threshold,
-                "per_file_threshold": 75.0,
-                "source": source,
-                "passed": False,
-                "pytest_exit_code": pyrc,
-                "shards": shard_results,
-                "failed_shards": failed_shards,
-                "error": "coverage JSON was not produced by the audit command",
-            }
-            with open(json_out, "w") as output_file:
-                json.dump(failure_report, output_file, indent=2)
-            print(f"Coverage audit failed — report: {json_out}", file=sys.stderr)
-            print(
-                f"  Failed shards: {len(failed_shards)}",
-                file=sys.stderr,
-            )
-            sys.exit(pyrc if pyrc > 1 else 1)
         print(f"ERROR: coverage report not found at {report_input}", file=sys.stderr)
         sys.exit(2)
 
@@ -793,6 +786,22 @@ def main() -> None:
     report["pytest_exit_code"] = pyrc
     report["shards"] = shard_results
     report["failed_shards"] = [shard for shard in shard_results if shard["status"] != "passed"]
+    if owns_e2e_run and shard_results and all(
+        shard.get("status") == "passed" and shard.get("returncode") == 0
+        for shard in shard_results
+    ):
+        total = cast(int, report["total_branches"])
+        covered = cast(int, report["covered_branches"])
+        report["e2e_branch_coverage"] = report["branch_coverage"]
+        report["e2e_branch_totals"] = {
+            "scope": "tests/e2e",
+            "total": total,
+            "covered": covered,
+            "missing": max(total - covered, 0),
+            "coverage_percent": report["branch_coverage"],
+            "total_branches": total,
+            "covered_branches": covered,
+        }
 
     with open(json_out, "w") as output_file:
         json.dump(report, output_file, indent=2)
@@ -802,10 +811,6 @@ def main() -> None:
     print(f"  Per-file threshold: {per_file_threshold}%")
     print(f"  Files analyzed: {report['total_files']}")
     print(f"  Files below {per_file_threshold}%: {report['files_below_threshold']}")
-
-    if pyrc != 0:
-        print(f"Coverage test command failed with exit code {pyrc}", file=sys.stderr)
-        sys.exit(pyrc if pyrc > 1 else 1)
 
     if files_under or not all_ok:
         if files_under:

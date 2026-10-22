@@ -102,6 +102,14 @@ A single-file scan against that complete manifest reports every other entry as
 stale. The documented full-scope native check retains264 resources; do not
 regenerate or narrow a manifest merely to repair that caller-scope mismatch.
 
+Imported coverage JSON/XML is generic numeric evidence. The existing
+coverage-files audit keeps85aggregate/75each-file line AND branch admission
+without E2E aliases. Only successful native audit-coverage shards establish
+E2E totals; names, contexts and old reports do not. Preserve native failure
+before parsing stale measurements and use the complete ten-owner example in
+the [coverage contract](../../docs/E2E_COVERAGE_AUDIT_CONTRACT.md#suite-provenance-repair-2026-10-22-utc).
+Controlled reporting tests under tests/e2e do not establish deployment acceptance.
+
 The coverage-files owner automatically captures physical pwd -P and exports
 private GLUDD_COVERAGE_SOURCE_ROOT for the existing watchdog profile. Children
 retain that identity across CWD changes; the required variable is not a caller

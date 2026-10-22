@@ -4,7 +4,9 @@ import importlib.util
 import json
 import subprocess
 from pathlib import Path
+from typing import TypedDict, Unpack
 
+import pytest
 from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).parent.parent.parent
@@ -12,13 +14,29 @@ MAKEFILE = ROOT / "Makefile"
 AUDIT_SCRIPT = ROOT / "scripts" / "audit_coverage.py"
 
 
+class CoverageRunOptions(TypedDict):
+    """The actual coverage child keyword arguments recorded by the fake."""
+
+    cwd: Path
+    env: dict[str, str]
+    timeout: float
+
+
+class CoverageShard(TypedDict):
+    """Fields produced by the existing failed-shard fixture."""
+
+    path: str
+    status: str
+    returncode: int
+
+
 class TestAuditCoverageScript:
     """Unit tests for the coverage audit parser (no pytest run)."""
 
-    def test_script_exists(self):
+    def test_script_exists(self) -> None:
         assert AUDIT_SCRIPT.exists(), "scripts/audit_coverage.py must exist"
 
-    def test_all_files_above_threshold(self, tmp_path):
+    def test_all_files_above_threshold(self, tmp_path: Path) -> None:
         coverage_json = tmp_path / "coverage.json"
         coverage_json.write_text(json.dumps({
             "files": {
@@ -38,7 +56,7 @@ class TestAuditCoverageScript:
         assert result.returncode == 0, f"Expected exit 0, got {result.returncode}\n{result.stdout}\n{result.stderr}"
         assert "All" in result.stdout and "meet the" in result.stdout
 
-    def test_some_files_below_threshold(self, tmp_path):
+    def test_some_files_below_threshold(self, tmp_path: Path) -> None:
         coverage_json = tmp_path / "coverage.json"
         coverage_json.write_text(json.dumps({
             "files": {
@@ -58,7 +76,7 @@ class TestAuditCoverageScript:
         assert result.returncode == 1, f"Expected exit 1, got {result.returncode}\n{result.stdout}\n{result.stderr}"
         assert "bar.py" in result.stdout
 
-    def test_empty_files_skipped(self, tmp_path):
+    def test_empty_files_skipped(self, tmp_path: Path) -> None:
         coverage_json = tmp_path / "coverage.json"
         coverage_json.write_text(json.dumps({
             "files": {
@@ -77,7 +95,7 @@ class TestAuditCoverageScript:
         )
         assert result.returncode == 0
 
-    def test_branch_arcs_and_contexts_are_reported(self, tmp_path):
+    def test_branch_arcs_and_contexts_are_reported(self, tmp_path: Path) -> None:
         coverage_json = tmp_path / "coverage.json"
         coverage_json.write_text(json.dumps({
             "files": {
@@ -103,22 +121,16 @@ class TestAuditCoverageScript:
         parsed, _, passed = module.parse_coverage_json(str(coverage_json), 70, "src/general_ludd")
         assert passed
         assert parsed["branch_coverage"] == 75.0
-        assert parsed["e2e_branch_coverage"] == 75.0
-        assert parsed["e2e_branch_totals"] == {
-            "scope": "tests/e2e",
-            "total": 4,
-            "covered": 3,
-            "missing": 1,
-            "coverage_percent": 75.0,
-            "total_branches": 4,
-            "covered_branches": 3,
-        }
+        assert parsed["total_branches"] == 4
+        assert parsed["covered_branches"] == 3
+        assert "e2e_branch_coverage" not in parsed
+        assert "e2e_branch_totals" not in parsed
         assert parsed["per_file_thresholds"] == {"line": 75.0, "branch": 75.0}
         assert parsed["per_file_results"]["general_ludd/branchy.py"]["passed"] is True
         assert parsed["missing_arcs"]["general_ludd/branchy.py"] == [[10, 12]]
         assert parsed["contexts"]["general_ludd/branchy.py"] == ["10"]
 
-    def test_per_file_branch_floor_fails_even_when_aggregate_passes(self, tmp_path):
+    def test_per_file_branch_floor_fails_even_when_aggregate_passes(self, tmp_path: Path) -> None:
         coverage_json = tmp_path / "coverage.json"
         coverage_json.write_text(json.dumps({
             "files": {
@@ -142,7 +154,7 @@ class TestAuditCoverageScript:
         assert not passed
         assert "general_ludd/low.py" in under
 
-    def test_aggregate_floor_does_not_replace_lower_per_file_line_floor(self, tmp_path):
+    def test_aggregate_floor_does_not_replace_lower_per_file_line_floor(self, tmp_path: Path) -> None:
         """A file between the 75% file floor and 85% aggregate floor must pass."""
         coverage_json = tmp_path / "coverage.json"
         coverage_json.write_text(json.dumps({
@@ -171,7 +183,7 @@ class TestAuditCoverageScript:
         assert passed
         assert report["per_file_results"]["general_ludd/eighty.py"]["passed"] is True
 
-    def test_cli_names_the_branch_ratio_when_only_branch_floor_fails(self, tmp_path):
+    def test_cli_names_the_branch_ratio_when_only_branch_floor_fails(self, tmp_path: Path) -> None:
         """Failure output must not print a passing line ratio as the cause."""
         coverage_json = tmp_path / "coverage.json"
         coverage_json.write_text(json.dumps({
@@ -201,7 +213,7 @@ class TestAuditCoverageScript:
         assert "branch=50.0%" in result.stdout
         assert "branch<75.0%" in result.stdout
 
-    def test_json_report_written(self, tmp_path):
+    def test_json_report_written(self, tmp_path: Path) -> None:
         coverage_json = tmp_path / "coverage.json"
         out_json = tmp_path / "out.json"
         coverage_json.write_text(json.dumps({
@@ -223,7 +235,7 @@ class TestAuditCoverageScript:
         assert parsed["passed"] is True
         assert parsed["total_files"] == 1
 
-    def test_missing_coverage_json_exits_two(self, tmp_path):
+    def test_missing_coverage_json_exits_two(self, tmp_path: Path) -> None:
         missing = tmp_path / "nope.json"
         result = subprocess.run(
             ["python3", str(AUDIT_SCRIPT), f"--json-file={missing}", "--threshold=85"],
@@ -231,17 +243,21 @@ class TestAuditCoverageScript:
         )
         assert result.returncode == 2
 
-    def test_default_audit_uses_isolated_report_and_bounded_child(self, tmp_path, monkeypatch):
+    def test_default_audit_uses_isolated_report_and_bounded_child(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         spec = importlib.util.spec_from_file_location("audit_coverage", AUDIT_SCRIPT)
         assert spec and spec.loader
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 
-        calls = []
+        calls: list[tuple[list[str], CoverageRunOptions]] = []
 
-        def fake_run(args, **kwargs):
+        def fake_run(
+            args: list[str], **kwargs: Unpack[CoverageRunOptions],
+        ) -> subprocess.CompletedProcess[str]:
             calls.append((args, kwargs))
-            return type("Result", (), {"returncode": 0})()
+            return subprocess.CompletedProcess[str](args, 0)
 
         monkeypatch.setattr(module.subprocess, "run", fake_run)
         report_path = tmp_path / "coverage-data.json"
@@ -257,22 +273,26 @@ class TestAuditCoverageScript:
         assert any("tests/e2e/" in str(arg) for arg in args)
         assert kwargs["env"]["GLUDD_E2E_ACTIVE"] == "1"
 
-    def test_shard_results_are_recorded_and_failed_shards_are_reported(self, tmp_path, monkeypatch):
+    def test_shard_results_are_recorded_and_failed_shards_are_reported(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         spec = importlib.util.spec_from_file_location("audit_coverage_shards", AUDIT_SCRIPT)
         assert spec and spec.loader
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 
-        calls = []
+        calls: list[list[str]] = []
 
-        def fake_run(args, **kwargs):
+        def fake_run(
+            args: list[str], **kwargs: Unpack[CoverageRunOptions],
+        ) -> subprocess.CompletedProcess[str]:
             calls.append(args)
-            result = type("Result", (), {})()
+            result = subprocess.CompletedProcess[str](args, 0)
             result.returncode = 7 if len(calls) == 1 else 0
             return result
 
         monkeypatch.setattr(module.subprocess, "run", fake_run)
-        shards = []
+        shards: list[CoverageShard] = []
         assert module.run_pytest_coverage(
             "src/general_ludd", str(tmp_path / "coverage.json"), shards
         ) == 7
@@ -281,7 +301,9 @@ class TestAuditCoverageScript:
         assert shards[0]["status"] == "failed"
         assert shards[0]["returncode"] == 7
 
-    def test_failed_run_writes_report_with_failed_shards(self, tmp_path, monkeypatch):
+    def test_failed_run_writes_report_with_failed_shards(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         spec = importlib.util.spec_from_file_location("audit_coverage_failure", AUDIT_SCRIPT)
         assert spec and spec.loader
         module = importlib.util.module_from_spec(spec)
@@ -308,7 +330,7 @@ class TestAuditCoverageScript:
             {"path": "tests/e2e/test_broken.py", "status": "failed", "returncode": 9}
         ]
 
-    def test_e2e_environment_overrides_caller_value(self, monkeypatch):
+    def test_e2e_environment_overrides_caller_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
         spec = importlib.util.spec_from_file_location("audit_coverage_env", AUDIT_SCRIPT)
         assert spec and spec.loader
         module = importlib.util.module_from_spec(spec)
@@ -319,18 +341,22 @@ class TestAuditCoverageScript:
         assert env["GLUDD_E2E_ACTIVE"] == "1"
         assert env["GLUDD_COVERAGE_AUDIT"] == "1"
 
-    def test_e2e_shards_use_bounded_xdist_workers(self, tmp_path, monkeypatch):
+    def test_e2e_shards_use_bounded_xdist_workers(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Shard workers isolate per-test resources without unbounded fan-out."""
         spec = importlib.util.spec_from_file_location("audit_coverage_serial", AUDIT_SCRIPT)
         assert spec and spec.loader
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 
-        calls = []
+        calls: list[list[str]] = []
 
-        def fake_run(args, **kwargs):
+        def fake_run(
+            args: list[str], **kwargs: Unpack[CoverageRunOptions],
+        ) -> subprocess.CompletedProcess[str]:
             calls.append(args)
-            return type("Result", (), {"returncode": 0})()
+            return subprocess.CompletedProcess[str](args, 0)
 
         monkeypatch.setattr(module.subprocess, "run", fake_run)
         assert module.run_pytest_coverage("src/general_ludd", str(tmp_path / "coverage.json")) == 0
@@ -344,24 +370,24 @@ class TestAuditCoverageScript:
 class TestMakefileTargets:
     """Integration-level tests that the Make targets exist and are wired."""
 
-    def test_audit_coverage_target_exists(self):
+    def test_audit_coverage_target_exists(self) -> None:
         content = compose_makefile(MAKEFILE)
         assert "audit-coverage:" in content, "Makefile missing audit-coverage target"
 
-    def test_gate_audit_target_exists(self):
+    def test_gate_audit_target_exists(self) -> None:
         content = compose_makefile(MAKEFILE)
         assert "gate-audit:" in content, "Makefile missing gate-audit target"
 
-    def test_coverage_json_target_exists(self):
+    def test_coverage_json_target_exists(self) -> None:
         content = compose_makefile(MAKEFILE)
         assert "coverage-json:" in content, "Makefile missing coverage-json target"
 
-    def test_targets_in_phony(self):
+    def test_targets_in_phony(self) -> None:
         content = compose_makefile(MAKEFILE)
         assert "audit-coverage" in content
         assert "gate-audit" in content
 
-    def test_uses_python_variable(self):
+    def test_uses_python_variable(self) -> None:
         content = compose_makefile(MAKEFILE)
         lines = content.splitlines()
         # Find the audit-coverage target section
@@ -378,7 +404,7 @@ class TestMakefileTargets:
                 break
         assert python_found, "audit-coverage target must use the project UV interpreter in its recipe"
 
-    def test_audit_targets_use_project_environment(self):
+    def test_audit_targets_use_project_environment(self) -> None:
         """Coverage must run through uv so imports match the E2E environment."""
         content = compose_makefile(MAKEFILE)
         for target in ("audit-coverage:", "coverage-json:"):
@@ -387,12 +413,12 @@ class TestMakefileTargets:
             assert "$(UV) run python scripts/audit_coverage.py" in recipe
             assert "$(PYTHON) scripts/audit_coverage.py" not in recipe
 
-    def test_make_audit_coverage_help_listed(self):
+    def test_make_audit_coverage_help_listed(self) -> None:
         content = compose_makefile(MAKEFILE)
         assert "audit-coverage" in content
         assert "Run coverage audit" in content
 
-    def test_make_coverage_json_uses_nox_test(self, tmp_path):
+    def test_make_coverage_json_uses_nox_test(self, tmp_path: Path) -> None:
         coverage_json = tmp_path / "coverage.json"
         coverage_json.write_text(json.dumps({
             "files": {
@@ -412,34 +438,34 @@ class TestMakefileTargets:
 class TestCoverageAuditRole:
     """Verify the coverage_audit Ansible role exists and is well-formed."""
 
-    def test_role_directory_exists(self):
+    def test_role_directory_exists(self) -> None:
         role = ROOT / "collections" / "ansible_collections" / "general_ludd" / "agent" / "roles" / "coverage_audit"
         assert role.is_dir(), f"Role directory missing: {role}"
 
-    def test_tasks_main_yml_exists(self):
+    def test_tasks_main_yml_exists(self) -> None:
         tasks = ROOT / "collections/ansible_collections/general_ludd/agent/roles/coverage_audit/tasks/main.yml"
         assert tasks.exists(), "tasks/main.yml missing"
 
-    def test_defaults_main_yml_exists(self):
+    def test_defaults_main_yml_exists(self) -> None:
         defaults = ROOT / "collections/ansible_collections/general_ludd/agent/roles/coverage_audit/defaults/main.yml"
         assert defaults.exists(), "defaults/main.yml missing"
 
-    def test_meta_main_yml_exists(self):
+    def test_meta_main_yml_exists(self) -> None:
         meta = ROOT / "collections/ansible_collections/general_ludd/agent/roles/coverage_audit/meta/main.yml"
         assert meta.exists(), "meta/main.yml missing"
 
-    def test_defaults_contain_threshold(self):
+    def test_defaults_contain_threshold(self) -> None:
         defaults = ROOT / "collections/ansible_collections/general_ludd/agent/roles/coverage_audit/defaults/main.yml"
         content = defaults.read_text()
         assert "threshold" in content
         assert "85" in content or "threshold:" in content
 
-    def test_meta_role_name(self):
+    def test_meta_role_name(self) -> None:
         meta = ROOT / "collections/ansible_collections/general_ludd/agent/roles/coverage_audit/meta/main.yml"
         content = meta.read_text()
         assert "coverage_audit" in content
 
-    def test_tasks_use_artifact_dir(self):
+    def test_tasks_use_artifact_dir(self) -> None:
         tasks = ROOT / "collections/ansible_collections/general_ludd/agent/roles/coverage_audit/tasks/main.yml"
         content = tasks.read_text()
         assert "artifact_dir" in content

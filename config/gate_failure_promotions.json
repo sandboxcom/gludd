@@ -1209,6 +1209,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_detect_secrets_full_scan.py::test_successful_full_scan_rejects_added_identity_or_occurrence[new-digest]",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "coverage-native-suite-provenance",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_audit_coverage_suite_provenance.py::test_imported_cobertura_never_proves_e2e_execution",
+      "full_gate_phase": "test"
     }
   ]
 }

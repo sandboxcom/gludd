@@ -18,7 +18,7 @@ from scripts import makefile_layout
 from tests.unit.test_observed_command import _command, _current_status
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 150
+EXPECTED_FAMILY_COUNT = 151
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 EXPECTED_MAIN_PYTEST_FLAGS = (
@@ -99,6 +99,8 @@ ROSTER = (
     "tests/unit/test_clean_ci_shard_scratch.py::test_stale_scratch_nested_symlink_preserves_external_target_modes[file]",
     "tests/unit/test_detect_secrets_full_scan.py::"
     "test_successful_full_scan_rejects_added_identity_or_occurrence[new-digest]",
+    "tests/unit/test_audit_coverage_suite_provenance.py::"
+    "test_imported_cobertura_never_proves_e2e_execution",
     "tests/unit/test_status_heartbeat_terminal.py",
     "tests/unit/test_task_ledger_validation.py",
     "tests/unit/test_make_readonly_version.py",
@@ -978,6 +980,42 @@ def test_scratch_symlink_permission_failure_has_one_exact_native_route(
     assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
 
 
+def test_coverage_suite_provenance_failure_has_one_exact_native_route(tmp_path: Path) -> None:
+    """Route one imported-report witness without changing native proof bounds."""
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    node = (
+        "tests/unit/test_audit_coverage_suite_provenance.py::"
+        "test_imported_cobertura_never_proves_e2e_execution"
+    )
+    assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
+    first = rows[0]["files"]
+    assert isinstance(first, list) and first.count(node) == 1
+    for index, row in enumerate(rows):
+        selection = row["files"]
+        assert isinstance(selection, list)
+        assert node.split("::", 1)[0] not in selection
+        if index:
+            assert node not in selection
+    payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 151
+    assert payload["families"][149]["id"] == "native-full-scan-success-inventory"
+    assert payload["families"][150] == {
+        "id": "coverage-native-suite-provenance",
+        "owner_target": OWNER, "node_kind": "pytest_node",
+        "node": node, "full_gate_phase": "test",
+    }
+    assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
+    phase = next(
+        item for item in payload["runtime_contract"]["phases"]
+        if item["name"] == "pytest-runtime-compatibility"
+    )
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert len(payload["runtime_contract"]["phases"]) == 21
+    assert sum(item["max_seconds"] for item in payload["runtime_contract"]["phases"]) == 2850
+    assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
+
+
 def test_full_scan_success_inventory_failure_has_one_exact_native_route(
     tmp_path: Path,
 ) -> None:
@@ -992,8 +1030,8 @@ def test_full_scan_success_inventory_failure_has_one_exact_native_route(
         "owner_target": OWNER, "node_kind": "pytest_node",
         "node": node, "full_gate_phase": "test",
     }
-    assert payload["families"][-1] == expected
-    assert payload["families"][-2]["id"] == "scratch-nested-symlink-permissions"
+    assert payload["families"][149] == expected
+    assert payload["families"][148]["id"] == "scratch-nested-symlink-permissions"
     assert len(payload["families"]) == EXPECTED_FAMILY_COUNT
     selectors = re.findall(r"TESTFILES=\"([^\"]*)\"", _stanza(OWNER))
     assert len(selectors) == 3
