@@ -58,6 +58,16 @@ Python source changes or coverage exclusions are introduced by this status repai
 The earlier trace coverage retains its own unchanged four-source scope; full gate,
 a guarded commit, clean-SHA repair and hosted/deployment proof remain pending.
 
+The changed-input guarded retry commits the status repair at
+32bb6190b882c93af422489b4297d5588f7f6e6a. Native staged-content checks,
+zero-new-clone audit and collection pass; the latter selects129268/129292collected,
+24deselected/0errors48.68s/native55.0s at
+.gate-logs/observed/test-count/20261022T203312Z-84726-266d785b.json.
+Six other owned receiving code paths remain unstaged during that working-checkout
+collection; this is not a claim about the intermediate committed tree's isolated
+test count. The successful retry identifies no original writer and proves no
+full gate, CI or deployment. All old failures and protected checkpoints remain.
+
 ## Resume without losing owned work
 
 Use git-unstage-files with the exact eight owned FILES to clear only their index

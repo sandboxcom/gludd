@@ -9,7 +9,24 @@ Total tests: 129237 selected / 129261 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 status-owner commit prerequisite
+## Current S98.4 separate source commits
+
+Native status repair is locally committed at
+32bb6190b882c93af422489b4297d5588f7f6e6a on the candidate branch above.
+Its guarded working-checkout preflight collects129268selected/129292collected,
+24deselected/0errors48.68s/native55.0s:
+test-count/20261022T203312Z-84726-266d785b.json. Six other receiving code paths
+remain unstaged, so that measurement is not an isolated intermediate-tree count.
+The status record retains actual successful stash/guard/collection outcomes,
+the preceding failure and its unidentified writer; no lock was deleted.
+Root now commits SESSION, URI and trace code as separate small changes, each
+with mandatory native collection. All focused receiving/coverage results retain
+their original source/scope. Independent final-source review and clean-SHA
+repair-owned runtime/Pages evidence are next, before normal guarded publication.
+No successor hosted result, deployment acceptance, full gate or release proof
+exists; all seven tasks remain unchecked.
+
+## Retained S98.4 status-owner commit prerequisite
 
 The complete boundary repair compatibility passes633/94.30s/native0/96.256s:
 admission-boundary-receiving/v012-admission-boundary-receiving312.json.
