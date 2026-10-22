@@ -181,6 +181,7 @@ action; they do not execute it or create gate/release proof.
 
 | Target/result | Required model action |
 |---|---|
+| Admission blocked on capacity | Repair actual capacity through existing authorized owners or the HumanTodo escalation route. Service/config/store/auth prerequisites govern filing. After capacity clears, run unchanged admission even if filing is pending; preserve all owners and final proofs. |
 | work-item planned | Inspect explicit mode0 status; no focus selection, active-ledger eligibility check or runtime admission occurred. |
 | work-item uninitialized/updated/prepared | Select an open active focus if absent; inspect active-work-status for capacity/ownership before bounded acceptance. prepare-runtime is administrative only. |
 | work-item observed | Inspect exact linked receipts with observed-status and actual owners with active-work-status. Pointers do not prove current workers or acceptance. |

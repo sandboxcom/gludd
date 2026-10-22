@@ -64,6 +64,13 @@ measurements, rejected approaches and the missing release proofs.
 
 ### Make results teach the next action
 
+Keep admission dependencies distinct from escalation dependencies. HumanTodo
+service/config/store/auth facts govern filing that request. Actual capacity
+clearance permits the existing nine-owner admission even while filing remains
+pending; every native owner and final proof still applies. Claim filing only
+with its real returned ID. Diagnose the blocked native input instead of adding
+an unrelated prerequisite to the release gate.
+
 work-item emits advisory stderr prompts from its native result branch while
 stdout retains machine-readable JSON. Plan mode does not select focus or check
 active-ledger eligibility; prepare-runtime is administrative. Status pointers do

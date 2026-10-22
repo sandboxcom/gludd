@@ -240,6 +240,40 @@ def test_failed_owner_stops_later_work_without_proof_or_success(
         assert not (tmp_path / "runtime-watch").exists()
 
 
+@pytest.mark.parametrize("admission_capacity_cleared", [False, True])
+def test_capacity_escalation_does_not_add_an_admission_owner(
+    tmp_path: Path, admission_capacity_cleared: bool,
+) -> None:
+    """Only native owner results govern admission, independently of escalation."""
+    result = _run(
+        tmp_path, failed_phase="" if admission_capacity_cleared else PHASES[0],
+        native_focus=True, task="F12.1",
+    )
+    assert result.returncode == (0 if admission_capacity_cleared else 2), result.stdout + result.stderr
+    assert (tmp_path / "phases.log").read_text().splitlines() == (
+        list(PHASES) if admission_capacity_cleared else [PHASES[0]]
+    )
+    assert (tmp_path / "runtime-watch").exists() is admission_capacity_cleared
+    assert not (tmp_path / ".gate-status").exists()
+    assert not (tmp_path / "attestation.json").exists()
+    assert not (tmp_path / "human-todo.json").exists()
+    assert not any("human-todo" in phase or "daemon" in phase for phase in PHASES)
+    if admission_capacity_cleared:
+        line = _result_guidance(result, "passed", "complete")
+        assert "canonical gate" in line and "exact-SHA" in line
+        assert (tmp_path / ".gludd/item-progress.json").exists()
+    else:
+        assert "PROOF-ADMISSION-BLOCKED phase=disk-cleanup-preflight rc=2" in result.stdout
+        assert "PROOF-ADMISSION-PASS" not in result.stdout
+        assert not (tmp_path / ".gludd").exists()
+        line = _result_guidance(result, "blocked", PHASES[0])
+        assert "direct admission blocker is capacity" in line
+        assert "HumanTodo is an escalation route" in line
+        assert "after actual capacity clears" in line
+        assert "even if the request remains unfiled" in line
+        assert "changed service prerequisite before API retry" in line
+
+
 def test_changed_head_does_not_clear_an_unchanged_capacity_blocker(tmp_path: Path) -> None:
     for head in ("a" * 40, "b" * 40):
         result = _run(tmp_path, failed_phase=PHASES[0], claimed_head=head)

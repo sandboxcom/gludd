@@ -8,7 +8,45 @@ Total tests: 129093 selected / 129117 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 work-item result guidance
+## Current S98.4 capacity versus escalation guidance
+
+Root owns Main/shared/Git on release-candidate/v012-git-mutex-20261022 from
+ade6b6e979e6013b98a1f8b04a8afcda72499fbf. Independent APPROVE SOURCE ONLY is fully
+read at /tmp/gludd-v012-work-item-ade6-source-review.md; no correction remains.
+Normal ade6 collection retains129124selected/129148collected,24deselected/
+zeroerrors48.36s/native57.092s at
+.gate-logs/observed/test-count/20261022T161839Z-94676-6fdd0ffa.json.
+The global header keeps its explicit historical f2e measurement.
+
+Root overstated daemon config/store/auth as release-admission prerequisites.
+Those inputs belong to legitimate HumanTodo filing/startup. The native recipe
+has nine ordered admission owners and no HumanTodo/daemon phase. Correct only
+its capacity-blocked advisory string: keep a failed request unfiled, repair its
+service before API retry, and run the existing admission after actual capacity
+clears even if filing is still pending. Preserve all native owners and gates.
+
+Two additive real-Make controls retain1FAIL/1PASS1.34s/native2.3s before this
+repair, with all58 predecessors unchanged. The positive uses actual focus
+preparation and all nine phase owners in its owned fixture, never live release
+admission. The whole owner is already selected early; no family/selector or
+policy change. The [owning record](docs/features/MAKE_RESULT_GUIDANCE.md#capacity-admission-and-humantodo-escalation-have-distinct-dependencies)
+retains exact evidence and required normal collection/review. Complete seven-owner
+receiving passes211 per runtime,31117.70s/31220.54s, fatal warnings/zero skips or
+errors, whole-shell40.257s/terminal0:
+.gate-logs/observed/capacity-escalation-receiving/v012-capacity-escalation-receiving.json.
+All eight pins pass1.67s, followed by the actual registered plan/0; native3.179s.
+Ruff/strict,278 contracts, nine-path registration, seven Markdown/SESSION/strict
+line checks pass. This complete receipt predates final metadata validation.
+
+Actual capacity remains96percent>95 and counted scratch797.5MB>100MB in native
+work-item-capacity-check, failed2/0.876s. Native eligible cleanup is exhausted.
+A required operator question requests a capacity change or existing authorized
+cleanup owner. Daemon/config/store/auth questions apply to filing the unfiled
+HumanTodo and do not add a release-admission prerequisite. Original60907 remains
+unattributed/unreplayed; last gateFAIL/no running gate, all seven S98 tasks open.
+Keep full gate/global85-75/exact-SHA CI/deployment/reviewed-head/promotion pending.
+
+## Retained S98.4 work-item result guidance
 
 Root owns Main/shared/Git on release-candidate/v012-git-mutex-20261022 from
 ae5d7471014255376ee77f6c5b16df33f9cd95cd. Independent APPROVE SOURCE ONLY is fully

@@ -6,6 +6,86 @@ check-gate-failure-promotions, git-merge-nc, development-merge-forward and
 release-proof-admission, human-todo-module, run-watched, work-item and guarded-target parse refusals. Existing native owners, statuses and artifacts remain
 authoritative; no second observer, runner, cache or proof schema is introduced.
 
+## Capacity admission and HumanTodo escalation have distinct dependencies
+
+Root owns this S98.4 correction from exact
+ade6b6e979e6013b98a1f8b04a8afcda72499fbf on the existing candidate branch.
+Independent APPROVE SOURCE ONLY is fully consumed at
+/tmp/gludd-v012-work-item-ade6-source-review.md; no correction remains.
+Normal ade6 collection retains129124selected/129148collected,24deselected/
+zeroerrors48.36s/native57.092s at
+.gate-logs/observed/test-count/20261022T161839Z-94676-6fdd0ffa.json.
+The prior202-source/294-caller receipts per runtime and physical Main95.5line/
+90.0branch remain scoped historical evidence, not a reason for unchanged replay.
+
+### Observed workflow error and native authority
+
+Root incorrectly presented persistent daemon configuration/database/schema/auth
+facts as prerequisites to the release admission itself. Those facts are needed
+for legitimate startup and HumanTodo filing through the unavailable endpoint.
+They are not an extra admission phase. The native recipe in
+make/30-ci-and-release.mk owns nine existing ordered phases: capacity, gate
+configuration, task registration/integrity, failure promotions, resource
+ownership, test-environment writes, source contracts and runtime compatibility.
+No HumanTodo or daemon owner appears in that sequence.
+
+The capacity-blocked prompt now states that capacity is the direct admission
+blocker and HumanTodo is the escalation route. An unavailable request stays
+unfiled and needs changed service prerequisites before an API retry. After
+actual capacity clears, documented mode0 admission can run even if that request
+is still unfiled. Every native owner and final proof remains required.
+A filed claim still requires an actual returned ID; check-mode null, prepared
+JSON, elapsed time and a newer HEAD remain insufficient.
+
+This is one advisory string correction. All run_owner calls, argv, defaults,
+native statuses, stop-on-failure behavior, read-only cleanup/grace, active-focus
+preparation, warning policy, coverage, three2/1/1 children,90/60,21/2850, ZDD,
+retention and promotion remain unchanged. No new target, phase, dependency,
+observer, cache, service startup or human-input bypass is introduced.
+
+### Failing-first controls and current blocker
+
+Two additive native Make fixture controls preserve58 predecessor cases.
+The blocked case retains1FAIL while the all-nine-phase control passes,
+58deselected1.34s/native2.3s:
+.gate-logs/observed/capacity-escalation-red311/v012-capacity-escalation-red311.json.
+Original status, phase order, missing later runtime, false gate/release authority
+and no attestation assertions precede the missing-message assertion.
+The positive control uses the actual administrative focus preparer in its owned
+fixture and requires all nine original owners without configuring a daemon or
+HumanTodo. These are confined behavior controls, not live capacity or deployment.
+The complete admission-target owner is already selected in the existing first
+child; no family/selector/roster change is needed. All171 families/eight pins remain.
+
+The real bounded disk diagnostic remains failed2/native0.876s at
+.gate-logs/observed/work-item-capacity-check/v012-work-item-capacity-check.json:
+96percent exceeds95; generated scratch797.5MB exceeds100MB. Existing native
+cleanup exhausted eligible removals; no protected paths or policy are changed.
+No HumanTodo tool is exposed in the current tool catalog. That metadata search
+does not establish service absence or filing. The operator input request now
+targets a real capacity change or existing authorized cleanup owner. Earlier
+daemon/store questions remain relevant only to the pending filing route.
+Original60907/full gate/exact-SHA CI/deployment/promotion stay pending and all
+seven release tasks stay unchecked.
+
+Complete seven-owner receiving passes211 per runtime,31117.70s/31220.54s,
+fatal warnings and zero skips/errors. It includes the complete60-case admission
+owner, all five SESSION/documentation owners and the complete59-case fixture
+collision guard. One successful whole-shell AND receipt returns0/native40.257s:
+.gate-logs/observed/capacity-escalation-receiving/v012-capacity-escalation-receiving.json.
+Tested source is5f5c5b53b48911ed72b9d7344e17bab162df1220e99a29677ba703f3db8b9dab.
+The120total/60quiet diagnostic is not original publication/final admission proof.
+
+All eight current pins pass1.67s; the exact registered plan example then
+returns0 with no live owners. Their shared whole-shell receipt returns0/3.179s:
+.gate-logs/observed/capacity-escalation-pins/v012-capacity-escalation-pins.json.
+Ruff/strict scope,278 contracts, nine-path registration, seven Markdown files,
+structural SESSION validation and strict line limits pass. The211-case receiving
+precedes this final metadata record. No production Python, coverage profile,
+family/selector or branch policy changes; ade6's physical Main95.5/90.0 remains
+prior scoped evidence. Normal guarded collection and independent exact-source
+review remain separate required steps for this correction.
+
 ## Work-item results preserve administrative scope
 
 Root owns this S98.4 enhancement on release-candidate/v012-git-mutex-20261022
