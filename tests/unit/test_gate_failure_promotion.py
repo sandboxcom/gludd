@@ -226,7 +226,7 @@ def test_native_reviewed_finalization_executes_in_bounded_early_admission(test_n
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
     assert node in executable
     assert 'tests/unit/test_reviewed_head_inputs.py"' not in executable
-    recipes = executable.split("\t@$(MAKE) --no-print-directory test-files")
+    recipes = executable.split("$(MAKE) --no-print-directory test-files")
     assert len(recipes) == 4
     selectors = recipes[3].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
     assert len(selectors) == 9 and selectors.count(node) == 1
@@ -1009,7 +1009,7 @@ def test_repaired_failures_execute_as_exact_nodes_before_fanout(
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
-    recipes = executable.split("\t@$(MAKE) --no-print-directory test-files")
+    recipes = executable.split("$(MAKE) --no-print-directory test-files")
     assert len(recipes) == 4
     selectors = recipes[1].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
     assert selectors.count(node) == 1
@@ -1546,7 +1546,7 @@ def test_duplicate_help_failure_runs_in_a_fresh_early_process() -> None:
         "full_gate_phase": "test",
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
-    recipes = owner.split("\t@$(MAKE) --no-print-directory test-files")
+    recipes = owner.split("$(MAKE) --no-print-directory test-files")
     assert len(recipes) == 4
     assert "tests/unit/test_makefile_audit_deep.py" not in recipes[1]
     assert f'TESTFILES="{node}"' in recipes[2]
@@ -1633,7 +1633,7 @@ def _assert_complete_early_runtime_cohort(
     )
     assert node in owner
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
-    recipes = executable.split("\t@$(MAKE) --no-print-directory test-files")
+    recipes = executable.split("$(MAKE) --no-print-directory test-files")
     assert len(recipes) == 4
     selectors = recipes[1].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
     assert selectors.count(test_file) == 1

@@ -3,13 +3,53 @@
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: release-candidate/v012-git-mutex-20261022 eb772a658a01db4485087813e4478eb6c59cc328.
 Previously recorded development publication: 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 129348 selected / 129372 collected, 24 deselected, zero collection errors in48.51s/native53.7s during the native guarded ef41a2273534fde218a3f9b01a81af287cc6584d commit preflight. Native receipt: .gate-logs/observed/test-count/20261022T221636Z-60852-f5eb7d40.json. This intermediate working-checkout collection includes unstaged HTTPS Make/Foundation source and its untracked test; it is not isolated ef41 or a clean final-candidate proof. The prior clean64 collection remains bound to its original receipt in retained history. Collection is separate from behavioral, runtime, hosted and final-gate proof. Prior refs keep their original receipts; each normal source commit retains fresh collection without a receipt-only commit.
+Total tests: 129348 selected / 129372 collected, 24 deselected, zero collection errors in46.23s/native51.4s during the native guarded6387304ef5edc1b38ad8a2062c27e92ba430e344 commit preflight. Native receipt: .gate-logs/observed/test-count/20261022T221903Z-62261-afdf4695.json. This collection matches the coherent clean638 candidate before its actual original-budget failure. Earlier ef41 intermediate and clean64 collections retain their original scopes and receipts in the runtime record. Collection is separate from behavioral, runtime, hosted and final-gate proof. Prior refs keep their original receipts; each normal source commit retains fresh collection without a receipt-only commit.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 working-checkout receiving after64bafe6
+## Current S98.4 bounded native cohort receiving from6387304
+
+Root receives MAIN2 beside sequential fresh HELP1/TAIL1 in the existing owner,
+with original raw selectors/flags/90-60 and PID-owned scratch via literal ID=.
+Native timeout/signal drain remains in the existing observer; no new runner,
+checker/parser, cache or public variable. Canonical RED8FAIL/3PASS then a separate
+guidance RED1FAIL precede the implementation. First497-case union retains
+24FAIL/473PASS93.93s/native95.0s; four old route readers and one exact fixture
+read are conformed without weakening their assertions. Corrected complete
+12-owner union passes738 each on311/312,227.79s/native230.710s and
+229.45s/native232.480s; exact terminal reads passed/inactive/0. These are
+working-checkout receipts before this manual evidence handoff/source commit,
+not exact-SHA gate/hosted proof. Normal collection/new-source review and the
+original90/60 repair remain pending.
+The [runtime record](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md) owns native
+receipts, research/platform limits and the unchanged all-seven missing proofs.
+Prior source commits remain local; current native638 handoff is pending/missing
+exact workflows with hard-blocked capacity. No runtime/hosted/deployment claim.
+
+## Retained S98.4 original-budget failure at6387304
+
+Candidate6387304ef5edc1b38ad8a2062c27e92ba430e344 is clean before proof and
+has fully consumed independent source-only approval. Actual original312 repair
+FAILS124/90.559s:2395mainPASS79.53s,HELP1PASS0.69s,tail11 collects with historical
+focusPASS and finalization unfinished. No repair receipt or push follows.
+Exact evidence, partial trace and all earlier failures are in the
+[runtime record](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md). All thirteen
+post-eb772 source commits remain local; no exact638 hosted workflows exist.
+
+Actual repo-local HTTPS apply0 and prior-head verification0 are separate
+operating evidence; missing-head2 stays nonzero. No key or token is extracted.
+Root owns Main/shared/Git and a bounded TMP architecture proposal assessing
+mature native overlap of MAIN2 with sequential HELP1/TAIL1, at most two active
+cohorts/three workers, subject to actual policy/resource/isolation admission.
+No overlap is accepted or original replay authorized without a changed input.
+Keep every existing selector/assertion,176families/eightpins,11tailcases,
+90/60,2/1/1,21phases2850,85/75 BOTH,ZDD/cleanup/retention. Prior measured declines
+are not retried unchanged. Full capacity/gate/global coverage, exact-SHA hosted/
+deployment, reviewed-head and promotion remain pending; all seven stay unchecked.
+
+## Retained S98.4 working-checkout receiving after64bafe6
 
 Native tests-first Root reproduces unused-probe2FAIL and HTTPS5FAIL. After the
 minimal Make repairs, the complete deduplicated eleven-owner union passes471

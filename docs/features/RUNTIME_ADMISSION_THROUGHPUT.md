@@ -1,9 +1,14 @@
 # Runtime Admission Throughput
 
-Current clean-SHA timeout and bounded receiving: [35c08ba record](RUNTIME_ADMISSION_CLEAN_SHA.md).
+Current clean-SHA timeout and bounded receiving: [native clean-SHA record](RUNTIME_ADMISSION_CLEAN_SHA.md).
 The [current confined search-input record](RUNTIME_SEARCH_INPUT.md) retains
 S98.4's measured hosted span, preserved assertions and failing-first native
 receiving. Local input reduction supplies no hosted speed or release proof.
+
+## Bounded native cohort overlap (2026-10-22 UTC)
+
+The [owning cohort decision](RUNTIME_ADMISSION_COHORT_OVERLAP.md) retains native
+research, isolation, failed receiving and all unchanged proof requirements.
 
 ## Single-export cold-import boundary (2026-10-21 UTC)
 

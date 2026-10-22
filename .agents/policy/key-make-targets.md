@@ -292,6 +292,20 @@ can still fail the required child and enclosing Make. Its documented example
 exposes that mismatch before the bounded runtime replay. The complete
 runtime-admission-scheduling and cold-start-selection owners also retain mutation
 checks for omitted, duplicated and widened selectors.
+Runtime compatibility keeps three native children2/1/1 in one existing owner:
+MAIN2 overlaps the independent fresh HELP1 then TAIL1 branch. Every child binds
+ID= so existing test-files uses a unique process-owned basetemp/Ansible temp.
+HELP failure skips TAIL; ordinary branch failures retain statuses and always
+join MAIN before returning nonzero. The existing run-watched/stream_command
+owner alone handles timeout/signal descendant drain; no unobserved direct call
+establishes the required90total/60quiet boundary. The joined AGENT_NEXT message
+keeps gate_evidence=false/release_ready=false and routes to ci-failure-status.
+Two active cohorts/three execution workers exclude controllers/nested fixture
+processes; check actual resource ownership rather than assuming a global lease.
+The [native cohort decision](../../docs/features/RUNTIME_ADMISSION_THROUGHPUT.md#bounded-native-cohort-overlap-2026-10-22-utc)
+retains inherited-ID mutation, actual124/143 drain controls and all failed input
+receipts. Preserve the whole affected routing/native-owner union on both installed
+runtimes; source barriers prove no timing gain or exact-SHA hosted success.
 When pytest parametrization changes, include the complete existing
 tests/unit/test_pytest_param_fixture_collisions.py owner with the changed
 test files. Names such as context are external Playwright fixtures; use a

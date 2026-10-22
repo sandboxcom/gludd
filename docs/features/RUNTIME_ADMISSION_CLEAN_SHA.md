@@ -1,6 +1,118 @@
 # Clean-SHA runtime admission
 
-## Current receiving after64bafe6
+## Current bounded cohort receiving from6387304
+
+Root owns Main/shared/Git on release-candidate/v012-git-mutex-20261022; HEAD
+remains6387304ef5edc1b38ad8a2062c27e92ba430e344 while the changed working
+checkout receives the native overlap proposal. Its complete decision/research/
+postimages are consumed from /tmp/gludd-v012-runtime-concurrency-proposal;
+that model owner and all private test/read sessions are quiescent. No production
+checker/config/roster change, additional runner, observer or cache is introduced.
+
+MAIN2 runs beside the unchanged fresh HELP1 then TAIL1 branch, at most two
+active admission cohorts/three execution workers, not a global process lease.
+Literal ID= keeps each child in test-files' existing PID basetemp/Ansible temp.
+HELP failure skips TAIL; all ordinary paths join MAIN and preserve every status.
+The unchanged outer observer alone drains timeout/signal descendants. All raw
+selectors/flags,176families/eightpins,90/60,21phases2850,85/75 BOTH,ZDD/cleanup
+and retention remain. The [throughput decision](RUNTIME_ADMISSION_THROUGHPUT.md#bounded-native-cohort-overlap-2026-10-22-utc)
+retains native research, firsthand context, isolation and platform limits.
+
+Canonical tests-first RED8FAIL/3PASS16.58s/native17.8s is retained at
+.gate-logs/observed/runtime-overlap-red/v012-runtime-overlap-red312.json.
+Root's added AGENT_NEXT guidance control first fails1/1.37s/native2.6s at
+.gate-logs/observed/runtime-overlap-guidance-red/v012-runtime-overlap-guidance-red312.json;
+the implementation then retains original status exits and teaches next proof.
+Original roster/no-replay assertions remain; only canonical phase comparison
+and independent-side completion conform to the requested schedule. Native
+ID-removal collision83 and124/143 descendant drain remain additive controls.
+
+Cheap lint/strict and native285contracts/1162targets/1073help/line/task checks
+pass. All eight native pins pass1.80s/native3.5s at
+.gate-logs/observed/runtime-overlap-pins/v012-runtime-overlap-pins311.json.
+The first whole ten-owner497-case receiving fails24/473PASS93.93s/native95.0s:
+.gate-logs/observed/runtime-overlap-receiving/v012-runtime-overlap-receiving311.json.
+Twenty-three old route checks assume separate recipe prefixes; four literal
+reader edits retain exact three-child, selector, flag and policy assertions.
+One reviewed-head fixture read now uses compose_makefile while preserving its
+original exact bytes. No guard or assertion is weakened; preserve the failure.
+
+The corrected complete twelve-owner union passes738 cases on each runtime:
+311227.79s/native230.710s;312229.45s/native232.480s. Both exact terminal
+observed-status reads report passed/inactive/exit0, without errors or skips.
+Native receipts under .gate-logs/observed/runtime-overlap-receiving are
+v012-runtime-overlap-receiving-final311.json and
+v012-runtime-overlap-receiving-final312.json; matching tested source digest:
+ba9606009ac99fec1eeea3ccfad97492d1a895a70474f96e2b1fb48f6a6cc144.
+Both run actual ordinary Main harness/plugin controls; no production source
+changes after acceptance. These working-checkout receipts precede this manual
+evidence handoff and normal source commit; they are not final exact-SHA proof.
+
+Normal guarded collection, independent
+new clean-source review and first changed-input original90/60 repair remain
+pending. Thirteen newer commits remain local; the current native handoff still
+reports638 missing exact workflows/pending and hard-blocked capacity. No local
+focus/source approval supplies full gate, exact-SHA CI, deployment or release
+proof. All seven tasks stay unchecked. Generated current JSON remains producer-owned.
+
+## Retained original-budget failure at6387304
+
+Source6387304ef5edc1b38ad8a2062c27e92ba430e344 is the coherent candidate
+after the two independent source commits. Normal guarded collection selects
+129348/129372,24deselected/zero errors46.23s/native51.4s, receipt
+.gate-logs/observed/test-count/20261022T221903Z-62261-afdf4695.json.
+Native worktree-state confirms clean, zero staged/untracked before proof.
+Root consumes the complete independent APPROVE SOURCE ONLY decision at
+/tmp/gludd-v012-6387304-source-review.md; every model reader/test owner quiesces.
+The existing natural security scan drains; neither watchdog is stopped.
+
+The first changed-input original312 repair FAILS124/90.559s, enclosing
+ci-failure-repair2. Main passes2395/79.53s; fresh HELP passes1/0.69s.
+Tail collects11; historical focus passes, finalization/native background
+producer is unfinished. There is no runtime-family repair receipt or push.
+Exact native receipt:
+.gate-logs/observed/runtime-repair-6387304/v012-runtime-repair-6387304-312.json;
+trace and /tmp/gludd-v012-runtime-repair-6387304-312.log are preserved.
+Tested source digest:
+05ca2a278af79b019c2ecb7bd70f5c7789cdea19e0dcfe5f8c8743abbde46148.
+
+Native trace summary is PARTIAL:4808events,2398starts,2397pairs,
+zero failure reports and one unfinished node. Paired-wall worker totals
+68.486884/68.389598s overlap; they are not CPU or the enclosing critical path.
+Historical-focus pair is2.682431s, HELP pair0.292557s; unfinished duration
+and remaining obligations are unknown. Inventory5.642849s/setup and
+SearXNG-source25cases/5.022801s are measured spans, not removable work.
+Do not repeat any unchanged inventory/stress/heartbeat measured decline.
+
+The unused Ollama count reduction remains real operation evidence but this
+actual run demonstrates no original-budget success or measured speed gain.
+Root now owns a bounded architecture proposal about overlapping the existing
+MAIN2 with sequential fresh HELP1/TAIL1, at most two active cohorts/three
+workers. No scheduling change, extra worker allowance or proof waiver is
+accepted yet. Research mature native Make/POSIX facilities and actual resource/
+namespace/status/drain prerequisites before choosing a concrete implementation.
+No new runner, observer, daemon or cache, selector pruning, deadline increase,
+plugin disabling, weaker assertion or unchanged90/60 replay follows.
+
+Separately, actual native mode0 HTTPS configuration returns0 and verifies the
+already-published branch/full eb772a658a01db4485087813e4478eb6c59cc328.
+The changed HTTPS missing-head example retains native2/no VERIFIED.
+Manual operating history:/tmp/gludd-v012-6387304-transport-observation.md;
+the [HTTPS feature](GITHUB_PUBLICATION_HTTPS.md) distinguishes that authority.
+Native verify-state reports CLEAN6387304 and remote eb772, no exact638 workflows,
+missing Build and Molecule; its report exit0 is not CI success.
+Native pipeline-status then returns2 and writes the existing current pointer
+.gludd/release-proof-status-release-candidate-v012-git-mutex-20261022.json
+for6387304 with state=pending/release_ready=false, no exact workflows and
+hard_blocked capacity. Its native producer owns that JSON; no manual observation
+edit or stale eb772 success is adopted. The old failed local gate remains failed.
+All thirteen newer repair commits remain local. Last hosted eb772 remains
+Build/PagesFAIL and six Molecule lanesPASS. Capacity/full gate, global85/75
+BOTH, exact-SHA hosted/deployed-head proof and promotion remain pending.
+All seven release tasks stay unchecked; all176families/eightpins,11tailcases,
+90/60,2/1/1,21phases2850,ZDD/cleanup/retention remain required.
+
+## Retained receiving after64bafe6
 
 Root consumes both frozen TMP decisions; all model readers/executions quiesce.
 Only Make10's optional Ollama discovery and its existing install-check change
@@ -67,7 +179,7 @@ its untracked test. Its source-only authority is not a coherent clean-candidate
 or isolated ef41 proof. The separate HTTPS source commit follows; all accepted
 source tests remain unchanged. No metadata-only commit or repeated union follows.
 
-## Current original-budget failure at64bafe6
+## Retained original-budget failure at64bafe6
 
 Reviewed source is64bafe6aab4aefac3205a8cc4348ecf6268e66b1 on
 release-candidate/v012-git-mutex-20261022. Root owns Main/shared/Git/S98.4.

@@ -198,7 +198,7 @@ def test_native_fixture_batches_complete_prerequisite_tree(
     # The original wrong-parent control needs this genuine earlier ancestor.
     assert _git(root, "rev-parse", "refs/heads/reviewed/one~2") == _git(root, "rev-parse", base + "~1")
     assert _git(root, "diff", "--exit-code", base, "--", *sorted(expected_paths)) == ""
-    assert (root / "Makefile").read_text(encoding="utf-8") == (
+    assert compose_makefile(root / "Makefile") == (
         'test-files:\n\t@"' + sys.executable
         + '" -m pytest $(TESTFILES) $(PYTEST_ARGS) -o addopts= -q\n'
     )

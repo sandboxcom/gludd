@@ -82,6 +82,18 @@ measurements, rejected approaches and the missing release proofs.
    override those controls. Preserve unrelated carriers, ordinary/-e precedence
    and original assertions. Recover reused cohort filenames/argv from the native
    receipt before launch; zero-case collection refusal supplies no acceptance.
+   The existing runtime owner overlaps MAIN2 with sequential fresh HELP1/TAIL1,
+   retaining all three raw commands and original selectors in the same stanza.
+   Literal ID= on each child selects test-files' existing PID-owned basetemp;
+   inherited identifiers can otherwise make concurrent children delete each
+   other's scratch. HELP failure skips TAIL; every ordinary outcome joins MAIN
+   and retains all statuses. The existing outer observer owns timeout/signal
+   descendant drain. At most two admission cohorts/three execution workers is
+   not a global process or resource-lease claim. Keep the original90/60 watched
+   boundary and prove actual receiving/runtime interactions; synthetic barriers
+   and native124/143 controls establish no performance improvement.
+   Route tests inspect the literal child command independently of recipe-line
+   prefix, retaining exact three-child counts, selectors, flags and mutation checks.
 
 Native status readers must preserve the index as well as working bytes. The
 existing git-status owner uses Git's no-optional-locks mode, retains native

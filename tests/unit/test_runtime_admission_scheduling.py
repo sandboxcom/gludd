@@ -257,6 +257,8 @@ def _capture_owner(tmp_path: Path, fail_phase: str) -> tuple[subprocess.Complete
         cwd=ROOT, text=True, capture_output=True, timeout=10,
     )
     rows = [json.loads(line) for line in record.read_text(encoding="utf-8").splitlines()]
+    # Canonical phase order compares the unchanged inventories, not entry timing.
+    rows.sort(key=lambda row: {"full": 0, "help": 1, "reviewed": 2}[row["phase"]])
     return result, rows
 
 
@@ -285,7 +287,8 @@ def test_runtime_admission_retains_entire_roster_and_fresh_help(tmp_path: Path) 
 
 @pytest.mark.parametrize(
     ("fail_phase", "expected_phases"),
-    [("full", ["full"]), ("help", ["full", "help"]), ("reviewed", ["full", "help", "reviewed"])],
+    [("full", ["full", "help", "reviewed"]), ("help", ["full", "help"]),
+     ("reviewed", ["full", "help", "reviewed"])],
 )
 def test_runtime_admission_propagates_each_owner_failure_without_replay(
     tmp_path: Path, fail_phase: str, expected_phases: list[str],
@@ -1352,3 +1355,234 @@ def test_make_safety_and_guidance_have_exact_native_routes(
     assert len(payload["runtime_contract"]["phases"]) == 21
     assert sum(item["max_seconds"] for item in payload["runtime_contract"]["phases"]) == 2850
     assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
+
+
+# Native scheduling controls use the actual owner and actual test-files recipe.
+# Only UV is replaced by this bounded fixture; no real-UV/pytest speed is claimed.
+_OVERLAP_UV_FIXTURE = r"""
+import json, os, signal, subprocess, sys, time
+from pathlib import Path
+args = sys.argv[1:]
+assert args[:4] == ["run", "python", "-m", "pytest"]
+root = Path(os.environ["GLUDD_OVERLAP_FIXTURE_ROOT"])
+phase = "help" if args[4] == os.environ["GLUDD_OVERLAP_HELP"] else (
+    "reviewed" if args[4] == os.environ["GLUDD_OVERLAP_TAIL"] else "full")
+mode = os.environ["GLUDD_OVERLAP_MODE"]
+bt = Path(next(arg.split("=", 1)[1] for arg in args if arg.startswith("--basetemp=")))
+sentinel = bt / (phase + "-owned")
+sentinel.write_text(phase)
+def emit(event, **extra):
+    row = dict(phase=phase, event=event, pid=os.getpid(), time=time.monotonic(),
+               args=args, bt=str(bt), identifier=os.environ.get("ID"),
+               nproc=os.environ["NPROC"], workers=os.environ["GLUDD_XDIST_WORKERS"],
+               ansible=os.environ["ANSIBLE_LOCAL_TEMP"], **extra)
+    descriptor = os.open(root / "events.jsonl", os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    try:
+        os.write(descriptor, (json.dumps(row) + "\n").encode())
+    finally:
+        os.close(descriptor)
+def wait_for(name):
+    deadline = time.monotonic() + 2.0
+    while not (root / name).exists():
+        if time.monotonic() > deadline:
+            emit("barrier-error", missing=name)
+            raise SystemExit(73)
+        time.sleep(0.005)
+emit("start")
+(root / (phase + "-start")).touch()
+if mode == "hold":
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    child = subprocess.Popen([
+        sys.executable, "-c",
+        "import signal; signal.signal(signal.SIGTERM, signal.SIG_IGN); signal.alarm(4); signal.pause()",
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    emit("descendant", child_pid=child.pid)
+    # Bounded self-exit remains a fixture fallback if host inspection is denied.
+    deadline = time.monotonic() + 4.0
+    while time.monotonic() < deadline:
+        time.sleep(0.01)
+    child.wait(timeout=2)
+    emit("finish", status=75)
+    raise SystemExit(75)
+if phase == "full":
+    wait_for("help-start")
+    if mode != "fail-main":
+        wait_for("help-finish" if mode == "fail-help" else "reviewed-finish")
+else:
+    wait_for("full-start")
+    if mode == "fail-main" and phase == "help":
+        wait_for("full-finish")
+status = {"fail-main": 17, "fail-help": 7, "fail-tail": 23}.get(mode, 0)
+failed_phase = {"fail-main": "full", "fail-help": "help", "fail-tail": "reviewed"}.get(mode)
+status = status if phase == failed_phase else 0
+if not sentinel.exists():
+    status = 83
+emit("finish", status=status)
+(root / (phase + "-finish")).touch()
+raise SystemExit(status)
+"""
+
+
+def _overlap_time(row: dict[str, object]) -> float:
+    value = row["time"]
+    assert isinstance(value, (int, float))
+    return float(value)
+
+
+def _overlap_rows(path: Path) -> list[dict[str, object]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, object]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        row: object = json.loads(line)
+        assert isinstance(row, dict) and all(isinstance(key, str) for key in row)
+        rows.append(row)
+    return rows
+
+
+def _overlap_fixture(
+    tmp_path: Path, mode: str, *, owner_body: str | None = None,
+) -> tuple[Path, Path, dict[str, str]]:
+    root = tmp_path.resolve()
+    uv = root / "uv fixture.py"
+    uv.write_text(_OVERLAP_UV_FIXTURE, encoding="utf-8")
+    child = root / "native-test-files.mk"
+    child.write_text(
+        f"UV := {shlex.quote(sys.executable)} {shlex.quote(str(uv))}\n"
+        f".PHONY: test-files\ntest-files:\n{_stanza('test-files')}\n",
+        encoding="utf-8",
+    )
+    owner = root / "owner.mk"
+    owner.write_text(
+        f"MAKE := make --no-print-directory -f {shlex.quote(str(child))}\n"
+        f".PHONY: {OWNER}\n{OWNER}:\n{owner_body or _stanza(OWNER)}\n",
+        encoding="utf-8",
+    )
+    environment = {key: value for key, value in os.environ.items()
+                   if key not in {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "ID"}}
+    environment.update({
+        "ID": "overlap-fixture-" + root.name,
+        "GLUDD_OVERLAP_FIXTURE_ROOT": str(root),
+        "GLUDD_OVERLAP_MODE": mode,
+        "GLUDD_OVERLAP_HELP": HELP,
+        "GLUDD_OVERLAP_TAIL": REVIEWED_FINALIZATION[0],
+    })
+    return owner, root / "events.jsonl", environment
+
+
+def _overlap_run(
+    tmp_path: Path, mode: str, *, owner_body: str | None = None,
+) -> tuple[subprocess.CompletedProcess[str], list[dict[str, object]]]:
+    owner, record, environment = _overlap_fixture(tmp_path, mode, owner_body=owner_body)
+    result = subprocess.run(
+        ["make", "--no-print-directory", "-f", str(owner), OWNER],
+        cwd=tmp_path.resolve(), env=environment, capture_output=True, text=True,
+        check=False, timeout=10,
+    )
+    return result, _overlap_rows(record)
+
+
+@pytest.mark.parametrize("overlap_native_mode", ["pass", "fail-main", "fail-help", "fail-tail"])
+def test_native_overlap_joins_main_and_preserves_each_side_status(
+    tmp_path: Path, overlap_native_mode: str,
+) -> None:
+    result, rows = _overlap_run(tmp_path, overlap_native_mode)
+    expected_phases = {"full", "help"} if overlap_native_mode == "fail-help" else {"full", "help", "reviewed"}
+    starts = {row["phase"]: row for row in rows if row["event"] == "start"}
+    finishes = {row["phase"]: row for row in rows if row["event"] == "finish"}
+    assert set(starts) == set(finishes) == expected_phases, result.stdout + result.stderr
+    assert len(starts) == len([row for row in rows if row["event"] == "start"])
+    assert len({row["pid"] for row in starts.values()}) == len(expected_phases)
+    assert len({row["bt"] for row in starts.values()}) == len(expected_phases)
+    for phase, row in starts.items():
+        assert row["identifier"] == ""
+        assert row["ansible"] == str(Path(str(row["bt"])) / "ansible-local")
+        assert not Path(str(row["bt"])).exists()
+        assert (row["nproc"], row["workers"]) == (("2", "2") if phase == "full" else ("1", "1"))
+        arguments = row["args"]
+        assert isinstance(arguments, list) and all(isinstance(argument, str) for argument in arguments)
+        expected = list(ROSTER) if phase == "full" else [HELP] if phase == "help" else list(REVIEWED_FINALIZATION)
+        assert arguments[4:4 + len(expected)] == expected
+        assert "-W" in arguments and arguments[arguments.index("-W") + 1] == "error"
+    # Barriers require actual overlap; no wall-time threshold claims a speedup.
+    assert _overlap_time(starts["full"]) < _overlap_time(finishes["help"])
+    assert _overlap_time(starts["help"]) < _overlap_time(finishes["full"])
+    if "reviewed" in starts:
+        assert _overlap_time(finishes["help"]) < _overlap_time(starts["reviewed"])
+        if overlap_native_mode != "fail-main":
+            assert _overlap_time(finishes["reviewed"]) < _overlap_time(finishes["full"])
+    active: set[str] = set()
+    for row in rows:
+        phase = str(row["phase"])
+        if row["event"] == "start":
+            active.add(phase)
+        elif row["event"] == "finish":
+            active.remove(phase)
+        assert len(active) <= 2
+        assert sum(2 if member == "full" else 1 for member in active) <= 3
+    assert not active
+    if overlap_native_mode == "pass":
+        assert result.returncode == 0, result.stdout + result.stderr
+    else:
+        native_status = {"fail-main": 17, "fail-help": 7, "fail-tail": 23}[overlap_native_mode]
+        assert result.returncode != 0 and f"Error {native_status}" in result.stderr
+    assert "runtime-cohort-join" in result.stdout
+    outcome = "passed" if overlap_native_mode == "pass" else "failed"
+    guidance = result.stdout + result.stderr
+    assert f"AGENT_NEXT target={OWNER} outcome={outcome}" in guidance
+    assert "gate_evidence=false release_ready=false" in guidance
+    assert "make ci-failure-status" in guidance
+
+
+def test_native_overlap_rejects_shared_basetemp_mutation(tmp_path: Path) -> None:
+    body = _stanza(OWNER)
+    assert body.count("test-files ID=") == 3
+    result, rows = _overlap_run(tmp_path, "pass", owner_body=body.replace("test-files ID=", "test-files"))
+    assert result.returncode != 0
+    starts = [row for row in rows if row["event"] == "start"]
+    assert len({row["bt"] for row in starts}) == 1
+    assert any(row.get("status") == 83 for row in rows)
+
+
+@pytest.mark.parametrize("overlap_observer_end", ["timeout", "signal"])
+def test_existing_observer_drains_both_overlap_branches_and_descendants(
+    tmp_path: Path, overlap_observer_end: str,
+) -> None:
+    import signal
+    import time
+
+    owner, record, environment = _overlap_fixture(tmp_path, "hold")
+    # Reuse the existing native helper, replacing only its test child command.
+    command = _command(
+        tmp_path, "", "--heartbeat-secs", "0.1", "--quiet-secs", "0",
+        "--max-secs", "1.5" if overlap_observer_end == "timeout" else "8",
+        run_id="native-overlap-" + overlap_observer_end,
+    )
+    boundary = command.index("--")
+    command[boundary + 1:] = ["make", "--no-print-directory", "-f", str(owner), OWNER]
+    with subprocess.Popen(
+        command, cwd=tmp_path.resolve(), env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    ) as process:
+        if overlap_observer_end == "signal":
+            deadline = time.monotonic() + 4
+            while len([row for row in _overlap_rows(record) if row["event"] == "descendant"]) < 2:
+                assert process.poll() is None
+                assert time.monotonic() < deadline
+                time.sleep(0.01)
+            process.send_signal(signal.SIGTERM)
+        stdout, stderr = process.communicate(timeout=12)
+    expected_status = 124 if overlap_observer_end == "timeout" else 143
+    assert process.returncode == expected_status, (stdout + stderr).decode()
+    status = _current_status(tmp_path)
+    assert status["exit_code"] == expected_status
+    assert status["state"] == ("timed_out" if overlap_observer_end == "timeout" else "interrupted")
+    rows = _overlap_rows(record)
+    assert {row["phase"] for row in rows if row["event"] == "start"} == {"full", "help"}
+    owned = {int(str(row["pid"])) for row in rows}
+    owned.update(int(str(row["child_pid"])) for row in rows if "child_pid" in row)
+    for pid in owned:
+        inspected = subprocess.run(
+            ["/bin/ps", "-p", str(pid), "-o", "pid="],
+            capture_output=True, text=True, check=False, timeout=5,
+        )
+        assert inspected.returncode == 1 and not inspected.stdout.strip(), inspected.stderr

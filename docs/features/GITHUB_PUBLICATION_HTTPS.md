@@ -1,5 +1,51 @@
 # Repository-local GitHub HTTPS publication
 
+## Workflow-write authorization diagnostic (2026-10-22 UTC)
+
+Remote read verification does not establish permission to write workflow files.
+The actual earlier gh auth status reports repo,gist,read:org with no workflow
+scope; the native eb772..6387304 changed-path inventory includes Pages workflow
+ad4f92. No newer push has been attempted, so no workflow rejection is measured.
+
+Root's fixed public Make research plan/live owner is
+/tmp/gludd-v012-workflow-scope-research.mk. Both bounded20s unauthenticated
+HTTPS fetches return200; snapshots/decision live in the corresponding TMP
+directory. [GitHub's current scope contract](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps)
+requires workflow authority for new or changed workflow files, with an exception
+when identical path and bytes already exist on another repository branch.
+That exception has not been established for this candidate.
+The [March2022 firsthand CLI report5355](https://github.com/cli/cli/issues/5355)
+describes an HTTPS clone, workflow edit and rejection for missing workflow
+permission. Its CLI2.6.0 context supports this diagnostic distinction, not a
+current Gludd failure or a claim that read auth proves write authorization.
+
+Keep normal guarded batch-push and the actual remote result authoritative.
+Preserve a real denial if it occurs; reconcile authorization through existing
+owners without bypassing hooks or launching interactive credentials setup.
+Research/configuration/native read supplies no publication, CI or deployment
+proof. The TMP research decision retains native transport/history details.
+
+## Actual native operating history at6387304
+
+After canonical source receiving, Root runs mode0 at clean
+6387304ef5edc1b38ad8a2062c27e92ba430e344. Native authentication/configuration
+returns0 with active sandboxcom/keyring/HTTPS/repo scope, a redacted token and
+repo-local helper/fetch/push postchecks. No key or token is extracted.
+Actual verify-remote then returns0 and emits VERIFIED for the previously
+published release-candidate/v012-git-mutex-20261022 at full
+eb772a658a01db4485087813e4478eb6c59cc328, using an explicit absent SSH_KEY.
+This verifies that prior ref, not publication of6387304.
+The documented absent-head example with actual HTTPS retains native2 at
+phase=remote-head and emits no VERIFIED. All footers retain no gate/release
+authority. Manual history:/tmp/gludd-v012-6387304-transport-observation.md.
+
+The independent638 source-only decision is fully consumed. Its first actual
+original90/60 runtime repair still fails124/90.559s; no repair/push/new GHA
+result follows. The [runtime record](RUNTIME_ADMISSION_CLEAN_SHA.md) retains
+that failure and the separate next architecture proposal. No global config
+change, credential file, automatic push or deployment occurs. Earlier receiving/
+private proposal statements below retain their own pre-operation scope.
+
 ## Canonical Root receiving
 
 Root integrates Make30, the early raw Foundation capture, actual help and the
