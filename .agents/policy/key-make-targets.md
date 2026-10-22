@@ -363,6 +363,15 @@ Follow that result without changing native status or fabricating missing spans.
 
 ### Attribute a runtime timeout before changing source
 
+A private rootdir/confcutdir deliberately omits Main conftest. Before spending
+an instrumentation attempt, execute one original selected native-child case in
+that private harness and verify inherited Main root/src/scripts across the
+child's actual CWD change. Keep such diagnostic bridges out of canonical source.
+Collection/import failures count toward the existing two-profile bound; retain
+them without deriving compatibility or speed claims. Canonical receiving uses
+the complete owner with the ordinary Main harness. The [tail decision](../../docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md#required-tail-prerequisite-batching)
+retains the actual failed profiles and real Git operation controls separately.
+
 When test-files-cprofile owns a private trace, use the generated profile run ID
 and trace.jsonl from its published directory. A wrapping observer can allocate
 an empty separate trace; preserve both identities. The [readonly-scanner decision](../../docs/features/PUBLICATION_READONLY_SCANNER_PROFILE.md)

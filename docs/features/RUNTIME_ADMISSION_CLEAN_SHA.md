@@ -1,5 +1,149 @@
 # Clean-SHA runtime admission
 
+## Required-tail prerequisite batching
+
+Root consumes the terminal proposal and frozen postimages under
+/tmp/gludd-v012-tail-throughput-proposal; all proposal executions/readers drain.
+The changed input is only the existing reviewed-head test fixture. Preserve its
+first real Makefile commit, then materialize TASKS, both exact adapter files,
+optional child probe and native test before one native add/commit/rev-parse.
+This removes9/12 actual Git launches per plain/probe setup. Source, integration,
+tags, cherry-pick/merge and all production validation remain real and unchanged.
+The genuine first ancestor preserves the original source~2 refusal.
+
+The two additive native controls verify complete tracked prerequisite paths,
+exact fixture content/adapter hashes, real application/parent bindings and the
+SAME wrong-parent ValueError before any patch inspection. All existing cases
+and assertions remain. Root receives tests-first into Main:2FAIL4.46s,
+native2/5.8s, at the redundant commit-count assertion after those semantic
+controls pass. Receipt:tail-prerequisites-red/v012-tail-prerequisites-red312.json
+under .gate-logs/observed. Root then receives the minimal fixture postimage.
+No production Python, Make, selector, family or coverage configuration changes.
+
+Both private profile attempts fail and remain preserved:baseline collection
+ERROR0cases, then paired4FAIL2PASS8.45s from missing inherited Main-root import
+context after child CWD changes. They are not compatibility, timing or CPU
+proof. No third profile is run. The bounded operation GREEN3PASS2.34s is distinct
+from complete acceptance. Root uses the ordinary canonical Main harness for
+complete reviewed-head and fixture-namespace owners on installed311/312,
+with fatal warnings and native watched receipts. The actual original90/60
+runtime family and all11 tail cases remain required; a smaller Git operation
+count does not establish material deadline improvement.
+
+Canonical complete receiving passes255cases each:311129.92s/native132.792s,
+312133.77s/native136.316s, no failures/skips/collection errors. This is the
+complete reviewed-head owner196 plus fixture-namespace owner59, serial pytest
+per runtime with two runtime owners in parallel. Native observed-status
+confirms passed/inactive/exit0 for
+.gate-logs/observed/tail-prerequisites-receiving/v012-tail-prerequisites-receiving311.json
+and its312 counterpart; both tested source digests are
+575d92836cb18ad6c190449d4f92aa751c360d181a8fe265f5d43a261a52ee9e.
+All three original reviewed-head tail cases pass in each complete owner.
+Ruff and separate strict test scope pass. These300-second scoped observations
+are neither the original90-second combined owner nor a speed benchmark.
+Only manual guidance/receipt changes follow these fixture tests.
+
+Root also runs the exact complete11-case required tail together on312,
+retaining its original9selectors, parameter expansions, -n0/maxprocesses1,
+ignore-glob and fatal warnings. All11PASS8.36s, native0/9.427s, no skips/errors.
+Receipt:.gate-logs/observed/tail-prerequisites-tail/v012-tail-prerequisites-tail312.json;
+tested digest1bc31809c4e58ef8478d1479582eeff3abdd6d88066544c88a935fea06c6b565.
+This tail-only component run does not establish that main/help/tail together
+fit the original90/60 envelope. No paired timing/savings claim follows.
+
+## Separate watchdog scan: measured decline
+
+Root consumes the complete terminal decision and receipts under
+/tmp/gludd-v012-secrets-throughput-proposal. Two actual pinned1.5.0 CLI child
+controls pass1case each in0.41s/0.44s, watched0/1.106s and0/1.144s. All27
+native default plugins and verification remain enabled. The private one-file
+branch runs serially despite requested cores5, so these synthetic64/1000-space
+fixtures do not measure the real five-worker repository scan or reproduce60s.
+Child profile wall0.226s/0.263s does not identify the actual timeout cause.
+No speculative production scanner patch or extra execution follows.
+
+Natural watchdog scans remain failed, including
+scan-ce21a57fc82a470d806ce5591f6f5716 at124/60.521s. They are separate from
+runtime admission; no causal relationship is inferred. Preserve full canonical
+scope, baseline/plugin/occurrence comparisons, readonly bytes, native failures,
+five workers,60scan/300cooldown and owned-group cleanup. Do not replace traversal
+with a Git filename list or remove detectors/verification to obtain green.
+
+The next missing input is a bounded stack from a verified currently live worker
+of a naturally scheduled scan. Use ps and active-work-status to bind the fresh
+worker/scanner/watchdog, interpreter and workspace before and after sampling;
+expired625xx/662xx identities are not reusable authority. The decision retains
+the mature native Darwin sample diagnostic and its unexecuted command. Attach
+refusal, exited/idle worker or unavailable symbols stays inconclusive. A stack
+may narrow an operation but supplies no Python file identity, CPU or clean scan
+by itself. No new scanner, observer, daemon or proof cache is authorized.
+
+Firsthand upstream reports [433](https://github.com/Yelp/detect-secrets/issues/433)
+and [868](https://github.com/Yelp/detect-secrets/issues/868) motivate attribution
+and a tiny whitespace control; neither diagnoses this repository. [Apple's native sampling guidance](https://developer.apple.com/library/archive/documentation/Performance/Conceptual/CodeSpeed/Articles/DiagnosingSlowness.html)
+supports the next bounded diagnostic. No sampler has run or scan timeout cleared.
+
+## Retained original-budget failure at2ca8f8e
+
+Source2ca8f8e8e108e3d03ff61bc30adb37a71e64c683 is natively committed and
+clean before the first original-budget repair. Branch remains
+release-candidate/v012-git-mutex-20261022; Root owns S98.4/Main/shared/Git.
+Mandatory collection is129273selected/129297collected,24deselected/0errors
+48.75s/native54.1s at
+.gate-logs/observed/test-count/20261022T211547Z-47053-6f447087.json.
+Root consumes the complete independent APPROVE SOURCE ONLY decision at
+/tmp/gludd-v012-shell-2ca8f8e-source-review.md after all reviewer sessions
+and readers terminate. It is not a runtime or platform approval.
+
+Existing watchdog-secrets run scan-914609abb9da4eb3be793ae0ad28b26b terminates
+TIMEOUT124/60.562s under its own owner57626. Root preserves that failure and
+checks native ps after its process group drains; only existing watchdogs remain.
+No guard is disabled, scanner killed or source changed to manufacture idle.
+All model proposal/review owners are quiescent before the original repair.
+
+Root then runs actual ci-failure-repair for the runtime family on this exact
+clean SHA, through run-watched and the unchanged
+_pytest-runtime-compatibility-admission command on installed no-sync312,
+STALL_SECS=60/MAX_SECS=90. This first changed-input attempt FAILS124/90.585s;
+the enclosing Make returns2 and no repair receipt is granted.
+
+The main child passes2395 in79.46s and fresh HELP passes1 in0.72s.
+The required tail collects11. Its first historical-focus case passes; the
+second finalization/native-background-producer case is unfinished when the
+watcher terminates the group. Remaining required work stays unproved.
+
+Exact evidence:
+
+- .gate-logs/observed/runtime-repair-2ca8f8e/v012-runtime-repair-2ca8f8e-312.json
+- The matching .pytest.jsonl and /tmp/gludd-v012-runtime-repair-2ca8f8e-312.log.
+- Native tested source digest ae351198905550db193870cd44f4621c8f259ab73696deb5c94b9cbdc75fa8ec.
+
+Native test-xdist-trace-summary generates a PARTIAL diagnostic:4808events,
+2397complete pairs,2398starts, zero failure reports, one issue/unfinished
+node at test_finalization_accepts_actual_native_background_producer_command.
+Its exit0 means summary generation only. The first tail pair is2.851290s;
+HELP is0.320388s. Main worker paired spans68.296764s/66.668638s overlap and
+are not CPU or critical path. The unfinished node is not established as the
+sole deadline cause. No measured causal speed improvement is claimed.
+
+The next actual repair input is that required native tail, preserving every
+selector and all11cases. A bounded TMP owner profiles the three existing
+reviewed-head cases and prior prepare_inputs/Git decisions before proposing
+an operation/input reduction. A second bounded TMP owner investigates the
+separate existing full-scan timeout without replaying an unchanged full scan.
+Root owns canonical receiving, shared files and commits; at most two execution
+owners, no new scanner/runner/observer/cache, no coverage/warning/deadline cuts.
+No next original-budget attempt is admitted until actual failing inputs change.
+
+The e82 local Pages-input repair remains valid ancestral push evidence under
+the existing ledger guard; it is not reattributed to2ca or called hosted-green.
+The ledger's native contract distinguishes repaired descendant-push permission
+from exact-SHA hosted resolution. Do not repeat unchanged optional component
+proof merely to move a receipt to a newer descendant. Native push/freshness
+guards remain authoritative. Full gate/capacity, global85/75BOTH, exact-SHA GHA,
+deployed reviewed-head acceptance and promotion remain pending. All seven
+release tasks stay unchecked, and published baseline remains eb772.
+
 ## Preserved failure at35c08ba, 2026-10-22 UTC
 
 Root owns S98.4 and the sole Main/shared/Git writer on

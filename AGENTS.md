@@ -66,6 +66,11 @@ measurements, rejected approaches and the missing release proofs.
    replay; paired trace spans are not CPU, critical path or forecast savings.
    The [clean-SHA record](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md) retains
    the native failure and bounded two-owner receiving process.
+   A private confcutdir omits Main's import harness. Verify one original native
+   child across its actual CWD change before profiling; preserve Main root,
+   src and scripts paths where the original child needs them. An import failure
+   is failed diagnostic input, counts toward the profile bound and proves no
+   speed benefit. Receive final fixtures in the ordinary canonical harness.
 
 Native status readers must preserve the index as well as working bytes. The
 existing git-status owner uses Git's no-optional-locks mode, retains native

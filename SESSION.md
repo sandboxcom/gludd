@@ -3,13 +3,57 @@
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: release-candidate/v012-git-mutex-20261022 eb772a658a01db4485087813e4478eb6c59cc328.
 Previously recorded development publication: 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 129268 selected / 129292 collected, 24 deselected, zero collection errors in47.85s/native53.0s during native guarded35c08ba94e4e5af2d6f994d29e9562ee35ed72a5 commit preflight. Native receipt: .gate-logs/observed/test-count/20261022T203931Z-88280-fded419d.json. This final coherent working-checkout collection matches the clean batch; earlier intermediate collections retain their disclosed unstaged-path scope. Collection is separate from behavioral and final-gate proof; prior refs keep their original receipts. Each normal source commit retains fresh collection without a receipt-only commit.
+Total tests: 129273 selected / 129297 collected, 24 deselected, zero collection errors in48.75s/native54.1s during the last native guarded2ca8f8e8e108e3d03ff61bc30adb37a71e64c683 commit preflight. Native receipt: .gate-logs/observed/test-count/20261022T211547Z-47053-6f447087.json. This coherent working-checkout collection matches that clean candidate; earlier intermediate collections retain their disclosed unstaged-path scope. Collection is separate from behavioral, runtime, hosted and final-gate proof. Prior refs keep their original receipts; each normal source commit retains fresh collection without a receipt-only commit.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 explicit-shell input receiving
+## Current required-tail input receiving from2ca8f8e
+
+Root consumes the terminal real-Git prerequisite-batching proposal and the
+separate measured security-scan decline. Canonical Main RED2FAIL4.46s/native5.8s
+precedes the fixture-only batching. Complete reviewed-head196 plus namespace59
+passes255 per311/312,129.92s/133.77s and native132.792s/136.316s. The original
+three reviewed-head tail cases and exact source~2 refusal pass. No speed,
+original90/60 or hosted/deployment claim follows. All original assertions,
+selectors,176families,21phases2850,85/75 BOTH and ZDD remain. Root owns all
+shared/Git work; all proposal readers/executions are quiescent. AGENTS and the
+mandatory Make guide codify private import-harness validation before profiling.
+Exact receipts, measured declines and missing proof: [runtime record](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md).
+The latest actual published GHA remains eb772:Build/Pages FAIL, six Molecule
+lanes PASS. Newer local repairs have not been pushed. Candidate pushes validate;
+Pages deployment needs master push plus required validation/JS; release
+publication follows the version-tag/fan-in workflow. All seven tasks unchecked.
+
+## Retained S98.4 original-budget failure at2ca8f8e
+
+Source2ca8f8e8e108e3d03ff61bc30adb37a71e64c683 is locally committed on the
+candidate branch above, with129273selected/129297collected,24deselected/
+0errors48.75s/native54.1s in normal guarded collection. Receipt:
+.gate-logs/observed/test-count/20261022T211547Z-47053-6f447087.json.
+Root consumes its exact independent source-only decision; all model owners
+quiesce and the existing security audit drains before the actual90/60 run.
+
+Actual repair-owned312 original admission FAILS124/90.585s after2395mainPASS
+79.46s and HELP1PASS0.72s. Required tail11 reaches firstPASS then unfinished
+test_finalization_accepts_actual_native_background_producer_command.
+No runtime repair receipt is granted. The [owning record](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md)
+retains exact native evidence/partial trace, all earlier failures, both-runtime
+162-case acceptance and the separate full security-scan TIMEOUT124/60.562s.
+
+Next is bounded native attribution/repair of the unchanged required tail and
+separate existing secrets owner through disjoint TMP proposals; Root remains
+sole Main/shared/Git writer. Preserve all176families,11tailcases, original
+90/60/2-1-1/21-2850, fatal warnings, cleanup and85/75BOTH. No unchanged original
+replay or push until actual repair inputs clear native guards. Pages local
+repair stays bound to ancestral e82; no duplicate receipt-only run is needed.
+Published eb772 remains the hosted baseline, with Build/PagesFAIL and
+MoleculePASS; no current candidate hosted/deployment proof exists. Capacity/
+full gate, exact-SHA reviewed-head acceptance and promotion remain pending;
+all seven S98 tasks stay unchecked.
+
+## Retained S98.4 explicit-shell input receiving
 
 Source is e82f7741d956c06cf36ca615c204a6cf3011682f before this small hardening;
 Root owns Main/shared/Git. Native collection is129271selected/129295collected,
