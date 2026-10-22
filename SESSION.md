@@ -2,35 +2,40 @@
 
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 128719 selected / 128743 collected, 24 deselected, zero collection errors in 50.96s/native 56.326s during normal 6e8945bdae0ee30df0a18219872d92026ccece68 source hooks. Native receipt: .gate-logs/observed/test-count/20261022T060356Z-71787-587c0e32.{log,json}. Collection is separate from behavioral and final-gate proof; older daf, eb6, 3e8, e5/bd3 and f36/815 collections retain their own refs.
+Total tests: 128731 selected / 128755 collected, 24 deselected, zero collection errors in 49.21s/native 54.504s during normal rejected 62151e62d048c2f425cdc016f682da86ab9e15f6 source hooks. Native receipt: .gate-logs/observed/test-count/20261022T062646Z-83008-3cc4c8cc.{log,json}. Collection is separate from behavioral and final-gate proof; older 6e8, daf, eb6, 3e8, e5/bd3 and f36/815 collections retain their own refs.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 bounded Git-mutex staging
+## Current S98.4 Git-mutex task-handoff repair
 
-Root owns release-candidate/v012-git-mutex-20261022 at base
-82db11b57b254c1ca1e035975b5cc86253e2fed5 in the existing canonical checkout.
-Development remains at that base; the candidate uses the existing checkout.
-Source41fd1b1d854a7f7b678239429f8783c2a2942d57 is selected alone; its parent is
-already an ancestor. The [mutex record](docs/features/GIT_REPOSITORY_MUTEX.md#async-lifecycle-staging-2026-10-22-utc)
-retains actual5FAIL/7PASS3.27s/native4.221s before12PASS1.31s/native2.3s,
-and261 complete source/consumer passes17.45s/native19.6s under unchanged
-one-file96.9line/89.5branch and85/75 BOTH. Current common-directory helpers remain.
-The native staged-test merge attempt refuses, emits index.lock/File exists then
-no merge to abort, and leaves the checkout clean; six owned stashes remain.
-No competing PID or autostash cause is established. Immutable test restoration
-and literal original source hunks preserve current metadata helpers. The
-publication_repair_design model owner produces only a confined helper proposal;
-Root remains Main/shared/Git writer. No lock removal or unchanged retry occurs.
-The complete261-case312 cohort passes14.11s/native15.2s in
-/tmp/gludd-v012-git-mutex-stage-312.{log,xml}; both separate strict scopes and Ruff
-pass. Operating checks, normal collection and independent exact-source review
-remain pending. Preserve all154 early families; a cheap regression joins that
-existing owner with the helper repair before any final replay. Capacity97/6.7GiB,
-original60907, final gate/global coverage and all exact-SHA release proofs remain
-blocked; all seven task states stay open.
+Root owns release-candidate/v012-git-mutex-20261022 from rejected exact
+62151e62d048c2f425cdc016f682da86ab9e15f6 against development
+82db11b57b254c1ca1e035975b5cc86253e2fed5, using the existing canonical checkout.
+The [mutex record](docs/features/GIT_REPOSITORY_MUTEX.md#task-handoff-correction-after-independent-rejection-2026-10-22-utc)
+retains original source41fd,5FAIL/7PASS->12PASS and261-case acceptance per runtime.
+Normal621 hooks collect128731selected/128755collected,24deselected0errors49.21s/
+native54.504s in .gate-logs/observed/test-count/20261022T062646Z-83008-3cc4c8cc.json,
+zero new clones and six checkpoints. Independent CHANGES REQUIRED is fully read
+at /tmp/gludd-v012-git-mutex-621-source-review.md:2FAIL0.45s/native1.175s proves
+foreign-task critical-section overlap and nested wait_for timeout. No approval
+is inferred from the earlier261 passes. Five additive permanent controls retain
+4FAIL/1PASS0.80s/native1.7s before17PASS1.30s/native2.1s, with all12 original cases
+unchanged. Atomic completed-task adoption requires one reservation, exact old
+binding and no conflicting worker; live foreign owners refuse before entry.
+Seven complete source/consumer owners pass266 on31115.42s/native17.6s with the
+unchanged profile at96.8line/90.7branch and85/75 BOTH. The same266 cases pass312
+in14.90s/native16.1s at /tmp/gludd-v012-git-mutex-handoff-312.{log,xml}; separate
+strict source/test scopes and Ruff pass. Operating checks, fresh collection and
+independent exact-source re-review remain pending.
+The publication_repair_design model owner produces only a separate confined
+merge-helper proposal; Root stays Main/shared/Git writer. Preserve its unknown
+index.lock cause, refused approaches and ignored-file tests. No lock deletion
+or unchanged retry. Retain all154 early families; promote cheap regressions
+through that existing owner before final proof. Capacity97/6.7GiB, original60907,
+final gate/global coverage and all exact-SHA release proofs remain blocked;
+all seven task states stay open.
 
 ## Reviewed S98.4 exact shared-cache inventory repair
 

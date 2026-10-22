@@ -488,6 +488,37 @@ def _reserve_async_worker(repo_path: str) -> _AsyncGitLockWorker:
         return worker
 
 
+def _adopt_completed_async_worker(worker: _AsyncGitLockWorker) -> None:
+    """Fence a live owner and adopt only its sole completed-task result."""
+    try:
+        task = asyncio.current_task()
+    except RuntimeError:
+        task = None
+    # Keep the public synchronous returned-context API usable after the
+    # acquiring event loop has completed.
+    consumer: object = task if task is not None else threading.current_thread()
+    with _async_workers_guard:
+        previous_token = worker.owner_token
+        if _async_workers.get(previous_token) is not worker:
+            raise RuntimeError("async Git lock context has no registered owner")
+        if previous_token[0] is consumer:
+            return
+        previous_owner = previous_token[0]
+        if not isinstance(previous_owner, asyncio.Task) or not previous_owner.done():
+            raise RuntimeError("async Git lock context belongs to another live owner task")
+        if worker.users != 1:
+            raise RuntimeError("async Git lock owner transfer requires one reservation")
+        consumer_token = (consumer, previous_token[1])
+        existing = _async_workers.get(consumer_token)
+        if existing is not None and existing is not worker:
+            raise RuntimeError("async Git lock owner transfer conflicts with a registered worker")
+        # Publish one identity under the same registry guard used by reserve
+        # and release. The native RLock/flock stay held by the same worker.
+        _async_workers.pop(previous_token)
+        worker.owner_token = consumer_token
+        _async_workers[consumer_token] = worker
+
+
 def _release_async_worker(worker: _AsyncGitLockWorker) -> None:
     """Release one reservation and stop an idle owner worker."""
     shutdown = False
@@ -538,6 +569,7 @@ class _EnteredAsyncGitRepoLock(contextlib.AbstractContextManager[None]):
                 raise RuntimeError("async Git lock context is already closed")
             if self._entered:
                 raise RuntimeError("async Git lock context is already entered")
+            _adopt_completed_async_worker(self._worker)
             self._entered = True
         return None
 

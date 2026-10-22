@@ -181,6 +181,77 @@ canonical full gate/global85-75 BOTH, exact-SHA all-shard hosted/deployment,
 reviewed-head and guarded promotion proof remain pending; all seven release
 tasks remain unchecked. Candidate staging supplies none of those proofs.
 
+## Task handoff correction after independent rejection (2026-10-22 UTC)
+
+Exact candidate62151e62d048c2f425cdc016f682da86ab9e15f6 receives independent
+CHANGES REQUIRED against82db11b57b254c1ca1e035975b5cc86253e2fed5. Root fully reads
+/tmp/gludd-v012-git-mutex-621-source-review.md and the separate exact correction
+proposal. Preserve that immutable negative decision. Earlier261-case passes and
+96.9line/89.5branch measure the original source/consumer scope; they never
+override a later semantic failure. Normal621 hooks retain128731selected/
+128755collected,24deselected/zeroerrors49.21s/native54.504s, zero new clones and six
+retained checkpoints. Native receipt:
+.gate-logs/observed/test-count/20261022T062646Z-83008-3cc4c8cc.json.
+
+The acquired wrapper entered any task, while its worker registry still named
+the acquiring task. A foreign consumer could therefore hold the context while
+the original task re-entered the same native RLock, overlapping critical
+sections. A completed acquisition task created by wait_for also kept its old
+registry identity, so its parent's subsequent direct nested acquisition selected
+another worker and timed out against its own held lock.
+
+One independent fixture-only native run loads exact frozen621 and proves both:
+2FAIL0.45s/native1.175s, retained at
+/tmp/gludd-v012-git-mutex-621-repro.log and
+.gate-logs/observed/git-mutex-review621-handoff/v012-git-mutex-review621-handoff.json.
+Its actual child pins equal physical rootdir/confcutdir and project config;
+the source postimage and all12 cases remain unchanged during diagnosis.
+
+Root ports both intents additively into
+tests/unit/test_git_automation_locking_handoff.py. Multiple-reservation and
+destination-worker collision controls require unchanged registry identities,
+reference counts and native lock depth after refusal; resolving the actual
+reservation ambiguity then permits safe adoption. A completed-loop result also
+retains the public synchronous context API. The five controls first reproduce
+4FAIL/1PASS0.80s/native1.7s in
+/tmp/gludd-v012-git-mutex-handoff-red311.{log,xml}. All12 predecessor cases and
+their assertions remain untouched.
+
+Before first entry, a live acquiring task may not hand an unopened wrapper to
+another task. A completed acquiring task's sole result can be adopted by its
+consuming task, or the consuming thread after its event loop closes. Adoption
+requires one reservation, the exact existing worker binding and no destination
+conflict, all checked under the existing registry guard. Only that identity
+changes; the same native worker retains RLock/flock ownership. A refused entry
+does not set the wrapper's entered flag or move/drop any reservation.
+
+Direct nesting by the consuming task then reuses the worker. Awaiting a new
+task's acquisition while already holding an outer context still creates a
+distinct contender. Do not treat inherited context or a shared executor thread
+as logical re-entry permission for independent tasks. Synchronous exit,
+cancellation drainage, final reference shutdown, deadlines, metadata resolution,
+stable inode and existing process fences remain. The fork dictionary/descriptor
+controls do not certify teardown of a live inherited async wrapper; preserve
+that unproved boundary rather than broadening the source claim.
+
+The original12 plus new5 cases pass17 in1.30s/native2.1s, retained at
+/tmp/gludd-v012-git-mutex-handoff-green311.{log,xml}. Seven complete owners then
+pass266 on311 in15.42s/native17.6s under the unchanged one-file profile:
+96.8% line/90.7% branch, both85aggregate/75each-file requirements passing.
+Preserve native coverage-files/20261022T063717Z-94134-2804838a.json,
+.gate-logs/coverage-git-mutex-handoff-311.json and terminal
+.gate-logs/coverage-20261022T063735Z.json. Operating checks, fresh collection and independent successor-source review
+remain required. The same266 cases also pass312 in14.90s/native16.1s at
+/tmp/gludd-v012-git-mutex-handoff-312.{log,xml}; both separate strict scopes and
+Ruff pass. Promote the cheap regressions through existing admission with
+all154 predecessor families, original2/1/1,90/60,21/2850 and full gate retained.
+
+This ownership correction is separate from the still-proposed merge-helper
+repair. Preserve its actual failed approaches, checkpoint/ignored-file controls
+and unknown index.lock cause. Neither source change clears capacity97/6.7GiB,
+original60907, full canonical gate/global coverage, exact-SHA all-shard hosted/
+deployment/reviewed-head or guarded promotion proof. All seven tasks stay open.
+
 ## Verification
 
 - `tests/unit/test_git_automation_locking.py` proves PID/thread ownership, fork
