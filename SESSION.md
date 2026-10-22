@@ -2,13 +2,27 @@
 
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 128913 selected / 128937 collected, 24 deselected, zero collection errors in49.67s/native55.036s during normal37454900137c21e4d051b9c1fd65cc6c450ac514 hooks. Native receipt: .gate-logs/observed/test-count/20261022T120527Z-77538-f06c3086.{log,json,pytest.jsonl}. Collection is separate from behavioral and final-gate proof; prior refs retain their original receipts. The next guarded substantive commit owns fresh normal collection; consume it without another receipt-only commit.
+Total tests: 129008 selected / 129032 collected, 24 deselected, zero collection errors in47.56s/native52.927s during normal843fe156cd3a2bf6449456bc8365c5740e70cb9c hooks. Native receipt: .gate-logs/observed/test-count/20261022T124815Z-1429-8cc1bca6.{log,json,pytest.jsonl}. Collection is separate from behavioral and final-gate proof; prior refs retain their original receipts. This receiving change fixes ambiguous check-policy/exit-status wording; its normal guarded commit owns fresh collection, without a receipt-only commit or unchanged source-suite replay.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 HumanTodo identity and Make result repair
+## Current S98.4 HumanTodo receiving clarification
+
+Independent APPROVE SOURCE ONLY for exact843fe156cd3a2bf6449456bc8365c5740e70cb9c
+against374 is fully consumed at /tmp/gludd-v012-human-todo-843-source-review.md.
+Its exact nonblocking wording patch is applied: HUMAN_TODO_VALIDATE_ONLY=1 is
+check policy; exit0 is the native result. Literal0 applies a real request.
+This receiving changes documentation only. Keep accepted662-per-runtime code
+acceptance and source-specific coverage; run affected docs and normal guarded
+collection, then independent exact receiving-source review. Final54-per-runtime
+docs receipts from843 stay at .gate-logs/observed/human-todo-docs{311,312}/
+v012-human-todo-docs{311,312}.json. No final proof or request follows.
+Native status after843 retains gateFAIL/no running gate and7open/132excluded;
+latest disk97percent/7.5GiB still exceeds95. Required operator facts stay pending.
+
+### Retained implementation and missing-proof context
 
 Root is sole Main/shared/Git writer from reviewed local
 37454900137c21e4d051b9c1fd65cc6c450ac514 on
@@ -45,7 +59,8 @@ and21/2850 unchanged; diagnostic240/180 is not final proof.
 
 Latest measured disk97percent/7.6GiB still exceeds95. Preserve original60907
 and the original refused/unfiled HumanTodo. The updated request input374 validates
-through bounded native check mode0/native0.8s/id=null, never a filed item.
+through bounded native check mode (HUMAN_TODO_VALIDATE_ONLY=1),
+exit0/native0.8s/id=null; no HumanTodo is filed.
 The pending question requests only existing daemon URL and credential binding
 name. Fully consumed core-daemon proposal is HOLD: existing foreground CLI owns
 its child lifecycle, but persistent DB/config/schema/runtime/auth are unverified.

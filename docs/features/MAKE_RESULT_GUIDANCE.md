@@ -8,6 +8,42 @@ authoritative; no second observer, runner, cache or proof schema is introduced.
 
 ## HumanTodo results require identity and reconciliation, 2026-10-22 UTC
 
+### Separate check policy from native exit status
+
+Exact843fe156cd3a2bf6449456bc8365c5740e70cb9c has independent APPROVE SOURCE ONLY
+against374, fully read at /tmp/gludd-v012-human-todo-843-source-review.md.
+Its normal guarded hooks collect129008selected/129032collected,24deselected/
+zero errors47.56s/native52.927s; native receipt:
+.gate-logs/observed/test-count/20261022T124815Z-1429-8cc1bca6.json.
+Final four-owner documentation receipts pass54 per runtime,3117.29s/native9.008s
+and3128.49s/native10.296s:
+.gate-logs/observed/human-todo-docs{311,312}/v012-human-todo-docs{311,312}.json.
+
+The review catches ambiguous SESSION wording "check mode0/native0.8s/id=null."
+The intended0 is an exit status; literal HUMAN_TODO_VALIDATE_ONLY=0 applies.
+Apply the exact source-only review's receiving patch:
+HUMAN_TODO_VALIDATE_ONLY=1 selects check mode; exit0/native0.8s/id=null reports
+its native result and no filed request. This documentation clarification changes
+no source, Make policy, assertions, rosters, budgets or candidate proof state.
+Retain accepted source suites; check affected documentation and normal collection
+without repeating662 unchanged tests or adding a receipt-only commit.
+
+The frozen review packet includes its exact17-path roster, thirteen historical
+native evidence copies and two unchanged843 imports: the canonical HTTP fixture
+and module client/result helper. Include those direct support boundaries when
+preparing review exports; a changed-path list alone cannot prove restoration or
+error-schema compatibility. They are frozen review evidence, never current
+observations or another cache/runner. Root consumes the complete decision/patch
+and all reader sessions are quiescent before the receiving mutation.
+
+Latest native status retains exact843, gateFAIL/no running gate, seven open
+milestone tasks,132 excluded backlog items and zero observed workers; model-agent
+status is separate. Disk remains97percent/7.5GiB against95. Operator endpoint/
+credential binding and persistent daemon/store ownership remain unverified.
+No original60907/final-gate/API replay, startup, cleanup or promotion follows.
+
+### Retained implementation evidence
+
 This coupled S98.4 repair starts from reviewed local
 37454900137c21e4d051b9c1fd65cc6c450ac514 on
 release-candidate/v012-git-mutex-20261022. Development remains
