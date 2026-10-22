@@ -18,7 +18,7 @@ from scripts import makefile_layout
 from tests.unit.test_observed_command import _command, _current_status
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 175
+EXPECTED_FAMILY_COUNT = 176
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 EXPECTED_MAIN_PYTEST_FLAGS = (
@@ -121,6 +121,7 @@ ROSTER = (
     "tests/unit/test_test_files_native_trace.py::test_observer_trace_contains_real_matching_protocol_pairs[pass-serial]",
     "tests/unit/test_xdist_trace_diagnostics.py::test_native_summary_cli_keeps_json_status_and_emits_guidance[trace_guidance_native_rows0-empty]",
     "tests/unit/test_presentation_browser_apt_source.py::test_apt_mode_is_literal_at_real_make_startup[environment-override]",
+    "tests/unit/test_git_status_readonly.py::test_status_never_refreshes_native_index[inherited-one]",
     "tests/unit/test_status_heartbeat_terminal.py", "tests/unit/test_task_ledger_validation.py",
     "tests/unit/test_make_readonly_version.py", "tests/unit/test_make_help_audit.py",
     "tests/unit/test_clean_stale_resource_namespaces.py", "tests/unit/test_native_temp_artifact_target.py",
@@ -1014,7 +1015,7 @@ def test_coverage_suite_provenance_failure_has_one_exact_native_route(tmp_path: 
         if index:
             assert node not in selection
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 175
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 176
     assert payload["families"][149]["id"] == "native-full-scan-success-inventory"
     assert payload["families"][150] == {
         "id": "coverage-native-suite-provenance",
@@ -1078,7 +1079,7 @@ def test_uv_prune_native_failure_has_one_exact_native_route(tmp_path: Path) -> N
         assert node.split("::", 1)[0] not in selection
     assert counts == [1, 0, 0]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 175
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 176
     assert payload["families"][150]["id"] == "coverage-native-suite-provenance"
     assert payload["families"][151] == {
         "id": "uv-prune-native-failure-status",
@@ -1114,7 +1115,7 @@ def test_uv_prune_inherited_policy_has_one_exact_native_route(tmp_path: Path) ->
     assert counts == [1, 0, 0]
     assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 175
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 176
     assert payload["families"][151]["id"] == "uv-prune-native-failure-status"
     assert payload["families"][152] == {
         "id": "uv-prune-inherited-policy-context", "owner_target": OWNER,
@@ -1145,7 +1146,7 @@ def test_shared_uv_inventory_has_one_exact_native_route(tmp_path: Path) -> None:
     assert all(node.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 175
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 176
     assert payload["families"][152]["id"] == "uv-prune-inherited-policy-context"
     assert payload["families"][153] == {
         "id": "shared-uv-cache-inventory-exposure", "owner_target": OWNER,
@@ -1185,7 +1186,7 @@ def test_git_handoff_failures_have_exact_native_routes(
     assert all(node_selector.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 175
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 176
     assert payload["families"][153]["id"] == "shared-uv-cache-inventory-exposure"
     assert payload["families"][154:156] == [
         {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
@@ -1269,6 +1270,8 @@ CANDIDATE_PROOF_PROMOTIONS = (
      "test_native_summary_cli_keeps_json_status_and_emits_guidance[trace_guidance_native_rows0-empty]"),
     ("presentation-hosted-apt-literal-mode", "tests/unit/test_presentation_browser_apt_source.py::"
      "test_apt_mode_is_literal_at_real_make_startup[environment-override]"),
+    ("git-status-native-index-readonly", "tests/unit/test_git_status_readonly.py::"
+     "test_status_never_refreshes_native_index[inherited-one]"),
 )
 
 WORK_ITEM_PROMOTIONS = (
@@ -1298,7 +1301,7 @@ def test_make_safety_and_guidance_have_exact_native_routes(
     assert all(node_selector.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 175
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 176
     assert [family["id"] for family in payload["families"][154:156]] == [
         "git-async-live-owner-handoff", "git-async-completed-owner-adoption",
     ]

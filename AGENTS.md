@@ -62,6 +62,19 @@ measurements, rejected approaches and the missing release proofs.
    files. Source review, collection, focused acceptance and final proof retain
    distinct authority. Reuse the native owners; no second observer or cache.
 
+Native status readers must preserve the index as well as working bytes. The
+existing git-status owner uses Git's no-optional-locks mode, retains native
+failures and emits observation-only guidance. On a hook/index conflict, reconcile
+owned state and preserve the failed evidence; use index-only git-unstage-files
+for exact owned paths before committing the status-owner repair first. Do not
+attribute an uncaptured writer or delete locks. The [status record](docs/features/GIT_STATUS_READONLY.md)
+retains the real failure, native write witness and receiving/promotion scope.
+Native trace roles come from the actual pytest session config, not inherited
+worker environment labels. Preserve carriers, original controller/worker pairs
+and profile restoration; test ordinary teardown and a newer/restored owner.
+The [role record](docs/features/XDIST_TRACE_SUMMARY.md#native-session-role-and-lifecycle-boundary-s9842026-10-22-utc)
+retains separate RED/coverage/runtime receipts and proof limits.
+
 ### Make results teach the next action
 
 Candidate hosted proof requires the canonical exact-SHA push event. Keep the
@@ -97,7 +110,12 @@ On success, state what was measured and the next required owner, including
 missing gate/exact-SHA proof. Retained SESSION collection paragraphs name their
 fixed source/ref and native receipt; never inherit a changing current header.
 The existing first-child SESSION node rejects direct relative claims; source
-review still owns semantic attribution. Emit terminal-success guidance only after all
+review still owns semantic attribution. Its hash parser follows the existing
+hex-letter evidence boundary, excluding numeric dates/counts while retaining
+native verification of the first real hash. Keep additive boundary negatives
+and complete persistence/snapshot receiving; never reorder prose to hide a
+parser defect. The [SESSION record](docs/features/STATUS_SNAPSHOT_PORTABILITY.md#hex-letter-session-hash-boundary-s9842026-10-22-utc)
+retains the actual runtime failure and source-only repair scope. Emit terminal-success guidance only after all
 required children finish successfully. Preserve exit codes, original assertions,
 fatal warnings, coverage, cleanup and promotion gates. Guidance is advisory
 context for the model; native measurements and the established gates remain

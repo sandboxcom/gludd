@@ -138,6 +138,38 @@ publication, actual hosted source preparation followed by the original installer
 launch and both browser/JS gates, exact-SHA CI/deployment and promotion remain
 pending. All seven release tasks stay unchecked.
 
+### URI field review correction
+
+Independent review of exact ad4f92abc025cd416d0c72d822270336901ba00a is
+CHANGES REQUIRED: /tmp/gludd-v012-pages-input-ad4f92-source-review.md.
+The binding matcher requires whitespace and a nonempty value, so additional
+URIs:unknown, unspaced duplicate and empty URIs: fields are invisible to the
+existing allowlist/count/uniqueness assertions. The minimal reviewed correction
+is consumed from /tmp/gludd-v012-pages-input-ad4f92-URI-binding-correction.patch.
+Retain that rejection and immutable candidate; its23/668 earlier passes did not
+exercise this boundary.
+
+Receive the three additive native refusal cases first. Both unspaced controls
+fail4.01s/native2/4.9s and the empty-field control fails2.23s/native2/2.9s:
+.gate-logs/observed/pages-uri-binding-red/v012-pages-uri-binding-red311.json and
+v012-pages-empty-uri-red311.json. Actual Ansible incorrectly reports prepared
+and mutates the owned mirror fixture. Capture every URIs field, including empty
+or unspaced values, so the original assertions reject before that atomic write.
+All23 predecessor cases, failure status, no-prepared and byte/mode assertions
+remain unchanged; no test exception or new parsing dependency is introduced.
+
+The complete26-case owner plus59 fixture-collision controls passes85 per
+runtime:31125.06s/native0/25.872s and31227.97s/native0/29.146s. Native receipts:
+.gate-logs/observed/pages-uri-binding/v012-pages-uri-binding311.json and
+v012-pages-uri-binding312.json; raw/XML are
+/tmp/gludd-v012-pages-uri-binding{311,312}.{log,xml}. Ruff and separate complete
+strict test-owner checking pass. This one-line YAML source correction changes
+no Python production source or coverage profile. Existing85aggregate/75each
+LINE AND BRANCH, fatal warnings and full gates remain required. Normal collection,
+independent successor source review, clean-SHA native family repair and actual
+hosted installer/browser/JS/deployment proof remain pending; do not relabel
+focused fixture success as acquisition or release acceptance.
+
 Rollback is a reviewed revert of this source change on a new candidate. Fresh
 hosted runners retain their image defaults; no persistent service/data migration
 exists. Never restore guessed remote /etc bytes or continue after failed prep.

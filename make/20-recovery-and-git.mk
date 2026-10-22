@@ -565,7 +565,13 @@ molecule-test-model-pipeline:
 	@cd collections/ansible_collections/general_ludd/agent && $(UV) run molecule test -s default
 
 git-status:
-	@git status --short || echo "Not a git repo"
+	@git --no-optional-locks status --short; native_rc=$$?; \
+	if [ "$$native_rc" -eq 0 ]; then \
+		printf '%s\n' 'AGENT_NEXT target=git-status outcome=observed native_status=0 gate_evidence=false release_ready=false next_owner=worktree-state; status is an observation; preserve owned changes and obtain the required source, gate and exact-SHA proofs' >&2; \
+	else \
+		printf '%s\n' "AGENT_NEXT target=git-status outcome=failed native_status=$$native_rc gate_evidence=false release_ready=false next_owner=worktree-state; retain the native Git reason; reconcile repository and owned index/lock state before retry; failure grants no commit or release authority" >&2; \
+	fi; \
+	exit "$$native_rc"
 
 git-show:
 	@test -n "$(SHA)" || (echo "Usage: make git-show SHA=<sha>"; exit 1)

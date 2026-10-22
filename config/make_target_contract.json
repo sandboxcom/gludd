@@ -1,6 +1,7 @@
 {
   "version": 1,
   "targets": [
+    {"name": "git-status", "make_variables": [], "behavior": "make git-status"},
     {"name": "inspect-presentation-browser-dependency-source", "make_variables": [], "behavior": "make inspect-presentation-browser-dependency-source"},
     {"name": "inspect-presentation-browser-dependency-source-live", "make_variables": [], "behavior": "make inspect-presentation-browser-dependency-source-live"},
     {"name": "ps-gludd", "make_variables": [], "behavior": "make ps-gludd"},

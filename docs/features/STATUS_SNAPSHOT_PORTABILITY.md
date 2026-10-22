@@ -64,6 +64,43 @@ afterward. The mandatory guide names the original marker owner and complete
 persistence owner, alongside the required Last Updated and Total tests: labels.
 No new handoff authority, scanner, cache, daemon or manual-default file is added.
 
+## Hex-letter SESSION hash boundary (S98.4,2026-10-22 UTC)
+
+The first clean runtime-family repair at
+ad4f92abc025cd416d0c72d822270336901ba00a fails2/2377PASS78.29s,
+native2/81.9s, before either later child. Its original90/60/2-1-1 bounds remain:
+.gate-logs/observed/runtime-repair-ad4f92/v012-runtime-repair-ad4f92-312.json.
+The persistence owner mistakes the branch suffix20261022 for its first Git
+hash. SESSION already names the actual published eb772 commit after that branch.
+Reordering the handoff would hide the parser defect.
+
+Conform the test parser to the existing AGENTS evidence policy: a bounded7-40
+lowercase hexadecimal token must contain at least one a-f letter. Numeric dates
+and counts are not evidence tokens. Preserve all nine original cases and the
+first actual token's native git cat-file commit verification; an invalid first
+hex token still fails even when a valid historical commit follows. Eight added
+token cases cover numeric/date, first/last-letter and length boundaries; two
+delegate controls exercise that original assertion. Explicit return annotations
+allow the complete changed owner to pass strict typing without suppressions.
+
+Canonical tests-first receiving is5FAIL/14PASS0.80s/native2/about1.9s:
+.gate-logs/observed/session-hash-boundary-red/v012-session-hash-boundary-red311.json.
+The complete persistence, snapshot and fixture-collision union then passes116
+on each runtime:3115.27s/native0/about6.2s and3126.34s/native0/7.4s.
+Receipts are .gate-logs/observed/session-hash-boundary/
+v012-session-hash-boundary311.json and v012-session-hash-boundary312.json;
+XML/raw remain /tmp/gludd-v012-session-hash-boundary{311,312}.{xml,log}.
+Ruff and a separate strict complete-owner check pass. No production Python
+source changes, coverage exclusions or fabricated coverage measurement are added.
+
+The same failed runtime run independently exposes an inherited xdist worker
+label on a serial grandchild; that producer repair is separate and remains
+pending. The failed attempt invalidates older current repair authority through
+ci-failure-repair. Only a clean successor's actual original-budget repair-owned
+execution can restore it. Collection/source review, full gate, hosted exact-SHA
+CI and deployment remain distinct pending proofs; all seven tasks stay unchecked.
+This local validation change mutates no serving process or data.
+
 ## Practitioner evidence
 
 Astral uv issue

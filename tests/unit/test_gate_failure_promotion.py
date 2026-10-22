@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 175
+EXPECTED_FAMILY_COUNT = 176
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -1832,7 +1832,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "make-guarded-goal-outcome-guidance", "work-item-administrative-result-guidance",
         "release-candidate-push-workflow-triggers",
         "pytest-native-trace-protocol", "trace-summary-result-guidance",
-        "presentation-hosted-apt-literal-mode",
+        "presentation-hosted-apt-literal-mode", "git-status-native-index-readonly",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2078,6 +2078,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "test_native_summary_cli_keeps_json_status_and_emits_guidance[trace_guidance_native_rows0-empty] "
         "tests/unit/test_presentation_browser_apt_source.py::"
         "test_apt_mode_is_literal_at_real_make_startup[environment-override] "
+        "tests/unit/test_git_status_readonly.py::test_status_never_refreshes_native_index[inherited-one] "
         "tests/unit/test_status_heartbeat_terminal.py " "tests/unit/test_task_ledger_validation.py "
         "tests/unit/test_make_readonly_version.py " "tests/unit/test_make_help_audit.py "
         "tests/unit/test_clean_stale_resource_namespaces.py " "tests/unit/test_native_temp_artifact_target.py "
@@ -2481,8 +2482,7 @@ def test_trace_summary_literal_guard_keeps_one_native_case_before_fanout() -> No
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
     node = ("tests/unit/test_trace_summary_make_inputs.py::"
             "test_summary_public_inputs_never_execute_make_or_shell_data[backticks-LOG-False]")
-    expected = {"id": "trace-summary-literal-inputs",
-                "owner_target": "_pytest-runtime-compatibility-admission",
+    expected = {"id": "trace-summary-literal-inputs", "owner_target": "_pytest-runtime-compatibility-admission",
                 "node_kind": "pytest_node", "node": node, "full_gate_phase": "test"}
     assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
     assert len(payload["families"]) == EXPECTED_FAMILY_COUNT

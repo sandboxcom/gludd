@@ -10,6 +10,70 @@ exit or interrupted test run. The summary command reads that record without
 modifying it. A non-empty failure or unfinished-test result remains failure
 evidence; formatting options never turn an incomplete run into a passing one.
 
+## Native session role and lifecycle boundary (S98.4,2026-10-22 UTC)
+
+The clean ad4f92abc025cd416d0c72d822270336901ba00a runtime repair fails
+2/2377PASS78.29s/native2/81.9s under unchanged90/60/2-1-1:
+.gate-logs/observed/runtime-repair-ad4f92/v012-runtime-repair-ad4f92-312.json.
+One failure is the separately repaired SESSION numeric-date parser. The other
+is test_observer_trace_contains_real_matching_protocol_pairs[pass-serial]:
+a real serial grandchild passes both tests but its events inherit gw0 from the
+outer xdist worker. A worker environment label identifies its carrier, not the
+new process's actual pytest session role. Preserve the original controller
+assertion and native event pairs rather than clearing carriers or changing the
+expected role.
+
+A private producer proposal reproduces two inherited-carrier failures while
+all19 original native controls pass:2FAIL/19PASS16.99s/native2/17.7s in
+/tmp/gludd-v012-trace-worker-role-proposal/red311.{log,xml}.
+Its initial role correction passes29 per runtime,31117.95s/native18.7s and
+31221.15s/native22.1s, but source review then identifies ordinary Config retention
+after unconfigure. Those private29 passes cover neither that teardown boundary
+nor the entire diagnostic/coverage profile; preserve them with their actual scope.
+
+Use native session config workerinput to identify the controller and worker;
+an inherited environment carrier is not fallback authority. Reuse the existing
+active config and profile pin/finish hooks. Release only the exact unconfigured
+ordinary owner; retain a profile's restored different previous owner and never
+let stale teardown clear a newer one. Keep profile artifact ownership, cleanup
+and prior-state restoration, original native controls and fatal warnings.
+The proposal's lifecycle controls, complete canonical receiving/coverage,
+independent successor review and clean-SHA repair-owned runtime proof remain
+pending at this checkpoint. Main/shared source and Git stay single-writer.
+No new observer/cache/profile state, global environment clearing, budget or
+coverage relaxation supplies this repair.
+
+Root takes over remaining lifecycle receiving; the private owner's unfinished
+report/proof task is cancelled because Root owns canonical acceptance. Its
+three postimages and all private native receipts remain preserved under
+/tmp/gludd-v012-trace-worker-role-proposal; no private helper lands.
+Canonical tests-first receiving produces11FAIL3.13s/native2/4.0s at
+trace-native-role-red/v012-trace-native-role-red311. Against the role-only repair,
+both actual teardown controls then fail0.64s/native2/1.3s at
+trace-native-lifecycle-red/v012-trace-native-lifecycle-red311. Preserve both
+receipts; these are assertion failures, not collection errors.
+
+After receiving the minimal final hook, the complete diagnostic/native/collision
+owners pass176/25.64s/native0/26.7s at trace-native-role/v012-trace-native-role311.
+Ruff and three separate strict scopes pass. The unchanged canonical12-owner
+profile plus complete native consumer passes548/103.50s/native0/105.6s:
+.gate-logs/observed/coverage-files/20261022T201228Z-69191-8c4ed183.json.
+Audit .gate-logs/coverage-20261022T201414Z.json measures91.7line/86.1branch;
+the whole trace plugin measures96.7line/87.5branch, and every whole file passes
+unchanged85aggregate/75each BOTH. Full JSON is
+.gate-logs/coverage-v012-native-role311.json; XML remains
+/tmp/gludd-v012-native-role-coverage311.xml.
+
+Complete Python3.12 compatibility, including all canonical trace owners plus
+SESSION/snapshot, all26 native apt cases and both link controls, passes
+633/94.30s/native0/96.256s at
+.gate-logs/observed/admission-boundary-receiving/v012-admission-boundary-receiving312.json.
+Tested source is82d757f84adb25d11b5b0480b8d702463d6ffb304f4ffb6bcf68eb1fb7f430d3;
+raw/XML remain /tmp/gludd-v012-admission-boundary-receiving312.{log,xml}.
+This source-scoped compatibility run is not the original90-second admission,
+final combined release replay or a full gate. Normal source commits, independent
+successor review, clean-SHA family repair, GHA and deployment remain pending.
+
 ## Native consumers and result guidance (S98.4, 2026-10-22 UTC)
 
 Root receives this coupled evidence repair on

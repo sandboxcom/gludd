@@ -241,6 +241,11 @@ running a command rather than allowing an implicit environment acquisition.
 SESSION's existing parser expects the local Last Updated date and a leading
 numeric Total tests: N field, including the colon. Keep UTC measurement dates and source provenance in
 the accompanying prose; the complete persistence owner exercises those fields.
+Hash evidence uses7-40 bounded lowercase hex characters with at least one a-f
+letter. Preserve the first real token's native Git commit check; branch dates and
+counts must not shadow it, and a later valid hash cannot rescue an invalid first
+one. The [SESSION boundary record](../../docs/features/STATUS_SNAPSHOT_PORTABILITY.md#hex-letter-session-hash-boundary-s9842026-10-22-utc)
+retains tests-first controls and complete persistence/snapshot receiving.
 Keep the native gate marker pair during handoff compaction, then run
 make status-snapshot STATUS_SNAPSHOT_VALIDATE_ONLY=0 to regenerate from the actual
 retained .gate-status. Keep source/profile/age interpretation outside that region;
@@ -676,6 +681,19 @@ terminal result before the next lifecycle cohort. Final gate/global coverage
 and exact-SHA release proof remain separate.
 
 ### Commit, integrate and promote through their owners
+
+make git-status has no variables. It disables optional index writes while keeping
+short stdout status, native failure propagation and advisory stderr guidance.
+Its zero exit proves only an observation. The [native status record](../../docs/features/GIT_STATUS_READONLY.md)
+retains actual metadata-write controls and the unidentified-writer hook failure.
+After a terminal hook failure reconcile worktree-state; git-unstage-files FILES
+must name only the exact owned index entries. It preserves working bytes. Stage
+the status-owner correction first so native temporary stash cycles retain it;
+keep all model/read/test owners quiescent and never clear locks or skip guards.
+Native pytest trace identity follows session workerinput while inherited carrier
+variables remain intact. Preserve original profile cleanup and exercise exact
+ordinary-owner release, previous-owner restoration and stale teardown. The [role record](../../docs/features/XDIST_TRACE_SUMMARY.md#native-session-role-and-lifecycle-boundary-s9842026-10-22-utc)
+names the complete unchanged coverage profile and actual receiving receipts.
 
 After integration, accept the complete changed owners and registered whole-file
 coverage in the receiving checkout. Source-branch receipts do not prove that an

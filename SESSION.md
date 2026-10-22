@@ -3,13 +3,56 @@
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: release-candidate/v012-git-mutex-20261022 eb772a658a01db4485087813e4478eb6c59cc328.
 Previously recorded development publication: 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 129093 selected / 129117 collected, 24 deselected, zero collection errors in47.38s/native52.615s during normal f2e2cf5d910cf8f4e44ab0430ee9a48fae89c0db hooks. Native receipt: .gate-logs/observed/test-count/20261022T150906Z-56373-519db956.{log,json,pytest.jsonl}. Collection is separate from behavioral and final-gate proof; prior refs retain their original receipts. The guarded-goal guidance repair starts from f2e; its normal hooks own fresh collection, without a receipt-only commit or unchanged source-suite replay.
+Total tests: 129237 selected / 129261 collected, 24 deselected, zero collection errors in51.87s/native60.7s during normal ad4f92abc025cd416d0c72d822270336901ba00a hooks. Native receipt: .gate-logs/observed/test-count/20261022T194715Z-43004-27466303.{log,json,pytest.jsonl}. Collection is separate from behavioral and final-gate proof; prior refs retain their original receipts. Boundary repairs start from ad4; each normal commit retains fresh native collection, without a receipt-only commit.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 hosted archive-input receiving
+## Current S98.4 status-owner commit prerequisite
+
+The complete boundary repair compatibility passes633/94.30s/native0/96.256s:
+admission-boundary-receiving/v012-admission-boundary-receiving312.json.
+Canonical trace coverage passes548/103.50s/native105.6s,91.7line/86.1branch,
+all four whole files above75BOTH with85aggregate unchanged. The [role record](docs/features/XDIST_TRACE_SUMMARY.md#native-session-role-and-lifecycle-boundary-s9842026-10-22-utc)
+retains source hashes, the eleven-case RED and separate teardown2RED.
+The attempted first source commit fails in a native stash/secrets guard on
+index.lock before collection or a commit. Native state retains15dirty/eight
+staged paths; writer unidentified. The [status record](docs/features/GIT_STATUS_READONLY.md)
+owns5FAIL/1PASS, actual metadata-write witness,130PASS and family176/eightpins.
+Complete449-case receiving passes per311/312,62.93s/85.53s with native0;
+exact receipts, contract282 and actual safe example remain in that record.
+Root receives that small native status correction first, then commits SESSION,
+URI and trace separately; all remain local receiving until native commits prove
+otherwise. The interrupted private trace owner's unfinished proof/report is
+cancelled because Root now owns its canonical receiving; all three postimages
+and prior results are consumed/preserved. No additional model/reader/test owner
+runs during Git hooks. Full gate, exact-SHA hosted/deployment and promotion stay
+pending; original budgets and all seven unchecked tasks remain unchanged.
+
+## Retained S98.4 admission boundary repairs
+
+Source is ad4f92abc025cd416d0c72d822270336901ba00a on the candidate branch above.
+Normal hooks collect129237selected/129261collected,24deselected/0errors51.87s/
+native60.7s at test-count/20261022T194715Z-43004-27466303.json.
+The first clean runtime-family repair, executed through ci-failure-repair, fails
+2/2377PASS78.29s/native2/81.9s before fresh HELP/tail:
+runtime-repair-ad4f92/v012-runtime-repair-ad4f92-312.json. Preserve the failure
+and invalidated older current repair authority. Original90/60/2-1-1 stays.
+The [SESSION boundary record](docs/features/STATUS_SNAPSHOT_PORTABILITY.md#hex-letter-session-hash-boundary-s9842026-10-22-utc)
+retains the branch-date misparse, additive5FAIL/14PASS RED, unchanged real-Git
+assertion and116PASS receiving per311/312. Independent inherited-worker trace
+producer repair is pending. Source review of ad4 is CHANGES REQUIRED at
+/tmp/gludd-v012-pages-input-ad4f92-source-review.md: extra unspaced/empty URI
+fields bypass inspection. Three actual native negatives reproduce that gap;
+the playbook correction is receiving, never covered retroactively by its old23
+or668-case result. All old receipts/ref/rejections remain immutable.
+Root owns Main/shared/Git and batches all three actual repairs before another
+clean repair-owned runtime attempt and normal guarded push. No current successor
+CI/deployment/full-gate proof exists; all seven release items stay unchecked.
+Capacity remains the actual final-proof blocker; no unchanged full-gate retry.
+
+## Retained S98.4 hosted archive-input receiving
 
 Root receives the native Make/Ansible/Pages repair from exact
 5dc22cb9d885636df107dbbda6d28ead94a048c2, retaining sole Main/shared/Git ownership.

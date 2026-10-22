@@ -1384,6 +1384,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_presentation_browser_apt_source.py::test_apt_mode_is_literal_at_real_make_startup[environment-override]",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "git-status-native-index-readonly",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_git_status_readonly.py::test_status_never_refreshes_native_index[inherited-one]",
+      "full_gate_phase": "test"
     }
   ]
 }
