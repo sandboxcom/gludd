@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -484,7 +486,16 @@ def test_make_targets_run_traced_full_suite() -> None:
     assert "-p scripts.xdist_trace_plugin" in makefile
     assert "GLUDD_XDIST_TRACE_RUN_ID" in makefile
     assert chr(10) + "test-xdist-trace-summary:" in makefile
-    assert '--run-id "$(RUN_ID)"' in makefile
+    summary_recipe = makefile.split(chr(10) + "test-xdist-trace-summary:" + chr(10), 1)[1].split(
+        chr(10) + chr(10), 1
+    )[0]
+    assert '--run-id "$$GLUDD_TRACE_SUMMARY_RUN_ID"' in summary_recipe
+    assert 'scripts/summarize_xdist_trace.py "$$@" -- ' in summary_recipe
+    assert '"$${GLUDD_TRACE_SUMMARY_LOG:-/tmp/gludd-xdist-progress.log}"' in summary_recipe
+    assert (
+        "test-xdist-trace-summary: override GLUDD_TRACE_SUMMARY_RUN_ID = $(value RUN_ID)"
+        in makefile
+    )
 
 
 def test_runner_exports_repo_root_for_plugin_import(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1083,3 +1094,189 @@ def test_profile_trace_pins_regular_file_identity_and_refuses_truncation(
         assert path.read_text(encoding="utf-8") == "replacement unchanged"
     finally:
         trace._finish_profile(native_profile_config, 1)
+
+
+def _guidance_event(kind: str, timestamp: float, **values: object) -> str:
+    return json.dumps({
+        "event": kind, "run_id": "selected-run", "worker": "gw0", "pid": 101,
+        "nodeid": "tests/example.py::test_example", "timestamp": timestamp, **values,
+    })
+
+
+_GUIDANCE_PAIRED = (
+    _guidance_event("START", 10),
+    _guidance_event("FINISH", 12),
+)
+_GUIDANCE_CASES = [
+    pytest.param(None, True, "empty", 0, 0, 0, 0, 0, id="missing"),
+    pytest.param((), True, "empty", 0, 0, 0, 0, 0, id="empty"),
+    pytest.param(
+        (_guidance_event("START", 10, run_id="other-run"),), True,
+        "empty", 0, 0, 0, 0, 0, id="filtered-empty",
+    ),
+    pytest.param(
+        (_guidance_event("RUN_START", 10),), True,
+        "no-paired-timings", 1, 0, 0, 0, 0, id="events-without-protocol",
+    ),
+    pytest.param(
+        (_guidance_event("START", 10),), True,
+        "partial", 1, 0, 1, 1, 0, id="unfinished",
+    ),
+    pytest.param(("not-json",), False, "partial", 1, 0, 1, 0, 0, id="parse-error"),
+    pytest.param(
+        (*_GUIDANCE_PAIRED, _guidance_event("FINISH", 13)), True,
+        "partial", 3, 1, 1, 0, 0, id="paired-plus-unmatched",
+    ),
+    pytest.param(
+        (_guidance_event("START", 10),
+         _guidance_event("REPORT", 11, outcome="failed", when="call"),
+         _guidance_event("FINISH", 12)),
+        True, "populated-with-failures", 3, 1, 0, 0, 1, id="failed-paired",
+    ),
+    pytest.param(_GUIDANCE_PAIRED, True, "populated", 2, 1, 0, 0, 0, id="paired"),
+]
+
+
+@pytest.mark.parametrize("trace_guidance_mode", [[], ["--failures-only"], ["--verbose"]])
+@pytest.mark.parametrize(
+    ("trace_guidance_rows", "trace_guidance_filter", "trace_guidance_outcome",
+     "trace_guidance_events", "trace_guidance_pairs", "trace_guidance_issues",
+     "trace_guidance_unfinished", "trace_guidance_failures"),
+    _GUIDANCE_CASES,
+)
+def test_summary_cli_guidance_uses_actual_selected_evidence_without_json_changes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    trace_guidance_mode: list[str], trace_guidance_rows: tuple[str, ...] | None,
+    trace_guidance_filter: bool, trace_guidance_outcome: str,
+    trace_guidance_events: int, trace_guidance_pairs: int, trace_guidance_issues: int,
+    trace_guidance_unfinished: int, trace_guidance_failures: int,
+) -> None:
+    from scripts import summarize_xdist_trace as summary_module
+
+    path = tmp_path / "trace.jsonl"
+    if trace_guidance_rows is not None:
+        path.write_text("".join(row + chr(10) for row in trace_guidance_rows), encoding="utf-8")
+    before = path.read_bytes() if path.exists() else None
+    selected_run = "selected-run" if trace_guidance_filter else None
+    summary = summary_module.summarize_log(path, run_id=selected_run)
+    if "--verbose" in trace_guidance_mode:
+        expected = summary
+    elif "--failures-only" in trace_guidance_mode:
+        expected = summary_module.failures_only_summary(summary)
+    else:
+        expected = summary_module.compact_summary(summary)
+    arguments = [*trace_guidance_mode]
+    if selected_run is not None:
+        arguments.extend(["--run-id", selected_run])
+
+    assert summary_module.main([*arguments, str(path)]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.out == json.dumps(expected, indent=2, sort_keys=True) + chr(10)
+    assert summary["events"] == trace_guidance_events
+    assert summary["timings"]["paired_count"] == trace_guidance_pairs
+    assert summary["timings"]["issue_count"] == trace_guidance_issues
+    assert len(summary["unfinished"]) == trace_guidance_unfinished
+    assert summary["failure_report_count"] == trace_guidance_failures
+    assert captured.err.startswith(
+        "AGENT_NEXT target=test-xdist-trace-summary outcome=" + trace_guidance_outcome + " "
+    )
+    for expected_field in (
+        f"events={trace_guidance_events}", f"paired_count={trace_guidance_pairs}",
+        f"issue_count={trace_guidance_issues}", f"unfinished={trace_guidance_unfinished}",
+        f"failure_reports={trace_guidance_failures}", "gate_evidence=false",
+        "release_ready=false", "Exit 0 means summary generation",
+    ):
+        assert expected_field in captured.err
+    if trace_guidance_outcome == "empty":
+        assert "timing, cause and performance remain unknown" in captured.err
+        assert "exact LOG/RUN_ID" in captured.err
+    elif trace_guidance_outcome == "partial":
+        assert "missing intervals remain unknown" in captured.err
+    elif trace_guidance_outcome == "no-paired-timings":
+        assert "no accepted paired timing spans" in captured.err
+    else:
+        assert "wall spans include fixtures and child waits" in captured.err
+        assert "not CPU or suite elapsed time" in captured.err
+    assert captured.err.count(chr(10)) == 1
+    assert (path.read_bytes() if path.exists() else None) == before
+
+
+@pytest.mark.parametrize("trace_guidance_library_rows", [(), _GUIDANCE_PAIRED])
+def test_summary_library_projection_remains_silent(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    trace_guidance_library_rows: tuple[str, ...],
+) -> None:
+    from scripts import summarize_xdist_trace as summary_module
+
+    path = tmp_path / "trace.jsonl"
+    path.write_text("".join(row + chr(10) for row in trace_guidance_library_rows), encoding="utf-8")
+    summary = summary_module.summarize_log(path)
+    assert summary_module.compact_summary(summary)["events"] == len(trace_guidance_library_rows)
+    assert summary_module.failures_only_summary(summary)["failure_report_count"] == 0
+    assert capsys.readouterr() == ("", "")
+
+
+@pytest.mark.parametrize(
+    ("trace_guidance_native_rows", "trace_guidance_native_outcome"),
+    [
+        ((), "empty"),
+        ((_guidance_event("START", 10),), "partial"),
+        (_GUIDANCE_PAIRED, "populated"),
+    ],
+)
+def test_native_summary_cli_keeps_json_status_and_emits_guidance(
+    tmp_path: Path, trace_guidance_native_rows: tuple[str, ...],
+    trace_guidance_native_outcome: str,
+) -> None:
+    from scripts import summarize_xdist_trace as summary_module
+
+    path = tmp_path / "trace with spaces.jsonl"
+    path.write_text("".join(row + chr(10) for row in trace_guidance_native_rows), encoding="utf-8")
+    before = path.read_bytes()
+    result = subprocess.run(
+        [sys.executable, str(Path(summary_module.__file__).resolve()), "--include-timings",
+         "--run-id", "selected-run", "--", str(path)],
+        cwd=tmp_path, capture_output=True, text=True, check=False, timeout=5,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout) == summary_module.compact_summary(
+        summary_module.summarize_log(path, run_id="selected-run"), include_timings=True,
+    )
+    assert "outcome=" + trace_guidance_native_outcome + " " in result.stderr
+    assert "gate_evidence=false release_ready=false" in result.stderr
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    ("trace_guidance_failure", "trace_guidance_status", "trace_guidance_error"),
+    [("invalid-run-id", 2, "run ID must be a safe path component"),
+     ("unreadable-input", 1, "IsADirectoryError")],
+)
+def test_native_summary_cli_preserves_parse_and_io_failure_status(
+    tmp_path: Path, trace_guidance_failure: str,
+    trace_guidance_status: int, trace_guidance_error: str,
+) -> None:
+    from scripts import summarize_xdist_trace as summary_module
+
+    arguments = ["--run-id", "../unsafe"] if trace_guidance_failure == "invalid-run-id" else []
+    result = subprocess.run(
+        [sys.executable, str(Path(summary_module.__file__).resolve()), *arguments, str(tmp_path)],
+        cwd=tmp_path, capture_output=True, text=True, check=False, timeout=5,
+    )
+    assert result.returncode == trace_guidance_status
+    assert result.stdout == ""
+    assert trace_guidance_error in result.stderr
+    assert "AGENT_NEXT" not in result.stderr
+
+
+@pytest.mark.parametrize("trace_guidance_make_e", [False, True])
+def test_summary_recipe_retains_native_quoted_run_and_log_arguments(
+    tmp_path: Path, trace_guidance_make_e: bool,
+) -> None:
+    from tests.unit.test_trace_summary_make_inputs import _assert_call, _run, _values
+
+    values = {**_values(tmp_path), "TRACE_SUMMARY_TIMINGS": "1", "TRACE_SUMMARY_MEMORY": "1"}
+    result = _run(tmp_path, values, trace_environment_overrides=trace_guidance_make_e)
+    assert result.returncode == 0, result.stdout + result.stderr
+    _assert_call(tmp_path, values)

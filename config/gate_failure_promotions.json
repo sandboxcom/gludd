@@ -1363,6 +1363,20 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_release_pipeline_structure.py::TestReleaseCandidateHostedValidation::test_candidate_push_filters_preserve_existing_routes",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "pytest-native-trace-protocol",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_test_files_native_trace.py::test_observer_trace_contains_real_matching_protocol_pairs[pass-serial]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "trace-summary-result-guidance",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_xdist_trace_diagnostics.py::test_native_summary_cli_keeps_json_status_and_emits_guidance[trace_guidance_native_rows0-empty]",
+      "full_gate_phase": "test"
     }
   ]
 }

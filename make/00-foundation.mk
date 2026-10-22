@@ -61,6 +61,12 @@ export GLUDD_UV_CACHE_PRUNE_VALIDATE_ONLY := $(value UV_CACHE_PRUNE_VALIDATE_ONL
 export GLUDD_UV_CACHE_PRUNE_ROOT := $(value UV_CACHE_PRUNE_OBSERVED_ROOT)
 unexport UV_CACHE_PRUNE_TIMEOUT UV_CACHE_PRUNE_FORCE UV_CACHE_PRUNE_VALIDATE_ONLY UV_CACHE_PRUNE_OBSERVED_ROOT
 
+# Keep an explicitly supplied pytest trace path literal before startup exports.
+ifneq ($(filter command line environment override,$(origin GLUDD_XDIST_TRACE_LOG)),)
+override GLUDD_XDIST_TRACE_LOG := $(value GLUDD_XDIST_TRACE_LOG)
+export GLUDD_XDIST_TRACE_LOG
+endif
+
 # Keep the opt-in watcher flag literal before native startup/export expansion.
 RUN_WATCHED_PYTEST_TRACE ?= 0
 override RUN_WATCHED_PYTEST_TRACE := $(value RUN_WATCHED_PYTEST_TRACE)

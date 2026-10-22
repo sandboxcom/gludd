@@ -197,7 +197,10 @@ def test_native_cprofile_refuses_external_internal_mode(
     assert "python -m pytest" not in result.stdout
 
 
-def test_native_cprofile_off_preserves_original_recipe() -> None:
+def test_native_cprofile_off_preserves_original_recipe(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("GLUDD_XDIST_TRACE_LOG", "GLUDD_XDIST_TRACE_RUN_ID", "GLUDD_XDIST_TRACE_TRUNCATE"):
+        monkeypatch.delenv(name, raising=False)
+
     ordinary = _make("-n", "test-files", "TESTFILES=fixture.py", "PYTEST_ARGS=-q -n 0")
     profiled = _make("-n", "test-files-cprofile", "TESTFILES=fixture.py", "PYTEST_ARGS=-q -n 0")
     assert ordinary.returncode == profiled.returncode == 0

@@ -1,14 +1,62 @@
 # Current release handoff
 
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
-Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
+Published/remote-VERIFIED: release-candidate/v012-git-mutex-20261022 eb772a658a01db4485087813e4478eb6c59cc328.
+Previously recorded development publication: 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
 Total tests: 129093 selected / 129117 collected, 24 deselected, zero collection errors in47.38s/native52.615s during normal f2e2cf5d910cf8f4e44ab0430ee9a48fae89c0db hooks. Native receipt: .gate-logs/observed/test-count/20261022T150906Z-56373-519db956.{log,json,pytest.jsonl}. Collection is separate from behavioral and final-gate proof; prior refs retain their original receipts. The guarded-goal guidance repair starts from f2e; its normal hooks own fresh collection, without a receipt-only commit or unchanged source-suite replay.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 candidate hosted validation
+## Current S98.4 native trace receiving
+
+Root is the sole Main/shared/Git writer on
+release-candidate/v012-git-mutex-20261022 from exact
+eb772a658a01db4485087813e4478eb6c59cc328. Its independent
+APPROVE SOURCE ONLY is fully consumed at
+/tmp/gludd-v012-candidate-push-eb772-source-review.md; normal hooks retain
+129135 selected / 129159 collected,24deselected,zeroerrors56.55s/native62.038s
+in .gate-logs/observed/test-count/20261022T173939Z-36513-e465bd56.json.
+Those receipts certify their own frozen scope. The global collection header
+remains explicitly historical f2e evidence.
+
+Normal candidate publication actually passes0/193.979s, then verify-remote
+returns VERIFIED for the full branch@eb772 SHA. The same native branch-owned
+pipeline-status output records terminal exact push evidence:
+Build39826135809FAIL, Molecule39826135844PASS(all6shards), Pages39826135878FAIL;
+2failed/0pending/1passed/0missing, native2/9.726s. Python3.12 admission returns
+124/90.5s after2371mainPASS85.10s and HELP1PASS1.23s, without tail terminal
+result. Pages Chromium dependency acquisition returns124/600s. These are
+separate actual families; no unchanged retry, bypass or release claim follows.
+
+The [native consumer record](docs/features/XDIST_TRACE_SUMMARY.md#native-consumers-and-result-guidance-s984-2026-10-22-utc)
+owns the coupled ordinary pytest plugin-load/literal-path repair and summary
+stderr AGENT_NEXT guidance. Root's new canonical106-case owner union first
+fails46/23.93s, including ordinary/-e actual startup; exact routing then fails2
+before families173/174 append after all172 predecessors. Eight pins pass
+1.86s/terminal0 before broad receiving. The first physical coverage attempt fails4/960PASS248.53s/native249.816s:
+three -e recorder overrides and one direct physical entrypoint read. Actual
+fixture authority/native copy-file and process-owned basetemps preserve all
+assertions; the corrected focused three-owner union passes147/27.25s. The
+source record retains that receipt and11real contract protocols. Corrected
+physical Main coverage passes537/104.25s/native106.556s; audit
+.gate-logs/coverage-20261022T183517Z.json passes91.7line/86.0branch across all
+four complete sources, each above75BOTH. Remaining complete callers pass386/
+64.18s/native65.133s. Python3.12 complete combined receiving passes975/150.59s/
+native152.776s at sourcef80643307f7bdd04fbf075091dad88b6d78dcafb7f5eaa7bee332297c7028369;
+the owning record retains all exact native receipts. Normal per-commit collection
+and independent new-SHA source review remain pending. Earlier private/physical
+coverage failures remain failures, never superseding or fabricated proof.
+
+All original selectors/order, three2/1/1 children,90/60,21phases/2850,85/75
+LINE AND BRANCH, fatal warnings, ZDD, cleanup/retention and promotion gates
+remain. No serving/deployment mutation. Hosted green for a clean descendant,
+actual runtime/Pages repair evidence, final capacity admission, full gate/global
+coverage, deployment acceptance and guarded integration remain missing.
+All7release tasks stay unchecked;132backlog entries stay outside this scope.
+
+## Retained 8ceb candidate hosted validation
 
 Root is the sole Main/shared/Git writer on
 release-candidate/v012-git-mutex-20261022 from exact

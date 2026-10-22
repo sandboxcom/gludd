@@ -334,6 +334,26 @@ retains the witnessed gap and source acceptance separately from timeout cause.
 Do not repeat an unchanged failed admission/publication or final gate merely to
 obtain a new trace. Preserve prerequisites and use bounded source acceptance.
 
+Ordinary test-files loads the existing plugin when its inherited raw
+GLUDD_XDIST_TRACE_LOG is nonempty; default-off stays plugin-free. Native
+serial/xdist controls must prove matching protocol pairs and exact run/worker/PID,
+not only argv/environment/path allocation. Early literal path capture also needs
+actual Main startup and ordinary/-e controls. Use pytest-owned temporary evidence;
+do not add an unbounded random source-tree archive.
+The [native consumer record](../../docs/features/XDIST_TRACE_SUMMARY.md#native-consumers-and-result-guidance-s984-2026-10-22-utc)
+retains source RED, two routing REDs and both real exact-SHA hosted failures.
+A synthetic UV recorder owns override UV under -e; retain its surrounding
+coverage/runtime environment. Let test-files allocate its native process-owned
+basetemp and assert actual cleanup rather than sharing a fixture basename.
+Use native copy-file for a physical entrypoint needed by an actual startup
+probe; keep compose_makefile for logical reads and preserve the guard.
+Run focused green with the real recursive carriers before broad acceptance.
+Measure the complete canonical coverage profile, then run remaining complete
+callers normally; instrumentation of unrelated repository audits is no shortcut.
+The existing summary CLI keeps JSON stdout and emits outcome-specific stderr:
+empty/events-without-pairs/partial/populated is diagnostic, never gate/CI authority.
+Follow that result without changing native status or fabricating missing spans.
+
 ### Attribute a runtime timeout before changing source
 
 When test-files-cprofile owns a private trace, use the generated profile run ID

@@ -129,6 +129,19 @@ put a raw PSK in JSON/argv or infer credential binding from ambient server auth.
 An approved controller binding can be passed explicitly by name through native
 Ansible env lookup; reject missing/empty values and retain the [native auth controls](docs/features/MAKE_RESULT_GUIDANCE.md#explicit-controller-credentials).
 
+Before diagnosing pytest timing, verify that the actual test-files consumer
+loads the existing trace plugin and records matching protocol pairs. An allocated
+path or summary exit0 with no events grants no timing/cause/performance evidence.
+Use the native summary's stderr AGENT_NEXT outcome while retaining its unchanged
+stdout JSON and native status. Require focused green with the actual recursive
+carriers before broad receiving; measure the complete coverage profile and run
+remaining complete callers normally. Keep fixture recorders authoritative under
+-e, native process-owned basetemps and the logical-Makefile guard intact.
+Keep nested trace identities separate and use
+pytest-owned fixtures instead of unbounded archive copies. The
+[native consumer record](docs/features/XDIST_TRACE_SUMMARY.md#native-consumers-and-result-guidance-s984-2026-10-22-utc)
+retains ordinary/-e literal controls, real hosted failures and exact proof limits.
+
 ## Make Target Selection Contract
 
 Watched pytest diagnostics opt into the existing native trace with RUN_WATCHED_PYTEST_TRACE=1; mode0 preserves ordinary/inherited behavior. Publication owns mode1 for both watchers, without changing90/60,2/1/1 or proof authority. Native trace_path/run_id and failed artifacts remain producer-owned; no trace/cause/performance claim may be inferred from a different run. Explicit empty RUN_ID/LOG use existing automatic native identities, not a manual fixture. Optional observer arguments preserve CMD's shell positional parameters; retain the native two-mode regression. See the mandatory guide and [publication trace record](docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#retain-a-native-trace-for-publication-admission-2026-10-21).

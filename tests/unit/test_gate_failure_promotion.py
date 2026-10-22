@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 172
+EXPECTED_FAMILY_COUNT = 174
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -1692,14 +1692,8 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
 
     assert payload["full_gate_required"] is True
     assert [family["id"] for family in payload["families"]] == [
-        "dead-code-baseline-drift",
-        "coverage-gap-drift",
-        "resource-ownership-drift",
-        "claim-fence",
-        "project-isolation",
-        "concurrent-tick",
-        "mcp-workspace-containment",
-        "mcp-workspace-dispatch-jail",
+        "dead-code-baseline-drift", "coverage-gap-drift", "resource-ownership-drift", "claim-fence",
+        "project-isolation", "concurrent-tick", "mcp-workspace-containment", "mcp-workspace-dispatch-jail",
         "module-graph-classification-drift",
         "ansible-role-variable-prefix-drift",
         "cloud-iam-resource-pruning-trigger",
@@ -1838,6 +1832,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "run-watched-native-outcome-guidance", "run-watched-namesake-execution", "run-watched-complete-command",
         "make-guarded-goal-outcome-guidance", "work-item-administrative-result-guidance",
         "release-candidate-push-workflow-triggers",
+        "pytest-native-trace-protocol", "trace-summary-result-guidance",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2078,6 +2073,10 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_item_progress.py::test_native_work_item_status_guidance_preserves_owned_json[True] "
         "tests/unit/test_release_pipeline_structure.py::TestReleaseCandidateHostedValidation::"
         "test_candidate_push_filters_preserve_existing_routes "
+        "tests/unit/test_test_files_native_trace.py::"
+        "test_observer_trace_contains_real_matching_protocol_pairs[pass-serial] "
+        "tests/unit/test_xdist_trace_diagnostics.py::"
+        "test_native_summary_cli_keeps_json_status_and_emits_guidance[trace_guidance_native_rows0-empty] "
         "tests/unit/test_status_heartbeat_terminal.py " "tests/unit/test_task_ledger_validation.py "
         "tests/unit/test_make_readonly_version.py " "tests/unit/test_make_help_audit.py "
         "tests/unit/test_clean_stale_resource_namespaces.py " "tests/unit/test_native_temp_artifact_target.py "

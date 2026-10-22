@@ -1,7 +1,7 @@
 # Durable xdist Trace Summaries
 
 Status: implemented for the beta4 diagnostic workflow. Last reviewed:
-2026-10-21.
+2026-10-22.
 
 ## Purpose
 
@@ -9,6 +9,213 @@ Gludd's xdist trace is an append-only JSONL record designed to survive a worker
 exit or interrupted test run. The summary command reads that record without
 modifying it. A non-empty failure or unfinished-test result remains failure
 evidence; formatting options never turn an incomplete run into a passing one.
+
+## Native consumers and result guidance (S98.4, 2026-10-22 UTC)
+
+Root receives this coupled evidence repair on
+release-candidate/v012-git-mutex-20261022 from exact
+eb772a658a01db4485087813e4478eb6c59cc328, after its actual hosted workflows
+are terminal. Main/shared source and Git have one writer. Two private proposal
+owners supplied the Make/plugin-consumer and summary-CLI changes, and all
+their readers/tests are quiescent before receiving. Their separate decisions
+remain /tmp/gludd-v012-pytest-trace-load-proposal/decision.md and
+/tmp/gludd-v012-trace-summary-guidance-proposal/decision.md.
+
+### Actual local and hosted boundaries
+
+Normal eb772 publication actually passes all original guards and native
+collection, then remote verification returns VERIFIED for the full candidate
+branch/SHA. The publication operation is native0/193.979s:
+.gate-logs/observed/candidate-hosted-publication/v012-candidate-hosted-publication-eb772.json.
+Its canonical prerequisite passes8/1.90s/native3.513s; original runtime
+passes2371main/76.21s,1freshHELP/0.55s and11tail/8.61s, native0/89.997s.
+This single near-deadline pass establishes no stable timing margin.
+
+Exact push GHA is now real evidence, separate from local acceptance:
+
+| Workflow at exact eb772 | Actual terminal result |
+| --- | --- |
+| [Build39826135809](https://github.com/sandboxcom/gludd/actions/runs/39826135809) | Python3.11 gate passes;3.12 runtime admission times out124/90.5s |
+| [Molecule39826135844](https://github.com/sandboxcom/gludd/actions/runs/39826135844) | All6shards pass |
+| [Pages39826135878](https://github.com/sandboxcom/gludd/actions/runs/39826135878) | Chromium dependency acquisition times out124/600s |
+
+The same branch-owned pipeline-status producer records failure/false authority
+at .gludd/release-proof-status-release-candidate-v012-git-mutex-20261022.json.
+Its terminal receipt is
+.gate-logs/observed/candidate-hosted-status/v012-candidate-hosted-status-eb772-after-failure-log.json,
+native2/9.726s,2failed/0pending/1passed/0missing. Never hand-edit this JSON.
+
+The exact3.12 job119989841880 passes2371main/85.10s and freshHELP1/1.23s;
+there is no tail terminal result before90.5s. Preserve this as cutoff evidence,
+not an assertion failure or the cause of older development60907.
+The immutable ci-run-summary retains all8 downstream shard rows as unknown/null:
+the gate barrier prevents their execution. Its receipt is
+candidate-hosted-run-summary/v012-candidate-hosted-run-summary-eb772.
+Raw job logs remain /tmp/gludd-v012-candidate-hosted-job-log-eb772-312.log and
+/tmp/gludd-v012-candidate-hosted-job-log-eb772-pages.log. Successful log
+retrieval means retrieval only, not successful tests.
+
+Native observation opens separate actual families:
+dc864ae9899fce43a978cb71e9ffc5898adaaa3b1b40a1d474dc93d3ad8646f5
+for the3.12 runtime, and
+9658fbc8df91d95cfda02557724be087de9d816f5c91d65e64edfb5f5e8fc26e
+for Pages browser dependencies. The latter log identifies slow/stalled Ubuntu
+archive font downloads; it proves no general outage or mirror repair. Batch
+actual independent required repairs before another normal guarded push.
+First successful repair evidence for selected families belongs to
+ci-failure-repair on a clean descendant, not an earlier standalone replay.
+
+### Repair the actual pytest consumer
+
+The native publication watcher allocates a non-null inner trace, but its
+retained file is empty. Existing summary generation returns0/events0/
+paired_count0. stream_command already exports the native LOG/run ID; ordinary
+test-files omitted the existing pytest plugin. A path allocation is not event
+capture. No unchanged admission is replayed merely to obtain another trace.
+
+test-files now selects only the constant -p scripts.xdist_trace_plugin argument
+when the raw inherited GLUDD_XDIST_TRACE_LOG is nonempty or its existing private
+cprofile mode is active. No trace bytes are interpolated into shell syntax.
+A small early foundation binding preserves explicitly supplied literal paths
+before startup exports. Undefined stays unset; default-off remains plugin-free.
+Trusted file-defined target-specific values retain native context.
+
+The canonical new owner tests actual serial/xdist success and failure,
+matching run/worker/PID protocol pairs, native status, exact UV/pytest argv,
+interpreter, fatal warnings, physical rootdir/confcutdir and removed basetemp.
+It also tests environment/command-line/target-specific paths through extracted
+recipes and actual Main startup, each under ordinary Make and -e.
+Synthetic hostile paths never execute their confined marker.
+
+Root removes the private proposal's default UUID archive copies: permanent
+tests use pytest-owned temporary fixtures and existing native receipts. No
+unbounded source-tree proof archive is introduced. The legacy default-off
+cprofile fixture clears only its inherited trace keys before asserting the
+original full ordinary/profiled recipe equivalence; all original assertions stay.
+
+Nested cprofile/observer owners can legitimately select a different trace
+identity, leaving an empty outer allocation. Do not copy, merge or relabel those
+events. Use the actual native receipt and the selected child's run ID/path.
+
+### Teach the actual summary outcome
+
+The existing CLI prints its unchanged JSON stdout, then one bounded stderr
+AGENT_NEXT advisory from the same already-produced summary. Library calls stay
+silent; parse/I/O failures keep native2/1 without a successful-result advisory.
+Missing files, empty files and filters selecting no events keep native0.
+
+| Selected evidence | Agent action |
+| --- | --- |
+| Empty | Preserve receipt/raw trace; inspect producer and exact LOG/RUN_ID; timing/cause/performance unknown |
+| Events without pairs | Retain events; infer no timing |
+| Partial | Preserve failures, unfinished nodes and issues; missing intervals remain unknown |
+| Paired, including failures | Inspect accepted exact run/worker/PID wall spans; retain failures and original proof requirements |
+
+Exit0 certifies summary generation only. Every successful advisory says
+gate_evidence=false/release_ready=false. Wall spans include fixture/child waits,
+supply no worker CPU or suite elapsed time, and alone establish no timeout
+cause or performance improvement. No parser, runner, observer, cache, schema,
+flag or dependency is added.
+
+The old global quoted-run-ID substring assertion could pass because unrelated
+Make recipes contained that text. The conformed original assertion scopes the
+actual summary recipe and retains quoted private run ID/positional forwarding,
+end-of-options/log argument and raw-value binding. Additive ordinary/-e native
+argv controls retain the established recorder/tripwire assertions.
+
+### Failing-first receiving and unchanged proof requirements
+
+Private fixture/configuration failures are retained separately, with no source
+RED credit. Private summary coverage first fails two unchanged startup children
+because an inherited absolute observer root violates their exact namespace.
+A second private-carrier diagnostic passes518cases but FAILS coverage admission:
+the external postimage is outside the native audit's source=., and the remaining
+three canonical sources have84.3branch against85aggregate. Raw private metrics
+and518PASS are not audited four-file coverage. No third private profile follows;
+Root uses the unchanged physical Main four-file profile and all12owners.
+
+Root's canonical source RED is46FAIL/60PASS23.93s/native2/25.092s:
+.gate-logs/observed/pytest-trace-receiving-red/v012-pytest-trace-receiving-red311.json.
+It includes the six added -e cases; this is separate from the private13-case
+packet. Exact new routing controls then fail2/0.93s before executable wiring:
+.gate-logs/observed/pytest-trace-routing-red/v012-pytest-trace-routing-red311.json.
+
+Families173/174 append after all172 predecessors: pytest-native-trace-protocol
+selects one actual serial-pass consumer, and trace-summary-result-guidance
+selects one actual empty CLI child. Independent literal rosters/seeds/counts
+retain original order, three2/1/1 children,90total/60quiet,21phases/2850,
+fatal warnings and required complete gate. All8native pins pass1.86s/terminal0
+before broad receiving; receipt pytest-trace-pins/v012-pytest-trace-pins.
+Value-preserving literal compaction keeps both large mapping owners below2500.
+
+Canonical combined receiving, unchanged whole-file coverage85aggregate/75each
+LINE AND BRANCH, normal per-commit collection and exact-source review remain
+required at this stage. This source repair is diagnostic; neither original
+runtime timeout nor Pages acquisition is declared repaired. No serving process,
+database or deployment changes; ZDD/cleanup/retention remain intact. Rollback
+uses normal branch review/revert, retaining immutable failures. Final capacity
+admission, complete gate/global coverage, exact-SHA hosted green, deployment
+acceptance and promotion remain pending; all7release tasks stay unchecked.
+
+### Canonical fixture failures and corrected receiving scope
+
+The first physical Main coverage attempt collected964cases by instrumenting the
+12profile owners plus all Make/source callers. It fails4/960PASS248.53s,
+native1/249.816s, without publishing coverage:
+.gate-logs/observed/coverage-files/20261022T182609Z-75269-9e3bc398.json.
+Preserve /tmp/gludd-v012-native-trace-coverage311.xml. Three extracted -e
+cases lose their UV recorder because an inherited outer UV overrides the
+fixture's ordinary file assignment. The logical-Makefile guard also rejects
+the new test's direct read of the physical root entrypoint. These are real
+receiving fixture failures; no production assertion, guard or threshold changes.
+
+The fixture now owns override UV while preserving the surrounding environment,
+including coverage. Its actual Main startup input comes through native
+make copy-file into its owned temporary path; it still substitutes only00/10
+and retains all other actual includes. Logical readers continue to use
+compose_makefile. No guard exception, allowlist or disguised root read is added.
+Permanent tests bind the actual repository, removing proposal-only source
+redirects. An explicit empty ID lets test-files use its native process identity;
+assert the actual numeric basetemp and cleanup rather than a shared basename.
+All original protocol/argv/interpreter/root/status/literal assertions remain.
+
+The corrected three complete focused owners pass147/27.25s, native0/about28.2s,
+with explicit outer UV=uv and tracing enabled:
+.gate-logs/observed/pytest-trace-focused-green/v012-pytest-trace-focused-green311.json.
+The public Make contract example passes11/1.95s/native0/3.076s. Its actual
+summary has25events,11paired protocols and0issues, and emits the populated
+diagnostic advisory. Neither result clears either actual hosted failure.
+
+Keep whole-file coverage in its canonical12-owner scope plus the changed native
+consumer owner; run remaining complete Make/routing callers normally. The first
+overbroad instrumented attempt is failure evidence, not a runtime performance
+baseline. This scope correction preserves every test and the full four-source
+coverage profile85/75BOTH while avoiding instrumenting unrelated repository
+audits merely to measure those four sources. Focused green precedes broad
+acceptance; all complete owners remain in the combined receiving scope.
+
+Corrected physical Main coverage passes537/104.25s, native0/106.556s:
+.gate-logs/observed/coverage-files/20261022T183330Z-82650-79c6fa9e.json.
+It retains all12 canonical owners plus the19-case native consumer. The actual
+audit .gate-logs/coverage-20261022T183517Z.json reports passed=true:
+91.7line/86.0branch over all four complete physical source files, each above75
+LINE AND BRANCH, with85aggregate unchanged. This is scoped coverage, not the
+complete release coverage gate. The earlier failed profile stays immutable.
+
+The remaining complete Make/routing callers pass386/64.18s, native0/65.133s:
+.gate-logs/observed/pytest-trace-callers/v012-pytest-trace-callers311.json.
+All original logical-source guards pass. Separate focused/profile/caller/example
+receipts must not be described as one975-case Python3.11 execution.
+
+Python3.12 compatibility does run the complete975-case union in one invocation:
+975PASS/150.59s, native0/152.776s, source
+f80643307f7bdd04fbf075091dad88b6d78dcafb7f5eaa7bee332297c7028369,
+.gate-logs/observed/pytest-trace-compatibility/v012-pytest-trace-compatibility312.json.
+Native command/status/XML remain in that receipt and
+/tmp/gludd-v012-pytest-trace-compatibility312.xml. This focused receiving proves
+neither a90-second admission margin nor either hosted failure repaired.
+Normal per-commit collection, independent new-SHA source review, actual hosted
+repairs and all final release proofs remain separate pending requirements.
 
 ## Parent-Readable Observed Commands
 

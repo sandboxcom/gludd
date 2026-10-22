@@ -419,6 +419,46 @@ def failures_only_summary(
     )
 
 
+def _cli_guidance(
+    *, events: int, paired_count: int, issue_count: int,
+    unfinished_count: int, failure_count: int,
+) -> str:
+    """Explain the selected diagnostic result without changing its authority."""
+    if events == 0:
+        outcome = "empty"
+        detail = (
+            "No selected trace events; timing, cause and performance remain unknown. "
+            "Preserve the receipt/raw trace and inspect the producer and exact LOG/RUN_ID."
+        )
+    elif issue_count or unfinished_count:
+        outcome = "partial"
+        detail = (
+            "Preserve failures, unfinished nodes and timing issues; "
+            "only accepted paired spans are available and missing intervals remain unknown."
+        )
+    elif paired_count == 0:
+        outcome = "no-paired-timings"
+        detail = (
+            "Selected events contain no accepted paired timing spans; "
+            "preserve diagnostic evidence without inferring timing, cause or performance."
+        )
+    else:
+        outcome = "populated-with-failures" if failure_count else "populated"
+        detail = (
+            "Inspect accepted exact run/worker/PID spans and retain recorded failures; "
+            "wall spans include fixtures and child waits, not CPU or suite elapsed time. "
+            "These rows alone establish no timeout cause or performance improvement."
+        )
+    return (
+        "AGENT_NEXT target=test-xdist-trace-summary "
+        f"outcome={outcome} events={events} paired_count={paired_count} "
+        f"issue_count={issue_count} unfinished={unfinished_count} "
+        f"failure_reports={failure_count} gate_evidence=false release_ready=false: "
+        f"Exit 0 means summary generation only. {detail} "
+        "Original acceptance, full gate and exact-SHA release proofs remain required."
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     """Print the selected compact, failure-only, or verbose JSON summary."""
     parser = argparse.ArgumentParser(description="Summarize a Gludd xdist JSONL trace")
@@ -457,6 +497,15 @@ def main(argv: list[str] | None = None) -> int:
             summary, include_memory=args.include_memory, include_timings=args.include_timings
         )
     print(json.dumps(output, indent=2, sort_keys=True))
+    timings = summary["timings"]
+    print(
+        _cli_guidance(
+            events=summary["events"], paired_count=timings["paired_count"],
+            issue_count=timings["issue_count"], unfinished_count=len(summary["unfinished"]),
+            failure_count=summary["failure_report_count"],
+        ),
+        file=sys.stderr,
+    )
     return 0
 
 
