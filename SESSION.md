@@ -19,8 +19,12 @@ test-count/20261022T203312Z-84726-266d785b.json. Six other receiving code paths
 remain unstaged, so that measurement is not an isolated intermediate-tree count.
 The status record retains actual successful stash/guard/collection outcomes,
 the preceding failure and its unidentified writer; no lock was deleted.
-Root now commits SESSION, URI and trace code as separate small changes, each
-with mandatory native collection. All focused receiving/coverage results retain
+SESSION boundary code is locally committed at
+074e29f24957a9c95814d97020da6a79070f252a. Its working-checkout collection passes
+129268selected/129292collected,24deselected/0errors47.80s/native53.0s:
+test-count/20261022T203526Z-86047-34d172c2.json. Five receiving code paths remain;
+this is not their intermediate committed-tree count. Root now commits URI and
+trace separately, retaining mandatory native collection. All focused receiving/coverage results retain
 their original source/scope. Independent final-source review and clean-SHA
 repair-owned runtime/Pages evidence are next, before normal guarded publication.
 No successor hosted result, deployment acceptance, full gate or release proof

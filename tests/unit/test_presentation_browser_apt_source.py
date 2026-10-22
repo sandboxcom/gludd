@@ -347,7 +347,8 @@ def test_native_ansible_check_mode_predicts_without_writing(tmp_path: Path) -> N
     "refusal",
     ["unknown-mirror", "duplicate-mirror", "unknown-source", "duplicate-source",
      "missing-mirror", "linked-mirror", "linked-source", "wrong-architecture",
-     "case-variant-unknown-uri", "folded-uri"],
+     "case-variant-unknown-uri", "folded-uri", "unspaced-unknown-uri",
+     "unspaced-duplicate-uri", "empty-uri"],
 )
 def test_native_ansible_refuses_unknown_inputs_without_mutation(
     tmp_path: Path, refusal: str,
@@ -368,6 +369,12 @@ def test_native_ansible_refuses_unknown_inputs_without_mutation(
         source.write_text(
             NATIVE_SOURCE.replace("Suites:", " https://unknown.invalid/\nSuites:"), encoding="utf-8",
         )
+    elif refusal == "unspaced-unknown-uri":
+        source.write_text(NATIVE_SOURCE + "URIs:https://unknown.invalid/\n", encoding="utf-8")
+    elif refusal == "unspaced-duplicate-uri":
+        source.write_text(NATIVE_SOURCE + "URIs:mirror+file:/etc/apt/apt-mirrors.txt\n", encoding="utf-8")
+    elif refusal == "empty-uri":
+        source.write_text(NATIVE_SOURCE + "URIs:\n", encoding="utf-8")
     elif refusal == "duplicate-source":
         source.write_text(NATIVE_SOURCE + "URIs: mirror+file:/etc/apt/apt-mirrors.txt\n", encoding="utf-8")
     elif refusal == "missing-mirror":

@@ -9,7 +9,7 @@
     presentation_apt_root: /etc/apt
     presentation_apt_source_uris: >-
       {{ presentation_apt_source.content | b64decode
-         | regex_findall('(?im)^URIs:[ \t]+([^\n]+)$') }}
+         | regex_findall('(?im)^URIs:[ \t]*([^\n]*)$') }}
     presentation_apt_original_mirrors: |
       http://azure.archive.ubuntu.com/ubuntu/	priority:1
       https://archive.ubuntu.com/ubuntu/	priority:2
