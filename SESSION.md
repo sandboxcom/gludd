@@ -9,7 +9,26 @@ Total tests: 129268 selected / 129292 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 heartbeat launcher input receiving
+## Current S98.4 explicit-shell input receiving
+
+Source is e82f7741d956c06cf36ca615c204a6cf3011682f before this small hardening;
+Root owns Main/shared/Git. Native collection is129271selected/129295collected,
+24deselected/0errors50.26s/native59.3s; receipt210617Z-32044-71167502.
+The clean e82 Pages family has native26PASS20.57s/21.614s repair evidence,
+separate from hosted acquisition/deployment. The [owning record](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md)
+retains all failures and the negative wall benchmark. A new native0644 input
+control yields2FAIL2PASS1.48s/native2/2.4s on direct script execution. The minimal
+explicit POSIX shell prefix preserves original capabilities and avoids a new
+execute-bit assumption; no Windows or speed pass is claimed. Ruff/strict pass.
+Complete162-case receiving passes31124.57s/native25.739s and
+31224.47s/native25.691s,0errors/skips, under the two-owner ceiling. The exact
+e82 source-only decision is consumed, including its POSIX/platform limit.
+Normal commit/collection, successor exact-source decision and one actual
+original90/60 replay follow. No such runtime replay
+has run for e82. Full gate/capacity,85/75BOTH, hosted/deployed-head proof and
+promotion remain pending; all seven release tasks stay unchecked.
+
+## Retained S98.4 heartbeat launcher input receiving
 
 Receiving starts from35c08ba94e4e5af2d6f994d29e9562ee35ed72a5; Root owns Main,
 shared docs and Git. The [owning record](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md)

@@ -178,7 +178,90 @@ changes. Root's complete deduplicated both-runtime receiving and normal
 zero-error collection, independent exact-source review and actual changed-input
 90/60 evidence remain separate pending owners. No completion or task tick.
 
-## Canonical complete receiving
+## Explicit shell receiving frome82f774
+
+The first launcher change is natively committed at
+e82f7741d956c06cf36ca615c204a6cf3011682f. Its mandatory collection reports
+129271selected/129295collected,24deselected/0errors50.26s/native59.3s:
+.gate-logs/observed/test-count/20261022T210617Z-32044-71167502.json.
+The clean SHA receives the complete26-case Pages-input repair evidence,
+26PASS20.57s/native0/21.614s, and the native ledger records its one repair:
+pages-input-repair-e82f774/v012-pages-input-repair-e82f774-312.json under
+.gate-logs/observed. This is local input-fixture evidence, not acquisition,
+browser launch, deployed Pages or final release proof.
+
+Independent source assessment identifies a practical limit: directly executing
+an extensionless script via Popen relies on host shebang execution. Darwin
+and the intended Ubuntu gate scope do not establish native-Windows support.
+Root chooses the minimal explicit-shell prefix before the first original
+runtime replay. No Windows pass, skip or new performance claim is introduced.
+
+Failing-first control extends only the newly added startup probe across
+executable and readable-non-executable owned scripts, for both status0/7.
+All existing cases/assertions stay. On the current direct-script launcher,
+the executable cases pass and both0644 cases fail at actual Popen with
+PermissionError13:2FAIL2PASS1.48s/native2/2.4s, receipt
+heartbeat-shell-red/v012-heartbeat-shell-red312.json.
+This demonstrates the actual execute-bit requirement on Darwin; it is not
+a simulation or measurement of Windows CreateProcess.
+
+Replace only the UV fixture prefix with stdlib
+shlex.join(['sh', str(uv)]). The existing Make owner already requires a POSIX
+shell; direct probes now invoke it explicitly too. The same selected Python,
+token checks, literal argv, native statuses and one-initialization assertions
+remain. All39 original heartbeat cases and the prior42-case scope remain,
+with just two additional permission variants. The complete owner is now44.
+Ruff and strict typing pass before complete both-runtime receiving.
+
+For future fixture-input optimization, retain the existing explicit transport
+capability when removing an intermediate interpreter; do not add reliance on
+script executable bits or infer another platform's success. Native behavior
+controls must verify the new input rather than assert a fragile timing gain.
+No production code, Make/config,176-family roster, deadline, warning policy,
+coverage85/75BOTH or cleanup obligation changes. Complete receiving, normal
+small source commit/collection, exact-source decision and one actual changed
+clean-SHA original90/60 run remain the next owners.
+
+## Explicit-shell complete receiving and retained base review
+
+Root consumes the full e82 APPROVE SOURCE ONLY decision at
+/tmp/gludd-v012-heartbeat-e82f774-source-review.md and its exact unapplied
+one-line patch at /tmp/gludd-v012-heartbeat-e82f774-explicit-shell.patch.
+Its POSIX/Darwin/Ubuntu scope, native-Windows limit, negative benchmark and
+missing release proofs remain. Root applies that same prefix with the actual
+new permission controls above; the base e82 reference remains immutable.
+
+The complete affected union is now162cases:heartbeat44,inventory59,
+SESSION19,snapshot38 and the two original repository link controls.
+Both installed runtimes run concurrently under the two-owner ceiling,
+one serial pytest process per runtime, fatal warnings and no skips/errors.
+
+- Python3.11.14:162PASS24.57s, native0/25.739s.
+- Python3.12.15:162PASS24.47s, native0/25.691s.
+
+Native observed-status confirms passed/inactive/exit0 for
+.gate-logs/observed/heartbeat-shell-receiving/v012-heartbeat-shell-receiving311.json
+and its312 counterpart. Both tested input digests are
+de4701e2d8376606890c821152a0b9152e2c570f1e3a9d4bbc8a3e4ab6ba2e58.
+These concurrent component measurements are not an original-budget replay,
+paired benchmark, hosted improvement or native-Windows proof. All scoped
+original assertions and new permission cases pass; no production source changes.
+
+Native ps also exposes a separate existing watchdog secrets scan.
+Existing observed-status/watchdog-secrets identifies actual owner57626 and
+run scan-60dd7ce01d364f84af3085ff671aa035:TIMEOUT124/60.556s, not a security pass.
+Its existing cooldown is300seconds. No model PID is invented or scanner killed;
+no guard is disabled and no earlier unknown PID is retroactively attributed.
+Use that existing native producer plus ps to drain active audits before the
+original replay; retain this separate failed observation. It does not diagnose
+the runtime timeout or justify another scanner/cache or a changed deadline.
+
+Only receipt/handoff prose follows component acceptance. Native guarded
+collection, clean successor review and one actual original90/60 repair remain.
+Full capacity/gate/global coverage, exact-SHA GHA/deployment and promotion are
+still pending. All seven release tasks remain unchecked.
+
+## Retained canonical complete receiving before explicit-shell hardening
 
 After the actual two-case Main RED and optimized postimage, Root runs one
 deduplicated union of complete heartbeat42, inventory59, SESSION19,

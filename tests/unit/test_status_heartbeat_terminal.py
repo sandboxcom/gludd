@@ -149,7 +149,7 @@ def _fixture(
                GLUDD_HEARTBEAT_SLEEPS=str(tmp_path / "sleeps"),
                GLUDD_HEARTBEAT_RECEIPT=str(tmp_path / "stream-receipt"),
                GLUDD_HEARTBEAT_SEED_MARKER="0", GLUDD_HEARTBEAT_COUNT=str(count))
-    command = ["make", "--no-print-directory", "status-heartbeat", f"UV={shlex.quote(str(uv))}",
+    command = ["make", "--no-print-directory", "status-heartbeat", f"UV={shlex.join(['sh', str(uv)])}",
                f"PYTHON={sys.executable}", f"INTERVAL={interval}", f"COUNT={count}",
                f"STATUS_HEARTBEAT_VALIDATE_ONLY={plan}",
                f"PIPELINE_STATUS_REPO={REPO}", f"PIPELINE_STATUS_BRANCH={BRANCH}",
@@ -337,12 +337,15 @@ def test_opt_in_pipeline_output_streams_before_detail_observation_completes(tmp_
 
 
 @pytest.mark.parametrize("heartbeat_uv_native_status", [0, 7])
+@pytest.mark.parametrize("heartbeat_uv_executable", [True, False])
 def test_fixture_uv_starts_selected_python_once_and_preserves_literal_argv(
-    tmp_path: Path, heartbeat_uv_native_status: int,
+    tmp_path: Path, heartbeat_uv_native_status: int, heartbeat_uv_executable: bool,
 ) -> None:
     command, env = _fixture(tmp_path, "success", count=1)
     uv_values = [value.removeprefix("UV=") for value in command if value.startswith("UV=")]
     assert len(uv_values) == 1
+    if not heartbeat_uv_executable:
+        Path(shlex.split(uv_values[0])[-1]).chmod(0o644)
     startup_root = tmp_path / "startup-hook"
     startup_root.mkdir()
     starts = tmp_path / "python-starts.jsonl"
