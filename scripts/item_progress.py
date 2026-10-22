@@ -545,6 +545,43 @@ def prepare_runtime_focus(root: Path, task_id: str = "") -> dict[str, object]:
         return state
 
 
+def _result_guidance(outcome: str) -> None:
+    """Teach the actual administrative result without interpreting native proofs."""
+    actions = {
+        "planned": (
+            "Inspect work-item status in mode0; no focus was selected, task eligibility was not checked "
+            "and no runtime admission ran. This plan is not acceptance."
+        ),
+        "uninitialized": (
+            "Select one open canonical active task with work-item focus/mode0; inspect "
+            "active-work-status for capacity and ownership before bounded acceptance."
+        ),
+        "observed": (
+            "Inspect exact linked receipts with observed-status and actual owners with active-work-status; "
+            "pointers do not prove live workers or acceptance. Repair the actual blocked or changed input "
+            "before retrying its owner."
+        ),
+        "updated": (
+            "This is an administrative declaration; no runtime admission ran. Inspect active-work-status "
+            "for capacity and ownership, then use the existing bounded acceptance owner."
+        ),
+        "prepared": (
+            "Only administrative focus was prepared; no runtime admission ran. Inspect active-work-status "
+            "for capacity and ownership before the existing bounded runtime owner."
+        ),
+        "refused": (
+            "Preserve the native reason and reconcile existing state before retry; repair the actual "
+            "changed input, and never delete native state or locks or manufacture observation JSON."
+        ),
+    }
+    status = 2 if outcome == "refused" else 0
+    print(
+        f"AGENT_NEXT target=work-item outcome={outcome} native_status={status} "
+        f"gate_evidence=false release_ready=false next_action={actions[outcome]}",
+        file=sys.stderr, flush=True,
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Expose bounded administrative controls without executing a second runner."""
     import argparse
@@ -554,7 +591,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--task", default="")
     parser.add_argument("--reason", default="")
     parser.add_argument("--validate-only", choices=("0", "1"), default="0")
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as exc:
+        if exc.code == 2:
+            _result_guidance("refused")
+        raise
     try:
         if args.action in {"focus", "support"} and not args.task.strip():
             raise ValueError("focus/support requires one canonical task ID")
@@ -577,9 +619,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "release_ready": False, "gate_evidence": False,
             }
         print(json.dumps(record, sort_keys=True))
+        if args.validate_only == "1":
+            outcome = "planned"
+        elif args.action == "status":
+            outcome = "uninitialized" if record.get("state") == "uninitialized" else "observed"
+        else:
+            outcome = "prepared" if args.action == "prepare-runtime" else "updated"
+        _result_guidance(outcome)
         return 0
     except (OSError, ValueError) as exc:
         print(f"work-item: {exc}", file=sys.stderr)
+        _result_guidance("refused")
         return 2
 
 

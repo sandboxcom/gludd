@@ -8,7 +8,48 @@ Total tests: 129093 selected / 129117 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 retained receipt binding repair
+## Current S98.4 work-item result guidance
+
+Root owns Main/shared/Git on release-candidate/v012-git-mutex-20261022 from
+ae5d7471014255376ee77f6c5b16df33f9cd95cd. Independent APPROVE SOURCE ONLY is fully
+read at /tmp/gludd-v012-retained-receipt-ae5-source-review.md; no correction remains.
+Normal ae5 collection retains129106selected/129130collected,24deselected/zeroerrors
+50.82s/native56.229s at
+.gate-logs/observed/test-count/20261022T155708Z-79039-9ba51b2b.json.
+The global header keeps its explicitly historical f2e measurement.
+
+The current native work-item status supplies JSON without the requested next
+action. Add one advisory stderr prompt from its existing native CLI for planned,
+uninitialized, observed, updated/prepared and refused outcomes. Preserve stdout
+JSON, original status/usage/reasons, state ownership, locking and all native proof
+requirements. prepare-runtime is administrative; receipt pointers are not workers
+or acceptance. On refusal reconcile potentially applied writes before retry.
+
+Seventeen additive Main controls retain16FAIL/1PASS2.14s/native3.2s; one routing
+RED retains1FAIL0.80s/native1.7s. Family171 retains170 predecessors and selects one
+exact status case once in the existing first child. All eight pins pass1.82s,
+native terminal0; source Ruff/strict pass. Two literal compactions preserve every
+assertion and2499/<2500 in the deep test. The
+[owning record](docs/features/MAKE_RESULT_GUIDANCE.md#work-item-results-preserve-administrative-scope)
+names exact receipts and remaining receiving steps.
+
+Complete source202 passes per runtime,31150.07s/native52.069s with physical Main
+95.5line/90.0branch under85/75 BOTH and31235.71s/native38.093s. Complete eight-owner
+receiving passes294 each,31142.06s/31245.20s, under whole-shell89.179s/terminal0:
+.gate-logs/observed/work-item-receiving-host/v012-work-item-receiving-host.json.
+The owning feature binds sourcec40f and separate source/coverage/receiving receipts;
+these predate final metadata recording and supply no gate or release authority.
+All four strict scopes/Ruff,278 contracts,1157 targets/zero duplicates,13-path
+registration, seven Markdown/SESSION/strict line checks and the actual registered
+plan example pass. Final metadata validation, normal guarded collection and
+exact-source review remain separate receiving steps.
+All seven S98 tasks stay unchecked. Last native gate FAIL/no running gate; latest
+disk96percent/7.9GiB exceeds95. The real capacity HumanTodo remains unfiled with
+endpoint/approved binding and persistent config/store facts unverified. No
+unchanged original60907, final admission/gate/exact-SHA/deployment/promotion
+replay or protected cleanup follows.
+
+## Retained S98.4 receipt binding repair
 
 Root owns Main/shared/Git/proof on release-candidate/v012-git-mutex-20261022
 from exact d76f21fe6a360fbaf650fc5780b564c6f1971acc. Independent CHANGES REQUIRED

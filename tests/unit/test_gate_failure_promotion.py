@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 170
+EXPECTED_FAMILY_COUNT = 171
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -1836,7 +1836,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "development-merge-forward-plan-guidance", "development-merge-forward-namesake",
         "human-todo-response-identity", "human-todo-check-mode-guidance",
         "run-watched-native-outcome-guidance", "run-watched-namesake-execution", "run-watched-complete-command",
-        "make-guarded-goal-outcome-guidance",
+        "make-guarded-goal-outcome-guidance", "work-item-administrative-result-guidance",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2075,12 +2075,13 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "test_compound_tail_is_running_inside_one_terminal_receipt[7-0] "
         "tests/unit/test_make_uv_execution_boundary.py::"
         "test_guarded_multi_goal_refusal_teaches_both_input_repairs_before_any_body[quoted-markdown] "
+        "tests/unit/test_item_progress.py::"
+        "test_native_work_item_status_guidance_preserves_owned_json[True] "
         "tests/unit/test_status_heartbeat_terminal.py " "tests/unit/test_task_ledger_validation.py "
         "tests/unit/test_make_readonly_version.py " "tests/unit/test_make_help_audit.py "
         "tests/unit/test_clean_stale_resource_namespaces.py " "tests/unit/test_native_temp_artifact_target.py "
         "tests/unit/test_ci_run_summary_script.py " "tests/unit/test_ci_run_summary_target.py "
-        "tests/unit/test_ci_workflow_integrity.py "
-        "tests/unit/test_plugin_manifest_deep.py::"
+        "tests/unit/test_ci_workflow_integrity.py " "tests/unit/test_plugin_manifest_deep.py::"
         "TestHookValidity::test_no_duplicate_hooks_within_single_plugin "
         "tests/unit/test_plugin_session_start_deadlock.py::"
         "TestSessionStartNoDeadlock::test_no_plugin_denies_reads_at_session_start "
@@ -2093,8 +2094,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "test_fallback_subagent_guard_precedes_delegated_handler "
         "tests/unit/test_v011_exact_gate_repair_contract.py::"
         "test_all_six_exact_gate_repairs_remain_green_together "
-        "tests/unit/test_secrets_scan_resources.py "
-        "tests/unit/test_css_lint_target.py::"
+        "tests/unit/test_secrets_scan_resources.py " "tests/unit/test_css_lint_target.py::"
         "test_lint_css_dependency_config_and_contract_are_exactly_pinned "
         "tests/unit/test_gate_status_attestation.py::"
         "test_repository_identity_batches_only_fresh_metadata_with_equivalent_digests "

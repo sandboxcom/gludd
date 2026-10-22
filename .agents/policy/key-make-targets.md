@@ -181,6 +181,10 @@ action; they do not execute it or create gate/release proof.
 
 | Target/result | Required model action |
 |---|---|
+| work-item planned | Inspect explicit mode0 status; no focus selection, active-ledger eligibility check or runtime admission occurred. |
+| work-item uninitialized/updated/prepared | Select an open active focus if absent; inspect active-work-status for capacity/ownership before bounded acceptance. prepare-runtime is administrative only. |
+| work-item observed | Inspect exact linked receipts with observed-status and actual owners with active-work-status. Pointers do not prove current workers or acceptance. |
+| work-item refused | Preserve native usage/reason/status; reconcile potentially applied state and repair the actual input before retry. Never delete native state/locks or manufacture JSON. |
 | make check-make-target-contract PASS | Run the changed target's registered behavioral example with every variable explicit; preserve expected refusal/status. |
 | Contract FAIL/ERROR | Repair the listed target/help/variable/example or input/parse error, then rerun the same native owner. |
 | Promotion script STRUCTURAL ONLY | Wait for all eight required child pins and terminal Make exit0 before broader acceptance. |

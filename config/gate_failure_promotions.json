@@ -1349,6 +1349,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_make_uv_execution_boundary.py::test_guarded_multi_goal_refusal_teaches_both_input_repairs_before_any_body[quoted-markdown]",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "work-item-administrative-result-guidance",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_item_progress.py::test_native_work_item_status_guidance_preserves_owned_json[True]",
+      "full_gate_phase": "test"
     }
   ]
 }

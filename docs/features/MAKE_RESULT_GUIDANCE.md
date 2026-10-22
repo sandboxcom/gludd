@@ -3,8 +3,96 @@
 S98.4, 2026-10-22 UTC. Agent-facing Make results should teach the model what to
 do with the actual result. Current owners include check-make-target-contract,
 check-gate-failure-promotions, git-merge-nc, development-merge-forward and
-release-proof-admission, human-todo-module, run-watched and guarded-target parse refusals. Existing native owners, statuses and artifacts remain
+release-proof-admission, human-todo-module, run-watched, work-item and guarded-target parse refusals. Existing native owners, statuses and artifacts remain
 authoritative; no second observer, runner, cache or proof schema is introduced.
+
+## Work-item results preserve administrative scope
+
+Root owns this S98.4 enhancement on release-candidate/v012-git-mutex-20261022
+from exact ae5d7471014255376ee77f6c5b16df33f9cd95cd. Its independent
+APPROVE SOURCE ONLY is fully consumed at
+/tmp/gludd-v012-retained-receipt-ae5-source-review.md. Normal ae5 collection
+retains129106selected/129130collected,24deselected/zeroerrors50.82s/native56.229s:
+.gate-logs/observed/test-count/20261022T155708Z-79039-9ba51b2b.json.
+These fixed receipts do not recertify this later source.
+
+The actual work-item status returns administrative JSON without next-action
+context. The same native CLI already distinguishes plans, uninitialized status,
+validated focus records, administrative mutations and refusals. Reuse that
+owner's actual branch; do not parse its output in a shell wrapper, invent a
+second observer or interpret receipt pointers as current proof.
+
+### Native result and model action
+
+Every parsed terminal result now emits one AGENT_NEXT line on stderr; stdout
+retains its original single JSON record on success and no JSON on refusal.
+Existing argparse usage/error precedes the refusal prompt and retains exit2;
+ordinary help retains exit0 without a result prompt. JSON/schema/state producers,
+native input checks, locking, admission, retention and all exit codes remain.
+
+| Native outcome | Model action |
+| --- | --- |
+| planned | Use explicit mode0 status before actual work. Check mode did not select focus, check active-ledger eligibility, read current state or run runtime admission. |
+| uninitialized | Select one open canonical active task through work-item focus/mode0, then inspect active-work-status for capacity and ownership. |
+| observed | Inspect exact linked native receipts with observed-status and actual owners with active-work-status. Pointers do not prove live workers, acceptance or release. Repair the blocked input before its owner retries. |
+| updated/prepared | Treat the result as administrative only. Inspect capacity and ownership before existing bounded acceptance/runtime owners; prepare-runtime itself ran no runtime admission. |
+| refused | Preserve the native reason and reconcile existing state before retry. A write may have applied before acknowledgement failed. Repair the actual input; never delete state/locks or manufacture current JSON. |
+
+The prompts state gate_evidence=false and release_ready=false. They execute
+nothing and grant no full gate, coverage, exact-SHA hosted/deployment or promotion
+authority. No daemon restarts; active processes keep their loaded implementation.
+The existing Python stdlib argparse/JSON and native result owner suffice; this
+adds no parser, dependency, runner, persistent observation or permission rule.
+The existing [reuse research](#reuse-and-operating-decision) remains applicable.
+
+### Failing-first controls and receiving proof
+
+Seventeen additive controls exercise actual Main code, including16 missing-prompt
+failures and one unchanged help pass,185 deselected2.14s/native3.2s:
+.gate-logs/observed/work-item-guidance-red311/v012-work-item-guidance-red311.json.
+Native JSON/status, malformed-state no-read in check mode, read-only status,
+original task/reason errors and a genuinely applied write followed by an OS error
+are asserted before guidance. All185 predecessor controls remain unchanged.
+
+One routing RED retains1FAIL/71deselected0.80s/native1.7s:
+.gate-logs/observed/work-item-routing-red311/v012-work-item-routing-red311.json.
+Family171 selects the exact initialized-status case once in the existing first
+child, after170 predecessor families. All three literal rosters agree. Two
+adjacent-literal compactions retain identical expected bytes and2499/<2500 in
+the deep test; no assertion disappears. All eight required pins pass1.82s/native
+terminal0 at
+.gate-logs/observed/work-item-required-pins/v012-work-item-required-pins.json.
+Three2/1/1 children,90total/60quiet,21phases/2850, fatal warnings,85/75 BOTH,
+ZDD, cleanup, retention and promotion requirements remain unchanged.
+
+Complete source acceptance passes202 per installed runtime. Python311 coverage
+runs all202 controls in50.07s, native52.069s, measuring physical Main
+scripts/item_progress.py at95.5line/90.0branch under unchanged85/75 BOTH:
+.gate-logs/observed/coverage-files/20261022T161425Z-86442-ad8fa7a9.json,
+.gate-logs/v012-work-item-guidance-coverage311.json and
+.gate-logs/coverage-20261022T161517Z.json.
+Python312 passes202 in35.71s/native38.093s:
+.gate-logs/observed/work-item-source312/v012-work-item-source312.json.
+
+The complete eight-owner wiring/routing/SESSION/documentation receiving union
+passes294 per runtime,31142.06s/31245.20s, fatal warnings and zero skips/errors.
+One native whole-shell AND observation returns0 in89.179s:
+.gate-logs/observed/work-item-receiving-host/v012-work-item-receiving-host.json.
+Tested source is c40f365a65aeec79cc226d4386183f256842c641b3c635772a1e268b90008049.
+These source202 and receiving294 scopes have distinct receipts; neither is a
+canonical gate. The receiving union precedes this final metadata recording.
+Its240total/60quiet diagnostic changes no original publication/final bound.
+
+All four changed Python files pass Ruff/strict scope;278 contracts,1157 targets/
+zero duplicates,13-path registration, seven Markdown files, structural SESSION
+validation and strict line limits pass. The exact registered work-item status
+plan example returns0 with planned guidance and no authority. No new dependency,
+selector cache or extra observer is added. Normal guarded collection and
+independent exact-source review remain required. Disk remains above95 and the
+real capacity HumanTodo is still unfiled; daemon
+endpoint/approved binding and persistent config/store facts remain unverified.
+Do not retry original60907, final admission/full gate or exact-SHA proof unchanged.
+All seven release items remain unchecked.
 
 ## Retained collection receipts survive header moves
 

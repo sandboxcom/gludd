@@ -64,6 +64,12 @@ measurements, rejected approaches and the missing release proofs.
 
 ### Make results teach the next action
 
+work-item emits advisory stderr prompts from its native result branch while
+stdout retains machine-readable JSON. Plan mode does not select focus or check
+active-ledger eligibility; prepare-runtime is administrative. Status pointers do
+not prove current workers or acceptance. Reconcile potentially applied state after
+a refusal, then repair its actual input before retrying the native owner.
+
 Agent-facing target output should include outcome-specific guidance from the
 existing result owner. On refusal/failure, identify the actual failed input,
 retain its native status/artifacts and name the narrow repair or prerequisite.
