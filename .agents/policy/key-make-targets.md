@@ -36,7 +36,11 @@ large evidence history. These windows establish navigation, not a changed task
 definition or proof. Read the selected task's full criteria and owning feature
 before implementation/closure; complete native guards still evaluate the ledger.
 An older collection paragraph keeps its own source/ref and native artifact;
-a later header refresh cannot recertify it. Use the existing work-item status
+a later header refresh cannot recertify it. The existing first-child
+TestStatusSnapshot.test_session_md_has_markers rejects direct collection-to-header
+claims in Retained H2 sections; it preserves both marker assertions and grants no
+complete historical-attribution proof. Name the fixed ref/receipt even when the
+current header happens to match. Use the existing work-item status
 with explicit WORK_ITEM_ACTION=status,
 WORK_ITEM_ID=S98.4, WORK_ITEM_REASON='' and WORK_ITEM_VALIDATE_ONLY=0 after
 selecting the installed runtime below. It reports observations, not acceptance.

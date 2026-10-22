@@ -68,7 +68,10 @@ Agent-facing target output should include outcome-specific guidance from the
 existing result owner. On refusal/failure, identify the actual failed input,
 retain its native status/artifacts and name the narrow repair or prerequisite.
 On success, state what was measured and the next required owner, including
-missing gate/exact-SHA proof. Emit terminal-success guidance only after all
+missing gate/exact-SHA proof. Retained SESSION collection paragraphs name their
+fixed source/ref and native receipt; never inherit a changing current header.
+The existing first-child SESSION node rejects direct relative claims; source
+review still owns semantic attribution. Emit terminal-success guidance only after all
 required children finish successfully. Preserve exit codes, original assertions,
 fatal warnings, coverage, cleanup and promotion gates. Guidance is advisory
 context for the model; native measurements and the established gates remain

@@ -6,6 +6,67 @@ check-gate-failure-promotions, git-merge-nc, development-merge-forward and
 release-proof-admission, human-todo-module, run-watched and guarded-target parse refusals. Existing native owners, statuses and artifacts remain
 authoritative; no second observer, runner, cache or proof schema is introduced.
 
+## Retained collection receipts survive header moves
+
+Root owns this S98.4 receiving correction on the same candidate branch from exact
+d76f21fe6a360fbaf650fc5780b564c6f1971acc. Independent CHANGES REQUIRED against
+f2e is fully read at /tmp/gludd-v012-guarded-goal-d76-source-review.md, together
+with its SESSION history patch and test proposal. No implementation blocker is
+identified; the retained d0a collection paragraph inherits a global header that
+now names f2e. Preserve this rejected decision, rather than editing it to approval.
+
+Normal d76 hooks retain129100selected/129124collected,24deselected/zeroerrors
+48.76s/native54.256s at
+.gate-logs/observed/test-count/20261022T153930Z-71443-937148de.json.
+At this receiving checkpoint the global header retains its explicit f2e measurement. This is a
+historical-binding correction with an executable regression, not a receipt-only
+header refresh or reason to replay the unchanged325-case source cohort.
+
+### Correction and existing admission owner
+
+Apply the review's fixed d0a count/ref/receipt hunk. Omit its temporary statement
+about which ref the current header names, because that would create another
+future dependency. Bind both retained f2e and d0a collection paragraphs directly
+to their fixed sources/artifacts. Do the same for the f2e paragraph when its
+previously current section becomes retained. Both historical receipts keep their
+original counts and scope; neither recertifies a later source.
+
+The existing first-child
+tests/unit/test_status_snapshot.py::TestStatusSnapshot::test_session_md_has_markers
+retains both marker assertions and gains a read-only check for direct
+collection-to-header claims within Retained H2 sections. Six confined controls
+cover explicit d0a receipt data under f2e and d76 headers, section resets,
+explanatory notes and a wrapped claim below a nested heading. Actual Main
+retains1FAIL/6PASS,31deselected1.31s/native2.7s before the receiving correction:
+.gate-logs/observed/retained-receipt-red311/v012-retained-receipt-red311.json.
+
+This is a bounded observation of the repeated failure form, not a complete
+historical-attribution validator. Fixed counts/ref/receipt correctness still
+requires source review. The native status-snapshot producer and generated
+regions are unchanged; its validate-only mode retains structural semantics.
+There is no new observer, parser dependency, CLI, schema, cache, family or
+selection. Existing literal rosters already select this exact SESSION node.
+All170 families/eight pins, three2/1/1 children,90/60,21/2850, fatal warnings,
+85/75 BOTH, ZDD, cleanup, retention and promotion remain intact.
+
+Ruff/strict scope pass the single changed test. All eight required pins pass1.74s
+and native terminal0 at
+.gate-logs/observed/retained-receipt-pins/v012-retained-receipt-pins.json.
+The complete five-owner SESSION/documentation union passes92 per installed
+runtime,3115.44s/3126.29s, fatal warnings and zero skips/errors. One native
+whole-shell AND chain returns0 at13.694s:
+.gate-logs/observed/retained-receipt-receiving/v012-retained-receipt-receiving.json.
+Tested source is150e1fda98f6bf4b0439b59c59977895e9108eee93b779751d09a0e92f24cf44.
+Diagnostic120total/60quiet is not original publication/final proof. Contracts278,
+seven Markdown files, eight-path registration, SESSION structural validation and
+strict line limits pass. Normal guarded collection and independent exact-source
+review remain pending. Latest native active-work-status reports exactd76,
+gateFAIL/no running gate, all seven release tasks open and zero observed workers;
+model-agent status remains separate. Fresh disk97percent/7.7GiB exceeds95.
+HumanTodo is unfiled; operator endpoint/approved binding and persistent config/
+store facts remain unverified. Keep original60907 cause/replay, final gate/global
+coverage and exact-SHA hosted/deployment/reviewed-head/promotion proof pending.
+
 ## Guarded target refusals distinguish input repairs
 
 Root owns this coupled S98.4 result-guidance repair on the same candidate branch
@@ -73,8 +134,11 @@ returns0 at101.020s:
 Tested source isf714e25695d968cfe41d34aae75b79be1dc81792eb3b26c65ec9824b33b863ad.
 Host execution retains real active-gate process checks; it does not mock sandbox
 restrictions. Diagnostic300total/60quiet does not alter original final budgets.
-Normal guarded collection and independent exact-source review remain pending. Root is the
-single Main/shared/Git/proof writer. All seven milestone items remain unchecked.
+Normal d76 collection is explicitly pinned in the receiving record above.
+Its independent CHANGES REQUIRED decision identifies the retained d0a header
+binding defect; the existing SESSION node now owns its failing-first receiving
+repair. Source-focused325-case acceptance is retained without unchanged replay.
+Root is the single Main/shared/Git/proof writer. All seven milestone items remain unchecked.
 Native post-f2e ancestry retains development82db11b57b254c1ca1e035975b5cc86253e2fed5
 and Git1/enclosing Make2 for f2e outside development; that negative is not failed
 source acceptance. Latest native disk96percent/8.0GiB still exceeds95. HumanTodo
@@ -91,8 +155,9 @@ against a7 is fully read at /tmp/gludd-v012-human-todo-d0a-source-review.md;
 no correction is required. Normal d0a hooks retain129014selected/129038collected,
 24deselected/zeroerrors47.58s/native52.718s at
 .gate-logs/observed/test-count/20261022T134900Z-23107-0a3fbd8e.json.
-This repair still needs its normal guarded collection and exact independent
-source review; none of these facts closes S98.4 or supplies final release proof.
+The later exactf2e normal collection and fully consumed independent source-only
+approval are pinned in the guarded-goal record above. These historical starting
+facts never close S98.4 or supply final release proof.
 
 ### Complete requested command inside the existing owner
 

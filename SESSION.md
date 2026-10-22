@@ -8,13 +8,54 @@ Total tests: 129093 selected / 129117 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 guarded-goal result repair
+## Current S98.4 retained receipt binding repair
+
+Root owns Main/shared/Git/proof on release-candidate/v012-git-mutex-20261022
+from exact d76f21fe6a360fbaf650fc5780b564c6f1971acc. Independent CHANGES REQUIRED
+against f2e is fully consumed at
+/tmp/gludd-v012-guarded-goal-d76-source-review.md, together with its literal
+receiving patch and focused test proposal. No implementation blocker is found;
+the historical d0a paragraph falsely inherits the newer f2e collection header.
+The rejected d76 decision remains immutable.
+
+Normal d76 hooks retain129100selected/129124collected,24deselected/zeroerrors
+48.76s/native54.256s at
+.gate-logs/observed/test-count/20261022T153930Z-71443-937148de.json.
+At this receiving checkpoint the global header retains its explicit f2e reference. Each scoped paragraph now
+names its own fixed source/receipt; it never depends on a later header refresh.
+The proposal's temporary current-f2e-header suffix is intentionally omitted.
+
+The existing first-child TestStatusSnapshot.test_session_md_has_markers gains
+a read-only check for direct collection-to-header claims in Retained H2 sections,
+with both original marker assertions preserved. Six confined controls cover
+header moves, explicit receipts, current/retained boundaries and wrapped/nested
+claims. Actual Main retains1FAIL/6PASS1.31s/native2.7s before the repair:
+.gate-logs/observed/retained-receipt-red311/v012-retained-receipt-red311.json.
+No new observer, parser dependency, schema, family, selector or producer change.
+This narrow check never proves every historical attribution correct.
+
+The [receiving record](docs/features/MAKE_RESULT_GUIDANCE.md#retained-collection-receipts-survive-header-moves)
+owns exact source/coverage limits. Complete five-owner receiving passes92 per
+installed runtime,3115.44s/3126.29s under one native whole-shell13.694s receipt.
+Eight pins pass1.74s/terminal0; contracts278, seven Markdown files, eight-path
+registration, structural validation and strict line limits pass. Normal guarded
+collection and exact-source review remain pending. Keep prior325-per-runtime source acceptance; no unchanged
+whole-cohort replay or receipt-only global header update is needed.
+All seven tasks stay unchecked; last native gate FAIL/no running gate. Latest
+native disk97percent/7.7GiB exceeds95, with zero observed proof workers.
+HumanTodo remains unfiled; operator endpoint/approved binding and persistent
+config/store facts remain unverified. No original60907/final-gate/exact-SHA/
+deployment/promotion replay or protected cleanup follows.
+
+## Retained S98.4 guarded-goal result repair
 
 Root owns Main/shared/Git/proof on release-candidate/v012-git-mutex-20261022
 from exact reviewed f2e2cf5d910cf8f4e44ab0430ee9a48fae89c0db.
 Independent APPROVE SOURCE ONLY against d0a is fully read at
 /tmp/gludd-v012-run-watched-f2e-source-review.md; no correction is required.
-Its normal collection is the header's explicitly pinned f2e measurement.
+Normal f2e collection remains129093selected/129117collected,
+24deselected/zeroerrors47.38s/native52.615s at
+.gate-logs/observed/test-count/20261022T150906Z-56373-519db956.json.
 All delegated model owners are quiescent; Root handles this small coupled change.
 
 An actual correctly quoted lint-markdown plus extra goals receives only quote
@@ -51,7 +92,10 @@ Root owns Main/shared/Git on release-candidate/v012-git-mutex-20261022 from
 reviewed exact d0aba940a650a14404853cf23499f932ee8ee5e3. Independent d0a
 APPROVE SOURCE ONLY against a7 is fully read at
 /tmp/gludd-v012-human-todo-d0a-source-review.md; no correction is required.
-Its normal collection receipt is the header's explicitly pinned d0a evidence.
+Its historical d0a collection remains129014selected/129038collected,
+24deselected/zeroerrors47.58s/native52.718s at
+.gate-logs/observed/test-count/20261022T134900Z-23107-0a3fbd8e.json.
+This receipt is scoped to d0a and never recertifies later source.
 All delegated model owners are quiescent at this handoff; refresh status separately from OS PIDs.
 
 Root fully consumes /tmp/gludd-v012-run-watched-boundary/decision.md and its
@@ -83,7 +127,9 @@ duplicates and9CI/12local parity pass. Complete current prompt/routing/documenta
 receiving passes262 per runtime,31142.16s/31246.85s with fatal warnings and zero
 skips/errors. The whole-shell native receipt returns0 at91.423s:
 .gate-logs/observed/run-watched-receiving-host/v012-run-watched-receiving-host.json.
-Normal f2e collection is the header's pinned measurement; independent APPROVE
+Normal f2e collection remains129093selected/129117collected,
+24deselected/zeroerrors47.38s/native52.615s at
+.gate-logs/observed/test-count/20261022T150906Z-56373-519db956.json; independent APPROVE
 SOURCE ONLY at /tmp/gludd-v012-run-watched-f2e-source-review.md is fully read.
 No receiving correction is required; this remains source-only proof.
 
