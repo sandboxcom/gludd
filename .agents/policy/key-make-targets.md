@@ -28,6 +28,8 @@ make cat-file FILE=config/ratchet.yml
 make cat-file FILE=SESSION.md
 ~~~
 
+Task identities use the existing canonical numeric-dot or uppercase-hyphenated grammar. Legacy labels such as S76.1a and S78.W10 retain explicit aliases after canonical primary names S76-1A and S78-W10; source/status/evidence remains historical. Run make validate-task-ledger before treating the current identity inventory as usable. Checked-only duplicates also refuse. The [task-source record](../../docs/features/BACKLOG_AUDIT_TASK_SOURCES.md#canonical-identity-and-duplicate-checked-claims-2026-10-22-utc) retains failing-first controls and the complete first-child guard. A repaired current ledger cannot recertify malformed immutable source/baseline ledgers or grant release authority.
+
 TASKS and BUGS keep compact current pointers above their full retained history.
 A seven-line active-task search can still truncate because each line contains a
 large evidence history. These windows establish navigation, not a changed task

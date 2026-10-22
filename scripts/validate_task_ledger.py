@@ -92,6 +92,10 @@ def main() -> int:
                     f"RE-DISPATCH: ID {tid} exists in BOTH checked and unchecked items "
                     f"({checked_count} checked, {unchecked_count} unchecked)"
                 )
+            elif checked_count > 1:
+                issues.append(
+                    f"DUPLICATE: ID {tid} appears in {checked_count} checked items"
+                )
             elif unchecked_count > 1:
                 issues.append(
                     f"DUPLICATE: ID {tid} appears in {unchecked_count} unchecked items"

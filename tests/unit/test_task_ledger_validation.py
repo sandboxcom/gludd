@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import sys
 import tempfile
+from collections import Counter
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from scripts.makefile_layout import compose_makefile
-from scripts.validate_task_ledger import ID_PATTERN, extract_tasks, main
+from scripts.validate_task_ledger import ID_PATTERN, TaskRecord, extract_tasks, main
 
 
 class TestIdPattern:
@@ -192,7 +195,7 @@ class TestTemporaryTasMd:
 
 class TestMainExitCodes:
     def test_checked_noncomplete_status_is_rejected(
-        self, capsys: object
+        self, capsys: pytest.CaptureFixture[str]
     ) -> None:
         task = {
             "line": "- [x] S83.157 — unfinished | status: in_progress",
@@ -208,7 +211,7 @@ class TestMainExitCodes:
             rc = main()
 
         assert rc == 1
-        assert "STATUS-MISMATCH" in capsys.readouterr().err  # type: ignore[attr-defined]
+        assert "STATUS-MISMATCH" in capsys.readouterr().err
 
     def test_main_with_real_tas_md(self) -> None:
         rc = main()
@@ -228,7 +231,7 @@ class TestMakeTargetExists:
         assert "validate_task_ledger.py" in content
 
 
-def extract_tasks_content(content: str) -> tuple[list[dict], list[dict]]:
+def extract_tasks_content(content: str) -> tuple[list[TaskRecord], list[TaskRecord]]:
     """Helper: call extract_tasks on a string by writing it to a temp file."""
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".md", delete=False, encoding="utf-8"
@@ -240,3 +243,71 @@ def extract_tasks_content(content: str) -> tuple[list[dict], list[dict]]:
         return extract_tasks(tmp_path)
     finally:
         tmp_path.unlink(missing_ok=True)
+
+
+def test_real_primary_ids_are_unique() -> None:
+    """Current metadata must remain usable by the immutable inventory owner."""
+    ledger = Path(__file__).resolve().parents[2] / "TASKS.md"
+    checked, unchecked = extract_tasks(ledger)
+    counts = Counter(task_id for task in [*checked, *unchecked] for task_id in task["ids"])
+    duplicates = {task_id: count for task_id, count in counts.items() if count > 1}
+    assert not duplicates, f"Ambiguous canonical task IDs: {duplicates}"
+
+
+@pytest.mark.parametrize("status", ["", " | status: completed", " | status: done"])
+def test_main_refuses_duplicate_checked_ids(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], status: str,
+) -> None:
+    """Checked completion claims cannot share a canonical identity."""
+    (tmp_path / "TASKS.md").write_text(
+        f"- [x] W.1 First claim{status}\n- [x] W.1 Second claim{status}\n",
+        encoding="utf-8",
+    )
+    with patch("scripts.validate_task_ledger._REPO_ROOT", tmp_path):
+        result = main()
+    assert result == 1
+    assert "DUPLICATE: ID W.1 appears in 2 checked items" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(("content", "expected_error"), [
+    ("# TASKS\n", None),
+    ("- [x] W.1 Valid claim | status: completed\n", None),
+    ("- [ ] W.1 Planned | status: pending\n", None),
+    ("- [ ] W.1 Active | status: in_progress | epoch 1999999999\n", None),
+    (
+        "- [ ] W.1 Active | status: in_progress | epoch 1999900000\n",
+        "STALE: in_progress item older than 24h",
+    ),
+    (
+        "- [x] W.1 Incomplete claim | status: pending\n",
+        "STATUS-MISMATCH",
+    ),
+    (
+        "- [x] W.1 Claimed\n- [ ] W.1 Still pending\n",
+        "RE-DISPATCH: ID W.1 exists in BOTH checked and unchecked items",
+    ),
+    (
+        "- [ ] W.1 First pending\n- [ ] W.1 Second pending\n",
+        "DUPLICATE: ID W.1 appears in 2 unchecked items",
+    ),
+    ("- [ ] Missing canonical identity\n", "MISSING-ID: 1 unchecked item"),
+])
+def test_native_main_retains_other_ledger_outcomes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    content: str, expected_error: str | None,
+) -> None:
+    """Native duplicate repair preserves status, stale and missing-ID refusal."""
+    (tmp_path / "TASKS.md").write_text(content, encoding="utf-8")
+    with (
+        patch("scripts.validate_task_ledger._REPO_ROOT", tmp_path),
+        patch("scripts.validate_task_ledger.time.time", return_value=2_000_000_000),
+    ):
+        result = main()
+    output = capsys.readouterr()
+    if expected_error is None:
+        assert result == 0
+        assert output.err == ""
+        assert "OK" in output.out
+    else:
+        assert result == 1
+        assert expected_error in output.err

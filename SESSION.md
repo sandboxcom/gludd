@@ -8,7 +8,21 @@ Total tests: 128685 selected / 128709 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on development. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 inherited prune-policy correction
+## Current S98.4 ledger identity repair
+
+Root owns the coupled repair on development at9b3e90a25ac1af18a0890b731f059712d992986a.
+The [task-source record](docs/features/BACKLOG_AUDIT_TASK_SOURCES.md#canonical-identity-and-duplicate-checked-claims-2026-10-22-utc)
+retains the actual4FAIL/22PASS, missing checked-only duplicate refusal, sixteen
+canonical primary-ID corrections with every legacy alias and unchanged statuses.
+The native validator moves from three duplicate refusals to188checked/139unchecked,
+OK; all35 focused cases pass0.73s/native1.7s. Original parser/immutable historical
+unknown semantics and all153 family/original runtime bounds remain unchanged.
+Complete579-case consumer owners pass each runtime:31127.06s/native28.893s and
+31225.02s/native26.4s. The unchanged four-file profile measures97.3line/94.8branch;
+validator97.2line/95.2branch, every file above75 on both. Separate strict scopes
+and Ruff pass. Fresh collection and independent exact-source review remain pending. No source-only result closes a release task.
+
+## Reviewed S98.4 inherited prune-policy correction
 
 Root's new repair starts at development3e8d325969fb8900f7a7f7c24a2826e5c7828e28.
 Its source-only approval remains scoped to the predecessor controls below.
@@ -25,7 +39,7 @@ Complete374-case routing owners pass both runtimes:31183.01s/native84.2s and
 31286.96s/native88.2s. Complete415-case source/consumer cohorts pass both runtimes:
 31153.49s/native54.7s and31256.64s/native57.8s. Three changed strict scopes/Ruff,
 277contracts/actual mode1,1157targets/zero duplicates and Make parity pass.
-Normal hooks retain exact eb6e1c616bb1ff8845836a5091af77397d40f5ea, zero new clones/six checkpoints and the collection receipt above. Independent APPROVE SOURCE ONLY against3e8 is fully read at /tmp/gludd-v012-uv-prune-eb6-source-review.md; no blocking correction. The four-document receiving receipt records this scope without changing source. Final gate, exact-SHA hosted/deployment and promotion remain pending.
+Normal eb6e1c616bb1ff8845836a5091af77397d40f5ea hooks retain zero new clones/six checkpoints and128685selected/128709collected,24deselected0errors51.49s/native56.769s in .gate-logs/observed/test-count/20261022T051321Z-24570-5fa35e7d.json. Independent APPROVE SOURCE ONLY against3e8 is fully read at /tmp/gludd-v012-uv-prune-eb6-source-review.md; no blocking correction. The four-document receiving receipt records this scope without changing source. Final gate, exact-SHA hosted/deployment and promotion remain pending.
 The prepared3e8 receiving draft is folded into this repair; it was never committed
 as a separate four-document receipt. Do not infer successor approval from3e8.
 

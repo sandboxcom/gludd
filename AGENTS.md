@@ -55,6 +55,8 @@ Literal text edits use write-text-b64/replace-text-b64 through the existing nati
 Native Git diagnostic ancestry uses the documented git-is-ancestor owner with literal A/B, retained exit=N/ErrorN and a nonzero Make result for native non-ancestry/errors. Patch equivalence and genuine ancestry remain distinct; the mandatory guide links native failing-first controls and preserves authenticated cleanup/release authority.
 Active-work claims need evidence: `make ps` covers Python test/audit PIDs; `make ps-gludd` projects the existing native project-owned inventory to watchdog/daemon classifications and proves no agent/audit idleness; detached PPID1 alone grants no cleanup authority. Report model-agent names/status separately; never invent PIDs. `make active-work-status` provides workstreams, parent/child PIDs, gate/hash/tasks; `agent_pids: false` is intentional.
 
+Task identity uses the existing canonical numeric-dot or uppercase-hyphenated grammar. Keep unsupported historical labels as explicit aliases after unique canonical primary IDs, with statuses and evidence preserved. Native validate-task-ledger rejects duplicate checked claims too; its complete existing early test owner guards current real-data uniqueness. The [task-source record](docs/features/BACKLOG_AUDIT_TASK_SOURCES.md#canonical-identity-and-duplicate-checked-claims-2026-10-22-utc) distinguishes valid current metadata, immutable historical unknowns and required final release proof.
+
 ## NO-PROMPT PROGRESS DIRECTIVE (READ FIRST)
 
 When task-level permission exists, do not call tools or paths that trigger approval prompts. If a route prompts, abandon that path immediately, use or add a make target, and keep working without asking unless required facts make progress impossible.
