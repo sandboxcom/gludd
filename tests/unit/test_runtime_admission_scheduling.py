@@ -18,7 +18,7 @@ from scripts import makefile_layout
 from tests.unit.test_observed_command import _command, _current_status
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 169
+EXPECTED_FAMILY_COUNT = 170
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 EXPECTED_MAIN_PYTEST_FLAGS = (
@@ -127,6 +127,8 @@ ROSTER = (
     "test_namesake_file_cannot_suppress_native_observation_or_guidance",
     "tests/unit/test_run_watched_command_boundary.py::"
     "test_compound_tail_is_running_inside_one_terminal_receipt[7-0]",
+    "tests/unit/test_make_uv_execution_boundary.py::"
+    "test_guarded_multi_goal_refusal_teaches_both_input_repairs_before_any_body[quoted-markdown]",
     "tests/unit/test_status_heartbeat_terminal.py",
     "tests/unit/test_task_ledger_validation.py",
     "tests/unit/test_make_readonly_version.py",
@@ -1024,7 +1026,7 @@ def test_coverage_suite_provenance_failure_has_one_exact_native_route(tmp_path: 
         if index:
             assert node not in selection
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 169
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 170
     assert payload["families"][149]["id"] == "native-full-scan-success-inventory"
     assert payload["families"][150] == {
         "id": "coverage-native-suite-provenance",
@@ -1088,7 +1090,7 @@ def test_uv_prune_native_failure_has_one_exact_native_route(tmp_path: Path) -> N
         assert node.split("::", 1)[0] not in selection
     assert counts == [1, 0, 0]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 169
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 170
     assert payload["families"][150]["id"] == "coverage-native-suite-provenance"
     assert payload["families"][151] == {
         "id": "uv-prune-native-failure-status",
@@ -1124,7 +1126,7 @@ def test_uv_prune_inherited_policy_has_one_exact_native_route(tmp_path: Path) ->
     assert counts == [1, 0, 0]
     assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 169
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 170
     assert payload["families"][151]["id"] == "uv-prune-native-failure-status"
     assert payload["families"][152] == {
         "id": "uv-prune-inherited-policy-context", "owner_target": OWNER,
@@ -1155,7 +1157,7 @@ def test_shared_uv_inventory_has_one_exact_native_route(tmp_path: Path) -> None:
     assert all(node.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 169
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 170
     assert payload["families"][152]["id"] == "uv-prune-inherited-policy-context"
     assert payload["families"][153] == {
         "id": "shared-uv-cache-inventory-exposure", "owner_target": OWNER,
@@ -1195,7 +1197,7 @@ def test_git_handoff_failures_have_exact_native_routes(
     assert all(node_selector.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 169
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 170
     assert payload["families"][153]["id"] == "shared-uv-cache-inventory-exposure"
     assert payload["families"][154:156] == [
         {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
@@ -1262,10 +1264,17 @@ WATCHED_COMMAND_PROMOTIONS = (
 )
 
 
+GUARDED_GOAL_PROMOTIONS = (
+    ("make-guarded-goal-outcome-guidance",
+     "tests/unit/test_make_uv_execution_boundary.py::"
+     "test_guarded_multi_goal_refusal_teaches_both_input_repairs_before_any_body[quoted-markdown]"),
+)
+
+
 @pytest.mark.parametrize(
     ("promoted_family", "node_selector"),
     (MAKE_GUIDANCE_PROMOTIONS + INTEGRATION_GUIDANCE_PROMOTIONS
-     + HUMAN_TODO_PROMOTIONS + WATCHED_COMMAND_PROMOTIONS),
+     + HUMAN_TODO_PROMOTIONS + WATCHED_COMMAND_PROMOTIONS + GUARDED_GOAL_PROMOTIONS),
 )
 def test_make_safety_and_guidance_have_exact_native_routes(
     tmp_path: Path, promoted_family: str, node_selector: str,
@@ -1282,7 +1291,7 @@ def test_make_safety_and_guidance_have_exact_native_routes(
     assert all(node_selector.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 169
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 170
     assert [family["id"] for family in payload["families"][154:156]] == [
         "git-async-live-owner-handoff", "git-async-completed-owner-adoption",
     ]
@@ -1301,13 +1310,20 @@ def test_make_safety_and_guidance_have_exact_native_routes(
          "node": selected_node, "full_gate_phase": "test"}
         for family_id, selected_node in HUMAN_TODO_PROMOTIONS
     ]
-    assert payload["families"][166:] == [
+    assert payload["families"][166:169] == [
         {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
          "node": selected_node, "full_gate_phase": "test"}
         for family_id, selected_node in WATCHED_COMMAND_PROMOTIONS
     ]
-    if (promoted_family, node_selector) in WATCHED_COMMAND_PROMOTIONS:
-        family_slice = slice(166, None)
+    assert payload["families"][169:] == [
+        {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
+         "node": selected_node, "full_gate_phase": "test"}
+        for family_id, selected_node in GUARDED_GOAL_PROMOTIONS
+    ]
+    if (promoted_family, node_selector) in GUARDED_GOAL_PROMOTIONS:
+        family_slice = slice(169, None)
+    elif (promoted_family, node_selector) in WATCHED_COMMAND_PROMOTIONS:
+        family_slice = slice(166, 169)
     elif (promoted_family, node_selector) in HUMAN_TODO_PROMOTIONS:
         family_slice = slice(164, 166)
     elif (promoted_family, node_selector) in INTEGRATION_GUIDANCE_PROMOTIONS:

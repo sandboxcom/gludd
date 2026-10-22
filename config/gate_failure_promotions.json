@@ -1342,6 +1342,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_run_watched_command_boundary.py::test_compound_tail_is_running_inside_one_terminal_receipt[7-0]",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "make-guarded-goal-outcome-guidance",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_make_uv_execution_boundary.py::test_guarded_multi_goal_refusal_teaches_both_input_repairs_before_any_body[quoted-markdown]",
+      "full_gate_phase": "test"
     }
   ]
 }

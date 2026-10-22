@@ -3,8 +3,84 @@
 S98.4, 2026-10-22 UTC. Agent-facing Make results should teach the model what to
 do with the actual result. Current owners include check-make-target-contract,
 check-gate-failure-promotions, git-merge-nc, development-merge-forward and
-release-proof-admission, human-todo-module and run-watched. Existing native owners, statuses and artifacts remain
+release-proof-admission, human-todo-module, run-watched and guarded-target parse refusals. Existing native owners, statuses and artifacts remain
 authoritative; no second observer, runner, cache or proof schema is introduced.
+
+## Guarded target refusals distinguish input repairs
+
+Root owns this coupled S98.4 result-guidance repair on the same candidate branch
+from exact f2e2cf5d910cf8f4e44ab0430ee9a48fae89c0db. Its independent
+APPROVE SOURCE ONLY against d0a is fully read at
+/tmp/gludd-v012-run-watched-f2e-source-review.md; no correction is required.
+Normal f2e collection retains129093selected/129117collected,24deselected and
+zero errors47.38s/native52.615s at
+.gate-logs/observed/test-count/20261022T150906Z-56373-519db956.json.
+The earlier watcher source/receiving suites below retain their measured scopes;
+they are not replayed merely to refresh a header.
+
+### Native refusal and intended action
+
+A real lint-markdown invocation with correctly quoted MARKDOWN_FILES and three
+intentional extra goals stops before work with Make2. The old message only says
+to quote multi-word values, which can send a model back to the same failure.
+The existing multi-word guard already requires one guarded target per invocation.
+Preserve its exact first/extra-goal condition, original reason and parse-time stop.
+The same error owner now adds one advisory AGENT_NEXT outcome=refused,
+native_status=2, gate_evidence=false, release_ready=false and
+next_action=quote-values-or-split-goals.
+
+When extra argv words belong to a value, quote the whole assignment. When the
+values are already quoted and the goals are intentional, run separate Make
+invocations. Batch independent invocations in the transport only within resource
+limits; drain every yielded process before a dependent edit or normal Git hooks.
+Never bypass the guard, discard intended work or treat corrected quoting as a
+reason to retry an unchanged multi-goal command.
+
+The mandatory guide already records this single-target rule. AGENTS, the guide
+and this result-specific record now connect the native refusal to both actual
+repairs. This changes guidance, not permitted goals or execution policy.
+
+### Failing-first controls and receiving point
+
+Five new real-Make controls retain5FAIL/1PASS,17deselected1.32s/native2.3s:
+.gate-logs/observed/make-goal-guidance-red311/v012-make-goal-guidance-red311.json.
+Four cases cover correctly grouped values with intentional extra goals; another
+covers split data. Each preserves native2, original reason, no UV/checkout body,
+unchanged Git/input authority and parent environment, and no project sync/import.
+The positive proves an actual single guarded search with a quoted path/pattern.
+All17 prior native-boundary controls remain unchanged.
+
+One exact routing RED0.84s/native1.7s precedes family170:
+.gate-logs/observed/make-goal-routing-red311/v012-make-goal-routing-red311.json.
+The quoted-markdown node appends after all169 predecessors in the existing first
+child. Update manifest, actual Make selector and both independent literal rosters;
+all eight required pins, three2/1/1 children,90/60,21phases/2850 and85/75 BOTH
+remain. Three adjacent-literal compactions preserve identical assertion strings
+and the deep test's2499/<2500 limit. No new runner, cache, profile or restriction.
+
+All eight required pins pass1.80s, native terminal0 at
+.gate-logs/observed/make-goal-required-pins/v012-make-goal-required-pins.json.
+Ruff and strict typing pass all three changed Python tests;278 contracts,
+1157 declarations/zero duplicates,9CI/12local parity, seven Markdown files,
+13-path registration, SESSION validation and the unchanged strict line limit pass.
+The complete nine-owner receiving union passes325 per installed runtime,
+31147.80s/31250.73s, fatal warnings and zero skips/errors. It contains native
+Make execution, workflow failure-class guards, readonly Make/version, both
+routing owners and the four complete documentation/contract owners. The actual
+whole-shell observation keeps both AND-chained runs in its command identity and
+returns0 at101.020s:
+.gate-logs/observed/make-goal-receiving-host/v012-make-goal-receiving-host.json.
+Tested source isf714e25695d968cfe41d34aae75b79be1dc81792eb3b26c65ec9824b33b863ad.
+Host execution retains real active-gate process checks; it does not mock sandbox
+restrictions. Diagnostic300total/60quiet does not alter original final budgets.
+Normal guarded collection and independent exact-source review remain pending. Root is the
+single Main/shared/Git/proof writer. All seven milestone items remain unchecked.
+Native post-f2e ancestry retains development82db11b57b254c1ca1e035975b5cc86253e2fed5
+and Git1/enclosing Make2 for f2e outside development; that negative is not failed
+source acceptance. Latest native disk96percent/8.0GiB still exceeds95. HumanTodo
+remains unfiled; endpoint/approved binding and persistent config/store facts are
+unverified. No unchanged original60907, full gate or exact-SHA/deployment/promotion
+replay follows from source approval or the added prompt.
 
 ## Watched command scope and result prompts
 

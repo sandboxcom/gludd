@@ -399,7 +399,10 @@ _FIRST_MAKE_GOAL := $(firstword $(MAKECMDGOALS))
 _EXTRA_MAKE_GOALS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 ifneq (,$(filter $(_FIRST_MAKE_GOAL),$(_MULTIWORD_VALUE_GOALS)))
 ifneq (,$(_EXTRA_MAKE_GOALS))
-$(error Quote multi-word variable values for $(_FIRST_MAKE_GOAL); stray make goals: $(_EXTRA_MAKE_GOALS))
+$(error Quote multi-word variable values for $(_FIRST_MAKE_GOAL); stray make goals: $(_EXTRA_MAKE_GOALS); \
+    AGENT_NEXT target=$(_FIRST_MAKE_GOAL) outcome=refused native_status=2 gate_evidence=false release_ready=false next_action=quote-values-or-split-goals; \
+    use one guarded target per Make invocation; quote the whole assignment when extra words belong to a value; \
+    if values are already quoted and goals are intentional, use separate Make invocations)
 endif
 endif
 

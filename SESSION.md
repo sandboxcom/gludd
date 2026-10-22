@@ -2,20 +2,57 @@
 
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 129014 selected / 129038 collected, 24 deselected, zero collection errors in47.58s/native52.718s during normal d0aba940a650a14404853cf23499f932ee8ee5e3 hooks. Native receipt: .gate-logs/observed/test-count/20261022T134900Z-23107-0a3fbd8e.{log,json,pytest.jsonl}. Collection is separate from behavioral and final-gate proof; prior refs retain their original receipts. This watcher repair starts from d0a; its normal guarded commit owns fresh collection, without a receipt-only commit or unchanged source-suite replay.
+Total tests: 129093 selected / 129117 collected, 24 deselected, zero collection errors in47.38s/native52.615s during normal f2e2cf5d910cf8f4e44ab0430ee9a48fae89c0db hooks. Native receipt: .gate-logs/observed/test-count/20261022T150906Z-56373-519db956.{log,json,pytest.jsonl}. Collection is separate from behavioral and final-gate proof; prior refs retain their original receipts. The guarded-goal guidance repair starts from f2e; its normal hooks own fresh collection, without a receipt-only commit or unchanged source-suite replay.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 watcher command/result repair
+## Current S98.4 guarded-goal result repair
+
+Root owns Main/shared/Git/proof on release-candidate/v012-git-mutex-20261022
+from exact reviewed f2e2cf5d910cf8f4e44ab0430ee9a48fae89c0db.
+Independent APPROVE SOURCE ONLY against d0a is fully read at
+/tmp/gludd-v012-run-watched-f2e-source-review.md; no correction is required.
+Its normal collection is the header's explicitly pinned f2e measurement.
+All delegated model owners are quiescent; Root handles this small coupled change.
+
+An actual correctly quoted lint-markdown plus extra goals receives only quote
+advice. Preserve the existing first/extra-goal parse refusal, native2 and original
+reason; its added advisory prompt teaches both quote-values and split-goals
+repairs without changing allowed execution. Five failing-first native controls
+and a passing single-goal quoted search retain body/authority/env/sync checks;
+one routing RED precedes family170 after169 predecessors. Three adjacent-literal
+compactions preserve identical assertion strings and2499/<2500 in the deep test.
+The [result record](docs/features/MAKE_RESULT_GUIDANCE.md#guarded-target-refusals-distinguish-input-repairs)
+owns exact RED receipts, source/caller receiving and pending collection/review.
+
+All eight check-gate-failure-promotions pins pass1.80s/native terminal0;
+the feature owns the exact receipt. Ruff/strict scopes,278 contracts, seven
+Markdown files,13-path registration/SESSION validation and strict line limits pass.
+Complete nine-owner source/caller receiving passes325 per installed runtime,
+31147.80s/31250.73s, fatal warnings and zero skips/errors. The actual AND-chained
+whole-shell observation returns0 at101.020s:
+.gate-logs/observed/make-goal-receiving-host/v012-make-goal-receiving-host.json.
+Retain the existing316-case watcher proof without unchanged replay. Next use the
+normal owned-file commit/collection owner, then independent exact-source review.
+Original three2/1/1 children,90/60,21/2850 and85/75 BOTH remain.
+
+Native post-f2e ancestry pins development82db11b57b254c1ca1e035975b5cc86253e2fed5
+and f2e outside development, Git1/enclosing Make2. All seven tasks remain open;
+last gate FAIL/no running gate. Latest disk96percent/8.0GiB still exceeds95.
+HumanTodo is unfiled; operator endpoint/approved binding and persistent config/
+store facts remain unverified. No unchanged60907/full-gate/exact-SHA/deployment/
+promotion replay or protected cleanup follows.
+
+## Retained S98.4 watcher command/result repair
 
 Root owns Main/shared/Git on release-candidate/v012-git-mutex-20261022 from
 reviewed exact d0aba940a650a14404853cf23499f932ee8ee5e3. Independent d0a
 APPROVE SOURCE ONLY against a7 is fully read at
 /tmp/gludd-v012-human-todo-d0a-source-review.md; no correction is required.
 Its normal collection receipt is the header's explicitly pinned d0a evidence.
-All model owners are quiescent; status must be refreshed separately from OS PIDs.
+All delegated model owners are quiescent at this handoff; refresh status separately from OS PIDs.
 
 Root fully consumes /tmp/gludd-v012-run-watched-boundary/decision.md and its
 minimal patch. Whole CMD now executes in the existing observer's selected shell;
@@ -46,7 +83,9 @@ duplicates and9CI/12local parity pass. Complete current prompt/routing/documenta
 receiving passes262 per runtime,31142.16s/31246.85s with fatal warnings and zero
 skips/errors. The whole-shell native receipt returns0 at91.423s:
 .gate-logs/observed/run-watched-receiving-host/v012-run-watched-receiving-host.json.
-Normal guarded collection and independent exact-source review remain next.
+Normal f2e collection is the header's pinned measurement; independent APPROVE
+SOURCE ONLY at /tmp/gludd-v012-run-watched-f2e-source-review.md is fully read.
+No receiving correction is required; this remains source-only proof.
 
 All seven release tasks stay unchecked. Native last gate remains FAIL/no running
 gate; disk97percent/7.5GiB exceeds95. Operator endpoint/approved binding and

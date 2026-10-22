@@ -77,6 +77,10 @@ unchanged ancestry runs no new gate. Repair failed capacity/ownership before
 applying, and retain missing exact-SHA proofs after an applied merge. The [result contract](docs/features/MAKE_RESULT_GUIDANCE.md)
 and [native merge contract](docs/features/GIT_MERGE_NO_COMMIT.md) retain the
 actual output branches, negative controls, decisions and proof limits.
+Guarded-target parse refusals teach both quote-values and split-goals repairs.
+Keep one guarded target per invocation; correctly quoted values do not permit
+intentional extra goals. Use separate Make invocations and drain their native
+sessions, retaining the original parse-time status and execution guard.
 run-watched reports its native result and directs observed-status to the exact
 command/receipt. Check that scope before interpreting success; a first-child
 receipt cannot certify later commands outside its watcher. Refusal/failure needs

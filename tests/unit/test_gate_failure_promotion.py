@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 169
+EXPECTED_FAMILY_COUNT = 170
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -1836,6 +1836,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "development-merge-forward-plan-guidance", "development-merge-forward-namesake",
         "human-todo-response-identity", "human-todo-check-mode-guidance",
         "run-watched-native-outcome-guidance", "run-watched-namesake-execution", "run-watched-complete-command",
+        "make-guarded-goal-outcome-guidance",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2072,6 +2073,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "test_namesake_file_cannot_suppress_native_observation_or_guidance "
         "tests/unit/test_run_watched_command_boundary.py::"
         "test_compound_tail_is_running_inside_one_terminal_receipt[7-0] "
+        "tests/unit/test_make_uv_execution_boundary.py::"
+        "test_guarded_multi_goal_refusal_teaches_both_input_repairs_before_any_body[quoted-markdown] "
         "tests/unit/test_status_heartbeat_terminal.py " "tests/unit/test_task_ledger_validation.py "
         "tests/unit/test_make_readonly_version.py " "tests/unit/test_make_help_audit.py "
         "tests/unit/test_clean_stale_resource_namespaces.py " "tests/unit/test_native_temp_artifact_target.py "
@@ -2081,8 +2084,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "TestHookValidity::test_no_duplicate_hooks_within_single_plugin "
         "tests/unit/test_plugin_session_start_deadlock.py::"
         "TestSessionStartNoDeadlock::test_no_plugin_denies_reads_at_session_start "
-        "tests/unit/test_process_overhead.py::"
-        "TestProcessTokenOverhead::test_anti_stop_plugins_are_lean "
+        "tests/unit/test_process_overhead.py::" "TestProcessTokenOverhead::test_anti_stop_plugins_are_lean "
         "tests/unit/test_enforcement_executable_modes.py::"
         "test_enforcement_runtime_surfaces_have_executable_git_mode "
         "tests/unit/test_subagent_output_clean.py::"
@@ -2132,13 +2134,11 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_markdown_docs_deep.py::test_relative_links_do_not_escape_repo "
         "tests/unit/test_branch_discipline_checks.py::"
         "TestWorktreeCleanupAfterMerge::test_agent_cu_removes_worktree "
-        "tests/unit/test_branch_discipline_checks.py::"
-        "TestWorktreeCleanupAfterMerge::"
+        "tests/unit/test_branch_discipline_checks.py::" "TestWorktreeCleanupAfterMerge::"
         "test_agent_cu_preserves_branch_and_release_evidence "
         "tests/unit/test_execution_adapter_protocols.py::"
         "test_core_protocols_do_not_claim_data_member_validation "
-        "tests/unit/test_status_snapshot.py::TestStatusSnapshot::"
-        "test_session_md_has_markers "
+        "tests/unit/test_status_snapshot.py::TestStatusSnapshot::" "test_session_md_has_markers "
         "tests/unit/test_status_snapshot.py::TestStatusSnapshot::"
         "test_validation_refuses_invalid_session_structure_without_writes "
         "tests/unit/test_status_snapshot.py::TestStatusSnapshot::"

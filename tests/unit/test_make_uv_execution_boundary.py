@@ -315,3 +315,58 @@ def test_no_project_workstream_owners_run_without_uv_policy_warnings(native_make
         assert ("agent-owned" in payload["workstreams"]) is present
         assert native_make.authority() == before and os.environ == parent
         assert not (native_make.root / ".venv").exists() and not (native_make.root / "uv.lock").exists()
+
+
+@pytest.mark.parametrize(
+    "multi_goal_case",
+    [
+        pytest.param(("lint-markdown", "MARKDOWN_FILES=one file.md", "worktree-state"), id="quoted-markdown"),
+        pytest.param(("lint-files", "FILES=one file.py", "worktree-state"), id="quoted-python"),
+        pytest.param(("search", "PATTERN=two words", "worktree-state"), id="quoted-search"),
+        pytest.param(("git-checkout", "MSG=fixture-target", "worktree-state"), id="checkout"),
+        pytest.param(("lint-markdown", "MARKDOWN_FILES=one.md", "two.md"), id="split-value"),
+    ],
+)
+def test_guarded_multi_goal_refusal_teaches_both_input_repairs_before_any_body(
+    native_make: NativeMake, multi_goal_case: tuple[str, str, str],
+) -> None:
+    """A complete assignment is one argv element; quoted values can still have extra goals."""
+    checkout = _capture_checkout(native_make)
+    uv_event = native_make.root / "uv-called"
+    uv = native_make.root / "bin" / "uv"
+    uv.write_text(f"#!/bin/sh\nprintf called > '{uv_event}'\nexit 79\n", encoding="utf-8")
+    uv.chmod(0o700)
+    first, assignment, extra = multi_goal_case
+    before = native_make.authority()
+    parent = dict(os.environ)
+    result = native_make.run(first, extra, assignment, f"UV={uv}")
+    assert result.returncode == 2
+    assert "Quote multi-word variable values for " + first in result.stderr
+    assert "stray make goals: " + extra in result.stderr
+    assert not checkout.exists() and not uv_event.exists()
+    assert native_make.authority() == before and os.environ == parent
+    assert not (native_make.root / ".venv").exists() and not (native_make.root / "uv.lock").exists()
+    prompts = [line for line in result.stderr.splitlines() if "AGENT_NEXT " in line]
+    assert len(prompts) == 1, result.stdout + result.stderr
+    prompt = prompts[0].split("AGENT_NEXT ", 1)[1]
+    assert "target=" + first + " " in prompt
+    assert "outcome=refused native_status=2 " in prompt
+    assert "gate_evidence=false release_ready=false " in prompt
+    assert "next_action=quote-values-or-split-goals" in prompt
+    assert "quote the whole assignment" in prompt
+    assert "already quoted" in prompt and "separate Make invocations" in prompt
+    assert "one guarded target" in prompt
+
+
+def test_single_guarded_target_keeps_quoted_value_and_path_executable(native_make: NativeMake) -> None:
+    owned = native_make.root / "two word inputs.txt"
+    owned.write_text("two word needle\n", encoding="utf-8")
+    before = native_make.authority()
+    parent = dict(os.environ)
+    result = native_make.run("search", "PATTERN=two word", f"SEARCH_PATH={owned.name}")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == "1:two word needle"
+    assert result.stderr == "" and "AGENT_NEXT " not in result.stdout
+    assert owned.read_text(encoding="utf-8") == "two word needle\n"
+    assert native_make.authority() == before and os.environ == parent
+    assert not (native_make.root / ".venv").exists() and not (native_make.root / "uv.lock").exists()
