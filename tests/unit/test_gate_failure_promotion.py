@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 174
+EXPECTED_FAMILY_COUNT = 175
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -1689,7 +1689,6 @@ def test_presentation_manifest_failure_executes_in_existing_early_owner() -> Non
 
 def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
-
     assert payload["full_gate_required"] is True
     assert [family["id"] for family in payload["families"]] == [
         "dead-code-baseline-drift", "coverage-gap-drift", "resource-ownership-drift", "claim-fence",
@@ -1833,6 +1832,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "make-guarded-goal-outcome-guidance", "work-item-administrative-result-guidance",
         "release-candidate-push-workflow-triggers",
         "pytest-native-trace-protocol", "trace-summary-result-guidance",
+        "presentation-hosted-apt-literal-mode",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1933,7 +1933,6 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     variable_prefix_owner = _target_stanza(makefile, "_ansible-role-variable-prefix")
     cloud_iam_owner = _target_stanza(makefile, "_cloud-iam-generation-parity")
     runtime_compatibility_owner = _target_stanza(makefile, "_pytest-runtime-compatibility-admission")
-
     assert "check-gate-failure-promotions" in makefile.split("help:", 1)[0]
     assert "check-gate-failure-promotions  Validate owned fast-admission failure nodes" in makefile
     assert (
@@ -2077,6 +2076,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "test_observer_trace_contains_real_matching_protocol_pairs[pass-serial] "
         "tests/unit/test_xdist_trace_diagnostics.py::"
         "test_native_summary_cli_keeps_json_status_and_emits_guidance[trace_guidance_native_rows0-empty] "
+        "tests/unit/test_presentation_browser_apt_source.py::"
+        "test_apt_mode_is_literal_at_real_make_startup[environment-override] "
         "tests/unit/test_status_heartbeat_terminal.py " "tests/unit/test_task_ledger_validation.py "
         "tests/unit/test_make_readonly_version.py " "tests/unit/test_make_help_audit.py "
         "tests/unit/test_clean_stale_resource_namespaces.py " "tests/unit/test_native_temp_artifact_target.py "

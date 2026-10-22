@@ -16,6 +16,8 @@ on:
       - 'pyproject.toml'
       - 'scripts/build_deck.py'
       - 'scripts/run_presentation_browser_tests.py'
+      - 'playbooks/presentation_browser_apt_source.yml'
+      - 'tests/unit/test_presentation_browser_apt_source.py'
       - 'scripts/run_presentation_safari_smoke.py'
       - 'scripts/probe_presentation_pages.py'
       - 'scripts/vendor_presentation_assets.py'
@@ -69,6 +71,8 @@ jobs:
         run: make vendor-presentation-assets PRESENTATION_VENDOR_VALIDATE_ONLY=1
       - name: Build exact Pages directory
         run: make deck-build
+      - name: Prepare the reviewed Ubuntu archive input
+        run: make presentation-browser-apt-source PRESENTATION_BROWSER_APT_VALIDATE_ONLY=0
       - name: Install and launch-probe pinned browser system dependencies
         run: >-
           make presentation-browser-install-deps
@@ -150,6 +154,8 @@ jobs:
         run: make vendor-presentation-assets PRESENTATION_VENDOR_VALIDATE_ONLY=1
       - name: Build exact Pages directory
         run: make deck-build
+      - name: Prepare the reviewed Ubuntu archive input
+        run: make presentation-browser-apt-source PRESENTATION_BROWSER_APT_VALIDATE_ONLY=0
       - name: Install and launch-probe pinned browser system dependencies
         run: >-
           make presentation-browser-install-deps

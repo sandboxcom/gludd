@@ -9,6 +9,29 @@ Total tests: 129093 selected / 129117 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
+## Current S98.4 hosted archive-input receiving
+
+Root receives the native Make/Ansible/Pages repair from exact
+5dc22cb9d885636df107dbbda6d28ead94a048c2, retaining sole Main/shared/Git ownership.
+Normal5dc hooks collect129213selected/129237collected,24deselected/0errors,
+54.04s/native61.0s in test-count/20261022T192915Z-25596-f8341841.json.
+Independent APPROVE SOURCE ONLY is fully consumed at
+/tmp/gludd-v012-runtime-search-5dc22-source-review.md; readers are quiescent.
+The [archive-input record](docs/features/PRESENTATION_JAVASCRIPT_COVERAGE.md#guarded-hosted-archive-input-s9842026-10-22-utc)
+retains private23-case/interpreter correction, canonical23FAIL1.24s then
+23PASS17.31s, routing3RED and appended family175/eightpinsPASS1.79s/terminal0.
+Contract281/actual offline plan/1160targets0duplicates, Ruff/three strict scopes
+pass. Broad644 receiving retains22FAIL/622PASS151.81s; a refused6-match edit
+incorrectly continued to204cohort23FAIL/181PASS36.84s. Six exact count edits and
+the exact new tail/param case preserve all assertions; complete routing204PASS
+52.04s, then unchanged canonical coverage250PASS27.41s at96.4line/90.3branch
+passes85/75BOTH (audit20261022T194319Z). Complete312combined668PASS103.70s/
+native105.025s; the owning record retains full selectors, hashes and receipts.
+Current normal collection/source review and actual original-budget/hosted repair
+remain pending. No local system
+or serving mutation; all seven tasks remain unchecked. Root batches both known
+CI input repairs before the next normally admitted push.
+
 ## Current S98.4 confined runtime input receiving
 
 Root receives tests/unit/test_make_help_audit.py and its owning

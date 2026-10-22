@@ -1377,6 +1377,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_xdist_trace_diagnostics.py::test_native_summary_cli_keeps_json_status_and_emits_guidance[trace_guidance_native_rows0-empty]",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "presentation-hosted-apt-literal-mode",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_presentation_browser_apt_source.py::test_apt_mode_is_literal_at_real_make_startup[environment-override]",
+      "full_gate_phase": "test"
     }
   ]
 }

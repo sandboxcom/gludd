@@ -13,7 +13,9 @@ checks do not replace the documented actual behavior command.
 If a tool returns a session ID, drain that exact session to a terminal exit
 before starting the next command in a sequential batch. Awaiting a launch result
 does not await the launched process. Count yielded processes toward the existing
-two-owner execution/testing limit; quiesce every checkout reader and model owner
+two-owner execution/testing limit. A failed exact edit or static check stops all
+dependent mutations/tests; inspect its native match count/status and correct the
+actual input before continuing. Quiesce every checkout reader and model owner
 before normal Git hooks can stash files. A static-check batch is still subject
 to these rules.
 
@@ -459,6 +461,13 @@ PATTERN='Included Software:', BEFORE=5, AFTER=3, MAX_MATCHES=1 and
 CI_JOB_CONTEXT_VALIDATE_ONLY=0 to bind image/version/source ref. Follow the
 owning feature's fully specified historical example. Retrieval success does
 not make the failed job pass; upstream main source does not certify its image.
+
+Use make presentation-browser-apt-source PRESENTATION_BROWSER_APT_VALIDATE_ONLY=1
+for its offline plan. Only the owned hosted workflow applies literal0 after
+native context/platform/source validation. Refusal blocks the installer: retain
+its native cause and repair that exact input. Preserve atomic scope, controller
+Python/owned cleanup and original600s install/launch/browser/JS gates. The [archive-input record](../../docs/features/PRESENTATION_JAVASCRIPT_COVERAGE.md#guarded-hosted-archive-input-s9842026-10-22-utc)
+retains canonical/private receipts and full proof limits.
 
 For a hosted browser dependency download failure, use the existing bounded
 public research owners before choosing a repair. Both have zero variables:

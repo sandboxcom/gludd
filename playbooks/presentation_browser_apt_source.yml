@@ -1,0 +1,115 @@
+---
+- name: Prepare only the reviewed hosted Ubuntu browser archive input
+  hosts: localhost
+  gather_facts: true
+  gather_subset:
+    - min
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    presentation_apt_root: /etc/apt
+    presentation_apt_source_uris: >-
+      {{ presentation_apt_source.content | b64decode
+         | regex_findall('(?im)^URIs:[ \t]+([^\n]+)$') }}
+    presentation_apt_original_mirrors: |
+      http://azure.archive.ubuntu.com/ubuntu/	priority:1
+      https://archive.ubuntu.com/ubuntu/	priority:2
+      https://security.ubuntu.com/ubuntu/	priority:3
+    presentation_apt_preferred_mirrors: |
+      https://archive.ubuntu.com/ubuntu/	priority:2
+      https://security.ubuntu.com/ubuntu/	priority:3
+  tasks:
+    - name: Refuse platforms outside the reviewed hosted Ubuntu24 x64 image
+      ansible.builtin.assert:
+        that:
+          - lookup('ansible.builtin.env', 'GITHUB_ACTIONS') == 'true'
+          - lookup('ansible.builtin.env', 'RUNNER_ENVIRONMENT') == 'github-hosted'
+          - lookup('ansible.builtin.env', 'RUNNER_OS') == 'Linux'
+          - lookup('ansible.builtin.env', 'ImageOS') == 'ubuntu24'
+          - ansible_facts.distribution == 'Ubuntu'
+          - ansible_facts.distribution_version == '24.04'
+          - ansible_facts.distribution_release == 'noble'
+          - ansible_facts.architecture == 'x86_64'
+        fail_msg: Unsupported hosted apt source platform; no source was changed.
+        quiet: true
+
+    - name: Inspect only the fixed mirror list and its native source binding
+      ansible.builtin.stat:
+        path: "{{ presentation_apt_root }}/{{ item }}"
+        follow: false
+        get_checksum: false
+        get_mime: false
+      loop:
+        - apt-mirrors.txt
+        - sources.list.d/ubuntu.sources
+      register: presentation_apt_files
+
+    - name: Refuse absent or linked source inputs before reading or writing
+      ansible.builtin.assert:
+        that:
+          - item.stat.isreg | default(false)
+          - not (item.stat.islnk | default(false))
+        fail_msg: Expected regular non-symlink native apt input is absent or unsafe.
+        quiet: true
+      loop: "{{ presentation_apt_files.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Read the native source binding without rewriting Deb822 fields
+      ansible.builtin.slurp:
+        src: "{{ presentation_apt_root }}/sources.list.d/ubuntu.sources"
+      register: presentation_apt_source
+
+    - name: Refuse unknown or duplicate mirror bindings
+      ansible.builtin.assert:
+        that:
+          - >-
+            presentation_apt_source.content | b64decode
+            | regex_findall('(?m)^[ \t]+\\S') | length == 0
+          - presentation_apt_source_uris | length in [1, 2]
+          - >-
+            presentation_apt_source_uris
+            | select('equalto', 'mirror+file:/etc/apt/apt-mirrors.txt') | list
+            | length == 1
+          - >-
+            presentation_apt_source_uris | difference([
+              'mirror+file:/etc/apt/apt-mirrors.txt',
+              'http://security.ubuntu.com/ubuntu/',
+              'https://security.ubuntu.com/ubuntu/']) | length == 0
+          - presentation_apt_source_uris | unique | length == presentation_apt_source_uris | length
+        fail_msg: Unknown native Ubuntu mirror binding; retain it and repair the explicit input.
+        quiet: true
+
+    - name: Read the exact reviewed native mirror list
+      ansible.builtin.slurp:
+        src: "{{ presentation_apt_root }}/apt-mirrors.txt"
+      register: presentation_apt_mirrors
+
+    - name: Refuse unreviewed endpoints options duplicates or partial mirror files
+      ansible.builtin.assert:
+        that:
+          - >-
+            presentation_apt_mirrors.content | b64decode
+            in [presentation_apt_original_mirrors, presentation_apt_preferred_mirrors]
+        fail_msg: Unknown native mirror list; no endpoint was changed.
+        quiet: true
+
+    - name: Atomically remove only the reviewed Azure archive entry
+      ansible.builtin.replace:
+        path: "{{ presentation_apt_root }}/apt-mirrors.txt"
+        regexp: '^http://azure[.]archive[.]ubuntu[.]com/ubuntu/\tpriority:1\n'
+        replace: ''
+        mode: "{{ presentation_apt_files.results[0].stat.mode }}"
+        unsafe_writes: false
+      register: presentation_apt_preparation
+
+    - name: Report preparation without claiming installer or hosted proof
+      ansible.builtin.debug:
+        msg: >-
+          AGENT_NEXT target=presentation-browser-apt-source
+          outcome={{ 'planned' if ansible_check_mode else 'prepared' }}
+          changed={{ presentation_apt_preparation.changed | bool }}
+          installer_run=false gate_evidence=false release_ready=false
+          next_owner=presentation-browser-install-deps;
+          {{ 'check mode changed no files; authorized hosted apply remains required'
+             if ansible_check_mode
+             else 'retain the unchanged installer and launch-probe result; source preparation is not browser proof' }}

@@ -1,3 +1,16 @@
+# Capture hosted apt input before native startup/export expansion.
+PRESENTATION_BROWSER_APT_VALIDATE_ONLY ?= 1
+override GLUDD_PRESENTATION_BROWSER_APT_VALIDATE_ONLY := $(value PRESENTATION_BROWSER_APT_VALIDATE_ONLY)
+export GLUDD_PRESENTATION_BROWSER_APT_VALIDATE_ONLY := $(value PRESENTATION_BROWSER_APT_VALIDATE_ONLY)
+unexport PRESENTATION_BROWSER_APT_VALIDATE_ONLY
+ifneq ($(filter presentation-browser-apt-source,$(MAKECMDGOALS)),)
+override GITHUB_ACTIONS := $(value GITHUB_ACTIONS)
+override RUNNER_ENVIRONMENT := $(value RUNNER_ENVIRONMENT)
+override RUNNER_OS := $(value RUNNER_OS)
+override ImageOS := $(value ImageOS)
+export GITHUB_ACTIONS RUNNER_ENVIRONMENT RUNNER_OS ImageOS
+endif
+
 # Keep no-commit merge branch data literal before startup or export children.
 override GLUDD_GIT_MERGE_NC_BR := $(value BR)
 export GLUDD_GIT_MERGE_NC_BR
@@ -582,6 +595,7 @@ help:
 		"  split-makefile-layout  Validate/apply the ordered make/*.mk layout (MAKEFILE_SPLIT_APPLY=0|1)" \
 		"  vendor-presentation-assets  Validate/refresh pinned Reveal.js assets (PRESENTATION_VENDOR_VALIDATE_ONLY=0|1)" \
 		"  presentation-browser-install Check/install pinned Chromium + WebKit (PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0|1)" \
+		"  presentation-browser-apt-source Plan/prepare the hosted native Ubuntu archive input (PRESENTATION_BROWSER_APT_VALIDATE_ONLY=0|1)" \
 		"  presentation-browser-install-deps Validate/install Playwright browser system libraries (PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY=0|1)" \
 		"  presentation-browser-test   Validate/run bounded Chromium + WebKit acceptance (PRESENTATION_BROWSER_VALIDATE_ONLY=0|1); optional Chromium JS coverage (PRESENTATION_BROWSER_JS_COVERAGE=0|1)" \
 		"  presentation-safari-test    Validate/run bounded native Safari smoke (PRESENTATION_SAFARI_VALIDATE_ONLY=0|1)" \

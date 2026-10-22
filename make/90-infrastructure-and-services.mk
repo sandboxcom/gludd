@@ -137,6 +137,33 @@ presentation-browser-install:
 			--timeout-seconds "$(PRESENTATION_BROWSER_INSTALL_TIMEOUT)" || exit $$?; \
 	done
 
+# Hosted source preparation never installs packages or changes browser bounds.
+.PHONY: presentation-browser-apt-source
+presentation-browser-apt-source:
+	@set -eu; \
+	presentation_apt_guide() { printf '%s\n' "AGENT_NEXT target=presentation-browser-apt-source outcome=$$1 gate_evidence=false release_ready=false $$2" >&2; }; \
+	case "$$GLUDD_PRESENTATION_BROWSER_APT_VALIDATE_ONLY" in 0|1) ;; *) \
+		echo "PRESENTATION_BROWSER_APT_VALIDATE_ONLY must be literal 0 or 1" >&2; \
+		presentation_apt_guide refused "system_mutation=false next_owner=presentation-browser-apt-source; repair the mode input and rerun this owner"; exit 2;; esac; \
+	if [ "$$GLUDD_PRESENTATION_BROWSER_APT_VALIDATE_ONLY" = 1 ]; then \
+		echo "[presentation-browser-apt-source] plan: on an explicit GitHub-hosted Ubuntu24 x64 runner, validate the fixed native mirror binding and remove only its exact Azure entry using Ansible; no apt or installer runs"; \
+		presentation_apt_guide planned "system_mutation=false next_owner=presentation-browser-apt-source; validate the frozen source and fixture controls before authorized hosted mode0; plan grants no acquisition or browser proof"; exit 0; fi; \
+	if [ "$$GITHUB_ACTIONS" != true ] || [ "$$RUNNER_ENVIRONMENT" != github-hosted ] || \
+		[ "$$RUNNER_OS" != Linux ] || [ "$$ImageOS" != ubuntu24 ]; then \
+		echo "apt source apply requires the explicit github-hosted Linux ubuntu24 environment" >&2; \
+		presentation_apt_guide refused "system_mutation=false next_owner=presentation-browser-apt-source; use only the owned Ubuntu24 hosted job; do not spoof context to apply locally"; exit 2; fi; \
+	if presentation_apt_tmp=$$(mktemp -d /tmp/gludd-presentation-apt-XXXXXX); then :; else \
+		presentation_apt_status=$$?; presentation_apt_guide failed "phase=owned-temporary-directory native_status=$$presentation_apt_status; repair the resource input before retry"; exit "$$presentation_apt_status"; fi; \
+	trap 'rm -rf "$$presentation_apt_tmp"' EXIT; \
+	echo "[presentation-browser-apt-source] phase=prepare-native-mirror-input"; \
+	if ANSIBLE_HOME="$$presentation_apt_tmp" ANSIBLE_LOCAL_TEMP="$$presentation_apt_tmp/local" ANSIBLE_REMOTE_TEMP="$$presentation_apt_tmp/remote" \
+	$(UV) run ansible-playbook --inventory localhost, --connection local --forks 1 \
+		--become playbooks/presentation_browser_apt_source.yml; then \
+		presentation_apt_guide returned "next_owner=presentation-browser-install-deps; source preparation only; run the unchanged600-second installer and launch probe, retain their actual native result; no browser or deployment proof"; \
+	else presentation_apt_status=$$?; \
+		presentation_apt_guide failed "phase=source-preparation native_status=$$presentation_apt_status next_owner=presentation-browser-apt-source; retain the native refusal, repair its actual source/platform/write input before retry; do not run the installer"; \
+		exit "$$presentation_apt_status"; fi
+
 presentation-browser-install-deps:
 	@case "$(PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY)" in 0|1) ;; *) echo "PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
 	@for browser in $(PRESENTATION_BROWSER_ENGINES); do \

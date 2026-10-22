@@ -6,6 +6,142 @@ its original cold/cached readiness assertions, five-second limit and bounded
 600-second commands remain required. Instrumented measurements do not prove
 a latency improvement and cannot substitute for those two-engine results.
 
+## Guarded hosted archive input (S98.4,2026-10-22 UTC)
+
+Root receives the reviewed private six-file proposal from exact
+5dc22cb9d885636df107dbbda6d28ead94a048c2 on
+release-candidate/v012-git-mutex-20261022. Root alone owns Main/shared/Git.
+The complete proposal and interpreter correction decisions are consumed at
+/tmp/gludd-v012-pages-apt-input-proposal/decision.md. Private bridge/inspection/
+patch-generation files do not land. Existing public research below retains the
+actual failed job/image, primary sources and firsthand issue bodies.
+
+Use the new thin native owner with its only public variable explicit:
+
+```console
+make presentation-browser-apt-source PRESENTATION_BROWSER_APT_VALIDATE_ONLY=1
+```
+
+Mode1 is the default offline plan: no Ansible child, facts or system reads.
+Literal mode0 is wired only into the existing ephemeral GitHub-hosted Linux
+Ubuntu24 x64 Pages jobs. It requires the actual hosted context and gathered
+Ubuntu24.04/noble/x86_64 facts. Never spoof those inputs for local apply. Early
+raw-value capture keeps command/environment/-e values literal before startup.
+Plan/refusal/returned/failed AGENT_NEXT retains actual phase/status, missing
+input and next owner, with gate_evidence=false/release_ready=false. A failed
+preparation stops the workflow before its installer; preserve the native reason
+and change that input before another attempt.
+
+### Native source and write boundary
+
+The native playbook inspects fixed /etc/apt/apt-mirrors.txt and its ubuntu.sources
+binding, refusing missing/non-regular/symlink or unknown inputs. The mirror bytes
+must match the observed image tag's exact Azure HTTP priority1/archive HTTPS2/
+security HTTPS3 list, or the already-repaired last two lines. Known uncontinued
+URI bindings are required; unknown/duplicate/folded forms refuse. Non-URI fields
+are left byte-identical. Ansible builtin replace atomically removes only that
+exact Azure line; no Deb822, suite/component/signature, cloud-init, acquire
+option, package or browser selection is rewritten. Priorities2/3 and mode remain.
+The trusted ephemeral runner's parent paths are assumed; no concurrent hostile
+filesystem guarantee is claimed.
+
+Installed Ansible's native stat/slurp/assert/replace provide inspection,
+validation, check mode and atomic writes. apt_repository/deb822_repository would
+introduce unnecessary source regeneration and python-apt/debian requirements;
+no new library, parser, runner, observer or cache is added. The playbook binds
+ansible_python_interpreter to ansible_playbook_python. Main ansible.cfg has no
+interpreter_python binding and is unchanged. A native no-extra-vars control
+retains the earlier actual discovery-warning/executable-path RED, then passes
+with the controller binding; warning settings/assertions are not suppressed.
+The fixed localhost/local/forks1/become invocation owns its unique Ansible TMP
+paths and cleanup. Native child17 remains recipe17/enclosing Make2.
+
+Both the browser matrix and JS-coverage job prepare the source immediately
+before the unchanged600-second with-deps installer and real launch probe.
+Original20-minute jobs, engines/packages, needs/master deployment condition,
+JS85/75BOTH, Chromium/WebKit readiness, ZDD and all promotion gates remain.
+Preparation edits the source preference; it authenticates or installs no package
+and proves no current server outage, IPv6/DNS cause or speed gain. Unknown runner
+layouts need a reviewed source-input change; no guessed rewrite or unchanged retry.
+
+### Actual canonical receiving
+
+Canonical tests-first receiving retains23FAIL1.24s/native2/about2.1s for the
+missing target/playbook/contract/workflow, not a collection error:
+.gate-logs/observed/pages-apt-receiving-red/v012-pages-apt-receiving-red311.json.
+The actual Main owner then passes23/17.31s/native0/about18.1s:
+.gate-logs/observed/pages-apt-receiving/v012-pages-apt-receiving311.json.
+Native fixtures execute installed Ansible against owned TMP files only, retaining
+unchanged source/unrelated bytes, mode/uid/gid, idempotent inode/mtime, check-mode
+no-write, ten input/platform refusals, real denied atomic write and temp cleanup.
+Actual Linux facts/become/runtime source files and acquisition remain hosted proof.
+
+One cheap native environment/-e literal-mode case is appended as family175
+presentation-hosted-apt-literal-mode in the existing first compatibility cohort.
+All174 predecessors/order remain; no new phase/runner or whole Ansible cohort
+is added to the90/60 admission. Three actual routing pins first fail0.93s in
+pages-apt-routing-red/v012-pages-apt-routing-red311; after manifest/wiring repair,
+the complete eight required pins pass1.79s/terminal0. An E501 on the new selector
+is repaired by string reflow, retaining all assertions and the<2500 limit.
+Ruff and three separate strict scopes pass; target contract281, actual safe plan
+and1160targets/zero duplicates pass. Full receiving/coverage and normal collection
+remain required; no family is marked repaired by these focused results.
+
+The first expanded644-case coverage attempt retains22FAIL/622PASS151.81s,
+native1/153.2s at coverage-files/20261022T193654Z-30330-cfb11542. Six additional
+independent routing-count literals still expected174; that failure precedes
+coverage reporting, so no passing coverage audit is claimed. The subsequent
+204-case route attempt retains23FAIL/181PASS36.84s/native2/about37.7s at
+pages-apt-complete-routing/v012-pages-apt-complete-routing311: its attempted
+multi-match text edit refused6matches, but Root's transport batch incorrectly
+continued to dependent checks. Preserve both failures. Six exact-context edits
+now conform each count to175, retain every predecessor/slice and add the exact
+new tail/param case. Never weaken the count assertions or ignore an edit refusal.
+The initial contract addition also retains2504-line refusal; compacting only the
+related dependency target's variable-array formatting preserves identical inputs
+and restores<2500. Eight required pins pass1.77s/terminal0 after these corrections.
+
+For future promotions, inspect all independent count literals and open-ended
+tail pins, not only the top constant. Finish complete routing owners before
+coverage; keep the complete unchanged coverage profile separate from unrelated
+instrumented repository scans. Stop dependent mutations/tests on any nonzero
+native edit/static result. A yielded launch or a retained earlier green does not
+satisfy that dependency. The failed644 cohort is never relabeled as a passing run.
+
+Corrected complete routing receiving passes204/52.04s/native0/about53.1s:
+pages-apt-complete-routing/v012-pages-apt-complete-routing-fixed311. The
+unchanged documented six-owner source coverage then passes250/27.41s/native0/
+about28.8s at coverage-files/20261022T194250Z-36826-bed52902; immutable audit
+.gate-logs/coverage-20261022T194319Z.json measures96.4line/90.3branch, both
+whole files above75BOTH and85aggregate unchanged. Full raw JSON is
+.gate-logs/coverage-presentation-browser-pages-input-canonical311.json; XML is
+/tmp/gludd-v012-pages-input-canonical-coverage311.xml. The other311callers passed
+in the retained failed644 replay; only routing expectation code changed after it.
+Neither622passes nor the separate canonical profile relabels that failed run.
+
+The complete corrected Python3.12 combined union, including all23real-Ansible
+cases and both whole routing owners, passes668/103.70s/native0/105.025s:
+.gate-logs/observed/pages-input-combined-receiving/v012-pages-input-combined-receiving312.json.
+Its tested source is b2573458527a55622570d54a26c7694ed8e813682ebf0b365c98958979256d58;
+native argv retains every selector and fatal warnings, with no skips. XML/raw
+stay /tmp/gludd-v012-pages-input-combined-receiving312.{xml,log}. No further
+code/Make/config/test edit follows these terminal results; receipt prose only.
+Normal collection and new-SHA source review remain pending, before native
+family repair/guarded publication and actual hosted proof.
+
+The existing complete six-owner coverage recipe below retains both entire
+Python sources and85aggregate/75each LINE AND BRANCH. The new Make/YAML fixtures
+are behavioral acceptance, not Python coverage of those unchanged controllers.
+Repeat the complete affected-owner union on312 without syncing a live prefix;
+keep every global check in its canonical full gate. Source review, guarded batch
+publication, actual hosted source preparation followed by the original installer/
+launch and both browser/JS gates, exact-SHA CI/deployment and promotion remain
+pending. All seven release tasks stay unchecked.
+
+Rollback is a reviewed revert of this source change on a new candidate. Fresh
+hosted runners retain their image defaults; no persistent service/data migration
+exists. Never restore guessed remote /etc bytes or continue after failed prep.
+
 ## Bounded public dependency research (S98.4, 2026-10-22 UTC)
 
 Actual candidate eb772 Pages39826135878 fails Chromium dependency acquisition:
