@@ -1,6 +1,8 @@
 {
   "version": 1,
   "targets": [
+    {"name": "inspect-presentation-browser-dependency-source", "make_variables": [], "behavior": "make inspect-presentation-browser-dependency-source"},
+    {"name": "inspect-presentation-browser-dependency-source-live", "make_variables": [], "behavior": "make inspect-presentation-browser-dependency-source-live"},
     {"name": "ps-gludd", "make_variables": [], "behavior": "make ps-gludd"},
     {"name": "list-files", "make_variables": ["DIR"], "behavior": "make list-files DIR=.agents/policy"},
     {"name": "replace-lines", "make_variables": ["FILE", "START", "END", "NEW_FILE"], "behavior": "make replace-lines FILE=/tmp/gludd-text-contract.txt START=1 END=1 NEW_FILE=/tmp/gludd-text-contract-replacement.txt"},

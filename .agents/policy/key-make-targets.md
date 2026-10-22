@@ -438,6 +438,32 @@ transport artifacts, and resolve a refused mutation before dependent verificatio
 
 ### Cleanup, pinned browser prefetch and acceptance
 
+When building a focused source cohort, inspect a legacy guardrail owner's
+native children before including the whole file. test_guardrails.py also runs
+global test-count/lint/healthcheck/Ansible checks, with original600/660s
+collection and300s syntax bounds. Use its complete affected policy classes and
+Make-structure nodes for this research change; keep every global test in the
+canonical gate and mandatory normal commit collection. A captured child can
+outlive a focused quiet budget. Use the native trace summary to identify the
+exact unfinished node; another runtime's last node is not its cause.
+
+ci-job-log displays the last400 lines; missing setup metadata there is not
+evidence of absence. Use the existing ci-job-failure-context with exact RUN/JOB,
+PATTERN='Included Software:', BEFORE=5, AFTER=3, MAX_MATCHES=1 and
+CI_JOB_CONTEXT_VALIDATE_ONLY=0 to bind image/version/source ref. Follow the
+owning feature's fully specified historical example. Retrieval success does
+not make the failed job pass; upstream main source does not certify its image.
+
+For a hosted browser dependency download failure, use the existing bounded
+public research owners before choosing a repair. Both have zero variables:
+make inspect-presentation-browser-dependency-source prints the offline plan;
+make inspect-presentation-browser-dependency-source-live retrieves the fixed
+primary sources and issue searches. Retain raw output through run-watched.
+Retrieval exit0 proves no issue relevance or apt repair; inspect actual returned
+bodies/dates and the named failed input. A moved source or transport failure
+requires that proven input to change before retry. The [browser research record](../../docs/features/PRESENTATION_JAVASCRIPT_COVERAGE.md#bounded-public-dependency-research-s984-2026-10-22-utc)
+owns source/transport bounds and keeps600s install/launch/full browser gates.
+
 The native pressure policy may reclaim the exact idle Playwright cache after
 repeat process and identity checks. Read its owning resource feature before
 classifying that expected reclamation as data loss. Run cache-reclaiming preflight

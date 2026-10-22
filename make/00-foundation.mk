@@ -546,6 +546,8 @@ help:
 		"  resolve-ansible-runtime-requirements Compile complete staged EE inputs (ANSIBLE_EE_COLLECTION_ROOT, ANSIBLE_EE_RESOLUTION_OUTPUT, ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY=1)" \
 		"  check-ansible-base-image Prove the exact EE base manifest is still served (ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=0|1)" \
 		"  inspect-ansible-searxng-source Read eleven exact frozen source/default-build inputs (ANSIBLE_SEARXNG_SOURCE_INSPECT_VALIDATE_ONLY=0|1)" \
+		"  inspect-presentation-browser-dependency-source Show the offline fixed public browser research plan (no variables)" \
+		"  inspect-presentation-browser-dependency-source-live Retrieve nine bounded public sources and issue searches (no variables)" \
 		"  refresh-ansible-base-image Resolve, verify, and atomically pin the supported EE base (ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY=0|1)" \
 		"  update-collection-python-boundary-inventory Refresh exact legacy migration inventory" \
 		"  deps-audit            Fail-closed Python dependency truth audit" \
@@ -1350,6 +1352,67 @@ inspect-ansible-searxng-source:
 			curl --fail --silent --show-error --connect-timeout 10 --max-time 20 --proto '=https' --tlsv1.2 \
 				"https://raw.githubusercontent.com/searxng/searxng/$$revision/$$source_file"; \
 		done
+
+# Fixed public research only. No caller URL, token, mode or output-path variables.
+# Playwright v1.63.0 matches requirements/profiles/presentation-test/uv.lock.
+.PHONY: inspect-presentation-browser-dependency-source inspect-presentation-browser-dependency-source-live
+
+inspect-presentation-browser-dependency-source:
+	@printf '%s\n' \
+		'BROWSER_SOURCE_INSPECTION plan_only=true network=false requests=9 playwright=1.63.0 gate_evidence=false' \
+		'playwright-dependencies https://raw.githubusercontent.com/microsoft/playwright/v1.63.0/packages/playwright-core/src/server/registry/dependencies.ts' \
+		'playwright-native-dependencies https://raw.githubusercontent.com/microsoft/playwright/v1.63.0/packages/playwright-core/src/server/registry/nativeDeps.ts' \
+		'apt-conf-upstream https://raw.githubusercontent.com/Debian/apt/main/doc/apt.conf.5.xml' \
+		'apt-sources-upstream https://raw.githubusercontent.com/Debian/apt/main/doc/sources.list.5.xml' \
+		'runner-image-source-tree https://api.github.com/repos/actions/runner-images/git/trees/main?recursive=1' \
+		'runner-firsthand-issues https://api.github.com/search/issues q=repo:actions/runner-images is:issue "azure.archive.ubuntu.com" "Connection timed out" created:<2026-01-01 per_page=5 page=1 sort=created order=asc' \
+		'playwright-firsthand-issues https://api.github.com/search/issues q=repo:microsoft/playwright is:issue "azure.archive.ubuntu.com" "Connection timed out" created:<2026-01-01 per_page=5 page=1 sort=created order=asc' \
+		'runner-image-apt-source https://raw.githubusercontent.com/actions/runner-images/ubuntu24/20261012.334/images/ubuntu/scripts/build/configure-apt.sh' \
+		'runner-image-apt-sources https://raw.githubusercontent.com/actions/runner-images/ubuntu24/20261012.334/images/ubuntu/scripts/build/configure-apt-sources.sh' \
+		'Explicit public retrieval: make inspect-presentation-browser-dependency-source-live; each request has connect=10s total=20s bytes<=2097152 retries=0 redirects=0; no authentication' \
+		'AGENT_NEXT target=inspect-presentation-browser-dependency-source outcome=plan research_only=true gate_evidence=false release_ready=false next_owner=inspect-presentation-browser-dependency-source-live next_action=explicit-live-retrieval-after-owned-receiving issue_relevance=unverified apt_repair=unverified'
+
+inspect-presentation-browser-dependency-source-live:
+	@set -eu; \
+		inspect_public_source() { \
+			gludd_source_name="$$1"; gludd_source_url="$$2"; shift 2; \
+			printf "\nBROWSER_SOURCE_BEGIN name=%s url=%s\n" "$$gludd_source_name" "$$gludd_source_url"; \
+			gludd_source_rc=0; \
+			env -i PATH="$$PATH" LC_ALL=C curl --disable \
+				--connect-timeout 10 --max-time 20 --max-filesize 2097152 --retry 0 \
+				--location --max-redirs 0 --proto '=https' --proto-redir '=https' --tlsv1.2 \
+				--proxy '' --noproxy '*' --fail-with-body --silent --show-error \
+				--write-out '\nBROWSER_SOURCE_HTTP http_code=%{http_code} url=%{url_effective}\n' \
+				"$$@" "$$gludd_source_url" || gludd_source_rc=$$?; \
+			printf "\nBROWSER_SOURCE_END name=%s native_status=%s\n" "$$gludd_source_name" "$$gludd_source_rc"; \
+			if [ "$$gludd_source_rc" -ne 0 ]; then \
+				case "$$gludd_source_rc" in \
+					22) gludd_source_changed_input=verified-pinned-source-or-public-HTTP-access ;; \
+					28) gludd_source_changed_input=verified-source-endpoint-or-network-availability ;; \
+					47) gludd_source_changed_input=reviewed-direct-HTTPS-source-without-redirect ;; \
+					*) gludd_source_changed_input=proven-source-or-transport-correction ;; \
+				esac; \
+				printf 'AGENT_NEXT target=inspect-presentation-browser-dependency-source-live outcome=failed failed_source=%s native_status=%s research_only=true gate_evidence=false release_ready=false next_owner=show-lines next_action=inspect-raw-failure-and-repair-proven-input changed_input=%s no_unchanged_retry=true preserve_prior_raw=true\n' \
+					"$$gludd_source_name" "$$gludd_source_rc" "$$gludd_source_changed_input"; \
+				exit "$$gludd_source_rc"; \
+			fi; \
+		}; \
+		inspect_public_source playwright-dependencies 'https://raw.githubusercontent.com/microsoft/playwright/v1.63.0/packages/playwright-core/src/server/registry/dependencies.ts'; \
+		inspect_public_source playwright-native-dependencies 'https://raw.githubusercontent.com/microsoft/playwright/v1.63.0/packages/playwright-core/src/server/registry/nativeDeps.ts'; \
+		inspect_public_source apt-conf-upstream 'https://raw.githubusercontent.com/Debian/apt/main/doc/apt.conf.5.xml'; \
+		inspect_public_source apt-sources-upstream 'https://raw.githubusercontent.com/Debian/apt/main/doc/sources.list.5.xml'; \
+		inspect_public_source runner-image-source-tree 'https://api.github.com/repos/actions/runner-images/git/trees/main?recursive=1'; \
+		inspect_public_source runner-firsthand-issues 'https://api.github.com/search/issues' --get \
+			--data-urlencode 'q=repo:actions/runner-images is:issue "azure.archive.ubuntu.com" "Connection timed out" created:<2026-01-01' \
+			--data-urlencode 'per_page=5' --data-urlencode 'page=1' --data-urlencode 'sort=created' --data-urlencode 'order=asc'; \
+		inspect_public_source playwright-firsthand-issues 'https://api.github.com/search/issues' --get \
+			--data-urlencode 'q=repo:microsoft/playwright is:issue "azure.archive.ubuntu.com" "Connection timed out" created:<2026-01-01' \
+			--data-urlencode 'per_page=5' --data-urlencode 'page=1' --data-urlencode 'sort=created' --data-urlencode 'order=asc'; \
+		inspect_public_source runner-image-apt-source 'https://raw.githubusercontent.com/actions/runner-images/ubuntu24/20261012.334/images/ubuntu/scripts/build/configure-apt.sh'; \
+		inspect_public_source runner-image-apt-sources 'https://raw.githubusercontent.com/actions/runner-images/ubuntu24/20261012.334/images/ubuntu/scripts/build/configure-apt-sources.sh'; \
+		printf '%s\n' 'BROWSER_SOURCE_INSPECTION completed=true requests=9 gate_evidence=false' \
+			'AGENT_NEXT target=inspect-presentation-browser-dependency-source-live outcome=observed research_only=true gate_evidence=false release_ready=false next_owner=show-lines next_action=retain-and-review-raw-primary-source-and-issue-bodies issue_relevance=unverified apt_repair=unverified'
+
 
 build-ansible-execution-environment:
 	@# Literal ANSIBLE_EE_RUNTIME -> GLUDD_EE_BUILD_RUNTIME; ANSIBLE_EE_IMAGE -> GLUDD_EE_BUILD_IMAGE.

@@ -9,7 +9,44 @@ Total tests: 129093 selected / 129117 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 native trace receiving
+## Current S98.4 hosted browser dependency research
+
+Root receives the bounded public source inspector from exact
+1ca50fa574acea09aaa880f986496f5587d16819 on the same candidate branch.
+Normal1ca hooks collect129192selected/129216collected,24deselected/0errors,
+47.81s/native53.2s; exact receipt is in the
+[browser research record](docs/features/PRESENTATION_JAVASCRIPT_COVERAGE.md#bounded-public-dependency-research-s984-2026-10-22-utc).
+Independent APPROVE SOURCE ONLY for1ca is fully consumed at
+/tmp/gludd-v012-trace-1ca50fa-source-review.md; reviewer readers are quiescent.
+Canonical new inspector tests retain16FAIL then16PASS4.57s, with native280-target
+contract/offline plan PASS. The owning research record retains two actual
+Ubuntu-manual TLS failures and a guessed manifest404, then proven source-endpoint
+corrections and native tests before final eight-source retrieval0/1.900s.
+Actual2020/2023 runner and Playwright issue bodies support a recurring archive
+acquisition failure class, not this timeout's cause or repair. A confined
+apt-input proposal is assigned to publication_repair_design; Root owns Main.
+Native setup context now binds the failed image20261012.334.1. The same source
+owner adds the confirmed ninth input and pins both apt scripts to its source tag;
+contract/plan/16PASS4.80s/all9HTTP200 pass0/about8.4s in browser-source-pinned-receiving/
+v012-browser-source-pinned-receiving311. Actual runtime file/acquisition proof is
+separate. Initial broad callers pass312 on311/121.28s/native122.423s, but312
+times out124/130.558s at nested global test-count (174finished/oneunfinished).
+This failed receipt remains; affected policy classes/structure nodes replace
+only that accidental focused-scope expansion. Original600/660 collection and
+300s Ansible bounds/full-gate selectors remain. Corrected affected-owner/class receiving passes261 on312/45.58s/native46.898s;
+its exact selectors/receipt and retained broad failure are in the owning record.
+The3.11 broader312PASS covers the unchanged code scope, without a relabeled run.
+Normal collection/new-SHA review and actual Pages/runtime repair remain pending.
+The Pages apt-input proposal is fully consumed at
+/tmp/gludd-v012-pages-apt-input-proposal/decision.md (private22PASS15.11s only).
+The runtime-cost decision is fully consumed at
+/tmp/gludd-v012-runtime-cost-repair-decision.md; its default-search fixture
+implementation is delegated only to /tmp/gludd-v012-runtime-search-input-proposal/.
+Root receives both next; no Main acceptance, hosted repair or task closure is
+implied. All Git hooks wait for every reader/test/model owner to quiesce. Research output is never gate/deployment/release evidence; preserve
+the two actual hosted failure families and existing600s/90s bounds.
+
+## Retained native trace receiving at1ca50fa
 
 Root is the sole Main/shared/Git writer on
 release-candidate/v012-git-mutex-20261022 from exact
