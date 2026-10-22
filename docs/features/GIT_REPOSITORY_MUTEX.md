@@ -76,8 +76,9 @@ is required, so rolling workers remain compatible throughout a ZDD deployment.
 
 - Newly created lock files use mode `0600`; ownership metadata remains in
   process memory rather than exposing PIDs or commands on disk.
-- Acquisition polling is bounded and sleeps between attempts. No helper daemon,
-  background thread, socket, semaphore, or untracked script is created.
+- Acquisition polling is bounded and sleeps between attempts. Async callers own
+  namespaced single-thread executors as described below; synchronous callers
+  create no helper thread. No daemon, socket, semaphore or untracked script is added.
 - Child-process regressions join and close every process and pipe. A crashed
   child deliberately bypasses Python cleanup, proving kernel-level release.
 - Thread contention uses `RLock.acquire(timeout=...)`; it creates no polling
@@ -101,6 +102,84 @@ safe to retain permanently. Drain new workers before restoring the old code for
 the same mixed-version reason. If promotion fails, stop dispatching new Git
 mutations, allow the bounded holder to exit, roll back, and resume; no request or
 repository state is transferred between lock implementations.
+
+## Async lifecycle staging (2026-10-22 UTC)
+
+Root stages the existing feature source41fd1b1d854a7f7b678239429f8783c2a2942d57
+on release-candidate/v012-git-mutex-20261022, based on development
+82db11b57b254c1ca1e035975b5cc86253e2fed5, under S98.4. Its parent
+a5b0d62273f2c7a89120f4f273cb3c1da86deffa is already an ancestor of that base.
+This is bounded integration of implemented release work while final capacity
+and publication proof remain blocked. It adds no provider or runtime feature.
+
+The original twelve adversarial cases run first against the receiving base:
+5FAIL/7PASS3.27s/native4.221s. They expose event-loop blocking during cancellation,
+foreign-thread nested re-entry, abandoned ownership, reusable wrappers and the
+absent async fork registry. Preserve
+/tmp/gludd-v012-git-mutex-stage-red311.{log,xml} and native JSON under
+.gate-logs/observed/git-mutex-stage-red311. These are actual receiving failures,
+separate from historical source-branch reports.
+
+An attempted git-merge-nc with the source-identical new test staged refuses that
+file, emits index.lock/File exists and then no merge to abort, and leaves a clean
+checkout. Six existing owned checkpoint entries remain unchanged. No competing
+PID or autostash cause is established. Do not retry that input, delete a lock or
+restore an unrelated checkpoint. The test is recoverable from its immutable
+source; Root restores it through git-show-file-to and applies only the original
+source hunks through literal Make edits. Current bounded common-directory and
+path-spelling helpers remain intact. The native helper safety repair has a
+separate confined proposal owner and must retain index, worktree and refs.
+
+Each active task/common-directory pair owns one namespaced gludd-git-lock
+single-thread executor. Nested acquisitions reuse that worker and reference
+count; unrelated tasks retain distinct ownership and unrelated repositories
+may overlap. The last reservation shuts the executor down. Fork reset discards
+the copied worker registry and its guard alongside existing descriptor/owner
+state. This is ephemeral lock ownership, not a proof or query cache.
+
+Cancellation shields the native acquire future, asynchronously waits for its
+bounded completion despite repeated cancellation, then releases on the same
+worker before propagating cancellation. Native enter errors propagate and
+retire the reservation. The acquired wrapper is single-use, release is
+idempotent, body exceptions retain their identity, and abandoned wrappers
+attempt release. The public synchronous-context API remains: acquire with
+await, then enter with with. Synchronous exit still waits for worker cleanup;
+this change does not promise a fully asynchronous body/exit API.
+
+All twelve original adversarial cases then pass1.31s/native2.3s. The unchanged
+one-file coverage profile executes six complete owners:261PASS17.45s/native19.6s,
+96.9% line/89.5% branch, both original85aggregate/75each-file floors passing.
+Preserve .gate-logs/observed/coverage-files/20261022T062215Z-80404-bb07ced7.json,
+.gate-logs/coverage-git-mutex-stage-311.json and terminal
+.gate-logs/coverage-20261022T062235Z.json. Existing assertions and the twelve
+source cases remain intact. The same261 complete cases pass on312 in14.11s/
+native15.2s, retained at /tmp/gludd-v012-git-mutex-stage-312.{log,xml} and native
+JSON under .gate-logs/observed/git-mutex-stage-312. Both separate strict scopes
+and Ruff pass. Operating checks, normal collection and independent exact-source
+review still need their actual receipts. Promote a cheap regression into the
+existing early owner with the helper repair, preserving all154 earlier families,
+three2/1/1 children,90total/60quiet,21phases/2850 and every final proof requirement.
+
+[CPython issue107505](https://github.com/python/cpython/issues/107505), opened
+July2023 for Python3.11/macOS M1 and currently closed as not planned, reports
+that cancelling an executor await leaves its thread running. The official
+[Future cancellation contract](https://docs.python.org/3.11/library/concurrent.futures.html#concurrent.futures.Future.cancel)
+says a running call cannot be cancelled; shutdown also waits for running work.
+These primary sources support using the existing stdlib executor and owning
+completion explicitly, rather than inventing thread cancellation. The native
+receiving tests establish Gludd's defect and repair; the report is no timing,
+FIFO, crash-recovery or release proof.
+
+The stable common-directory inode,0600 lock mode, total acquisition timeout,
+POSIX process fence and non-POSIX fallback remain unchanged. Deploy through the
+existing immutable generation and drain in-flight Git operations before
+retiring old workers; never unlink the mutex or discard active ownership.
+Rollback reverts this source integration after draining its acquired contexts,
+preserving lock files and all failed receipts. No service, socket, schema or
+database migration is introduced. Capacity97percent/6.7GiB, original60907,
+canonical full gate/global85-75 BOTH, exact-SHA all-shard hosted/deployment,
+reviewed-head and guarded promotion proof remain pending; all seven release
+tasks remain unchecked. Candidate staging supplies none of those proofs.
 
 ## Verification
 

@@ -42,6 +42,8 @@ so it never blocks the loop while waiting on a contended repo).
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import contextlib
 import errno
 import logging
@@ -50,6 +52,7 @@ import threading
 import time
 from collections.abc import Iterator
 from types import TracebackType
+from typing import TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -95,9 +98,30 @@ _file_lock_owner: dict[str, tuple[int, int]] = {}
 _file_lock_fds: dict[str, int] = {}
 
 
+class _AsyncGitLockWorker:
+    """One thread-affine lock worker owned by one task and repository."""
+
+    def __init__(self, owner_token: tuple[object, str]) -> None:
+        self.owner_token = owner_token
+        self.executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="gludd-git-lock",
+        )
+        self.users = 0
+
+
+# A nested async acquisition must execute on the same worker that owns the
+# underlying RLock. Different tasks intentionally get different workers so a
+# foreign task cannot be mistaken for a re-entrant owner.
+_async_workers_guard = threading.Lock()
+_async_workers: dict[tuple[object, str], _AsyncGitLockWorker] = {}
+
+_NativeResult = TypeVar("_NativeResult")
+
+
 def _reset_after_fork() -> None:
     """Discard parent-owned mutex state in a newly forked child."""
-    global _registry_guard
+    global _async_workers_guard, _registry_guard
 
     for fd in tuple(_file_lock_fds.values()):
         with contextlib.suppress(OSError):
@@ -106,7 +130,9 @@ def _reset_after_fork() -> None:
     _file_lock_depth.clear()
     _file_lock_owner.clear()
     _repo_locks.clear()
+    _async_workers.clear()
     _registry_guard = threading.Lock()
+    _async_workers_guard = threading.Lock()
 
 
 if hasattr(os, "register_at_fork"):
@@ -445,17 +471,111 @@ def git_repo_lock(
         inproc.release()
 
 
+def _reserve_async_worker(repo_path: str) -> _AsyncGitLockWorker:
+    """Reserve the thread-affine worker for this task/repository pair."""
+    task = asyncio.current_task()
+    if task is None:
+        raise RuntimeError("async_git_repo_lock requires a running asyncio task")
+    git_dir = _git_dir(repo_path)
+    key = _normalize(git_dir) if git_dir is not None else _normalize(repo_path)
+    owner_token = (task, key)
+    with _async_workers_guard:
+        worker = _async_workers.get(owner_token)
+        if worker is None:
+            worker = _AsyncGitLockWorker(owner_token)
+            _async_workers[owner_token] = worker
+        worker.users += 1
+        return worker
+
+
+def _release_async_worker(worker: _AsyncGitLockWorker) -> None:
+    """Release one reservation and stop an idle owner worker."""
+    shutdown = False
+    with _async_workers_guard:
+        if worker.users <= 0:
+            raise RuntimeError("async Git lock worker released without an owner")
+        worker.users -= 1
+        if worker.users == 0:
+            if _async_workers.get(worker.owner_token) is worker:
+                _async_workers.pop(worker.owner_token)
+            shutdown = True
+    if shutdown:
+        worker.executor.shutdown(wait=True)
+
+
+async def _await_native_future(
+    future: concurrent.futures.Future[_NativeResult],
+) -> _NativeResult:
+    """Await native worker completion while deferring repeated cancellation."""
+    wrapped = asyncio.wrap_future(future)
+    while not future.done():
+        try:
+            await asyncio.shield(wrapped)
+        except asyncio.CancelledError:
+            # Cleanup owns the mutex until the worker completes. A later
+            # cancellation request must not interrupt that ownership handoff.
+            continue
+    return future.result()
+
+
+class _EnteredAsyncGitRepoLock(contextlib.AbstractContextManager[None]):
+    """Already-acquired, single-use wrapper around a thread-owned mutex."""
+
+    def __init__(
+        self,
+        cm: contextlib.AbstractContextManager[None],
+        worker: _AsyncGitLockWorker,
+    ) -> None:
+        self._cm = cm
+        self._worker = worker
+        self._state_guard = threading.Lock()
+        self._entered = False
+        self._closed = False
+
+    def __enter__(self) -> None:
+        with self._state_guard:
+            if self._closed:
+                raise RuntimeError("async Git lock context is already closed")
+            if self._entered:
+                raise RuntimeError("async Git lock context is already entered")
+            self._entered = True
+        return None
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool | None:
+        with self._state_guard:
+            if self._closed:
+                return None
+            self._closed = True
+            self._entered = False
+        future = self._worker.executor.submit(self._cm.__exit__, exc_type, exc, tb)
+        try:
+            return future.result()
+        finally:
+            _release_async_worker(self._worker)
+
+    def __del__(self) -> None:
+        """Release an acquired mutex abandoned by a dying task."""
+        with contextlib.suppress(BaseException):
+            self.__exit__(None, None, None)
+
+
 async def async_git_repo_lock(
     repo_path: str,
     *,
     timeout: float = _DEFAULT_ACQUIRE_TIMEOUT,
     stale_after: float = _DEFAULT_STALE_AFTER,
 ) -> contextlib.AbstractContextManager[None]:
-    """Async-friendly acquire of :func:`git_repo_lock`.
+    """Acquire :func:`git_repo_lock` without blocking the event loop.
 
-    Acquires the (potentially blocking, timeout-bearing) lock off the event loop
-    via ``run_in_executor`` so waiting on a contended repo never blocks the
-    loop, then returns an already-entered context manager. Use as::
+    The returned synchronous context manager is already acquired. Nested calls
+    from one task and repository reuse a thread-affine worker, preserving the
+    underlying ``RLock`` ownership. Cancellation waits asynchronously for the
+    bounded acquire and releases any resulting ownership before propagating::
 
         cm = await async_git_repo_lock(repo_path)
         with cm:
@@ -464,54 +584,22 @@ async def async_git_repo_lock(
     For purely synchronous call sites (like repo.py's ``_run_git``) use
     :func:`git_repo_lock` directly.
     """
-    import asyncio
-    import concurrent.futures
-
-    class _EnteredAsyncGitRepoLock(contextlib.AbstractContextManager[None]):
-        def __init__(self, cm: contextlib.AbstractContextManager[None], executor: concurrent.futures.Executor) -> None:
-            self._cm = cm
-            self._executor = executor
-            self._entered = False
-            self._closed = False
-
-        def __enter__(self) -> None:
-            self._entered = True
-            return None
-
-        def __exit__(
-            self,
-            exc_type: type[BaseException] | None,
-            exc: BaseException | None,
-            tb: TracebackType | None,
-        ) -> bool | None:
-            if self._closed:
-                return None
-            self._closed = True
-            future = self._executor.submit(self._cm.__exit__, exc_type, exc, tb)
-            try:
-                return future.result()
-            finally:
-                self._executor.shutdown(wait=True)
-
+    worker = _reserve_async_worker(repo_path)
     cm = git_repo_lock(repo_path, timeout=timeout, stale_after=stale_after)
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="gludd-git-lock")
-    enter_future = executor.submit(cm.__enter__)
+    enter_future = worker.executor.submit(cm.__enter__)
     try:
-        await asyncio.wrap_future(enter_future)
-    except BaseException:
-        # Cancelling the asyncio wrapper cannot stop a running executor
-        # thread.  Resolve the underlying future directly, then release on
-        # that same single worker if it acquired the thread-owned RLock.  This
-        # bounded synchronous cleanup prevents an orphaned repository mutex
-        # before cancellation or an enter failure is propagated.
+        await asyncio.shield(asyncio.wrap_future(enter_future))
+    except BaseException as original:
         acquired = False
-        with contextlib.suppress(BaseException):
-            enter_future.result()
-            acquired = True
+        if isinstance(original, asyncio.CancelledError):
+            with contextlib.suppress(BaseException):
+                await _await_native_future(enter_future)
+                acquired = True
         try:
             if acquired:
-                executor.submit(cm.__exit__, None, None, None).result()
+                exit_future = worker.executor.submit(cm.__exit__, None, None, None)
+                await _await_native_future(exit_future)
         finally:
-            executor.shutdown(wait=True)
+            _release_async_worker(worker)
         raise
-    return _EnteredAsyncGitRepoLock(cm, executor)
+    return _EnteredAsyncGitRepoLock(cm, worker)

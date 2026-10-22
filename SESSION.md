@@ -6,7 +6,31 @@ Total tests: 128719 selected / 128743 collected, 24 deselected, zero collection 
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
-Root owns S98.4 and Main/shared/Git/proof mutations on development. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
+Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
+
+## Current S98.4 bounded Git-mutex staging
+
+Root owns release-candidate/v012-git-mutex-20261022 at base
+82db11b57b254c1ca1e035975b5cc86253e2fed5 in the existing canonical checkout.
+Development remains at that base; the candidate uses the existing checkout.
+Source41fd1b1d854a7f7b678239429f8783c2a2942d57 is selected alone; its parent is
+already an ancestor. The [mutex record](docs/features/GIT_REPOSITORY_MUTEX.md#async-lifecycle-staging-2026-10-22-utc)
+retains actual5FAIL/7PASS3.27s/native4.221s before12PASS1.31s/native2.3s,
+and261 complete source/consumer passes17.45s/native19.6s under unchanged
+one-file96.9line/89.5branch and85/75 BOTH. Current common-directory helpers remain.
+The native staged-test merge attempt refuses, emits index.lock/File exists then
+no merge to abort, and leaves the checkout clean; six owned stashes remain.
+No competing PID or autostash cause is established. Immutable test restoration
+and literal original source hunks preserve current metadata helpers. The
+publication_repair_design model owner produces only a confined helper proposal;
+Root remains Main/shared/Git writer. No lock removal or unchanged retry occurs.
+The complete261-case312 cohort passes14.11s/native15.2s in
+/tmp/gludd-v012-git-mutex-stage-312.{log,xml}; both separate strict scopes and Ruff
+pass. Operating checks, normal collection and independent exact-source review
+remain pending. Preserve all154 early families; a cheap regression joins that
+existing owner with the helper repair before any final replay. Capacity97/6.7GiB,
+original60907, final gate/global coverage and all exact-SHA release proofs remain
+blocked; all seven task states stay open.
 
 ## Reviewed S98.4 exact shared-cache inventory repair
 
