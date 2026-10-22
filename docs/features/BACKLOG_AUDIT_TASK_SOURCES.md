@@ -283,5 +283,41 @@ inside60, with native heartbeats retained. All six Markdown documents, strict
 line limits, eight-path registration and SESSION validation pass. The initial
 literal blank-spacing replacement refuses before mutation because its expected
 needle is absent; reading the actual range supplies the corrected exact edit.
-Source/metadata/test review is complete inline; fresh normal collection and an
-independent exact-source decision still require their actual receipts.
+At the pre-commit boundary, source/metadata/test review is complete inline;
+normal collection and independent source review require the actual receipts below.
+
+## Exact daf source review and refreshed diagnostic (2026-10-22 UTC)
+
+Normal guarded hooks produce development
+daf9a07d4e09f7e1bcfd8319909fab3c3363b459 against9b3, with zero new clones/six
+checkpoints and128698selected/128722collected,24deselected/zeroerrors48.26s,
+native53.47s. Preserve .gate-logs/observed/test-count/
+20261022T053725Z-42332-c069c26c.json with its exact log/trace. Root fully reads
+/tmp/gludd-v012-ledger-daf-source-review.md: APPROVE SOURCE ONLY, no blocking
+correction, scoped exclusively to daf against9b3. All sixteen aliases/statuses,
+old22 assertions, historical unknown fixtures and both coverage floors remain.
+
+The one refreshed native completed-backlog owner reads changed committeddaf,
+retaining the original target/baseline/limit100/report1000 arguments and180/60
+diagnostic observer. Its actual result is failed2/native124.485s, not a timeout:
+.gate-logs/observed/v012-staging-inventory/v012-staging-inventory-daf-20261022.json
+and /tmp/gludd-v012-staging-inventory-daf-20261022.log. The current target now
+reports188 completed records. Immutable v0.1.1 and historical branch ledgers
+remain malformed, so baseline/since-baseline/branch-only totals staynull.
+Native81heads/83branches, evidence_complete=false, truncated=false and0omitted
+remain diagnostic only. Partial completion claims keep implementation=unknown;
+they do not extend the individually verified pending-source list or close tasks.
+Do not rewrite immutable refs or repeat this diagnostic without changed inputs.
+
+This receiving record changes documentation only. The seven open milestone tasks,
+capacity97percent/7.0GiB, original publication60907, canonical gate/global85-75
+line AND branch coverage, exact-SHA all-shard CI/deployment, reviewed-head receipt
+and guarded promotion remain pending. Neither metadata validity, source approval
+nor188 historical checks supplies missing deployment acceptance.
+
+Receiving acceptance retains all124 documentation/handoff/contract/branch cases,
+7.26s/native8.3s, fatal warnings and serial pytest. Preserve
+/tmp/gludd-v012-ledger-daf-receiving311.{log,xml} and native JSON under
+.gate-logs/observed/ledger-daf-receiving. All four Markdown files, strict line
+limits, four-path registration and SESSION mode1 pass. This does not repeat the
+204-case source operating cohort or the original failed publication owner.

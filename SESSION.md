@@ -2,15 +2,15 @@
 
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 128685 selected / 128709 collected, 24 deselected, zero collection errors in 51.49s/native 56.769s during normal eb6e1c616bb1ff8845836a5091af77397d40f5ea source hooks. Native receipt: .gate-logs/observed/test-count/20261022T051321Z-24570-5fa35e7d.{log,json}. Collection is separate from behavioral and final-gate proof; older 3e8, e5/bd3 and f36/815 collections remain history.
+Total tests: 128698 selected / 128722 collected, 24 deselected, zero collection errors in 48.26s/native 53.47s during normal daf9a07d4e09f7e1bcfd8319909fab3c3363b459 source hooks. Native receipt: .gate-logs/observed/test-count/20261022T053725Z-42332-c069c26c.{log,json}. Collection is separate from behavioral and final-gate proof; older eb6, 3e8, e5/bd3 and f36/815 collections retain their own refs.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and Main/shared/Git/proof mutations on development. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 ledger identity repair
+## Reviewed S98.4 ledger identity repair
 
-Root owns the coupled repair on development at9b3e90a25ac1af18a0890b731f059712d992986a.
+Root owns exact source daf9a07d4e09f7e1bcfd8319909fab3c3363b459 on development against9b3e90a25ac1af18a0890b731f059712d992986a.
 The [task-source record](docs/features/BACKLOG_AUDIT_TASK_SOURCES.md#canonical-identity-and-duplicate-checked-claims-2026-10-22-utc)
 retains the actual4FAIL/22PASS, missing checked-only duplicate refusal, sixteen
 canonical primary-ID corrections with every legacy alias and unchanged statuses.
@@ -20,7 +20,7 @@ unknown semantics and all153 family/original runtime bounds remain unchanged.
 Complete579-case consumer owners pass each runtime:31127.06s/native28.893s and
 31225.02s/native26.4s. The unchanged four-file profile measures97.3line/94.8branch;
 validator97.2line/95.2branch, every file above75 on both. Separate strict scopes
-and Ruff pass. Fresh collection and independent exact-source review remain pending. No source-only result closes a release task.
+and Ruff pass. Normal daf hooks retain128698selected/128722collected,24deselected0errors48.26s/native53.47s in .gate-logs/observed/test-count/20261022T053725Z-42332-c069c26c.json, zero new clones and six checkpoints. Independent APPROVE SOURCE ONLY against9b3 is fully read at /tmp/gludd-v012-ledger-daf-source-review.md; no blocking correction. A refreshed native inventory against committeddaf reports188 completed current records but fails2/124.485s with immutable baseline/branch-only totals stillnull,81heads/83branches, no truncation/omissions. Preserve .gate-logs/observed/v012-staging-inventory/v012-staging-inventory-daf-20261022.json and its full log. No source-only result closes a release task.
 
 ## Reviewed S98.4 inherited prune-policy correction
 
