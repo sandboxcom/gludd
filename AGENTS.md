@@ -69,7 +69,11 @@ service/config/store/auth facts govern filing that request. Actual capacity
 clearance permits the existing nine-owner admission even while filing remains
 pending; every native owner and final proof still applies. Claim filing only
 with its real returned ID. Diagnose the blocked native input instead of adding
-an unrelated prerequisite to the release gate.
+an unrelated prerequisite to the release gate. Canonical volume pressure is a
+hard limit; generated scratch is a soft cleanup trigger. Native preflight may
+admit protected/recent scratch when volume is healthy and inspection/cleanup
+have no errors. disk-check is a stricter diagnostic, not a replacement admission
+owner. Read native reasons before selecting cleanup; no threshold is changed.
 
 work-item emits advisory stderr prompts from its native result branch while
 stdout retains machine-readable JSON. Plan mode does not select focus or check

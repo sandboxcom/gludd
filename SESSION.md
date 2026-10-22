@@ -8,7 +8,46 @@ Total tests: 129093 selected / 129117 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 capacity versus escalation guidance
+## Current S98.4 canonical capacity policy
+
+Root owns Main/shared/Git on release-candidate/v012-git-mutex-20261022 from
+b5d4a40ffb0394db60fabd38e32b58f191cfc3b6. Its independent source-only approval is
+fully read at /tmp/gludd-v012-capacity-escalation-b5d-source-review.md.
+Normal b5d collection retains129126selected/129150collected,24deselected,
+zeroerrors51.32s/native56.555s at
+.gate-logs/observed/test-count/20261022T164546Z-7186-f96af399.json.
+The global header retains its explicit historical f2e measurement.
+
+Root reported100MB scratch beside hard95percent volume without teaching the
+native distinction. The existing automatic_disk_cleanup owner can admit
+protected/recent scratch when volume is healthy and inspection/cleanup have no
+errors. Teach this policy in the capacity result; retain disk-check as a stricter
+diagnostic, all nine admission owners and every unchanged refusal/final proof.
+Two additive native-Make controls retain1FAIL/1PASS0.79s/native1.7s before repair,
+with all60 predecessors unchanged. The existing first child already owns this
+whole test file; families171/eight pins and original bounds remain unchanged.
+The [owning record](docs/features/MAKE_RESULT_GUIDANCE.md#capacity-results-teach-existing-hard-and-soft-policy)
+retains exact evidence and required normal collection/source review. Complete
+seven-owner receiving passes213 per runtime,31118.25s/31219.93s, fatal warnings,
+zero skips/errors under whole-shell0/40.934s:
+.gate-logs/observed/capacity-policy-receiving/v012-capacity-policy-receiving.json.
+All eight pins pass1.77s and the actual registered plan returns0; native3.474s.
+Ruff/strict,278 contracts, nine-path registration, seven Markdown/SESSION/line
+checks and1157 targets/zero duplicates pass. The complete receiving receipt
+precedes final metadata checks; the narrower binding is not a new whole cohort.
+
+Distinct bounded read-only attribution passes0/native3.757s in
+.gate-logs/observed/capacity-owner-attribution/v012-capacity-owner-attribution-b5d.json.
+Native df displays97percent/7.9GiB; its rounded output is not the earlier
+check_disk_usage96.0 metric. Git zero-garbage/prune-packable inventory supplies
+no deletion eligibility. The earlier real failure and exhausted cleanup remain.
+A pending operator question requests actual freed capacity or an authorized
+cleanup owner; HumanTodo remains unfiled and its service inputs are separate.
+No unchanged failed owner is retried and no protected artifact is removed.
+Last gateFAIL, all seven tasks unchecked, final gate/global coverage/exact-SHA
+CI/deployment/reviewed-head/promotion remain pending.
+
+## Retained S98.4 capacity versus escalation guidance
 
 Root owns Main/shared/Git on release-candidate/v012-git-mutex-20261022 from
 ade6b6e979e6013b98a1f8b04a8afcda72499fbf. Independent APPROVE SOURCE ONLY is fully

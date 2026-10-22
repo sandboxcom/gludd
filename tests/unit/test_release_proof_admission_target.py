@@ -274,6 +274,38 @@ def test_capacity_escalation_does_not_add_an_admission_owner(
         assert "changed service prerequisite before API retry" in line
 
 
+@pytest.mark.parametrize("capacity_policy_failure_phase", PHASES[:2])
+def test_capacity_result_teaches_canonical_soft_and_hard_policy(
+    tmp_path: Path, capacity_policy_failure_phase: str,
+) -> None:
+    """Explain native policy only on its failing branch, without new prerequisites."""
+    result = _run(
+        tmp_path, failed_phase=capacity_policy_failure_phase,
+        native_focus=True, task="F12.1",
+    )
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert (tmp_path / "phases.log").read_text().splitlines() == list(
+        PHASES[:PHASES.index(capacity_policy_failure_phase) + 1]
+    )
+    assert f"PROOF-ADMISSION-BLOCKED phase={capacity_policy_failure_phase} rc=2" in result.stdout
+    assert "PROOF-ADMISSION-PASS" not in result.stdout
+    assert not (tmp_path / "runtime-watch").exists()
+    assert not (tmp_path / ".gludd").exists()
+    assert not (tmp_path / ".gate-status").exists()
+    assert not (tmp_path / "attestation.json").exists()
+    line = _result_guidance(result, "blocked", capacity_policy_failure_phase)
+    if capacity_policy_failure_phase == PHASES[0]:
+        assert "canonical volume limit is hard" in line
+        assert "generated scratch is a soft cleanup trigger" in line
+        assert "Protected or recent scratch may be admitted when volume is healthy" in line
+        assert "native preflight still refuses inspection or cleanup errors" in line
+        assert "disk-check is diagnostic, not the admission owner" in line
+        assert "all existing admission owners and final proofs remain required" in line
+    else:
+        assert "soft cleanup trigger" not in line
+        assert "disk-check is diagnostic" not in line
+
+
 def test_changed_head_does_not_clear_an_unchanged_capacity_blocker(tmp_path: Path) -> None:
     for head in ("a" * 40, "b" * 40):
         result = _run(tmp_path, failed_phase=PHASES[0], claimed_head=head)

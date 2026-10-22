@@ -6,6 +6,76 @@ check-gate-failure-promotions, git-merge-nc, development-merge-forward and
 release-proof-admission, human-todo-module, run-watched, work-item and guarded-target parse refusals. Existing native owners, statuses and artifacts remain
 authoritative; no second observer, runner, cache or proof schema is introduced.
 
+## Capacity results teach existing hard and soft policy
+
+Root owns S98.4 on release-candidate/v012-git-mutex-20261022 from exact
+b5d4a40ffb0394db60fabd38e32b58f191cfc3b6. Independent APPROVE SOURCE ONLY
+is fully consumed at /tmp/gludd-v012-capacity-escalation-b5d-source-review.md.
+Its normal collection retains129126selected/129150collected,24deselected,
+zeroerrors51.32s/native56.555s at
+.gate-logs/observed/test-count/20261022T164546Z-7186-f96af399.json.
+Those fixed receipts do not recertify this later guidance change.
+
+### Observed interpretation defect and authoritative policy
+
+Root's capacity report placed797.5MB scratch/100MB beside96percent volume/95,
+without teaching their distinct native roles. The existing automatic_disk_cleanup
+owner treats generated scratch as a soft cleanup trigger. After successful
+inspection/cleanup, it can admit protected or recent scratch when hard volume
+pressure is healthy; its recheck branches2393-2407 are the authority.
+The older [explicit volume authorization](RELEASE_PROOF_THROUGHPUT.md#temporary-volume-headroom-authorized-on-2026-10-14)
+already documents this policy. disk-check retains its stricter diagnostic
+meaning and is not the canonical admission owner. No second hard scratch
+prerequisite follows from its failure or a rounded df display.
+
+The existing capacity-blocked AGENT_NEXT result now teaches those roles and
+retains inspection/cleanup refusals. It names no duplicated numeric threshold,
+adds no waiver, and retains actual capacity repair before retrying admission.
+All nine run_owner calls, order, argv, statuses, phase markers, focus preparation,
+original runtime90/60, families171/eight pins,21phases/2850, fatal warnings,
+85/75 BOTH, ZDD, retention and promotion remain unchanged. No producer, profile,
+target, selector, observer, cache or API/service operation is added.
+
+### Native failing-first controls and receiving scope
+
+Two additive native-Make controls preserve all60 predecessor cases. The capacity
+branch retains1FAIL while the configuration-failure negative passes,
+60deselected0.79s/native1.7s:
+.gate-logs/observed/capacity-policy-guidance-red/v012-capacity-policy-guidance-red311.json.
+Native2, the original stopped phase prefix, absent runtime/focus/gate/attestation
+and false gate/release authority precede the missing-policy assertion. The
+negative forbids capacity policy advice on the unrelated configuration result.
+These are output/phase-routing controls, not live capacity or gate proof.
+The complete owner is already selected in the existing first child; no family
+or early-selector edit is needed.
+
+Complete seven-owner receiving passes213 per runtime,31118.25s/31219.93s,
+fatal warnings and zero skips/errors:62 admission cases,92 SESSION/docs cases
+and59 fixture-collision controls. The whole-shell AND receipt returns0/40.934s:
+.gate-logs/observed/capacity-policy-receiving/v012-capacity-policy-receiving.json.
+Tested source is1074217744c780f5d1819468a5520685afe998f48ab35a3aa0c997ba9ba452d0.
+The120total/60quiet diagnostic is not original publication/final admission proof.
+All eight pins pass1.77s; the exact registered plan then returns0 without live
+owners. Their shared receipt returns0/3.474s:
+.gate-logs/observed/capacity-policy-pins/v012-capacity-policy-pins.json.
+Ruff/strict scope,278 contracts, nine-path registration, seven Markdown files,
+SESSION validation, strict line limits and1157 targets/zero duplicates pass.
+This receiving receipt precedes final metadata checks; a narrower metadata
+binding cannot recertify the213-case cohort. Normal guarded collection and
+independent exact-source review remain separate required steps. No production
+Python/profile changed and no fresh global coverage is claimed.
+
+A distinct bounded read-only diagnostic is retained at
+.gate-logs/observed/capacity-owner-attribution/v012-capacity-owner-attribution-b5d.json,
+passed0/native3.757s, with its exact log and command in
+/tmp/gludd-v012-prerequisite-handoff-ade6.md. Git reports zero garbage and zero
+prune-packable objects; this proves no cleanup eligibility or capacity clearance.
+Browser/coverage artifacts and worktree namespaces stay protected. The pending
+operator question requests actual freed volume capacity or an existing
+authorized cleanup owner; no unchanged cleanup, failed API or final proof is
+retried. Full gate/global coverage/exact-SHA CI/deployment/promotion and all
+seven unchecked release tasks remain pending.
+
 ## Capacity admission and HumanTodo escalation have distinct dependencies
 
 Root owns this S98.4 correction from exact
