@@ -2,7 +2,7 @@ name: Validate and Deploy Presentation to Pages
 
 on:
   push:
-    branches: [master, development]
+    branches: [master, development, 'release-candidate/**']
     paths: &presentation-paths
       - '.github/workflows/pages.yml'
       - 'config/make_target_contract.json'

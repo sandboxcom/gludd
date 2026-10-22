@@ -6,6 +6,7 @@ on:
       - master
       - main
       - development
+      - 'release-candidate/**'
   pull_request:
     branches: [master, main, development]
   workflow_dispatch:

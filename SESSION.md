@@ -8,7 +8,57 @@ Total tests: 129093 selected / 129117 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 canonical capacity policy
+## Current S98.4 candidate hosted validation
+
+Root is the sole Main/shared/Git writer on
+release-candidate/v012-git-mutex-20261022 from exact
+8ceb3432446fb53a304aea13597c168bd712ec95. Its source-only approval is fully
+read at /tmp/gludd-v012-capacity-policy-8ceb-source-review.md.
+Normal 8ceb collection retains 129128 selected / 129152 collected,
+24 deselected, zero errors in 49.05s / native 54.357s:
+.gate-logs/observed/test-count/20261022T170457Z-17321-487771c7.json.
+The global header retains its explicitly historical f2e measurement.
+
+The latest 213-case checks per runtime were local, not GHA. Native exact 8ceb
+lookup finds zero runs and two required workflows missing. Candidate refs are
+absent from Build/Molecule/Pages push filters; manual/PR runs cannot satisfy
+the unchanged canonical push-event proof. Add only release-candidate/** and
+retain all old triggers, Pages paths, jobs, release/deployment conditions and
+exact-SHA guards. The [owning record](docs/features/MAKE_RESULT_GUIDANCE.md#candidate-hosted-validation-requires-an-exact-push-run)
+retains the concrete proposal and required failing-first/receiving/proof route.
+
+The default current-output attempt refuses existing development ownership:
+candidate-hosted-status/v012-candidate-hosted-status-8ceb, failed2/1.556s.
+Changing only PIPELINE_STATUS_OUTPUT to the candidate-owned
+.gludd/release-proof-status-release-candidate-v012-git-mutex-20261022.json
+lets the SAME producer record pending/false authority, native2/1.340s in
+.gate-logs/observed/candidate-hosted-status/v012-candidate-hosted-status-8ceb-scoped.json.
+No snapshot/guard is manually edited and no GHA job is dispatched.
+
+Normal policy-guarded candidate CI-repair publication remains permitted by
+release rule6 despite capacity blocking expensive final proof. Its unchanged
+_runtime-publish-admission still applies; no bypass or unchanged-failure replay
+is allowed. Prior development60907 is retained history with unknown cause,
+not a measured candidate refusal. New source/receiving/collection/review and
+actual guarded transport/exact-SHA hosted proof are required. Capacity remains
+hard-blocked, last gateFAIL, all seven tasks open; canonical gate/global coverage,
+deployment/reviewed-head/promotion stay pending.
+
+Local receiving now retains the actual3FAIL/22PASS trigger RED and two routing
+REDs before family172, with all171 predecessors/eight required pins unchanged.
+The eight pins pass2.54s, followed by the registered plan, native0/4.487s:
+.gate-logs/observed/candidate-push-pins/v012-candidate-push-pins-final.json.
+Complete13-owner receiving passes591 per311/312,56.96s/61.92s under native0/121.170s;
+security/parser/documentation callers pass123 per runtime,2.38s/2.48s,
+native0/6.511s. The owning result record retains both exact receipts and tested
+source8f2e7b1bdef1ea29b6135b7c0829796784d3f5b5dedaf1f2531543559da060d7.
+The actual strict checker exposed duplicate static shard-module identities;
+the established TYPE_CHECKING boundary preserves runtime/assertions and clears
+the same three-file scope. Literal compaction keeps both large test owners2499
+lines. Normal collection/new-SHA source review and guarded publication remain
+separate pending steps;714 local cases per runtime supplies no hosted proof.
+
+## Retained S98.4 canonical capacity policy
 
 Root owns Main/shared/Git on release-candidate/v012-git-mutex-20261022 from
 b5d4a40ffb0394db60fabd38e32b58f191cfc3b6. Its independent source-only approval is

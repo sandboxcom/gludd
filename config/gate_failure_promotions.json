@@ -1356,6 +1356,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_item_progress.py::test_native_work_item_status_guidance_preserves_owned_json[True]",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "release-candidate-push-workflow-triggers",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_release_pipeline_structure.py::TestReleaseCandidateHostedValidation::test_candidate_push_filters_preserve_existing_routes",
+      "full_gate_phase": "test"
     }
   ]
 }

@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 171
+EXPECTED_FAMILY_COUNT = 172
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -1837,6 +1837,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "human-todo-response-identity", "human-todo-check-mode-guidance",
         "run-watched-native-outcome-guidance", "run-watched-namesake-execution", "run-watched-complete-command",
         "make-guarded-goal-outcome-guidance", "work-item-administrative-result-guidance",
+        "release-candidate-push-workflow-triggers",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2046,8 +2047,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "test_stale_scratch_nested_symlink_preserves_external_target_modes[file] "
         "tests/unit/test_detect_secrets_full_scan.py::"
         "test_successful_full_scan_rejects_added_identity_or_occurrence[new-digest] "
-        "tests/unit/test_audit_coverage_suite_provenance.py::"
-        "test_imported_cobertura_never_proves_e2e_execution "
+        "tests/unit/test_audit_coverage_suite_provenance.py::test_imported_cobertura_never_proves_e2e_execution "
         "tests/unit/test_make_uv_cache_sandbox.py::test_native_prune_preserves_real_child_status[native-failure] "
         "tests/unit/test_make_uv_cache_sandbox.py::"
         "test_native_prune_target_policy_refuses_invalid[UV_CACHE_PRUNE_TIMEOUT=0] "
@@ -2075,8 +2075,9 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "test_compound_tail_is_running_inside_one_terminal_receipt[7-0] "
         "tests/unit/test_make_uv_execution_boundary.py::"
         "test_guarded_multi_goal_refusal_teaches_both_input_repairs_before_any_body[quoted-markdown] "
-        "tests/unit/test_item_progress.py::"
-        "test_native_work_item_status_guidance_preserves_owned_json[True] "
+        "tests/unit/test_item_progress.py::test_native_work_item_status_guidance_preserves_owned_json[True] "
+        "tests/unit/test_release_pipeline_structure.py::TestReleaseCandidateHostedValidation::"
+        "test_candidate_push_filters_preserve_existing_routes "
         "tests/unit/test_status_heartbeat_terminal.py " "tests/unit/test_task_ledger_validation.py "
         "tests/unit/test_make_readonly_version.py " "tests/unit/test_make_help_audit.py "
         "tests/unit/test_clean_stale_resource_namespaces.py " "tests/unit/test_native_temp_artifact_target.py "
@@ -2159,8 +2160,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "test_process_inventory_preserves_python_module_argument_forms "
         "tests/unit/test_code_intelligence_import_boundary.py::"
         "test_extractor_import_does_not_load_introspection_or_database "
-        "tests/unit/test_list_files_target.py::"
-        "test_listing_missing_input_preserves_native_failure "
+        "tests/unit/test_list_files_target.py::test_listing_missing_input_preserves_native_failure "
         "tests/unit/test_import_time_deep.py::"
         "test_measurement_contract_parses_native_numeric_rows "
         "tests/unit/test_import_time_deep.py::"

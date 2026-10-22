@@ -181,6 +181,8 @@ action; they do not execute it or create gate/release proof.
 
 | Target/result | Required model action |
 |---|---|
+| Candidate SHA has no hosted runs | Inspect push filters and actual remote visibility. Canonical proof requires exact-SHA push runs; manual dispatch is not a substitute. Use normal guarded repair publication, verify-remote and the same pipeline-status producer with branch-owned PIPELINE_STATUS_OUTPUT. All publication, full-gate and deployment guards remain. |
+| pipeline-status output ownership refusal | Preserve the existing repo/branch record. Select the same producer with an explicit output for the requested repo/branch; never hand-edit or adopt the foreign current JSON. Missing/pending remain nonzero. |
 | Admission blocked on capacity | Read the native cause: volume pressure is hard; scratch is a soft cleanup trigger and protected/recent scratch may be admitted when volume is healthy, without inspection/cleanup errors. disk-check is diagnostic, not admission. Repair actual capacity through existing authorized owners or HumanTodo escalation. Service/config/store/auth govern filing; admission can resume after capacity clears even if filing is pending. Preserve all owners and final proofs. |
 | work-item planned | Inspect explicit mode0 status; no focus selection, active-ledger eligibility check or runtime admission occurred. |
 | work-item uninitialized/updated/prepared | Select an open active focus if absent; inspect active-work-status for capacity/ownership before bounded acceptance. prepare-runtime is administrative only. |

@@ -6,6 +6,145 @@ check-gate-failure-promotions, git-merge-nc, development-merge-forward and
 release-proof-admission, human-todo-module, run-watched, work-item and guarded-target parse refusals. Existing native owners, statuses and artifacts remain
 authoritative; no second observer, runner, cache or proof schema is introduced.
 
+## Candidate hosted validation requires an exact push run
+
+Root owns this S98.4 enhancement on
+release-candidate/v012-git-mutex-20261022 from exact
+8ceb3432446fb53a304aea13597c168bd712ec95. Its independent APPROVE SOURCE ONLY
+is fully consumed at /tmp/gludd-v012-capacity-policy-8ceb-source-review.md.
+Normal collection retains 129128 selected / 129152 collected, 24 deselected,
+zero errors in 49.05s / native 54.357s:
+.gate-logs/observed/test-count/20261022T170457Z-17321-487771c7.json.
+The prior 213 checks per runtime are local receiving evidence. Neither source
+review nor collection supplies hosted validation or deployment evidence.
+
+### Delivery owners and the missing trigger
+
+The user asks whether these checks also run on GHA, which handles deployment.
+The latest candidate has not been pushed by Root. A real native exact-SHA query
+finds zero workflow runs and two missing required workflows, Build and Release
+and Molecule Tests. The existing three workflow push filters omit candidate
+refs. A PR or manual dispatch cannot substitute: pipeline_status and
+require-ci-green deliberately require matching repository, branch, full SHA
+and push event, retaining every required and additional matching workflow.
+
+Add only release-candidate/** to Build, Molecule and Pages push branch filters.
+Keep old branch order, tag triggers, PR bases, manual entrypoints, Pages paths,
+job bodies, concurrency and every release/deployment condition unchanged.
+Build runs quality gates on Python 3.11/3.12 and complete test shards on 3.11;
+it is not a promise to replay each local 3.12 focused command identically.
+Tagged release publication requires the existing exact development source
+proof and successful producers. Pages deploys only on master push after both
+validate and javascript-coverage, then probes the public revision. Azure live
+proof remains a separate protected manual/scheduled workflow. Candidate CI is
+validation; actual promotion, release and deployment acceptance remain required.
+
+### Native observation ownership and measured pending state
+
+The first actual lookup is retained at
+.gate-logs/observed/candidate-hosted-status/v012-candidate-hosted-status-8ceb.json,
+failed 2 / 1.556s. It finds no hosted runs but refuses to overwrite the
+development-owned default current output. This is an ownership/configuration
+refusal, not a failed hosted test. Keep that file and guard intact.
+
+The actual changed input is PIPELINE_STATUS_OUTPUT, selecting the same native
+pipeline-status producer's existing output facility for the candidate branch:
+.gludd/release-proof-status-release-candidate-v012-git-mutex-20261022.json.
+The corrected observation is
+.gate-logs/observed/candidate-hosted-status/v012-candidate-hosted-status-8ceb-scoped.json,
+failed 2 / 1.340s: snapshot written, state pending, release_ready false,
+zero runs and two missing required workflows. Pending is intentionally nonzero.
+No manual JSON, new producer, observer, cache or fabricated workflow is added.
+Reuse that branch-owned current output across later SHAs; the producer owns
+freshness and non-success replacement. Never adopt another repo/branch record.
+
+### Guarded publication and proof order
+
+The existing git-push-sandboxcom owner applies its native guards and
+_runtime-publish-admission to this branch too: pinned EE manifest, separately
+watched canonical prerequisites 90/60, then original runtime 90/60, and normal
+Git hooks. Release rule 6 permits such normal CI-repair pushes while expensive
+final local proof is capacity-blocked; disk alone does not prohibit every
+hosted validation attempt. No source approval, trigger patch or earlier local
+pass clears a native publication refusal. Preserve the actual failing input
+and require a changed prerequisite before retrying it; never bypass the owner.
+
+The older development60907 timeout remains 124 / 90.554s, null trace and no
+transport, with unknown cause. It is not a candidate hosted run or a measured
+refusal of a command not yet executed on this candidate. Do not attribute it to
+disk or assume this trigger correction repairs runtime timing.
+
+After failing-first/whole-owner receiving and required guarded collection,
+commit the coherent change, obtain exact-source review, run verify-state and
+the applicable normal publication owner. Then verify-remote for the new full
+SHA and use pipeline-status with explicit branch-owned output. Require terminal
+exact-SHA push CI, subsequent development identity/proofs and guarded promotion;
+retain canonical full gate/global 85/75 BOTH and required deployment acceptance.
+Manual dispatch success cannot replace canonical push proof. Pages remains
+conditional on its original paths; absence is not a passing deployment.
+This repair creates a new SHA; it cannot manufacture hosted proof for 8ceb.
+All seven release tasks remain unchecked.
+
+### Failing-first selection and local receiving
+
+All19 predecessor cases and their assertions remain. Six additive workflow
+cases retain3FAIL/22PASS1.04s before the three branch-filter edits, native2/1.985s:
+.gate-logs/observed/candidate-push-triggers-red/v012-candidate-push-triggers-red311.json.
+After those edits the complete owner passes25/0.92s, then two independent
+mapping/actual-child-roster controls fail2/0.81s before native early wiring:
+.gate-logs/observed/candidate-push-routing-red/v012-candidate-push-routing-red311.json,
+native2/3.238s. Both failed receipts and their source identities remain.
+
+Family172, release-candidate-push-workflow-triggers, appends after all171
+predecessors. The existing first child selects the exact failing function once;
+pytest expands its build/molecule/pages parameters. Independent literal rosters
+and actual child-argv controls retain every predecessor, three2/1/1 children,
+90total/60quiet,21phases/2850, fatal warnings and required complete gate.
+All eight required pins pass2.54s before the registered mode1 plan returns0,
+whole-shell0/4.487s:
+.gate-logs/observed/candidate-push-pins/v012-candidate-push-pins-final.json.
+Plan mode runs no live admission owner and grants no proof.
+
+At stable source8f2e7b1bdef1ea29b6135b7c0829796784d3f5b5dedaf1f2531543559da060d7,
+the complete13-owner source/consumer union passes591 per runtime:
+Python3.11 56.96s and3.12 61.92s, whole-shell0/121.170s:
+.gate-logs/observed/candidate-push-receiving/v012-candidate-push-receiving.json.
+The additional workflow-security/safe-parser owners and three documentation
+callers pass123 per runtime,2.38s/2.48s, whole-shell0/6.511s:
+.gate-logs/observed/candidate-push-callers/v012-candidate-push-callers.json.
+These714 local checks per runtime retain zero skips/errors and fatal warnings.
+Their diagnostic bounds are not original publication/final-gate admission.
+The remaining22 workflow cases stay in complete receiving and canonical shards.
+
+The actual three-file strict checker initially stops on duplicate
+scripts.ci_named_shard_files/ci_named_shard_files identities. The established
+TYPE_CHECKING import boundary gives static analysis one identity and preserves
+the original runtime import and every shard-coverage assertion. The same strict
+three-file scope then passes. Initial line-limit/Ruff failures are retained:
+literal-only roster compaction and reflow keep both large test owners2499lines
+and every selector/value/order, without suppressions or a larger ceiling.
+Ruff,278 target contracts,15-path registration, seven Markdown files, SESSION
+validation, strict file limits and1157 targets/zero duplicates pass before final
+metadata binding. No production Python/profile changes or fresh global coverage
+claim follows. Normal guarded collection and independent new-SHA source review
+remain required before the actual policy-guarded publication attempt.
+
+### Practitioner evidence and trigger diagnosis
+
+Reviewed2026-10-22, [GitHub Community26840](https://github.com/orgs/community/discussions/26840)
+records a September2020 reporter seeing no runs after tag pushes; the reporter
+later confirms explicit branch/tag filter advice resolved their case. This
+firsthand history motivates checking configured ref filters before changing
+tokens, retrying pushes or blaming GitHub. It does not establish Gludd's cause
+or prove that its unexecuted candidate push will schedule successfully.
+
+[GitHub's workflow syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onpushbranchestagsbranches-ignoretags-ignore)
+defines ref-pattern filtering and requires both branch and path filters when
+both exist. The local source and native exact-SHA query supply this repair's
+evidence. Keep the narrow candidate pattern, existing Pages paths and native
+push-event proof; actual transport, hosted terminal results and deployment
+acceptance still require their own measurements.
+
 ## Capacity results teach existing hard and soft policy
 
 Root owns S98.4 on release-candidate/v012-git-mutex-20261022 from exact

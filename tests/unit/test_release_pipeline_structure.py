@@ -374,7 +374,10 @@ class TestShardMatrixCoverage:
 
     def test_letter_ranges_cover_a_to_z(self) -> None:
         """Every top-level lettered unit test belongs to the canonical plan."""
-        from scripts.ci_named_shard_files import ISOLATED_TESTS, SHARDS, expand_shard
+        if typing.TYPE_CHECKING:
+            from ci_named_shard_files import ISOLATED_TESTS, SHARDS, expand_shard
+        else:
+            from scripts.ci_named_shard_files import ISOLATED_TESTS, SHARDS, expand_shard
 
         selected = {
             token
@@ -393,3 +396,138 @@ class TestShardMatrixCoverage:
             "canonical shard registry does not cover unit test(s): "
             + ", ".join(missing)
         )
+
+
+class TestReleaseCandidateHostedValidation:
+    """Candidate pushes must use native CI without entering publication jobs."""
+
+    @staticmethod
+    def _mapping(value: object) -> dict[object, object]:
+        assert isinstance(value, dict), "expected a workflow mapping"
+        result: dict[object, object] = {}
+        for key, member in value.items():
+            result[key] = member
+        return result
+
+    @staticmethod
+    def _strings(value: object) -> list[str]:
+        assert isinstance(value, list), "expected a workflow string list"
+        result: list[str] = []
+        for member in value:
+            assert isinstance(member, str), "expected a workflow string"
+            result.append(member)
+        return result
+
+    def _workflow(self, filename: str) -> dict[object, object]:
+        import yaml
+
+        payload = (ROOT / ".github" / "workflows" / filename).read_text(
+            encoding="utf-8"
+        )
+        document: object = yaml.load(
+            payload, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+        )
+        return self._mapping(document)
+
+    def _events(self, workflow: dict[object, object]) -> dict[object, object]:
+        # PyYAML's YAML 1.1 loader may decode the Actions key "on" as True.
+        return self._mapping(workflow.get("on", workflow.get(True)))
+
+    def _steps(self, job: dict[object, object]) -> list[dict[object, object]]:
+        value: object = job["steps"]
+        assert isinstance(value, list), "expected a workflow step list"
+        return [self._mapping(step) for step in value]
+
+    @pytest.mark.parametrize(
+        (
+            "hosted_workflow_filename",
+            "hosted_push_branches",
+            "hosted_pr_branches",
+        ),
+        [
+            ("build.yml", ["development", "master", "main"], ["master", "main"]),
+            (
+                "molecule.yml",
+                ["master", "main", "development"],
+                ["master", "main", "development"],
+            ),
+            ("pages.yml", ["master", "development"], ["master", "development"]),
+        ],
+        ids=("build", "molecule", "pages"),
+    )
+    def test_candidate_push_filters_preserve_existing_routes(
+        self,
+        hosted_workflow_filename: str,
+        hosted_push_branches: list[str],
+        hosted_pr_branches: list[str],
+    ) -> None:
+        events = self._events(self._workflow(hosted_workflow_filename))
+        push = self._mapping(events["push"])
+        pull_request = self._mapping(events["pull_request"])
+        assert self._strings(push["branches"]) == [
+            *hosted_push_branches,
+            "release-candidate/**",
+        ]
+        assert "branches-ignore" not in push
+        assert self._strings(pull_request["branches"]) == hosted_pr_branches
+        assert "workflow_dispatch" in events
+
+    def test_pages_candidate_keeps_presentation_path_filter(self) -> None:
+        events = self._events(self._workflow("pages.yml"))
+        push = self._mapping(events["push"])
+        pull_request = self._mapping(events["pull_request"])
+        paths = self._strings(push["paths"])
+        assert paths == self._strings(pull_request["paths"])
+        assert "make/**" in paths
+        assert ".github/workflows/pages.yml" in paths
+        assert "docs/presentation/**" in paths
+        assert "*" not in paths and "**" not in paths
+
+    def test_candidate_keeps_native_publication_guards(self) -> None:
+        jobs = self._mapping(self._workflow("build.yml")["jobs"])
+        release = self._mapping(jobs["release"])
+        condition: object = release["if"]
+        assert isinstance(condition, str), "expected a release condition"
+        assert condition.startswith("startsWith(github.ref, 'refs/tags/v') &&")
+        publish = next(
+            step
+            for step in self._steps(self._mapping(jobs["container"]))
+            if step.get("name") == "Publish verified container image"
+        )
+        assert publish["if"] == (
+            "github.event_name != 'pull_request' && "
+            "(startsWith(github.ref, 'refs/tags/v') || "
+            "github.ref == 'refs/heads/master')"
+        )
+        ee_push = next(
+            step
+            for step in self._steps(self._mapping(jobs["ansible-ee"]))
+            if step.get("name") == "Push tagged execution environment"
+        )
+        assert ee_push["if"] == "startsWith(github.ref, 'refs/tags/v')"
+        pages_jobs = self._mapping(self._workflow("pages.yml")["jobs"])
+        pages = self._mapping(pages_jobs["deploy"])
+        assert pages["if"] == (
+            "github.event_name == 'push' && github.ref == 'refs/heads/master'"
+        )
+        assert self._strings(pages["needs"]) == ["validate", "javascript-coverage"]
+
+    def test_candidate_retains_exact_checkout_and_python_scope(self) -> None:
+        jobs = self._mapping(self._workflow("build.yml")["jobs"])
+        gate = self._mapping(jobs["gate"])
+        gate_strategy = self._mapping(gate["strategy"])
+        gate_matrix = self._mapping(gate_strategy["matrix"])
+        assert self._strings(gate_matrix["python-version"]) == ["3.11", "3.12"]
+        shard = self._mapping(jobs["test-shard"])
+        shard_strategy = self._mapping(shard["strategy"])
+        shard_matrix = self._mapping(shard_strategy["matrix"])
+        assert self._strings(shard_matrix["python-version"]) == ["3.11"]
+        for name in ("gate", "test-shard"):
+            checkouts: list[dict[object, object]] = []
+            for step in self._steps(self._mapping(jobs[name])):
+                uses: object = step.get("uses")
+                if isinstance(uses, str) and uses.startswith("actions/checkout@"):
+                    checkouts.append(step)
+            assert len(checkouts) == 1
+            checkout_with = self._mapping(checkouts[0]["with"])
+            assert checkout_with["ref"] == "${{ github.sha }}"

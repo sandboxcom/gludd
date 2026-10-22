@@ -64,6 +64,15 @@ measurements, rejected approaches and the missing release proofs.
 
 ### Make results teach the next action
 
+Candidate hosted proof requires the canonical exact-SHA push event. Keep the
+existing release-candidate/** push route and all deployment/publication guards;
+manual dispatch is operational evidence, not canonical push proof. Use the
+existing pipeline-status producer with PIPELINE_STATUS_OUTPUT owned by the same
+repo and branch; preserve another branch's record and let the producer refresh
+SHA/state. Missing runs and pending stay nonzero. Normal policy-guarded repair
+publication is allowed while final proof is blocked; native publication guards
+still apply, and source-only approval never clears their refusal.
+
 Keep admission dependencies distinct from escalation dependencies. HumanTodo
 service/config/store/auth facts govern filing that request. Actual capacity
 clearance permits the existing nine-owner admission even while filing remains
