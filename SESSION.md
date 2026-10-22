@@ -2,51 +2,53 @@
 
 Last Updated: 2026-10-21 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 128608 selected / 128632 collected,24 deselected,zero collection errors48.41s/native53.8s during normal f36d2dc362dfe7676b1ea51239aa1f8b2a28e24f source hooks. Native receipt: .gate-logs/observed/test-count/20261022T001203Z-5279-80a22172.{log,json}. Collection is separate from behavioral and final-gate proof; older e946 collection remains history.
+Total tests: 128623 selected / 128647 collected, 24 deselected, zero collection errors in 48.50s/native 54.0s during normal e5acbad56eba25af0d8633074d4dd9a671ca0b06 source hooks. Native receipt: .gate-logs/observed/test-count/20261022T004337Z-26836-0b5e4352.{log,json}. Collection is separate from behavioral and final-gate proof; older f36/815 collections remain history.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and Main/shared/Git/proof mutations on development. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current coverage suite provenance repair
+## Reviewed coverage source and continuation
 
-Receiving base 815cd5dff5bf337eda518f9d1ff04673145a043c has independent
-APPROVE SOURCE ONLY. Root owns this S98.4 source change. Normal source hooks own
-fresh collection; freeze their resulting exact SHA for independent source review.
-Collection, review and final proof have separate authority. The [coverage contract](docs/E2E_COVERAGE_AUDIT_CONTRACT.md#suite-provenance-repair-2026-10-22-utc)
-owns the actual witness, implementation decisions, commands and failed history.
+Exact development e5acbad56eba25af0d8633074d4dd9a671ca0b06 has independent
+APPROVE SOURCE ONLY against 815cd5dff5bf337eda518f9d1ff04673145a043c.
+Root fully read /tmp/gludd-v012-coverage-suite-source-review.md; no blocking
+correction. This separate four-document receiving receipt preserves the frozen
+code. The [coverage contract](docs/E2E_COVERAGE_AUDIT_CONTRACT.md#suite-provenance-repair-2026-10-22-utc)
+owns decisions, exact commands, failed history and proof limits. Do not redo the
+accepted source repair.
 
-Imported JSON/XML previously acquired E2E labels without running any shards.
-Failed native audits could also certify stale percentages or hide their native
-failure behind a decoding error. Genuine pre-repair controls retain 12 FAIL /
-2 PASS in .87s/native 1.7s; the repaired complete owner passes 14 in .75s/native
-1.7s. Only completed owned native execution attaches E2E totals. Native failure
-is recorded before stale input is parsed; generic numeric admission remains.
+Imported JSON/XML retains numeric admission without unsupported E2E labels.
+Native failure is recorded before stale input is parsed. Genuine pre-repair
+12 FAIL/2 PASS/.87s/native 1.7s precedes 14 PASS/.75s/native 1.7s; final typed
+source/route controls pass 15/.82s/native 1.7s. All original numeric/arcs/context
+checks and the exact native E2E dictionary remain.
 
-Both complete ten-file source/consumer cohorts pass 251: Python 3.11 in 20.40s/
-native 22.5s and Python 3.12 in 21.24s/native 23.6s. The unchanged complete
-two-source profile measures 94.7% line / 86.7% branch aggregate; both files
-independently exceed 75% on both metrics. These are focused reporting controls,
-including controlled tests under tests/e2e, not live E2E/deployment acceptance.
-All five prior numeric/arcs/context assertions remain; only their unsupported
-imported aliases conform, with the original E2E dictionary retained natively.
+Both complete ten-file source/consumer cohorts pass 251 each: 3.11 in 20.40s/
+native 22.5s and 3.12 in 21.24s/native 23.6s. The unchanged complete two-source
+profile measures 94.7% line / 86.7% branch aggregate, with both files above 75%
+for both metrics. These are focused reporting controls, including controlled
+tests under tests/e2e, not live E2E/deployment acceptance.
 
-Family 151 adds one exact cheap witness after all 150 predecessors. Native route
-RED is 1 FAIL/.77s/native 1.6s; the canonical six pins pass 1.79s. Five complete
-routing/workflow owners pass 372 each: 3.11 in 73.81s/native 75.1s and 3.12 in
-84.31s/native 85.6s. Final typed controls pass 15/.82s/native 1.7s on 3.11.
-All six changed Python paths pass separate strict scopes; 276 Make contracts
-and 1157 targets/zero duplicates pass. Keep three children 2/1/1, 90 total / 60 quiet,
-21 phases / 2850 seconds, full gate and 85/75 LINE AND BRANCH floors unchanged.
+Family 151 retains all 150 predecessors and one exact first-child witness.
+Six canonical pins pass 1.79s. Five complete routing/workflow owners pass 372
+each: 3.11 in 73.81s/native 75.1s and 3.12 in 84.31s/native 85.6s. Documentation/
+branch-contract/fixture-namespace checks pass 189/9.52s/native 10.5s. Six strict
+scopes, native Ruff/manual script docstrings/Markdown/SESSION structure,
+276 Make contracts, 1157 targets/zero duplicates and full 264 resources pass.
+Original three children 2/1/1, 90/60, 21 phases/2850 and full gate remain.
 
-Prior f36d2dc362dfe7676b1ea51239aa1f8b2a28e24f full-scan source and the four-doc
-815 receiving receipt have independent APPROVE SOURCE ONLY, fully read by Root.
-The [security record](docs/security/audit-observability.md#full-scan-refresh-and-finding-admission-2026-10-21)
-retains all semantic/grammar REDs, clone repair, 257 source/caller passes per
-runtime at 99.0 line / 96.4 branch and 298 routing passes per runtime. The complete
-prior startup synopsis is immutable at 815; do not redo accepted source work.
-Neither repair establishes the cause of original publication60907 or watchdog
-scan timeouts. All seven S98 tasks stay unchecked.
+Normal e5 source hooks retain zero new clones, six protected checkpoints and
+the fresh collection above. All source research and annotation deliverables
+are integrated; the independent decision is retained. Only native producers
+own current observations. Source implementation/acceptance/collection/review
+do not establish final gate or release readiness.
+
+Prior f36/815 source approvals and full-scan receipts remain in the
+[security record](docs/security/audit-observability.md#full-scan-refresh-and-finding-admission-2026-10-21)
+and immutable 815 startup synopsis. Neither repair establishes the cause of
+original publication60907 or natural watchdog timeouts. All seven S98 tasks
+stay unchecked.
 
 ## Previously accepted source and controller state
 
@@ -73,7 +75,7 @@ prefix from that diagnostic; intended-profile/ownership and native handoff come 
 
 ## Actual release blockers and retained proof
 
-Capacity remains96percent>95,8.1GiB free. Native cleanup changes97to96 and
+Post-e5 native disk measurement remains 96 percent >95, with 8.0 GiB free. Native cleanup changes97to96 and
 768.1to711.7MB scratch, then removes0/skips403 and exits Make2/no-progress.
 The [capacity record](docs/features/CACHE_RESOURCE_INVENTORY.md#native-capacity-cleanup-and-direct-owner-2026-10-21)
 retains actual16-resource reclamation and all ownership/idle/grace refusals.
@@ -107,7 +109,13 @@ and scanners before normal Git hooks may stash. Keep strict scopes separate;
 do not sync or download implicitly. No .opencode plugin source is changed.
 
 Actual capacity must clear95 before release-proof-admission mode0 and expensive
-final proof. Diagnose/change the actual failing runtime input before another
+final proof. The exact next Make action after changed capacity/ownership inputs is:
+
+~~~console
+make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0 WORK_ITEM_ID=S98.4 OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=20 GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
+~~~
+
+Do not invoke this unchanged failure or treat a passing plan as clearance. Diagnose/change the actual failing runtime input before another
 original publication replay. Then freeze one independently reviewed candidate
 for combined acceptance, complete canonical gate/global85aggregate75each-file
 line AND branch, exact-SHA hosted all-shard CI/deployment, reviewed-head receipt

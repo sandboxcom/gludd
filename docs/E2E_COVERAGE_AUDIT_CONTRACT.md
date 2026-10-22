@@ -235,6 +235,30 @@ proof remain separate. Capacity 96>95 and the original 60907 publication 124 /
 authorizes neither unchanged replay nor promotion. All seven S98 tasks stay
 unchecked; ZDD, cleanup, retention and branch/promotion gates remain.
 
+## Exact source e5 and receiving boundary
+
+Exact development e5acbad56eba25af0d8633074d4dd9a671ca0b06 has independent
+APPROVE SOURCE ONLY against 815cd5dff5bf337eda518f9d1ff04673145a043c.
+Root fully read /tmp/gludd-v012-coverage-suite-source-review.md; no blocking
+correction was found. This separate four-document receiving receipt preserves
+the frozen code and acknowledges every integrated research/annotation result.
+
+Normal e5 hooks retain zero new clones and six protected checkpoints, with
+128623 selected / 128647 collected, 24 deselected and zero collection errors
+in 48.50s/native 54.0s. The native receipt is
+.gate-logs/observed/test-count/20261022T004337Z-26836-0b5e4352.json:
+passed/exit0/53.969s. This collection is distinct from earlier f36/815 receipts
+and the focused behavior/coverage above; no full gate result follows.
+
+Source-review exports /tmp/gludd-reviewe5ac and
+/tmp/gludd-review815-coverage-suite are review snapshots, not release candidate
+sealing. Native disk after e5 remains 96% used/8.0 GiB free. The unchanged
+capacity/publication failures and all seven tasks remain open. SESSION owns
+the exact continuation command after the actual prerequisite changes.
+Full canonical gate/global coverage, exact-SHA hosted/deployment/reviewed-head
+and promotion still require their existing native owners. Never restart this
+accepted source repair merely because final release evidence remains missing.
+
 ## Review checklist
 
 Before recording a percentage in `TASKS.md` or a release note:
