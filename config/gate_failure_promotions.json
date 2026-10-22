@@ -1307,6 +1307,20 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_development_merge_forward_targets.py::test_merge_forward_guidance_runs_despite_namesake_file",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "human-todo-response-identity",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_gludd_human_todo_module.py::test_success_without_usable_id_never_verifies_write[missing-present-200]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "human-todo-check-mode-guidance",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_human_todo_make_target.py::test_human_todo_guidance_uses_actual_native_outcome[0-1]",
+      "full_gate_phase": "test"
     }
   ]
 }

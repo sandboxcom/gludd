@@ -3,8 +3,121 @@
 S98.4, 2026-10-22 UTC. Agent-facing Make results should teach the model what to
 do with the actual result. Current owners include check-make-target-contract,
 check-gate-failure-promotions, git-merge-nc, development-merge-forward and
-release-proof-admission. Existing native owners, statuses and artifacts remain
+release-proof-admission and human-todo-module. Existing native owners, statuses and artifacts remain
 authoritative; no second observer, runner, cache or proof schema is introduced.
+
+## HumanTodo results require identity and reconciliation, 2026-10-22 UTC
+
+This coupled S98.4 repair starts from reviewed local
+37454900137c21e4d051b9c1fd65cc6c450ac514 on
+release-candidate/v012-git-mutex-20261022. Development remains
+82db11b57b254c1ca1e035975b5cc86253e2fed5; no integration or push follows.
+Root fully consumes APPROVE SOURCE ONLY againstfe2 at
+/tmp/gludd-v012-proof-admission-374-source-review.md. Normal374 hooks retain
+128913selected/128937collected,24deselected,zero errors49.67s/native55.036s:
+.gate-logs/observed/test-count/20261022T120527Z-77538-f06c3086.json.
+The earlier630-per-runtime acceptance remains source-specific. Carry these
+receipts into this substantive repair; do not create a receipt-only commit.
+
+The actual HumanTodo module accepts HTTP200/201 with a missing, null, blank,
+padded or nonstring ID, and accepts a resolution response for a different ID.
+That is a false verification boundary even when transport succeeds. The existing
+API router serializes the committed record's actual ID; PATCH returns the
+requested record. Require a nonempty unpadded string, preserve its exact bytes
+and require matching identity for done/dismissed. Do not invent a UUID grammar
+or normalize a returned ID. Native transport/HTTP error messages and statuses,
+valid response payloads, explicit client binding and check-mode shapes remain.
+
+A malformed successful response fails with its original HTTP status and
+write_outcome=unverified. This does not prove the daemon made no change.
+Reconcile the real record before retrying; a blind POST could create a duplicate.
+No returned ID, fake service, check-mode changed=true or prompt can verify filing.
+The existing Make owner emits stderr AGENT_NEXT for refused inputs, temporary/
+runtime failure, successful check-mode plan, returned apply response and module
+failure. Preserve original stdout, native failure status, literal JSON/policy,
+selected interpreter, one fork and owned temporary cleanup. Terminal guidance
+follows the native child. A returned apply response still requires capturing the
+real ID and verifying requested state; it supplies no milestone/gate authority.
+
+The genuine module RED retains58FAIL/33PASS0.93s/native1.910s, with all nine
+predecessor assertions intact. Make guidance retains9FAIL/20PASS2.90s/native4.038s.
+Routing retains2FAIL/65deselected0.95s/native2.0s before promotion. Receipts:
+.gate-logs/observed/human-todo-id-red311/v012-human-todo-id-red311.json,
+.gate-logs/observed/human-todo-guidance-red311/v012-human-todo-guidance-red311.json
+and .gate-logs/observed/human-todo-routes-red311/
+v012-human-todo-routes-red311.json. Logs/XML use the corresponding
+/tmp/gludd-v012-human-todo-{id,guidance,routes}-red311 names.
+The82 new module cases reuse the canonical physical module and existing HTTP
+adapter fixture. A scoped PATCH recorder restores the shared fake afterwards;
+the complete legacy HTTP owner runs with it. Nine additive real-Make controls
+invoke all original literal-policy/argv/status/temporary-cleanup assertions.
+Two further native controls retain temporary-directory and interpreter failures,
+original stderr/status9, no request and one failure prompt. The initial native
+registration guard refuses four unregistered HumanTodo paths; explicit S98.4
+path registration repairs the real input without adding or ticking a task.
+The new throughput cross-reference exceeds the strict ceiling at2501 then2500;
+compact that prose, preserving all older content/history and the strict limit.
+
+The complete106-case module/legacy cohort passes1.63s/native3.1s with fatal
+warnings and no skips/errors. Whole physical module coverage is97.6line/95.5branch,
+with no exclusions and unchanged85aggregate/75each-file BOTH:
+.gate-logs/observed/coverage-files/20261022T123757Z-89274-df0d3a26.json,
+.gate-logs/v012-human-todo-module-coverage311.json and
+.gate-logs/coverage-20261022T123800Z.json. This is generic source coverage,
+not E2E execution or global release coverage. The only missed line/arc is the
+main guard. Strict scopes for the module and both changed test owners pass;
+Ruff passes without suppressions. The actual registered check-mode example
+returns0, changed=true/id=null and planned guidance, with no HTTP filing.
+
+Exactly two new cheap nodes append as families165/166 after all164 predecessors.
+Both literal runtime rosters and the independent ordered manifest pin retain the
+same node order. The routing assertions preserve first-child counts1/0/0, all
+eight existing pins, three children2/1/1,90total/60quiet,21phases/2850 and full gate.
+Literal-only adjacent-string compaction keeps the existing promotion test below
+2500 physical lines without dropping a byte of its expected selection/assertions.
+All eight native pins pass1.77s/terminal0;278 target contracts and the documented
+actual example pass. The complete16-owner receiving union passes all662 cases
+per runtime, fatal warnings and zero skips/errors. Python311 takes104.84s/
+native106.129s; Python312 takes110.10s/native111.470s. Exact receipts:
+.gate-logs/observed/human-todo-receiving{311,312}/
+v012-human-todo-receiving{311,312}.json; logs/XML are
+/tmp/gludd-v012-human-todo-receiving{311,312}.{log,xml}. Both native commands bind
+unchanged tested sourceea4bdfc207be5ab9ce89b83a1c30685843bea89a0f454e0515c4735c6e954673.
+The native receipt retains every deduplicated owner and installed runtime tuple.
+These diagnostic240total/180quiet limits never replace original90/60 proof.
+Final documentation/registration checks and normal guarded collection retain
+their own native results; do not add a receipt-only commit or replay accepted
+source tests merely to restate that collection. No hosted speed claim follows.
+
+Capacity remains the measured97percent/7.6GiB against95, not cleared by a new
+candidate. Preserve original60907 and the refused/unfiled capacity request.
+The updated request configuration is
+/tmp/gludd-v012-capacity-human-todo-request-374.json. Its bounded check-mode
+receipt .gate-logs/observed/capacity-request-input374/
+v012-capacity-request-input374.json returns0/native0.8s/id=null: no request filed.
+An unanswered operator question requests the existing endpoint and credential
+binding name only, never its value. Do not repeat the same refused API request.
+
+Root fully consumes the independent existing-core-daemon proposal and stdio
+patch in /tmp/gludd-v012-core-daemon-proposal/. Decision: HOLD startup/apply.
+The public foreground CLI already owns Popen wait and signal forwarding; reuse
+that lifecycle if a thin Make entrypoint is later needed. Its --project does not
+isolate the store; an optional numeric PID file is not ownership/readiness.
+Source child stdio is suppressed, and external binding prints a PSK. No proposed
+stdio patch or daemon target is integrated here. Actual persistent config,
+database/schema/runtime ownership and explicit safe credential transport are
+unverified. GLUDD_DB_PATH cannot override configured database host/url; do not
+substitute temporary SQLite or a fake API to manufacture an ID. The shared client
+intentionally never scavenges GLUDD_AUTH_PSK. Raw psk in HUMAN_TODO_ARGS_JSON
+would enter Ansible --args despite no_log; keep it out of argv/logs/receipts.
+A verified native secret binding needs its own confined controls before apply.
+No new supervisor, observer, cache, outbox, daemon or cleanup is introduced.
+
+The existing [firsthand Make report](https://stackoverflow.com/questions/10559064/terminate-makefile-command-when-subcommand-throws)
+retained in the throughput feature motivates explicit local failure handling.
+It does not establish this API defect's cause or authorize a retry. Native
+receipts establish the repair; original full-gate, exact-SHA hosted/deployment/
+reviewed-head/promotion proofs and all seven milestone checkboxes stay pending.
 
 ## Release admission teaches bounded next actions, 2026-10-22 UTC
 

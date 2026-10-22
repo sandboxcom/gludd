@@ -10,18 +10,31 @@ unexport HUMAN_TODO_ARGS_JSON HUMAN_TODO_VALIDATE_ONLY
 endif
 .PHONY: human-todo-module
 human-todo-module:
-	@[ -n "$$GLUDD_HUMAN_TODO_ARGS_JSON" ] || { echo "HUMAN_TODO_ARGS_JSON must contain the existing module arguments" >&2; exit 2; }
-	@case "$$GLUDD_HUMAN_TODO_VALIDATE_ONLY" in 0|1) ;; *) echo "HUMAN_TODO_VALIDATE_ONLY must be literal 0 or 1" >&2; exit 2;; esac
 	@set -eu; \
-	human_todo_tmp=$$(mktemp -d /tmp/gludd-human-todo-XXXXXX); \
+	human_todo_guide() { printf '%s\n' "AGENT_NEXT target=human-todo-module outcome=$$1 gate_evidence=false release_ready=false $$2" >&2; }; \
+	[ -n "$$GLUDD_HUMAN_TODO_ARGS_JSON" ] || { \
+		echo "HUMAN_TODO_ARGS_JSON must contain the existing module arguments" >&2; \
+		human_todo_guide refused "input=HUMAN_TODO_ARGS_JSON http_request=false next_owner=human-todo-module; supply the existing module arguments and validate first"; exit 2; }; \
+	case "$$GLUDD_HUMAN_TODO_VALIDATE_ONLY" in 0|1) ;; *) \
+		echo "HUMAN_TODO_VALIDATE_ONLY must be literal 0 or 1" >&2; \
+		human_todo_guide refused "input=HUMAN_TODO_VALIDATE_ONLY http_request=false next_owner=human-todo-module; set literal 1 for check mode or 0 for the authorized request"; exit 2;; esac; \
+	if human_todo_tmp=$$(mktemp -d /tmp/gludd-human-todo-XXXXXX); then :; else \
+		human_todo_status=$$?; human_todo_guide failed "phase=owned-temporary-directory native_status=$$human_todo_status http_request=false; repair the actual resource prerequisite before retry"; exit "$$human_todo_status"; fi; \
 	trap 'rm -rf "$$human_todo_tmp"' EXIT; \
-	human_todo_interpreter=$$($(UV) run python -c 'import json, sys; print(json.dumps({"ansible_python_interpreter": sys.executable}))'); \
+	if human_todo_interpreter=$$($(UV) run python -c 'import json, sys; print(json.dumps({"ansible_python_interpreter": sys.executable}))'); then :; else \
+		human_todo_status=$$?; human_todo_guide failed "phase=selected-runtime native_status=$$human_todo_status http_request=false; repair the actual installed-runtime input before retry"; exit "$$human_todo_status"; fi; \
 	if [ "$$GLUDD_HUMAN_TODO_VALIDATE_ONLY" = 1 ]; then set -- --check; else set --; fi; \
 	echo "[human-todo-module] starting validate_only=$$GLUDD_HUMAN_TODO_VALIDATE_ONLY"; \
-	ANSIBLE_HOME="$$human_todo_tmp" ANSIBLE_LOCAL_TEMP="$$human_todo_tmp/local" ANSIBLE_REMOTE_TEMP="$$human_todo_tmp/remote" \
+	if ANSIBLE_HOME="$$human_todo_tmp" ANSIBLE_LOCAL_TEMP="$$human_todo_tmp/local" ANSIBLE_REMOTE_TEMP="$$human_todo_tmp/remote" \
 	$(UV) run ansible localhost --inventory localhost, --connection local --forks 1 \
 		--module-name general_ludd.agent.gludd_human_todo --args "$$GLUDD_HUMAN_TODO_ARGS_JSON" \
-		--extra-vars "$$human_todo_interpreter" "$$@"
+		--extra-vars "$$human_todo_interpreter" "$$@"; then \
+		if [ "$$GLUDD_HUMAN_TODO_VALIDATE_ONLY" = 1 ]; then \
+			human_todo_guide planned "http_request=false next_owner=human-todo-module; check-mode changed=true and id=null are validation only; no HumanTodo was filed or resolved; use a real owned endpoint and explicit safe credential binding before an authorized request"; \
+		else human_todo_guide returned "next_owner=human-todo-module; capture the returned id and verify requested state against the real daemon; retain native evidence; this is not milestone or release proof"; fi; \
+	else human_todo_status=$$?; \
+		human_todo_guide failed "phase=module native_status=$$human_todo_status write_outcome=unverified; no verified filing or resolution; reconcile any potentially applied write before retry; preserve the native reason and repair the actual service/config/auth changed input"; \
+		exit "$$human_todo_status"; fi
 
 # --- Collection Tests ---
 # binary_re collection: 8 roles + 3 knowledge modules (fuzzing_strategies, obfuscation_techniques, prompt_injection_detector)

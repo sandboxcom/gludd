@@ -2,53 +2,58 @@
 
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 128897 selected / 128921 collected, 24 deselected, zero collection errors in48.47s/native53.899s during normalfe2d6a53611a6e1fb38adf96d7fb1392a1069a5d hooks. Native receipt: .gate-logs/observed/test-count/20261022T114053Z-60590-67fe245a.{log,json,pytest.jsonl}. Collection is separate from behavioral and final-gate proof;65cb,6bc,41b,49bb, rejected621 and older collections retain their own refs. The next guarded commit owns its fresh native collection receipt; consume that result without another receipt-only commit or repeating accepted source acceptance.
+Total tests: 128913 selected / 128937 collected, 24 deselected, zero collection errors in49.67s/native55.036s during normal37454900137c21e4d051b9c1fd65cc6c450ac514 hooks. Native receipt: .gate-logs/observed/test-count/20261022T120527Z-77538-f06c3086.{log,json,pytest.jsonl}. Collection is separate from behavioral and final-gate proof; prior refs retain their original receipts. The next guarded substantive commit owns fresh normal collection; consume it without another receipt-only commit.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 release-admission guidance delta
+## Current S98.4 HumanTodo identity and Make result repair
 
-Root owns the coupled change from reviewed local
-fe2d6a53611a6e1fb38adf96d7fb1392a1069a5d on the same release-candidate branch;
-development remains82db11b57b254c1ca1e035975b5cc86253e2fed5. Normal fe2 hooks
-retain128897selected/128921collected,24deselected0errors48.47s/native53.899s at
-.gate-logs/observed/test-count/20261022T114053Z-60590-67fe245a.json. Independent
-APPROVE SOURCE ONLY against65cb is fully read at
-/tmp/gludd-v012-merge-forward-fe2-source-review.md; no blocking correction.
-The [result record](docs/features/MAKE_RESULT_GUIDANCE.md#development-integration-results-2026-10-22-utc)
-retains747 receiving passes per runtime, all original failures and budgets.
-The serial guarded retry follows actual index.lock ENOENT, never cause proof
-or lock deletion. Source review/collection never authorize final release.
+Root is sole Main/shared/Git writer from reviewed local
+37454900137c21e4d051b9c1fd65cc6c450ac514 on
+release-candidate/v012-git-mutex-20261022. Development stays
+82db11b57b254c1ca1e035975b5cc86253e2fed5. Independent APPROVE SOURCE ONLY
+againstfe2 is fully consumed at
+/tmp/gludd-v012-proof-admission-374-source-review.md. Normal374 collection is
+recorded above; earlier630-per-runtime source acceptance keeps its own receipt.
+The [current result record](docs/features/MAKE_RESULT_GUIDANCE.md#humantodo-results-require-identity-and-reconciliation-2026-10-22-utc)
+owns every decision, receipt, source/proof distinction and missing prerequisite.
 
-The next [admission result delta](docs/features/MAKE_RESULT_GUIDANCE.md#release-admission-teaches-bounded-next-actions-2026-10-22-utc)
-retains16FAIL/42deselected4.09s/native5.2s before repair. Existing native
-release-proof-admission emits stderr planned/refused/blocked/passed guidance,
-with exact owner/input repair, changed-input retry and missing-proof context.
-All original reasons/statuses/order, full-file early selection,164 families,
-eight pins, three2/1/1 children,90/60,21/2850 and85/75 BOTH remain unchanged.
-All 630 cases in the complete 17-owner cohort pass per runtime with fatal
-warnings/no skips or errors: Python3.11 115.07s/native116.282s and Python3.12
-117.69s/native118.985s. Native receipts:
-.gate-logs/observed/proof-admission-guidance-receiving{311,312}/
-v012-proof-admission-guidance-receiving{311,312}.json. Both bind unchanged tested
-source00e2824364e37c92206078c4a0c0dda861f3edbc1aef76ad4b6815c5cfb4397c.
-Eight pins1.78s/terminal0,278 contracts/actual mode1 plan(exit0),1157 targets/zero
-duplicates/parity, six Markdown, eight-path registration/SESSION/line checks and
-strict scope/Ruff pass. Retain mandatory normal commit collection, consume its
-native receipt and avoid another receipt-only cycle or unchanged accepted replay.
-The real safe plan is distinct from live admission; no final admission replay
-is justified by new prose, HEAD, timer or observer identity.
+The module's malformed-success reproduction retains58FAIL/33PASS; Make guidance
+retains9FAIL/20PASS; two exact-route REDs precede families165/166 after all164
+predecessors. Real nonempty unpadded response IDs are mandatory; resolutions must
+match requested identity. A malformed success is write_outcome=unverified:
+reconcile before retry, never assume no daemon write. Check-mode shapes, original
+native errors/statuses, explicit client binding and valid payloads remain.
+The existing Make owner emits refused/failed/planned/returned stderr guidance
+after the actual result; literal inputs, argv, selected runtime, one fork and
+owned temporary cleanup remain. No observer, auth scavenging or API retry follows.
 
-The bounded user-cache inventory is terminal0/native0.3s: seven children,
-zero errors, largest77049856 allocated bytes. Native receipt:
-.gate-logs/observed/user-cache-inventory/v012-user-cache-inventory-fe2.json.
-This cannot clear GiB-scale capacity; no managed cache is removed. Latest
-native disk97percent/7.6GiB remains above95. Capacity HumanTodo stays UNFILED
-after connection refusal/no ID; no service change justifies another request.
-Keep original60907 and canonical/global/exact-SHA hosted/deployment/reviewed-head/
-promotion proof pending. All seven S98 items stay unchecked.
+Whole physical module/legacy HTTP coverage passes106 cases,97.6line/95.5branch,
+unchanged85/75 BOTH and fatal warnings. Native receipt:
+.gate-logs/observed/coverage-files/20261022T123757Z-89274-df0d3a26.json.
+All eight existing promotion pins pass1.77s/terminal0;278 contracts and the actual
+check-mode example pass0/id=null/planned, never filing. Strict module/test scopes,
+Ruff and line ceiling pass. Complete16-owner receiving passes662 per runtime,
+311104.84s/native106.129s and312110.10s/native111.470s, zero skips/errors.
+Receipts are .gate-logs/observed/human-todo-receiving{311,312}/
+v012-human-todo-receiving{311,312}.json; same tested sourceea4bdfc207be5ab9ce89b83a1c30685843bea89a0f454e0515c4735c6e954673.
+Final docs/registration, normal guarded commit collection and exact independent
+source review retain separate native evidence. Keep three2/1/1 children,90/60
+and21/2850 unchanged; diagnostic240/180 is not final proof.
+
+Latest measured disk97percent/7.6GiB still exceeds95. Preserve original60907
+and the original refused/unfiled HumanTodo. The updated request input374 validates
+through bounded native check mode0/native0.8s/id=null, never a filed item.
+The pending question requests only existing daemon URL and credential binding
+name. Fully consumed core-daemon proposal is HOLD: existing foreground CLI owns
+its child lifecycle, but persistent DB/config/schema/runtime/auth are unverified.
+No fake API/store, temporary SQLite, numeric-PID adoption, raw-PSK argv, startup,
+cleanup or new supervisor is authorized by that proposal. Exact artifacts and
+prerequisites remain in the feature. No changed service input justifies retry.
+All seven tasks, final gate, exact-SHA hosted/deployment/reviewed-head/promotion
+and release integration remain pending.
 
 ## Reviewed mutex source and current S98.4 Make receiving
 

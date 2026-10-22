@@ -745,8 +745,8 @@ documents module invocation and JSON arguments; its quoting guidance supports
 literal transport. The [native configuration reference](https://docs.ansible.com/projects/ansible/latest/reference_appendices/config.html)
 documents Ansible home and temporary configuration. Existing firsthand workflow
 and recursive-Make findings above motivate this executable route; neither
-upstream documentation nor check mode supplies an actual human request or
-release proof.
+upstream documentation nor check mode supplies an actual human request or release proof.
+The later [identity and result repair](MAKE_RESULT_GUIDANCE.md#humantodo-results-require-identity-and-reconciliation-2026-10-22-utc) retains malformed-success REDs, unverified-write reconciliation, outcome prompts, whole-module coverage, canonical routing and the held existing-daemon proposal.
 
 ## Native workflow repairs and retained decisions (2026-10-20)
 

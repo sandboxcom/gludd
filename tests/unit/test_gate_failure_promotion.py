@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 164
+EXPECTED_FAMILY_COUNT = 166
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -1834,6 +1834,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "make-promotion-terminal-result-guidance", "make-contract-layout-error-guidance",
         "make-guide-required-owner-command", "make-variable-recipe-context",
         "development-merge-forward-plan-guidance", "development-merge-forward-namesake",
+        "human-todo-response-identity", "human-todo-check-mode-guidance",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2012,20 +2013,17 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::"
         "test_primary_objective_mentions_ci tests/unit/test_start_gate_background.py "
         "tests/unit/test_gate_run_lock.py tests/unit/test_bulkhead_deep.py "
-        "tests/unit/test_bulkhead_admission.py "
-        "tests/unit/test_enhancement_ratio_plugin.py "
+        "tests/unit/test_bulkhead_admission.py " "tests/unit/test_enhancement_ratio_plugin.py "
         "tests/unit/test_pytest_param_fixture_collisions.py "
         "tests/unit/test_ansible_runtime_artifacts.py "
         "tests/unit/test_ansible_ee_full_warm_acceptance.py "
         "tests/unit/test_ansible_ee_searx_acceptance.py "
         "tests/unit/test_beta4_python_runtime_boundary.py "
         "tests/unit/test_ansible_searxng_source_inspection.py "
-        "tests/unit/test_integration_admission_target.py "
-        "tests/unit/test_ci_failure_ledger.py "
+        "tests/unit/test_integration_admission_target.py " "tests/unit/test_ci_failure_ledger.py "
         "tests/unit/test_ci_failure_ledger_concurrency.py "
         "tests/unit/test_proof_observations.py tests/unit/test_ci_await_exact.py "
-        "tests/unit/test_ci_verdict_all_required.py "
-        "tests/unit/test_ci_verdict_structural_repair.py "
+        "tests/unit/test_ci_verdict_all_required.py " "tests/unit/test_ci_verdict_structural_repair.py "
         "tests/unit/test_secrets_baseline_compaction.py "
         "tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_pipeline_status_job_progress.py "
         "tests/unit/test_ci_cancel_contract.py "
@@ -2067,12 +2065,13 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_development_merge_forward_targets.py::"
         "test_merge_forward_plan_guidance_does_not_admit_integration[True-content] "
         "tests/unit/test_development_merge_forward_targets.py::test_merge_forward_guidance_runs_despite_namesake_file "
+        "tests/unit/test_gludd_human_todo_module.py::"
+        "test_success_without_usable_id_never_verifies_write[missing-present-200] "
+        "tests/unit/test_human_todo_make_target.py::test_human_todo_guidance_uses_actual_native_outcome[0-1] "
         "tests/unit/test_status_heartbeat_terminal.py " "tests/unit/test_task_ledger_validation.py "
         "tests/unit/test_make_readonly_version.py " "tests/unit/test_make_help_audit.py "
-        "tests/unit/test_clean_stale_resource_namespaces.py "
-        "tests/unit/test_native_temp_artifact_target.py "
-        "tests/unit/test_ci_run_summary_script.py "
-        "tests/unit/test_ci_run_summary_target.py "
+        "tests/unit/test_clean_stale_resource_namespaces.py " "tests/unit/test_native_temp_artifact_target.py "
+        "tests/unit/test_ci_run_summary_script.py " "tests/unit/test_ci_run_summary_target.py "
         "tests/unit/test_ci_workflow_integrity.py "
         "tests/unit/test_plugin_manifest_deep.py::"
         "TestHookValidity::test_no_duplicate_hooks_within_single_plugin "
@@ -2093,8 +2092,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "test_lint_css_dependency_config_and_contract_are_exactly_pinned "
         "tests/unit/test_gate_status_attestation.py::"
         "test_repository_identity_batches_only_fresh_metadata_with_equivalent_digests "
-        "tests/unit/test_ci_stylelint_workflow.py "
-        "tests/security/test_ci_workflow.py "
+        "tests/unit/test_ci_stylelint_workflow.py " "tests/security/test_ci_workflow.py "
         "tests/unit/test_workflow_safe_parser.py "
         "tests/unit/test_self_improve_private_policy_ci_contract.py "
         "tests/unit/test_ci_shards_log_context.py "
@@ -2114,10 +2112,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_release_asset_matrix.py "
         "tests/unit/test_release_ee_collection_closure.py "
         "tests/unit/test_mcp_topics_manifest.py::test_independent_topic_sizing_has_one_native_dump_per_topic "
-        "tests/unit/test_mcp_tool_gen.py "
-        "tests/unit/test_observed_command.py "
-        "tests/unit/test_observer_retention_concurrency.py "
-        "tests/unit/test_ci_collect_all_stress.py "
+        "tests/unit/test_mcp_tool_gen.py " "tests/unit/test_observed_command.py "
+        "tests/unit/test_observer_retention_concurrency.py " "tests/unit/test_ci_collect_all_stress.py "
         "tests/unit/test_admission_cold_start_selection.py::"
         "test_real_admission_filters_only_never_selected_main_siblings "
         "tests/unit/test_presentation_browser_runner.py::"

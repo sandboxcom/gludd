@@ -83,6 +83,11 @@ Only terminal passed output follows every admission child, and it still grants
 no full-gate/exact-SHA proof. Capacity uses existing native lifecycle/HumanTodo
 owners; check-mode null, configuration or API refusal never means a filed task.
 Preserve a refused request as unfiled until its service prerequisite changes.
+HumanTodo check mode performs no write; require the real returned ID and requested
+state before claiming filing/resolution. Missing, unusable or mismatched IDs on
+HTTP success mean write_outcome=unverified: reconcile before retrying. Read the
+existing human-todo-module outcome prompt, retain native errors/status and never
+put a raw PSK in JSON/argv or infer credential binding from ambient server auth.
 
 ## Make Target Selection Contract
 
