@@ -2,25 +2,47 @@
 
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 129008 selected / 129032 collected, 24 deselected, zero collection errors in47.56s/native52.927s during normal843fe156cd3a2bf6449456bc8365c5740e70cb9c hooks. Native receipt: .gate-logs/observed/test-count/20261022T124815Z-1429-8cc1bca6.{log,json,pytest.jsonl}. Collection is separate from behavioral and final-gate proof; prior refs retain their original receipts. This receiving change fixes ambiguous check-policy/exit-status wording; its normal guarded commit owns fresh collection, without a receipt-only commit or unchanged source-suite replay.
+Total tests: 129008 selected / 129032 collected, 24 deselected, zero collection errors in47.56s/native52.927s during normal843fe156cd3a2bf6449456bc8365c5740e70cb9c hooks. Native receipt: .gate-logs/observed/test-count/20261022T124815Z-1429-8cc1bca6.{log,json,pytest.jsonl}. Collection is separate from behavioral and final-gate proof; prior refs retain their original receipts. The current auth enhancement starts from the a7 collection receipt below; its normal guarded commit owns fresh collection, without a receipt-only commit or unchanged source-suite replay.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 HumanTodo receiving clarification
+## Current S98.4 explicit HumanTodo credential acceptance
 
-Independent APPROVE SOURCE ONLY for exact843fe156cd3a2bf6449456bc8365c5740e70cb9c
-against374 is fully consumed at /tmp/gludd-v012-human-todo-843-source-review.md.
-Its exact nonblocking wording patch is applied: HUMAN_TODO_VALIDATE_ONLY=1 is
-check policy; exit0 is the native result. Literal0 applies a real request.
-This receiving changes documentation only. Keep accepted662-per-runtime code
-acceptance and source-specific coverage; run affected docs and normal guarded
-collection, then independent exact receiving-source review. Final54-per-runtime
-docs receipts from843 stay at .gate-logs/observed/human-todo-docs{311,312}/
-v012-human-todo-docs{311,312}.json. No final proof or request follows.
-Native status after843 retains gateFAIL/no running gate and7open/132excluded;
-latest disk97percent/7.5GiB still exceeds95. Required operator facts stay pending.
+Root starts this coupled enhancement from independently source-approved local
+a7a43b165fd16bf44c45ad6be906003cc25ff0a7. Exact843/ebc/a7 reviews are fully read;
+the prior wording and historical-reference corrections need no further change.
+Normala7 collection retains129008selected/129032collected,24deselected/zeroerrors
+48.56s/native54.819s at
+.gate-logs/observed/test-count/20261022T130154Z-8210-4b008f3d.json.
+The canonical collection README's automatic admin-PSK fallback claim is false.
+Preserve the explicit client; use the existing native Ansible controller lookup
+by approved binding name, rejecting missing/empty values before HTTP.
+
+Six new native controls retain sandbox6setupERROR and first host6PASS evidence.
+A new verbose parser retains4FAIL/144PASS before its staging/execution correction.
+Complete five-owner acceptance then passes148 per runtime,31110.96s/native12.038s
+and3129.26s/native10.209s, fatal warnings/zero skips/errors. Exact watched receipts
+and same tested source live in the
+[auth record](docs/features/MAKE_RESULT_GUIDANCE.md#explicit-controller-credentials).
+This is fixture-only capability proof, never a filed HumanTodo or live endpoint.
+Ruff/strict typing pass; existing97.6line/95.5branch coverage keeps85/75 BOTH.
+Four affected doc owners pass54 per runtime,3117.16s/native8.391s and
+3128.08s/native9.323s; the auth record owns exact receipts. Eight Markdown files,
+nine-path registration, strict line ceiling and SESSION validation pass.
+Normal guarded collection and independent exact-source review remain separate
+receiving duties; no unchanged662-case replay is needed.
+
+The attempted CMD shell chain reveals an existing run-watched boundary gap:
+only311 was watched, even though its following312 command passed. The separate
+watched312 run supplies that missing bounded receipt. Preserve the first evidence;
+Root owns a failing-first repair of the existing Make transport next. Until then,
+one native Make command per watched invocation; overall exit is not combined proof.
+Current Main/shared/Git ownership stays Root on the same candidate branch;
+development is unchanged. Native last status retains gateFAIL/no running gate,
+7open/132excluded and disk97percent/7.5GiB above95. Operator endpoint/binding and
+persistent config/store facts remain pending; no startup, API retry or final proof.
 
 ### Retained implementation and missing-proof context
 

@@ -88,6 +88,8 @@ state before claiming filing/resolution. Missing, unusable or mismatched IDs on
 HTTP success mean write_outcome=unverified: reconcile before retrying. Read the
 existing human-todo-module outcome prompt, retain native errors/status and never
 put a raw PSK in JSON/argv or infer credential binding from ambient server auth.
+An approved controller binding can be passed explicitly by name through native
+Ansible env lookup; reject missing/empty values and retain the [native auth controls](docs/features/MAKE_RESULT_GUIDANCE.md#explicit-controller-credentials).
 
 ## Make Target Selection Contract
 

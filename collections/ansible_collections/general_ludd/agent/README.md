@@ -119,7 +119,20 @@ role prompt envelope, upstream user reports, and ZDD rollout procedure.
 All modules that contact the daemon accept `daemon_url` and `psk` parameters.
 `psk` is never logged (`no_log: true`).
 
-Set `GLUDD_AUTH_PSK` in the environment — the module_utils shim reads it automatically.
+The shared client intentionally reads only the explicit `psk` parameter; it never
+falls back to ambient `GLUDD_AUTH_PSK`. For a protected daemon, bind an approved
+controller credential by name through native Ansible templating. For example:
+
+~~~yaml
+psk: "{{ lookup('ansible.builtin.env', 'GLUDD_HUMAN_TODO_PSK', default=undef()) | default(undef(), true) }}"
+~~~
+
+The caller selects that environment name and supplies its value through the
+existing controller environment, without placing the value in Make/CLI arguments
+or JSON. The lookup rejects both missing and empty bindings. `no_log` protects
+module output; it does not remove a literal credential already put in argv.
+See the [native HumanTodo controls](../../../../docs/features/MAKE_RESULT_GUIDANCE.md#explicit-controller-credentials)
+for exact version/proof limits, command guidance and fixture-only acceptance.
 
 ## Note on MCP
 

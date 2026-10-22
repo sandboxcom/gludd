@@ -8,6 +8,114 @@ authoritative; no second observer, runner, cache or proof schema is introduced.
 
 ## HumanTodo results require identity and reconciliation, 2026-10-22 UTC
 
+### Explicit controller credentials
+
+The next coupled S98.4 acceptance starts from reviewed local
+a7a43b165fd16bf44c45ad6be906003cc25ff0a7 on the same candidate branch.
+Root fully consumes /tmp/gludd-v012-human-todo-a7-source-review.md and its prior
+843/ebc decisions. The exact reference correction needs no further change.
+Normala7 hooks retain129008selected/129032collected,24deselected/zeroerrors
+48.56s/native54.819s at
+.gate-logs/observed/test-count/20261022T130154Z-8210-4b008f3d.json.
+No collection, source approval or fixture result authorizes live filing.
+
+The collection README wrongly promises automatic GLUDD_AUTH_PSK fallback.
+The canonical client and its five existing security tests intentionally forbid
+that admin-credential scavenging. Correct the documentation and preserve the
+client. Native Ansible already supports an explicitly selected controller env
+lookup in the existing JSON psk field. Reject missing and empty bindings with
+default=undef() followed by default(undef(), true). Preserve credential bytes,
+including quotes, dollar signs and Jinja-looking text; never evaluate the
+credential as another template or put its value in argv/JSON/Make assignments.
+The operator supplies an approved binding in the existing controller environment;
+the lookup contains only its name. This is request configuration, not a new
+Make variable, credential-discovery rule or default ambient authorization.
+
+This check-mode example performs no HTTP write. Append the complete installed
+offline runtime tuple from the mandatory Make guide. The named binding must
+already exist and be nonempty; otherwise native Ansible refuses before HTTP.
+The JSON backslashes preserve the inner Jinja double quotes through shell data:
+
+~~~console
+make human-todo-module HUMAN_TODO_ARGS_JSON='{"title":"Credential binding check","body":"Validation only","psk":"{{ lookup(\"ansible.builtin.env\", \"GLUDD_HUMAN_TODO_PSK\", default=undef()) | default(undef(), true) }}"}' HUMAN_TODO_VALIDATE_ONLY=1
+~~~
+
+Literal HUMAN_TODO_VALIDATE_ONLY=1 is check mode; exit0 is a result.
+Literal0 is apply and still requires actual owned endpoint/config/store/auth
+facts, requested-state verification and a real returned ID. A test fixture ID,
+id=null or plan never satisfies those conditions. Do not change a refused real
+request or substitute a fixture endpoint to manufacture filing evidence.
+
+The separate mature-tool research is fully consumed at
+/tmp/gludd-v012-human-todo-auth-transport-decision.md. The official
+[controller env lookup](https://docs.ansible.com/projects/ansible-core/2.19/collections/ansible/builtin/env_lookup.html)
+defines undefined defaults; the
+[2.19 trust guide](https://docs.ansible.com/projects/ansible-core/2.19/porting_guides/porting_guide_core_2.19.html#template-trust-model-inversion)
+and inspected native CLI/legacy-JSON source support literal CLI args templating.
+Moving stable2.19/2.21 sources are not exact installed-version acceptance.
+The [2016 firsthand ad-hoc report](https://forum.ansible.com/t/using-variables-defined-in-files-when-running-ansible-command/22840)
+and [2025 maintainer trust discussion](https://forum.ansible.com/t/core-2-19-templating-changes-preview-and-testing/40759)
+motivate version-specific native controls, not local success or release authority.
+No fallback, trust relaxation, file-based runner or Make interface is added.
+
+Six controls use real Make, a UV argv recorder that execs the installed UV
+unchanged, native Ansible and the canonical module. Their loopback-only server
+is an ephemeral test fixture with no daemon store, namespaced joined thread and
+closed socket. A marked synthetic ID is never filing evidence. The cases cover
+named success, missing, empty, omitted psk despite ambient admin fixture, wrong
+explicit binding despite correct ambient fixture, and check mode. They require
+exact dual auth headers/body, literal Make/UV/Ansible argv, selected interpreter,
+one fork, owned-temp cleanup, no credential in output/argv, no HTTP for missing/
+empty/check cases and native error/guidance preservation. Verbosity4 also exposes
+native executed module commands for secret-free argv assertions. Shared client
+fallback remains forbidden; no existing assertion or coverage requirement changes.
+
+The first sandbox attempt fails all six at socket bind with PermissionError1;
+this is six setup errors, not a product RED or transport verdict. Preserve
+.gate-logs/observed/human-todo-auth-native311/v012-human-todo-auth-native311.json.
+The authorized host Make boundary then passes all six default-verbosity cases,
+Python3.11/Ansible2.19.14,5.84s/native6.7s:
+.gate-logs/observed/human-todo-auth-host311/v012-human-todo-auth-host311.json.
+Logs/XML share /tmp/gludd-v012-human-todo-auth-{native,host}311 names.
+The first strengthened verbose/current-quote consumer run retains4FAIL/144PASS
+in8.37s/native9.3s on311; fail-closed chaining correctly leaves312 unrun:
+.gate-logs/observed/human-todo-auth-consumers/v012-human-todo-auth-consumers.json.
+The fixture parser wrongly treats Ansible's chmod staging line as module execution.
+Conform only that new parser: check every matching command for secret absence,
+identify execution by its script argument, require exactly one execution and its
+exact selected interpreter. Retain all auth/header/body/status/cleanup assertions.
+This is a new fixture conformance failure, not a product RED.
+The corrected five-owner union passes148 per installed runtime with fatal
+warnings, zero skips/errors and the same tested source
+8e1c8997e9b6a457d5a6561d7725f9eca55d938c54c8d4edbc8a62035aba6a78:
+311/Ansible2.19.14 takes10.96s/native12.038s at
+.gate-logs/observed/human-todo-auth-consumers-v2/v012-human-todo-auth-consumers-v2.json;
+312/Ansible2.21.5 takes9.26s/native10.209s at
+.gate-logs/observed/human-todo-auth-consumers-watched312/v012-human-todo-auth-consumers-watched312.json.
+The complete owners are the new auth controls, original HumanTodo Make/module,
+legacy runtime HTTP and the five unchanged no-scavenge security cases.
+Ruff and strict typing of the new test pass. Four affected documentation owners
+pass54 per runtime,3117.16s/native8.391s and3128.08s/native9.323s, at
+.gate-logs/observed/human-todo-auth-docs{311,312}/v012-human-todo-auth-docs{311,312}.json.
+Eight Markdown files, nine-path task registration, SESSION validation and the
+unchanged strict line ceiling pass. Normal guarded collection and independent
+exact-source review remain separate. The original whole-module coverage retains
+97.6line/95.5branch under85/75 BOTH; no production code changed here.
+
+Root's attempted CMD shell chain exposes a separate observer boundary gap:
+the v2 receipt covers311 only, because Make evaluates the second command outside
+the watcher. Its earlier312 run passes148 in12.44s but has only terminal/XML
+evidence, not watched authority. Preserve that evidence and the first failed
+receipt; the explicit watched312 run above supplies the missing bounded result.
+Until the existing owner is repaired, pass one native Make command to CMD.
+Use separate watched invocations for separate runtimes; an overall tool exit
+or first-child success cannot certify the whole chain. Root owns the follow-up
+repair under S98.4, with native failing-first controls and no second runner.
+
+No production, Make, profile, family/pin or budget
+change follows from the authentication documentation contradiction; original166/eight pins,
+three2/1/1 children,90/60,21/2850,85/75 BOTH and all final proofs remain.
+
 ### Separate check policy from native exit status
 
 Exact843fe156cd3a2bf6449456bc8365c5740e70cb9c has independent APPROVE SOURCE ONLY
