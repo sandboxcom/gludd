@@ -30,7 +30,7 @@ release-candidate/v012-git-mutex-20261022. Development stays
 82db11b57b254c1ca1e035975b5cc86253e2fed5. Independent APPROVE SOURCE ONLY
 againstfe2 is fully consumed at
 /tmp/gludd-v012-proof-admission-374-source-review.md. Normal374 collection is
-recorded above; earlier630-per-runtime source acceptance keeps its own receipt.
+recorded in the retained result history; its630-per-runtime acceptance keeps its own receipt.
 The [current result record](docs/features/MAKE_RESULT_GUIDANCE.md#humantodo-results-require-identity-and-reconciliation-2026-10-22-utc)
 owns every decision, receipt, source/proof distinction and missing prerequisite.
 
