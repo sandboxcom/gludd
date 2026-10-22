@@ -77,6 +77,11 @@ unchanged ancestry runs no new gate. Repair failed capacity/ownership before
 applying, and retain missing exact-SHA proofs after an applied merge. The [result contract](docs/features/MAKE_RESULT_GUIDANCE.md)
 and [native merge contract](docs/features/GIT_MERGE_NO_COMMIT.md) retain the
 actual output branches, negative controls, decisions and proof limits.
+run-watched reports its native result and directs observed-status to the exact
+command/receipt. Check that scope before interpreting success; a first-child
+receipt cannot certify later commands outside its watcher. Refusal/failure needs
+its actual input/owner repaired and changed evidence before retry. The [watcher record](docs/features/MAKE_RESULT_GUIDANCE.md#watched-command-scope-and-result-prompts)
+retains shell/positional semantics, failing-first controls and acceptance limits.
 release-proof-admission planned output executes no live prerequisites; blocked
 output names the actual failed owner and requires changed input before retry.
 Only terminal passed output follows every admission child, and it still grants

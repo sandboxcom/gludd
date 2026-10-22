@@ -116,6 +116,85 @@ def _state(root: Path) -> dict[str, object]:
 
 
 
+@pytest.mark.parametrize(("watched_boundary_command", "watched_boundary_exempt"), [
+    (["/bin/sh", "-c", "make disk-check"], True),
+    (["/bin/sh", "-c", "make --no-print-directory disk-check"], True),
+    (["/bin/sh", "-c", "make disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0 "
+      "DISK_CLEANUP_PREFLIGHT_DRY_RUN=1 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800"], True),
+    ([], False), (["make"], False), (["make", "disk-check"], True),
+    (["/bin/sh", "-c", ""], False),
+    (["/bin/sh", "-c", "make 'unterminated"], False),
+    (["/bin/sh", "-c", "make disk-check && printf unrelated"], False),
+    (["/bin/sh", "-c", "make disk-check;printf unrelated"], False),
+    (["/bin/sh", "-c", "make disk-check\nprintf unrelated"], False),
+    (["/bin/sh", "-c", "make $(printf disk-check)"], False),
+    (["/bin/sh", "-c", 'make "$$BOUNDARY_TARGET"'], False),
+    (["/tmp/fixture-spoof/sh", "-c", "make disk-check"], False),
+    (["/bin/sh", "-ec", "make disk-check"], False),
+    (["/bin/sh", "-c", "make disk-check", "extra-positional-context"], False),
+    (["/bin/sh", "-c", "make disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0 "
+      "DISK_CLEANUP_PREFLIGHT_DRY_RUN=0 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800"], False),
+])
+def test_run_watched_shell_keeps_only_existing_readonly_capacity_authority(
+    policy: ModuleType, watched_boundary_command: list[str], watched_boundary_exempt: bool,
+) -> None:
+    """Measure actual Main policy, never a copied fixture's coverage."""
+    assert policy._read_only_capacity_diagnostic(watched_boundary_command) is watched_boundary_exempt
+
+
+@pytest.mark.parametrize(("watched_boundary_command", "watched_boundary_exempt"), [
+    (["/bin/sh", "-c", "make cat-file 'FILE=literal && not-a-command'"], True),
+    (["/bin/sh", "-c", "make cat-file 'UV=literal && not-a-command'"], False),
+    (["/tmp/fixture-spoof/sh", "-c", "make cat-file"], False),
+    (["/bin/sh", "-c", "make cat-file", "extra-positional-context"], False),
+    (["/bin/sh", "-ec", "make cat-file"], False),
+    (["/bin/sh", "-c", "make $(printf cat-file)"], False),
+    (["/bin/sh", "-c", "make " + chr(96) + "printf cat-file" + chr(96)], False),
+    (["/bin/sh", "-c", "make cat-file\nprintf unrelated"], False),
+])
+def test_run_watched_shell_diagnostics_keep_native_scope_and_override_guards(
+    policy: ModuleType, repository: Path,
+    watched_boundary_command: list[str], watched_boundary_exempt: bool,
+) -> None:
+    with policy.command_admission(
+        repository, watched_boundary_command, environment={"PRIVATE_INPUT": "fixture-only"},
+        quiet_seconds=3.0, max_seconds=5.0, primary_task_id="F12.1", task_id="F12.1",
+    ) as admission:
+        if watched_boundary_exempt:
+            assert admission is None
+            assert not (repository / ".gludd/item-progress.json").exists()
+        else:
+            assert admission is not None
+            assert admission.identity["command"] == watched_boundary_command
+            assert admission.identity["limits"] == [3.0, 5.0]
+
+
+def test_run_watched_shell_normalizes_only_fixed_lifecycle_metadata(policy: ModuleType) -> None:
+    command = ["/bin/sh", "-c", "make --no-print-directory _pytest-runtime-compatibility-admission"]
+    environment = {
+        "GATE_CANDIDATE_SHA": "changing-owner-sha", "GLUDD_GATE_OWNER_PID": "123",
+        "MAKEOVERRIDES": "opaque-native-reference", "PRIVATE_INPUT": "fixture-only",
+    }
+    assert policy._semantic_environment(command, environment) == {
+        "MAKEOVERRIDES": "opaque-native-reference", "PRIVATE_INPUT": "fixture-only",
+    }
+    compound = ["/bin/sh", "-c", command[2] + " && printf extra-stage"]
+    assert policy._semantic_environment(compound, environment) is environment
+
+
+def test_run_watched_shell_full_identity_blocks_unchanged_failure_despite_new_observer(
+    policy: ModuleType, repository: Path,
+) -> None:
+    command = ("/bin/sh", "-c", "make test-files TESTFILES=first.py && make test-files TESTFILES=second.py")
+    identity = _start(policy, repository, command=command)
+    assert identity is not None and identity["command"] == list(command)
+    with pytest.raises(ValueError, match="unchanged failed inputs"):
+        _start(policy, repository, command=command, run_id="new-run", label="new-observer")
+    changed = ("/bin/sh", "-c", command[2].replace("second.py", "repaired.py"))
+    current = _start(policy, repository, command=changed, run_id="changed-tail")
+    assert current is not None and current["command"] == list(changed)
+
+
 @pytest.mark.parametrize("state", ["failed", "timed_out"])
 def test_gate_lifecycle_metadata_cannot_launder_a_failed_runtime_input(
     policy: ModuleType, repository: Path, state: str,

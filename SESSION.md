@@ -2,13 +2,58 @@
 
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 129008 selected / 129032 collected, 24 deselected, zero collection errors in47.56s/native52.927s during normal843fe156cd3a2bf6449456bc8365c5740e70cb9c hooks. Native receipt: .gate-logs/observed/test-count/20261022T124815Z-1429-8cc1bca6.{log,json,pytest.jsonl}. Collection is separate from behavioral and final-gate proof; prior refs retain their original receipts. The current auth enhancement starts from the a7 collection receipt below; its normal guarded commit owns fresh collection, without a receipt-only commit or unchanged source-suite replay.
+Total tests: 129014 selected / 129038 collected, 24 deselected, zero collection errors in47.58s/native52.718s during normal d0aba940a650a14404853cf23499f932ee8ee5e3 hooks. Native receipt: .gate-logs/observed/test-count/20261022T134900Z-23107-0a3fbd8e.{log,json,pytest.jsonl}. Collection is separate from behavioral and final-gate proof; prior refs retain their original receipts. This watcher repair starts from d0a; its normal guarded commit owns fresh collection, without a receipt-only commit or unchanged source-suite replay.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 explicit HumanTodo credential acceptance
+## Current S98.4 watcher command/result repair
+
+Root owns Main/shared/Git on release-candidate/v012-git-mutex-20261022 from
+reviewed exact d0aba940a650a14404853cf23499f932ee8ee5e3. Independent d0a
+APPROVE SOURCE ONLY against a7 is fully read at
+/tmp/gludd-v012-human-todo-d0a-source-review.md; no correction is required.
+Its normal collection receipt is the header's explicitly pinned d0a evidence.
+All model owners are quiescent; status must be refreshed separately from OS PIDs.
+
+Root fully consumes /tmp/gludd-v012-run-watched-boundary/decision.md and its
+minimal patch. Whole CMD now executes in the existing observer's selected shell;
+constant eval export CMD preserves actual native Make context and empty shell
+positionals. Original stream_command.py, argv execution mode, statuses, trace,
+retention and descendant cleanup remain. Actual full-shell identity and
+unchanged-failure refusal stay native. Conservative exact-roundtrip recognition
+retains only established diagnostics/fixed lifecycle normalization, never execution.
+The existing Make target gains PHONY and native refused/passed/failed prompts.
+A before-start failure creates no new receipt; never reuse older current success.
+
+The complete five-owner union passes316 per runtime:311185PASS39.41s with
+physical Main coverage plus131PASS23.07s;312316PASS65.50s. One whole-command
+native observation returns0 at134.052s and covers all three phases:
+.gate-logs/observed/run-watched-source-host/v012-run-watched-source-host.json.
+Unchanged physical item-progress profile passes95.0line/88.9branch,85/75 BOTH;
+native coverage receipt20261022T143523Z-39007-6fddde58 and full audit paths live
+in the [watcher record](docs/features/MAKE_RESULT_GUIDANCE.md#watched-command-scope-and-result-prompts).
+No copied-source coverage or final publication90/60 proof follows from that scope.
+
+Retain guidance host9RED, real namesake false-success RED, Main5FAIL/22PASS
+before27PASS, proposal/rejected-GNU3.81 failures and three exact routing REDs.
+Families167-169 append after166 predecessors. The second independent stale
+literal roster retains1FAIL/7PASS before faithful conformance/three-line literal
+compaction; eight pins then pass1.77s/terminal0. All budgets/children remain.
+Ruff/strict scopes,278 contracts and current actual example,1157 targets/zero
+duplicates and9CI/12local parity pass. Complete current prompt/routing/documentation
+receiving passes262 per runtime,31142.16s/31246.85s with fatal warnings and zero
+skips/errors. The whole-shell native receipt returns0 at91.423s:
+.gate-logs/observed/run-watched-receiving-host/v012-run-watched-receiving-host.json.
+Normal guarded collection and independent exact-source review remain next.
+
+All seven release tasks stay unchecked. Native last gate remains FAIL/no running
+gate; disk97percent/7.5GiB exceeds95. Operator endpoint/approved binding and
+persistent config/store facts remain pending. HumanTodo is unfiled; no startup,
+API retry, original60907 replay, final gate or exact-SHA/promotion follows.
+
+## Retained S98.4 explicit HumanTodo credential acceptance
 
 Root starts this coupled enhancement from independently source-approved local
 a7a43b165fd16bf44c45ad6be906003cc25ff0a7. Exact843/ebc/a7 reviews are fully read;
@@ -31,8 +76,8 @@ Ruff/strict typing pass; existing97.6line/95.5branch coverage keeps85/75 BOTH.
 Four affected doc owners pass54 per runtime,3117.16s/native8.391s and
 3128.08s/native9.323s; the auth record owns exact receipts. Eight Markdown files,
 nine-path registration, strict line ceiling and SESSION validation pass.
-Normal guarded collection and independent exact-source review remain separate
-receiving duties; no unchanged662-case replay is needed.
+Normal d0a collection and independent exact d0a review are recorded above;
+no unchanged662-case replay is needed for this receiving watcher repair.
 
 The attempted CMD shell chain reveals an existing run-watched boundary gap:
 only311 was watched, even though its following312 command passed. The separate

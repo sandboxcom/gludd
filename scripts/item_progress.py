@@ -7,6 +7,7 @@ import importlib.metadata
 import json
 import math
 import os
+import shlex
 import sys
 import uuid
 from collections.abc import Iterator, Mapping, Sequence
@@ -235,8 +236,25 @@ def _environment_identity(environment: Mapping[str, str], cwd: Path | str | None
 
 
 
+def _canonical_native_command(command: Sequence[str]) -> Sequence[str]:
+    """Recognize only an exactly quoted native argv inside the default shell.
+
+    Execution and persisted identity retain the complete shell command. This
+    conservative view exists only for the owner's established Make exemptions
+    and fixed-command environment normalization; it never interprets a script.
+    """
+    if len(command) != 3 or list(command[:2]) != ["/bin/sh", "-c"]:
+        return command
+    try:
+        arguments = shlex.split(command[2], comments=False, posix=True)
+    except ValueError:
+        return command
+    return arguments if arguments and shlex.join(arguments) == command[2] else command
+
+
 def _semantic_environment(command: Sequence[str], environment: Mapping[str, str]) -> Mapping[str, str]:
     """Normalize only lifecycle metadata for the fixed compatibility command."""
+    command = _canonical_native_command(command)
     arguments = [arg for arg in command[1:] if arg != "--no-print-directory"]
     if not command or Path(command[0]).name != "make" or arguments != ["_pytest-runtime-compatibility-admission"]:
         return environment
@@ -391,6 +409,7 @@ def _retire_superseded_observation(
 
 def _read_only_capacity_diagnostic(command: Sequence[str]) -> bool:
     """Recognize only fixed read-only disk inspection, never cleanup execution."""
+    command = _canonical_native_command(command)
     if not command or Path(command[0]).name != "make":
         return False
     arguments = [arg for arg in command[1:] if arg != "--no-print-directory"]
@@ -443,12 +462,14 @@ def command_admission(
     cwd: Path | str | None = None,
 ) -> Iterator[Admission | None]:
     """Admit scoped execution; diagnostics and external-state waits stay available."""
-    targets = [arg for arg in command[1:] if "=" not in arg and arg != "--no-print-directory"]
-    if _read_only_capacity_diagnostic(command) or (command and Path(command[0]).name == "make" and len(targets) == 1
-            and (targets[0] in _DIAGNOSTICS or _bounded_status_wait(command, max_seconds))
+    semantic_command = _canonical_native_command(command)
+    targets = [arg for arg in semantic_command[1:] if "=" not in arg and arg != "--no-print-directory"]
+    if _read_only_capacity_diagnostic(semantic_command) or (
+            semantic_command and Path(semantic_command[0]).name == "make" and len(targets) == 1
+            and (targets[0] in _DIAGNOSTICS or _bounded_status_wait(semantic_command, max_seconds))
             and not any(arg.split("=", 1)[0] in {"UV", "PYTHON", "SHELL", "MAKEFILES", "MAKEFLAGS"}
-                        for arg in command[1:])
-            and all(not arg.startswith("-") or arg == "--no-print-directory" for arg in command[1:])):
+                        for arg in semantic_command[1:])
+            and all(not arg.startswith("-") or arg == "--no-print-directory" for arg in semantic_command[1:])):
         yield None
         return
     root = root.resolve()

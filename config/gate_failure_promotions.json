@@ -1321,6 +1321,27 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_human_todo_make_target.py::test_human_todo_guidance_uses_actual_native_outcome[0-1]",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "run-watched-native-outcome-guidance",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_run_watched_result_guidance.py::test_native_status_drives_one_result_prompt_without_changing_argv[7]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "run-watched-namesake-execution",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_run_watched_result_guidance.py::test_namesake_file_cannot_suppress_native_observation_or_guidance",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "run-watched-complete-command",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_run_watched_command_boundary.py::test_compound_tail_is_running_inside_one_terminal_receipt[7-0]",
+      "full_gate_phase": "test"
     }
   ]
 }

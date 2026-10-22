@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 166
+EXPECTED_FAMILY_COUNT = 169
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -1835,6 +1835,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "make-guide-required-owner-command", "make-variable-recipe-context",
         "development-merge-forward-plan-guidance", "development-merge-forward-namesake",
         "human-todo-response-identity", "human-todo-check-mode-guidance",
+        "run-watched-native-outcome-guidance", "run-watched-namesake-execution", "run-watched-complete-command",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2014,12 +2015,9 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "test_primary_objective_mentions_ci tests/unit/test_start_gate_background.py "
         "tests/unit/test_gate_run_lock.py tests/unit/test_bulkhead_deep.py "
         "tests/unit/test_bulkhead_admission.py " "tests/unit/test_enhancement_ratio_plugin.py "
-        "tests/unit/test_pytest_param_fixture_collisions.py "
-        "tests/unit/test_ansible_runtime_artifacts.py "
-        "tests/unit/test_ansible_ee_full_warm_acceptance.py "
-        "tests/unit/test_ansible_ee_searx_acceptance.py "
-        "tests/unit/test_beta4_python_runtime_boundary.py "
-        "tests/unit/test_ansible_searxng_source_inspection.py "
+        "tests/unit/test_pytest_param_fixture_collisions.py " "tests/unit/test_ansible_runtime_artifacts.py "
+        "tests/unit/test_ansible_ee_full_warm_acceptance.py " "tests/unit/test_ansible_ee_searx_acceptance.py "
+        "tests/unit/test_beta4_python_runtime_boundary.py " "tests/unit/test_ansible_searxng_source_inspection.py "
         "tests/unit/test_integration_admission_target.py " "tests/unit/test_ci_failure_ledger.py "
         "tests/unit/test_ci_failure_ledger_concurrency.py "
         "tests/unit/test_proof_observations.py tests/unit/test_ci_await_exact.py "
@@ -2068,6 +2066,12 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_gludd_human_todo_module.py::"
         "test_success_without_usable_id_never_verifies_write[missing-present-200] "
         "tests/unit/test_human_todo_make_target.py::test_human_todo_guidance_uses_actual_native_outcome[0-1] "
+        "tests/unit/test_run_watched_result_guidance.py::"
+        "test_native_status_drives_one_result_prompt_without_changing_argv[7] "
+        "tests/unit/test_run_watched_result_guidance.py::"
+        "test_namesake_file_cannot_suppress_native_observation_or_guidance "
+        "tests/unit/test_run_watched_command_boundary.py::"
+        "test_compound_tail_is_running_inside_one_terminal_receipt[7-0] "
         "tests/unit/test_status_heartbeat_terminal.py " "tests/unit/test_task_ledger_validation.py "
         "tests/unit/test_make_readonly_version.py " "tests/unit/test_make_help_audit.py "
         "tests/unit/test_clean_stale_resource_namespaces.py " "tests/unit/test_native_temp_artifact_target.py "

@@ -3,8 +3,182 @@
 S98.4, 2026-10-22 UTC. Agent-facing Make results should teach the model what to
 do with the actual result. Current owners include check-make-target-contract,
 check-gate-failure-promotions, git-merge-nc, development-merge-forward and
-release-proof-admission and human-todo-module. Existing native owners, statuses and artifacts remain
+release-proof-admission, human-todo-module and run-watched. Existing native owners, statuses and artifacts remain
 authoritative; no second observer, runner, cache or proof schema is introduced.
+
+## Watched command scope and result prompts
+
+Root owns this S98.4 repair and Main/shared/Git on
+release-candidate/v012-git-mutex-20261022 from exact
+d0aba940a650a14404853cf23499f932ee8ee5e3. Independent APPROVE SOURCE ONLY
+against a7 is fully read at /tmp/gludd-v012-human-todo-d0a-source-review.md;
+no correction is required. Normal d0a hooks retain129014selected/129038collected,
+24deselected/zeroerrors47.58s/native52.718s at
+.gate-logs/observed/test-count/20261022T134900Z-23107-0a3fbd8e.json.
+This repair still needs its normal guarded collection and exact independent
+source review; none of these facts closes S98.4 or supplies final release proof.
+
+### Complete requested command inside the existing owner
+
+The auth acceptance below exposes a real scope bug: raw recipe interpolation
+leaves a shell chain's later commands outside stream_command. The historical
+first native PASS covers311 only. Preserve it, the unobserved chained312 pass
+and the separate watched312 receipt; later code never recertifies old evidence.
+
+The existing Make target now exports CMD in its actual target context using
+the constant directive eval export CMD; CMD text is never reparsed by eval.
+It passes the quoted environment value as one script to the selected native
+shell inside the existing observer. CLI/environment/-e/late prerequisite context,
+Make dollar rules, quotes and empty shell positional parameters remain native.
+Actual child argv and admission identity retain the whole shell/script; no
+first-command argv is synthesized. stream_command.py is unchanged. No new
+runner, observer, parser, CLI flag, dependency, cache or coverage profile exists.
+
+For required multi-step work, use an existing fail-closed Make owner or an
+explicit AND chain of named Make commands. Native semicolon/OR/pipeline exit
+semantics remain; exit0 does not independently prove every earlier command
+passed. Keep user prose and raw credentials out of command code. Child output,
+trace, limits, process-group/descendant cleanup and terminal receipt remain
+owned by the existing native producer.
+
+The existing item-progress owner uses stdlib shlex only for a conservative
+diagnostic/normalization view. Only an exact /bin/sh,-c,script triple and exact
+split/join roundtrip can retain established Make diagnostic exemptions and
+fixed compatibility lifecycle normalization. Compounds, substitutions,
+noncanonical syntax, extra arguments, nondefault flags and spoofed shells stay
+scoped. Existing override/budget guards remain. Execution, persisted identity,
+reservations, source/private environment, unchanged-failure refusal and retention
+always keep the complete actual command.
+
+Root fully consumes /tmp/gludd-v012-run-watched-boundary/decision.md and
+production-and-trace-conformance.patch. The GNU3.81 postimage is the accepted
+proposal input; the plain postimage retains rejected export-override syntax and
+must never be ported. Only the reviewed hunks are integrated around Root's
+prompts/PHONY; the frozen full Make file never overwrites Main.
+
+### Outcome guidance and retained counterexamples
+
+Exactly one stderr AGENT_NEXT prompt reports refused/passed/failed with the
+actual native_status. Usage1, invalid trace2 and original native failures remain.
+Pass directs observed-status to the exact new receipt/log/trace; no receipt means
+no verified observation. A failure before native start creates no new receipt:
+never reuse an older current success. Preserve its reason, identify the actual
+failed owner and changed input before retry; reconcile potentially applied work.
+The prompt grants no full-gate/release authority and does not replace native data.
+
+Nine additive controls retain sandbox9FAIL2.12s/native3.0s: eight missing-prompt
+failures plus a separate sysctl permission failure, not a product timeout result.
+Authorized host Make retains genuine9FAIL2.58s/native3.395s, including actual124:
+.gate-logs/observed/run-watched-guidance-red-host311/v012-run-watched-guidance-red-host311.json.
+The earlier sandbox receipt stays under run-watched-guidance-red311.
+Eight non-timeout focus controls then pass0.87s/native1.6s with one deselection;
+that focus is not whole-owner or timeout proof.
+
+A tenth control retains1FAIL0.75s/native1.7s for absent producer PHONY binding.
+Moving the same exact-one assertion after actual behavior retains the stronger
+native counterexample1FAIL0.65s/native1.6s: Make0/up-to-date suppresses all work
+when a fixture file is named run-watched. The source now declares PHONY.
+The positive requires the real child, receipt/argv/prompt and untouched foreign
+namesake bytes; duplicate/missing producer binding still fails. Both failed
+receipts remain under run-watched-namesake-{red311,native-red311}.
+
+The separate proposal retains frozen31-case RED21FAIL/10PASS11.37s/native12.199s.
+Its first candidate fails21/10 at0.70s/native1.458s before any child because
+GNU3.81 treats export as a prerequisite. Corrected binding passes30 with one
+unchanged sysctl-EPERM timeout failure4.54s/native5.283s. Nine cheap predicates
+pass0.54s/native1.417s with30deselected. The decision owns all exact archived
+receipts. No sandbox retry, cleanup weakening or implementation credit follows
+from a rejected candidate. Root's port uses repository defaults and canonical
+pytest context; proposal-only absolute paths are absent from product defaults.
+Private-source copies prove controlled binding behavior, never physical Main
+coverage or actual UV startup. The original trace argv expectation truthfully
+describes the newly watched shell; actual-child argument/status/cleanup assertions
+remain intact.
+
+Twenty-seven additive tests against actual Main policy retain5FAIL/22PASS1.87s/
+native2.8s before27PASS2.25s/native3.4s. They preserve literal diagnostics and
+capacity authority, reject unsafe wrappers, retain private input and full identity,
+and refuse unchanged failure despite new observer metadata. Receipts remain at
+.gate-logs/observed/run-watched-main-admission-{red311,green311}/
+v012-run-watched-main-admission-{red311,green311}.json.
+
+### Complete source-specific acceptance and cheap routing
+
+The five complete owners are test_item_progress, test_run_watched_command_boundary,
+test_run_watched_result_guidance, test_run_watched_trace and test_observed_command.
+One real host observation keeps all three AND-chained Make phases inside its
+actual shell identity:311185PASS39.41s with coverage,311131PASS23.07s and
+312316PASS65.50s. Thus the complete union passes316 per installed runtime,
+fatal warnings and zero skips/errors. The native owner remains running across
+all phases and returns0 only at134.052s:
+.gate-logs/observed/run-watched-source-host/v012-run-watched-source-host.json.
+Tested source is642959992e092eb3db2028bf6e9b0800daf396e1e14ff34789a5e5d07d942d49.
+Diagnostic240total/60quiet is not the original publication90/60 replay or final
+combined candidate proof. Native host timeout124 and descendant checks now pass.
+
+Unchanged config/coverage_item_progress.ini measures exactly one physical Main
+file through all185 cases,95.0line/88.9branch;85aggregate/75each-file BOTH passes.
+Native coverage receipt:
+.gate-logs/observed/coverage-files/20261022T143523Z-39007-6fddde58.json.
+Raw report is .gate-logs/v012-run-watched-item-coverage311.json; the audit is
+.gate-logs/coverage-20261022T143604Z.json. No copied fixture coverage, exclusions
+or threshold changes substitute for that measured file.
+
+Three routing REDs1.10s/native2.0s precede families167-169 for native failure
+guidance, namesake execution and complete-command scope. They append after all
+166 predecessors in the existing first child only. Native three2/1/1 children,
+90/60,21phases/2850, all eight existing pins and full gate remain unchanged.
+Update the manifest, Make selector and BOTH independent literal test rosters;
+never derive expected inventory from the manifest. The first required-pin run
+catches the second stale literal roster:1FAIL/7PASS2.91s in native terminal
+evidence, not an invented per-run JSON. Complete that exact literal conformance;
+compact only three adjacent string lines to keep the test file2499/<2500.
+The required owner then passes all eight in1.77s/native3.4s, terminal0:
+.gate-logs/observed/run-watched-required-pins/v012-run-watched-required-pins.json.
+
+Ruff/strict scopes pass all seven changed Python files. Contracts retain278
+targets,1157declarations/zero duplicates and9CI/12local phases. The current documented
+actual behavior example passes0 at run-watched/20261022T145626Z-50242-6a62a5c3;
+its empty pytest trace is never test/release evidence. The complete seven-owner
+receiving cohort passes262 per required runtime with fatal warnings and zero
+skips/errors:31142.16s and31246.85s. It contains both routing owners, the four
+affected documentation/contract owners and the complete current guidance owner,
+including assertions against missing receipt and stale-success reuse. One native
+whole-shell observation returns0 at91.423s with both phases in actual identity:
+.gate-logs/observed/run-watched-receiving-host/v012-run-watched-receiving-host.json.
+Tested source isf6d6807579cd5ea5900ebb6645266c8d66b0033b7882e4b012ead758bd14a3dd.
+Diagnostic300/60 never expands original publication/final budgets. A batched
+lint-markdown invocation refuses extra goals before work; the already documented
+single-target invocation passes without changing that guard. Seven Markdown files,
+16-path registration, SESSION validation and the strict line ceiling pass.
+Normal guarded collection and independent exact-source review remain separate.
+
+### Reuse and operating decision
+
+The [GNU recipe variable rules](https://www.gnu.org/software/make/manual/html_node/Variables-in-Recipes.html)
+and [environment/export rules](https://www.gnu.org/software/make/manual/html_node/Environment.html)
+define the existing expansion boundary. The
+[GNU eval section](https://www.gnu.org/software/make/manual/make.html#Eval-Function)
+explains repeated eval expansion; passing only a constant variable name avoids
+reparsing command data. Two direct subpage fetches time out; the fetched full
+manual/search supplies that source context, not native GNU3.81 acceptance.
+[Python shlex](https://docs.python.org/3.11/library/shlex.html) documents lexical
+split/join and POSIX quoting, not whole-script execution. The
+[2021 firsthand report](https://unix.stackexchange.com/questions/669864/use-env-variable-in-makefile-target)
+records a user's empty-value/double-quoting problem and confirmed correction.
+It motivates exact native quote/context controls; forum advice is not local proof.
+
+Batch related deterministic source repairs and complete focused consumers at a
+stable receiving point; use explicit fail-closed dependencies and retain each
+phase's native result. Fewer coherent observations reduce startup/duplicate work
+only when the observer owns the entire command. Keep one Main/shared writer,
+at most two test owners and drained sessions before mutation or Git hooks.
+After capacity/service prerequisites clear, freeze one candidate and obtain the
+canonical gate/global coverage plus required exact-SHA hosted/deployment/reviewed
+head/promotion proofs. Do not broaden unrelated backlog work, retry original60907
+or claim a measured hosted improvement from these local source results.
+All seven release tasks, disk97percent/7.5GiB above95, operator daemon/binding
+and persistent config/store facts remain pending; real HumanTodo is still unfiled.
 
 ## HumanTodo results require identity and reconciliation, 2026-10-22 UTC
 
@@ -107,10 +281,11 @@ the v2 receipt covers311 only, because Make evaluates the second command outside
 the watcher. Its earlier312 run passes148 in12.44s but has only terminal/XML
 evidence, not watched authority. Preserve that evidence and the first failed
 receipt; the explicit watched312 run above supplies the missing bounded result.
-Until the existing owner is repaired, pass one native Make command to CMD.
-Use separate watched invocations for separate runtimes; an overall tool exit
-or first-child success cannot certify the whole chain. Root owns the follow-up
-repair under S98.4, with native failing-first controls and no second runner.
+At that historical checkpoint, only one native Make command belonged in CMD.
+Separate watched invocations supplied the missing runtime result; an overall tool
+exit or first-child success could not certify that old chain. The
+[current repair](#watched-command-scope-and-result-prompts) now owns the complete
+command; its newer receipt never recertifies this retained historical result.
 
 No production, Make, profile, family/pin or budget
 change follows from the authentication documentation contradiction; original166/eight pins,

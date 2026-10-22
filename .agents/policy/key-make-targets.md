@@ -187,6 +187,9 @@ action; they do not execute it or create gate/release proof.
 | development-merge-forward planned/unchanged | SOURCE/mode admission or unchanged ancestry supplies no new gate. Inspect worktree-state, repair capacity/ownership, then run documented release-proof-admission mode0 before APPLY=1. |
 | development-merge-forward refused/failed | Retain native reason/status, wait for native transaction cleanup and inspect worktree-state; repair the reported input before retrying. |
 | development-merge-forward passed | Retain native merged-tree gate evidence and obtain exact-SHA CI/deployment/reviewed-head proof before guarded promotion. |
+| run-watched passed | Inspect observed-status for the exact new command/receipt, native exit, log and trace. No receipt means no verified observation. A wrapper pass supplies no full-gate/release authority; a first-child receipt cannot certify commands outside its scope. |
+| run-watched refused | Repair the reported CMD or literal trace input before native execution. Retain original usage/status; do not substitute a different owner to evade refusal. |
+| run-watched failed | Preserve its actual native status/reason and any new receipt. Failure before native start creates none; never reuse older current success. Identify the failing owner and changed input before retry; reconcile any potentially applied work. |
 | human-todo-module planned | Check mode performs no HTTP write; changed=true/id=null never means filing or resolution. Obtain an owned endpoint and [safe explicit credential binding](../../docs/features/MAKE_RESULT_GUIDANCE.md#explicit-controller-credentials). |
 | human-todo-module returned | Capture the real returned ID and verify requested state; no milestone/gate proof follows. |
 | human-todo-module refused/failed | Preserve native reason/status. Repair its actual input; reconcile any potentially applied write before retrying. Never put raw PSK in JSON/argv. |
