@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -106,11 +107,14 @@ def _fixture(
     git = bin_dir / "git"
     git.write_text(f"#!{sys.executable}\nprint({SHA!r})\n", encoding="utf-8")
     git.chmod(0o755)
-    uv = bin_dir / "uv.py"
+    uv = bin_dir / "uv"
     uv.write_text(
-        "import os, sys\nassert sys.argv[1:3] == ['run', 'python']\n"
-        "os.execv(sys.executable, [sys.executable, *sys.argv[3:]])\n", encoding="utf-8",
+        "#!/bin/sh\n"
+        'if [ "$#" -lt 2 ] || [ "$1" != run ] || [ "$2" != python ]; then exit 1; fi\n'
+        'shift 2\nexec "$GLUDD_HEARTBEAT_PYTHON" "$@"\n',
+        encoding="utf-8",
     )
+    uv.chmod(0o755)
     runs = [_run("Build and Release", 1), _run("Molecule Tests", 2), _run("Presentation", 3)]
     if case in {"failure", "cancelled", "skipped", "timed_out"}:
         runs[0]["conclusion"] = "failure" if case == "failure" else case
@@ -140,11 +144,12 @@ def _fixture(
                GLUDD_PROJECT_NAMESPACE="gludd-heartbeat-native-fixture",
                GLUDD_RESOURCE_ROOT=str(tmp_path / "resources"),
                GLUDD_HEARTBEAT_CASE=case, GLUDD_HEARTBEAT_RUNS=json.dumps(runs),
+               GLUDD_HEARTBEAT_PYTHON=sys.executable,
                GLUDD_HEARTBEAT_CALLS=str(tmp_path / "calls"),
                GLUDD_HEARTBEAT_SLEEPS=str(tmp_path / "sleeps"),
                GLUDD_HEARTBEAT_RECEIPT=str(tmp_path / "stream-receipt"),
                GLUDD_HEARTBEAT_SEED_MARKER="0", GLUDD_HEARTBEAT_COUNT=str(count))
-    command = ["make", "--no-print-directory", "status-heartbeat", f"UV={sys.executable} {uv}",
+    command = ["make", "--no-print-directory", "status-heartbeat", f"UV={shlex.quote(str(uv))}",
                f"PYTHON={sys.executable}", f"INTERVAL={interval}", f"COUNT={count}",
                f"STATUS_HEARTBEAT_VALIDATE_ONLY={plan}",
                f"PIPELINE_STATUS_REPO={REPO}", f"PIPELINE_STATUS_BRANCH={BRANCH}",
@@ -329,3 +334,72 @@ def test_opt_in_pipeline_output_streams_before_detail_observation_completes(tmp_
     assert (tmp_path / "stream-receipt").exists()
     assert "STATUS-HEARTBEAT-STOP" in "".join(lines)
     assert not (tmp_path / "sleeps").exists()
+
+
+@pytest.mark.parametrize("heartbeat_uv_native_status", [0, 7])
+def test_fixture_uv_starts_selected_python_once_and_preserves_literal_argv(
+    tmp_path: Path, heartbeat_uv_native_status: int,
+) -> None:
+    command, env = _fixture(tmp_path, "success", count=1)
+    uv_values = [value.removeprefix("UV=") for value in command if value.startswith("UV=")]
+    assert len(uv_values) == 1
+    startup_root = tmp_path / "startup-hook"
+    startup_root.mkdir()
+    starts = tmp_path / "python-starts.jsonl"
+    (startup_root / "sitecustomize.py").write_text(
+        "import json, os, sys\n"
+        "with open(os.environ['GLUDD_HEARTBEAT_PYTHON_STARTS'], 'a', encoding='utf-8') as output:\n"
+        "    output.write(json.dumps({'argv': sys.argv, 'executable': sys.executable}) + '\\n')\n",
+        encoding="utf-8",
+    )
+    env["PYTHONPATH"] = str(startup_root) + os.pathsep + env["PYTHONPATH"]
+    env["GLUDD_HEARTBEAT_PYTHON_STARTS"] = str(starts)
+    probe = tmp_path / "literal child.py"
+    probe.write_text(
+        "import json, sys\nprint(json.dumps(sys.argv[1:]))\n"
+        + f"raise SystemExit({heartbeat_uv_native_status})\n",
+        encoding="utf-8",
+    )
+    marker = tmp_path / "must-not-exist"
+    literal = [
+        "argument with spaces", "$(touch " + str(marker) + ")",
+        "; touch " + str(marker), "$HOME", "*", "'quoted'", "back\\slash",
+    ]
+    result = subprocess.run(
+        [*shlex.split(uv_values[0]), "run", "python", str(probe), *literal],
+        cwd=tmp_path, env=env, capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == heartbeat_uv_native_status, result.stdout + result.stderr
+    payload: object = json.loads(result.stdout)
+    assert payload == literal
+    assert result.stderr == ""
+    assert not marker.exists()
+    observed: list[object] = [
+        json.loads(line) for line in starts.read_text(encoding="utf-8").splitlines()
+    ]
+    for record in observed:
+        assert isinstance(record, dict)
+        assert record.get("executable") == sys.executable
+    assert len(observed) == 1, observed
+    record = observed[0]
+    assert isinstance(record, dict)
+    assert record.get("argv") == [str(probe), *literal]
+
+
+def test_fixture_uv_refuses_other_transport_before_a_producer(tmp_path: Path) -> None:
+    command, env = _fixture(tmp_path, "success", count=1)
+    uv_values = [value.removeprefix("UV=") for value in command if value.startswith("UV=")]
+    assert len(uv_values) == 1
+    probe = tmp_path / "must-not-run.py"
+    marker = tmp_path / "must-not-exist"
+    probe.write_text(
+        "from pathlib import Path\n" + f"Path({str(marker)!r}).touch()\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [*shlex.split(uv_values[0]), "run", "other-python", str(probe)],
+        cwd=tmp_path, env=env, capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 1
+    assert not marker.exists()
+    assert not (tmp_path / "calls").exists()

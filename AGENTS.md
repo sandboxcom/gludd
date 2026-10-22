@@ -61,6 +61,11 @@ measurements, rejected approaches and the missing release proofs.
    proof scope and exact next Make action in the owning feature and tracking
    files. Source review, collection, focused acceptance and final proof retain
    distinct authority. Reuse the native owners; no second observer or cache.
+   On an all-green partial cohort followed by a timeout, preserve the missing
+   child as unproved. Profile the actual slow input before another original-bound
+   replay; paired trace spans are not CPU, critical path or forecast savings.
+   The [clean-SHA record](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md) retains
+   the native failure and bounded two-owner receiving process.
 
 Native status readers must preserve the index as well as working bytes. The
 existing git-status owner uses Git's no-optional-locks mode, retains native

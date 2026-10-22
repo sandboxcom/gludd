@@ -3,13 +3,44 @@
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: release-candidate/v012-git-mutex-20261022 eb772a658a01db4485087813e4478eb6c59cc328.
 Previously recorded development publication: 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 129237 selected / 129261 collected, 24 deselected, zero collection errors in51.87s/native60.7s during normal ad4f92abc025cd416d0c72d822270336901ba00a hooks. Native receipt: .gate-logs/observed/test-count/20261022T194715Z-43004-27466303.{log,json,pytest.jsonl}. Collection is separate from behavioral and final-gate proof; prior refs retain their original receipts. Boundary repairs start from ad4; each normal commit retains fresh native collection, without a receipt-only commit.
+Total tests: 129268 selected / 129292 collected, 24 deselected, zero collection errors in47.85s/native53.0s during native guarded35c08ba94e4e5af2d6f994d29e9562ee35ed72a5 commit preflight. Native receipt: .gate-logs/observed/test-count/20261022T203931Z-88280-fded419d.json. This final coherent working-checkout collection matches the clean batch; earlier intermediate collections retain their disclosed unstaged-path scope. Collection is separate from behavioral and final-gate proof; prior refs keep their original receipts. Each normal source commit retains fresh collection without a receipt-only commit.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 trace source receiving
+## Current S98.4 heartbeat launcher input receiving
+
+Receiving starts from35c08ba94e4e5af2d6f994d29e9562ee35ed72a5; Root owns Main,
+shared docs and Git. The [owning record](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md)
+consumes both measured inventory/stress declines and the heartbeat proposal.
+Actual Main native startup RED is2FAIL0.93s/native2/2.0s; optimized input keeps
+all39 predecessors plus3controls, with Ruff/strict PASS. Private wall comparison
+is negative19.01s to25.72s, so no speed/deadline improvement is claimed.
+Complete160-case receiving passes31129.68s/native30.720s and
+31230.77s/native31.755s, both0errors/skips; exact receipts/source digest remain
+in the owning record. Normal guarded commit/collection, independent source
+review and exactly one changed-input original90/60 repair run are next. No new hosted/deployment result exists; published baseline remains eb772.
+Capacity/full gate,85/75BOTH and guarded promotion remain pending; all seven
+release tasks stay unchecked.
+
+## Retained S98.4 clean-SHA runtime failure
+
+Exact35c08ba94e4e5af2d6f994d29e9562ee35ed72a5 is locally committed and clean.
+Its final coherent collection passes129268selected/129292collected,24deselected/
+0errors47.85s/native53.0s at test-count/20261022T203931Z-88280-fded419d.json.
+Independent APPROVE SOURCE ONLY is fully consumed from
+/tmp/gludd-v012-boundary-35c08ba-source-review.md; all reviewer sessions terminate.
+Actual repair-owned original90/60 runtime then times out124/90.542s:
+2390mainPASS83.78s, freshHELP1PASS0.87s, required final child unproved.
+No repair receipt or hosted/deployment/gate authority is granted. The [owning record](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md)
+retains exact native artifacts, profile limits, two disjoint TMP proposal owners
+and Root-only canonical receiving. Repair actual inventory/heartbeat workload
+before a new original-bound clean-SHA replay; no unchanged retry. Last published
+SHA remains eb772 and all seven release tasks stay unchecked. Capacity/final
+gate, exact-SHA hosted/deployed-head proof and promotion remain pending.
+
+## Retained S98.4 trace source receiving
 
 Source before the last trace commit is
 0f31a44a53552e67088ca8e86e5482659cfc1518 on the candidate branch above.

@@ -633,6 +633,11 @@ timeout: retain the failed watcher receipt and require an actual changed input
 before its next original-budget replay. Never infer worker timing from the last
 visible node or a null trace_path. The existing native observer owns the terminal
 reason and timing; no second observer/cache is needed.
+The [clean-SHA record](../../docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md) retains
+an all-green partial cohort followed by an unproved final child, bounded existing
+cProfile/trace attribution and a measured decision to reject unsafe inventory
+caching. Reduce demonstrated redundant work; keep every original assertion and
+run the next original-bound clean-SHA evidence alone after actual inputs change.
 
 Before a repair push, use the existing pipeline-status owner for the exact
 previous published SHA and inspect its terminal-record marker. A recorded failed
