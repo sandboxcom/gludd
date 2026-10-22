@@ -461,10 +461,26 @@ release-proof-admission: override UV := $(UV)
 
 release-proof-admission:
 	@WORK_TASK='$(subst ','"'"',$(value WORK_ITEM_ID))'; \
-	case "$$WORK_TASK" in *[!A-Za-z0-9._-]*) echo "ERROR: WORK_ITEM_ID must be literal task data"; echo "PROOF-ADMISSION-BLOCKED phase=release-proof-admission rc=2"; exit 2;; esac; \
-	case "$(RELEASE_PROOF_ADMISSION_VALIDATE_ONLY)" in 0|1) ;; *) echo "ERROR: RELEASE_PROOF_ADMISSION_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac; \
+	agent_next() { printf 'AGENT_NEXT target=release-proof-admission outcome=%s phase=%s gate_evidence=false release_ready=false: %s\n' "$$1" "$$2" "$$3" >&2; }; \
+	blocked_next() { \
+		case "$$1" in \
+			disk-cleanup-preflight) proof_next='Use make disk for bounded diagnosis and native lifecycle owners only for proven eligible resources. Without eligible reclamation use the documented HumanTodo route; retain an actual request ID, never a check-mode null or request configuration. A refused API request remains unfiled and needs a changed service prerequisite before retry.' ;; \
+			gate-admission-config) proof_next='Repair the reported release policy inputs with make gate-admission-config; preserve canonical budgets, coverage and runtime settings.' ;; \
+			check-task-registration|check-task-integrity) proof_next='Repair the named TASKS.md or source registration input with the reported native Make owner; retain canonical IDs and immutable history.' ;; \
+			check-gate-failure-promotions) proof_next='Repair the named manifest, node or Make-wiring input with make check-gate-failure-promotions; all eight child pins and terminal success remain required.' ;; \
+			check-resource-ownership) proof_next='Repair the named resource owner or inventory input with make check-resource-ownership; keep RESOURCE_OWNERSHIP_WRITE=0 for admission and preserve existing leases.' ;; \
+			check-test-env-writes) proof_next='Repair the named test fixture or environment writer with make check-test-env-writes; confine test output instead of changing production observations.' ;; \
+			test-files) proof_next='Repair the actual failing source-contract node through the documented make test-files owner; preserve original assertions and fatal warnings.' ;; \
+			_pytest-runtime-compatibility-admission) proof_next='Read the original native watched receipt from run-watched; identify the actual failed node, unmet prerequisite or timeout cause before repair. Preserve the original 90/60 owner and do not substitute a focused pass.' ;; \
+			*) proof_next='Repair the reported native owner and its actual failing input.' ;; \
+		esac; \
+		agent_next blocked "$$1" "$$proof_next Retain failed native evidence and identify the changed input before retrying documented mode0 admission; no expensive final proof or task tick follows this result."; \
+	}; \
+	case "$$WORK_TASK" in *[!A-Za-z0-9._-]*) echo "ERROR: WORK_ITEM_ID must be literal task data"; echo "PROOF-ADMISSION-BLOCKED phase=release-proof-admission rc=2"; agent_next refused work-item-input 'Repair WORK_ITEM_ID as documented literal active-task data; no admission owner has run.'; exit 2;; esac; \
+	case "$(RELEASE_PROOF_ADMISSION_VALIDATE_ONLY)" in 0|1) ;; *) echo "ERROR: RELEASE_PROOF_ADMISSION_VALIDATE_ONLY must be 0 or 1"; agent_next refused validate-only 'Repair RELEASE_PROOF_ADMISSION_VALIDATE_ONLY to documented 0 or 1; no admission owner has run.'; exit 2 ;; esac; \
 	if [ "$(RELEASE_PROOF_ADMISSION_VALIDATE_ONLY)" = "1" ]; then \
 		echo "PROOF-ADMISSION-PLAN capacity -> gate-config -> task-registration -> task-integrity -> failure-promotions -> resource-ownership -> test-env-writes -> source-contracts -> runtime-compatibility; release_ready=false gate_evidence=false"; \
+		agent_next planned plan 'Capacity, configuration, resource ownership, source contracts and runtime are not executed. Inspect worktree-state and native work-item status; use documented mode0 only after actual prerequisites are changed or clear. Do not seal a candidate, run a full gate, publish or tick tasks from this plan.'; \
 		exit 0; \
 	fi; \
 	run_owner() { \
@@ -472,7 +488,8 @@ release-proof-admission:
 		echo "PROOF-ADMISSION-START phase=$$phase"; \
 		if [ "$$phase" = "_pytest-runtime-compatibility-admission" ]; then \
 			if $(UV) run python scripts/item_progress.py prepare-runtime --task "$$WORK_TASK"; then :; else \
-				rc=$$?; echo "PROOF-ADMISSION-BLOCKED phase=$$phase rc=$$rc"; exit "$$rc"; \
+				rc=$$?; echo "PROOF-ADMISSION-BLOCKED phase=$$phase rc=$$rc"; \
+				agent_next blocked "$$phase" 'Use documented make work-item focus and active-work-status to repair the actual active-task input; runtime child has not started. Retain native reasons and identify the changed input before retrying; no expensive final proof or task tick follows.'; exit "$$rc"; \
 			fi; \
 			runtime_run_id="proof-admission-$$(date -u +%Y%m%dT%H%M%SZ)-$$$$"; \
 			set -- run-watched WORK_ITEM_ID="$$WORK_TASK" GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 \
@@ -484,7 +501,7 @@ release-proof-admission:
 		if $(MAKE) --no-print-directory "$$@"; then \
 			echo "PROOF-ADMISSION-PHASE-PASS phase=$$phase"; \
 		else \
-			rc=$$?; echo "PROOF-ADMISSION-BLOCKED phase=$$phase rc=$$rc"; exit "$$rc"; \
+			rc=$$?; echo "PROOF-ADMISSION-BLOCKED phase=$$phase rc=$$rc"; blocked_next "$$phase"; exit "$$rc"; \
 		fi; \
 	}; \
 	run_owner disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0 DISK_CLEANUP_PREFLIGHT_DRY_RUN=1 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800; \
@@ -496,7 +513,8 @@ release-proof-admission:
 	run_owner check-test-env-writes; \
 	run_owner test-files TESTFILES='tests/unit/test_guardrails.py::TestBashGuardrailPrompting::test_agents_md_lists_make_targets tests/unit/test_guardrails.py::TestTDDGuardrail::test_agents_md_tdd_lists_workflow_steps tests/unit/test_guardrails.py::TestGuardrailIntegrity::test_agents_md_has_guardrail_integrity_policy tests/unit/test_guardrails.py::TestTaskCompletionGuardrail::test_agents_md_has_completion_policy tests/unit/test_guardrails.py::TestTaskCompletionGuardrail::test_agents_md_completion_policy_forbids_early_stop tests/unit/test_no_home_directory_access.py::test_agents_md_documents_allowed_boundary tests/unit/test_no_home_directory_access.py::test_agents_md_lists_structural_test_as_enforcement tests/unit/test_markdown_docs_deep.py::test_all_internal_links_resolve tests/unit/test_oversized_document_splits.py tests/unit/test_spec_enforcement_t01_t29.py::TestT22T23T24GateStatusEvidence::test_t23_cite_pass_count_with_test_claim_policy tests/unit/test_behavioral_specs.py::TestAgentsMdPolicies::test_dispatch_floor_policy tests/unit/test_behavioral_specs.py::TestAgentsMdPolicies::test_ci_poll_subagents_forbidden tests/unit/test_e4_noqa_guardrail.py::TestAgentsMdRule::test_runtime_hook_layer_documented tests/unit/test_e4_noqa_guardrail.py::TestAgentsMdRule::test_behavior_pin_test_documented tests/unit/test_e4_noqa_guardrail.py::TestAgentsMdRule::test_guardrail_integrity_policy_cross_reference tests/unit/test_watchdog_deep.py::TestTaskWatchdogProcessIdentity::test_kill_skips_when_identity_changed tests/unit/test_xdist_pollution_guard.py::test_all_setenv_literals_are_in_leaky_env_vars tests/unit/test_deadline_enforcement_deep.py::TestKillProcessEdgeCases::test_sigterm_before_sigkill_ordering tests/unit/test_deadline_enforcement_deep.py::TestKillProcessEdgeCases::test_process_exited_during_sigterm_wait tests/unit/test_deadline_enforcement_deep.py::TestWatchdogSourceInvariants::test_kill_multiple_candidates tests/unit/test_watchdog_deep.py::TestTaskWatchdogConfiguration tests/unit/test_scoped_admission_targets.py tests/integration/test_gate_resume_preflights.py::test_preflights_skip_when_exact_sha_resume_receipt_exists tests/unit/test_operational_discipline_full.py::test_dc1_dispatch_examples tests/unit/test_operational_discipline_full.py::test_dc1_zero_subagents_allowed_without_filler tests/unit/test_precommit_quality_guards.py::test_engine_probe_owns_uv_without_discarding_native_make_carriers[owned-environment-overrides] tests/unit/test_push_discipline_checks_p2.py::TestP30NeverPushFixForwardToMaster::test_agents_forbids_fix_forward_to_master' PYTEST_ARGS='-q -W error -n 0'; \
 	run_owner _pytest-runtime-compatibility-admission; \
-	echo "PROOF-ADMISSION-PASS admitted_for_proof=true release_ready=false gate_evidence=false"
+	echo "PROOF-ADMISSION-PASS admitted_for_proof=true release_ready=false gate_evidence=false"; \
+	agent_next passed complete 'Admission prerequisites passed; keep one proof owner and freeze one exact candidate for independent source review, combined acceptance, canonical gate, exact-SHA hosted CI, deployment and reviewed-head promotion proof. Do not edit the frozen candidate or tick tasks from admission alone.'
 
 release-readiness:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-readiness TAG=v0.1.2 RELEASE_READINESS_VALIDATE_ONLY=0|1 RELEASE_COMPLETED_STAGES=stage,... RELEASE_OBSERVATIONS=stage=minutes,... REVIEWED_HEAD_INTEGRATION_RECEIPT=path RELEASE_CANDIDATE_SHA=full-sha RELEASE_READINESS_CI_BRANCH=source-branch-or-empty"; exit 2; }

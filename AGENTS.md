@@ -77,6 +77,12 @@ unchanged ancestry runs no new gate. Repair failed capacity/ownership before
 applying, and retain missing exact-SHA proofs after an applied merge. The [result contract](docs/features/MAKE_RESULT_GUIDANCE.md)
 and [native merge contract](docs/features/GIT_MERGE_NO_COMMIT.md) retain the
 actual output branches, negative controls, decisions and proof limits.
+release-proof-admission planned output executes no live prerequisites; blocked
+output names the actual failed owner and requires changed input before retry.
+Only terminal passed output follows every admission child, and it still grants
+no full-gate/exact-SHA proof. Capacity uses existing native lifecycle/HumanTodo
+owners; check-mode null, configuration or API refusal never means a filed task.
+Preserve a refused request as unfiled until its service prerequisite changes.
 
 ## Make Target Selection Contract
 

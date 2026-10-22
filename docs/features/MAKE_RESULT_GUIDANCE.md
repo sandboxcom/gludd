@@ -1,10 +1,96 @@
 # Make result guidance
 
 S98.4, 2026-10-22 UTC. Agent-facing Make results should teach the model what to
-do with the actual result. The first three owners are check-make-target-contract,
-check-gate-failure-promotions and git-merge-nc. Existing native owners, statuses
-and artifacts remain authoritative; no second observer, runner, cache or proof
-schema is introduced.
+do with the actual result. Current owners include check-make-target-contract,
+check-gate-failure-promotions, git-merge-nc, development-merge-forward and
+release-proof-admission. Existing native owners, statuses and artifacts remain
+authoritative; no second observer, runner, cache or proof schema is introduced.
+
+## Release admission teaches bounded next actions, 2026-10-22 UTC
+
+The next coupled S98.4 change starts at reviewed local
+fe2d6a53611a6e1fb38adf96d7fb1392a1069a5d on the same release-candidate branch;
+development remains82db11b57b254c1ca1e035975b5cc86253e2fed5. Root fully reads
+independent APPROVE SOURCE ONLY against65cb at
+/tmp/gludd-v012-merge-forward-fe2-source-review.md. That review accepts the
+twelve frozen integration-guidance paths, six native receipts and retained
+predecessor assertions. It grants no APPLY=1, cleanup, final gate or release
+authority. Normal fe2 hooks retain128897selected/128921collected,24deselected,
+zero collection errors48.47s/native53.899s at
+.gate-logs/observed/test-count/20261022T114053Z-60590-67fe245a.json.
+The first write-tree128/index.lock failure above stays unexplained; serial
+guarded retry follows actual ENOENT, never lock deletion or a cause assertion.
+
+The existing release-proof-admission owner now emits one short stderr result
+guidance line for planned, refused, blocked or passed outcomes. All original
+stdout markers, reasons, native status propagation, phase ordering and policies
+remain. The plan explicitly leaves live capacity, configuration, ownership,
+source contracts and runtime unexecuted. Input refusals identify mode/task data;
+a blocked child names its actual phase and native repair owner, retains failed
+evidence and requires a changed input before retrying. Native focus refusal
+states that the runtime child has not started. Terminal guidance follows every
+successful child and still requires one proof owner, a frozen exact candidate,
+independent source review, combined acceptance, canonical gate and exact-SHA
+hosted/deployment/reviewed-head proof. No prompt supplies release authority.
+
+Capacity guidance uses existing disk/lifecycle and HumanTodo owners only.
+Keep protected resources when no cleanup is eligible. A check-mode
+null, request configuration or refused API request is not a filed HumanTodo;
+a refused service needs a changed prerequisite before another request. The
+same-input original60907/final-gate replay stays blocked. The separate read-only
+native cache inventory examines seven children with zero errors in0.161s;
+largest pre-commit is77049856 allocated bytes. Its native receipt is
+.gate-logs/observed/user-cache-inventory/v012-user-cache-inventory-fe2.json,
+terminal0/native0.3s. These measurements cannot clear GiB-scale capacity or
+authorize managed-cache removal; no new lifecycle, scanner or daemon follows.
+
+Sixteen additive behavioral controls preserve all42 predecessor cases. They
+retain16FAIL/42deselected4.09s/native5.2s before the emitter exists:
+.gate-logs/observed/proof-admission-guidance-red311/
+v012-proof-admission-guidance-red311.json and
+/tmp/gludd-v012-proof-admission-guidance-red311.{log,xml}.
+Private real-Make cases cover plan, both literal input refusals, all nine
+failed owners, two real focus refusals and both ordinary/native-focus success.
+They assert exact original markers/statuses, stderr-only prompts, native child
+order and absence of gate/attestation writes. The complete test owner already
+runs in the first existing admission child; no new family, pin, phase or
+whole-file widening is needed. All164 families/eight pins, three2/1/1 children,
+90total/60quiet,21phases/2850 and85/75 BOTH remain unchanged.
+
+One cheap invocation attempts to combine lint-files with two other goals; its
+existing strict goal contract refuses before execution. The corrected separate
+lint-files invocation and separate strict scope both pass. Do not combine
+file-scope owners with extra goals to save calls. No assertions, scope checks,
+warnings or guardrails are weakened. Markdown catches a heading-level gap;
+the strict line owner also refuses BUGS2515 and TASKS2509 before replay. Only
+new tracking notes are compacted into existing paragraph prefixes; all old
+history and full decisions in this feature remain. A literal transport first
+fails to match the Unicode task heading before mutation; UTF-8 encoding fixes
+that exact input. Complete receiving and normal per-commit collection remain
+distinct from source review and final release proof.
+
+The complete 17-owner receiving cohort passes all 630 cases per runtime, with
+fatal warnings and zero skips/errors. Python 3.11 takes115.07s/native116.282s;
+Python 3.12 takes117.69s/native118.985s. Native
+receipts are .gate-logs/observed/proof-admission-guidance-receiving{311,312}/
+v012-proof-admission-guidance-receiving{311,312}.json; each
+progress_identity.command retains the complete deduplicated paths, argv and
+installed interpreter. Logs/XML are
+/tmp/gludd-v012-proof-admission-guidance-receiving{311,312}.{log,xml}.
+Both native receipts bind unchanged tested source
+00e2824364e37c92206078c4a0c0dda861f3edbc1aef76ad4b6815c5cfb4397c.
+The diagnostic240total/180quiet limits never become original runtime90/60 proof.
+
+All eight existing pins pass1.78s/terminal0;278 contracts, the actual documented
+mode1 plan(exit0),1157 targets/zero duplicates/parity, six Markdown files, eight-path
+registration, native SESSION mode1, strict scope/Ruff and line ceiling pass.
+This production delta changes only Make; no Python owner or coverage profile
+changes. Historical6bc95.2line/90.2branch remains source-specific two-checker
+coverage, never this candidate's global audit. Final native make disk measures
+97percent/7.6GiB against95; make ps shows only the two existing Python controllers,
+which is not a Git/model-agent idleness proof. No new daemon or cleanup runs.
+Normal guarded collection remains mandatory. No original60907/full-gate,
+exact-SHA CI/deployment, integration, release promotion or milestone tick follows.
 
 ## Development integration results, 2026-10-22 UTC
 

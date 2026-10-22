@@ -472,3 +472,115 @@ def test_admission_fixture_requires_one_real_binding_before_native_children(
             assert not (tmp_path / "runtime-watch").exists()
             assert not (tmp_path / ".gludd").exists()
     assert subprocess.run is native_run
+
+
+def _result_guidance(result: subprocess.CompletedProcess[str], outcome: str, phase: str) -> str:
+    lines = [
+        line for line in result.stderr.splitlines()
+        if line.startswith("AGENT_NEXT target=release-proof-admission ")
+    ]
+    assert len(lines) == 1, result.stdout + result.stderr
+    line = lines[0]
+    assert f"outcome={outcome} phase={phase} gate_evidence=false release_ready=false:" in line
+    assert "AGENT_NEXT" not in result.stdout
+    assert "gate_evidence=true" not in line and "release_ready=true" not in line
+    return line
+
+
+def test_admission_plan_guidance_keeps_all_prerequisites_and_proof_unmeasured(tmp_path: Path) -> None:
+    result = _run(tmp_path, mode="1")
+    assert result.returncode == 0, result.stdout + result.stderr
+    line = _result_guidance(result, "planned", "plan")
+    assert "not executed" in line and "worktree-state" in line
+    assert "documented mode0" in line and "changed or clear" in line
+    assert "full gate" in line and "not" in line
+    assert "PROOF-ADMISSION-PLAN" in result.stdout
+    assert "PROOF-ADMISSION-PASS" not in result.stdout
+    assert not (tmp_path / "phases.log").exists()
+    assert not (tmp_path / "runtime-watch").exists()
+    assert not (tmp_path / ".gate-status").exists()
+
+
+@pytest.mark.parametrize(
+    ("mode", "task", "phase", "reason"),
+    [
+        ("yes", "", "validate-only", "RELEASE_PROOF_ADMISSION_VALIDATE_ONLY must be 0 or 1"),
+        ("1", "bad task", "work-item-input", "WORK_ITEM_ID must be literal task data"),
+    ],
+)
+def test_admission_refusal_guidance_keeps_native_input_reason_and_status(
+    tmp_path: Path, mode: str, task: str, phase: str, reason: str,
+) -> None:
+    result = _run(tmp_path, mode=mode, task=task)
+    assert result.returncode == 2, result.stdout + result.stderr
+    line = _result_guidance(result, "refused", phase)
+    assert reason in result.stdout
+    assert "repair" in line.lower() and "documented" in line
+    assert not (tmp_path / "phases.log").exists()
+    assert not (tmp_path / "runtime-watch").exists()
+    assert "PROOF-ADMISSION-PASS" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("phase", "next_owner"),
+    [
+        ("disk-cleanup-preflight", "make disk"),
+        ("gate-admission-config", "release policy"),
+        ("check-task-registration", "TASKS.md"),
+        ("check-task-integrity", "TASKS.md"),
+        ("check-gate-failure-promotions", "eight"),
+        ("check-resource-ownership", "resource owner"),
+        ("check-test-env-writes", "fixture"),
+        ("test-files", "failing source-contract node"),
+        ("_pytest-runtime-compatibility-admission", "native watched receipt"),
+    ],
+)
+def test_admission_blocked_guidance_names_actual_owner_and_changed_input(
+    tmp_path: Path, phase: str, next_owner: str,
+) -> None:
+    result = _run(tmp_path, failed_phase=phase)
+    assert result.returncode == 2, result.stdout + result.stderr
+    line = _result_guidance(result, "blocked", phase)
+    assert next_owner in line
+    assert "changed input" in line and "retain" in line.lower()
+    assert f"PROOF-ADMISSION-BLOCKED phase={phase} rc=2" in result.stdout
+    assert (tmp_path / "phases.log").read_text().splitlines() == list(PHASES[:PHASES.index(phase) + 1])
+    assert "PROOF-ADMISSION-PASS" not in result.stdout
+    assert "outcome=passed" not in result.stderr
+    assert not (tmp_path / ".gate-status").exists()
+    assert not (tmp_path / "attestation.json").exists()
+    if phase != PHASES[-1]:
+        assert not (tmp_path / "runtime-watch").exists()
+
+
+@pytest.mark.parametrize("task", ["", "not-an-active-task"])
+def test_admission_focus_guidance_precedes_any_watched_runtime_child(tmp_path: Path, task: str) -> None:
+    result = _run(tmp_path, native_focus=True, task=task)
+    assert result.returncode != 0, result.stdout + result.stderr
+    line = _result_guidance(result, "blocked", PHASES[-1])
+    assert "work-item" in line and "runtime child has not started" in line
+    assert "changed input" in line
+    assert "PROOF-ADMISSION-BLOCKED phase=_pytest-runtime-compatibility-admission" in result.stdout
+    assert (tmp_path / "phases.log").read_text().splitlines() == list(PHASES[:-1])
+    assert not (tmp_path / "runtime-watch").exists()
+    assert not (tmp_path / ".gludd/item-progress.json").exists()
+
+
+@pytest.mark.parametrize("native_focus", [False, True])
+def test_admission_pass_guidance_requires_terminal_children_but_no_release_claim(
+    tmp_path: Path, native_focus: bool,
+) -> None:
+    result = _run(tmp_path, native_focus=native_focus, task="F12.1" if native_focus else "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    line = _result_guidance(result, "passed", "complete")
+    assert "one proof owner" in line and "freeze" in line.lower()
+    assert "independent source review" in line
+    assert "canonical gate" in line and "exact-SHA" in line and "deployment" in line
+    assert "Do not edit" in line and "tick" in line
+    assert (tmp_path / "phases.log").read_text().splitlines() == list(PHASES)
+    assert result.stdout.splitlines()[-1] == (
+        "PROOF-ADMISSION-PASS admitted_for_proof=true release_ready=false gate_evidence=false"
+    )
+    assert (tmp_path / "runtime-watch").exists()
+    assert not (tmp_path / ".gate-status").exists()
+    assert not (tmp_path / "attestation.json").exists()

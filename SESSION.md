@@ -2,41 +2,53 @@
 
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: development 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 128881 selected / 128905 collected, 24 deselected, zero collection errors in48.65s/native53.765s during normal6bc6981413c5c1f5b042043cc04f793f17b6841c hooks. Native receipt: .gate-logs/observed/test-count/20261022T104837Z-32263-e7ef01c1.{log,json,pytest.jsonl}. Collection is separate from behavioral and final-gate proof;41b,49bb, rejected621 and older collections retain their own refs. The next guarded commit owns its fresh native collection receipt; consume that result without another receipt-only commit or repeating accepted source acceptance.
+Total tests: 128897 selected / 128921 collected, 24 deselected, zero collection errors in48.47s/native53.899s during normalfe2d6a53611a6e1fb38adf96d7fb1392a1069a5d hooks. Native receipt: .gate-logs/observed/test-count/20261022T114053Z-60590-67fe245a.{log,json,pytest.jsonl}. Collection is separate from behavioral and final-gate proof;65cb,6bc,41b,49bb, rejected621 and older collections retain their own refs. The next guarded commit owns its fresh native collection receipt; consume that result without another receipt-only commit or repeating accepted source acceptance.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 integration-result guidance delta
+## Current S98.4 release-admission guidance delta
 
-Root owns the coupled change from local65cb7fb481f95fc3ef18a9808927140ed2ebd128
-on the same release-candidate branch; development stays82db. The native watched
-integration plan returns0 without branch/clean/capacity/test or merge proof.
-Fourteen additive real-Make/Git controls retain33 predecessors:13 RED4.75s/
-native6.0s plus native conflict1RED0.99s/native1.9s. Outcome prompts preserve
-old reasons/statuses/merge options/transaction gates; PHONY prevents suppression.
-Two routing REDs0.95s/native1.8s precede163/164 after162 predecessors, exact
-first-child nodes, eight pins and unchanged2/1/1,90/60,21/2850/full gate.
+Root owns the coupled change from reviewed local
+fe2d6a53611a6e1fb38adf96d7fb1392a1069a5d on the same release-candidate branch;
+development remains82db11b57b254c1ca1e035975b5cc86253e2fed5. Normal fe2 hooks
+retain128897selected/128921collected,24deselected0errors48.47s/native53.899s at
+.gate-logs/observed/test-count/20261022T114053Z-60590-67fe245a.json. Independent
+APPROVE SOURCE ONLY against65cb is fully read at
+/tmp/gludd-v012-merge-forward-fe2-source-review.md; no blocking correction.
 The [result record](docs/features/MAKE_RESULT_GUIDANCE.md#development-integration-results-2026-10-22-utc)
-owns decisions, failures and exact native receipt paths/argv. Complete18-owner
-receiving passes747 per runtime,311131.59s/native133.094s and312124.25s/
-native125.917s, fatal warnings/zero skips or errors. All three strict scopes/Ruff,
-278 contracts/actual safe plan,1157 targets/zero duplicates/parity, six Markdown,
-12-path registration/SESSION/line checks and eight pins1.83s terminal0 pass.
-Normal65cb collection retains128881selected/128905collected,24deselected0errors
-54.53s/native59.849s at .gate-logs/observed/test-count/20261022T110241Z-40296-fc8e9206.json.
-Consume the next guarded commit's actual native collection without another
-receipt-only commit or accepted-suite replay. New exact-source review remains
-separate; prior source approval never certifies changed inputs. Latest native
-disk97percent/7.7GiB still exceeds95; only existing controllers remain after tests.
-The first guarded commit stops before collection: Make2/pre-commit3/native
-write-tree128/index.lock exists. Exact native listing later returns ENOENT/find1/
-Make2 and worktree-state confirms65cb/all12 owned paths staged, no other changes.
-Only that observed prerequisite change permits normal guarded re-evaluation with
-serial make -j1; no cause/staleness is inferred and no lock or guard is removed.
-No unchanged original60907/full-gate replay, integration, task tick or release
-proof follows. Other model owners are quiescent; Root remains the sole writer.
+retains747 receiving passes per runtime, all original failures and budgets.
+The serial guarded retry follows actual index.lock ENOENT, never cause proof
+or lock deletion. Source review/collection never authorize final release.
+
+The next [admission result delta](docs/features/MAKE_RESULT_GUIDANCE.md#release-admission-teaches-bounded-next-actions-2026-10-22-utc)
+retains16FAIL/42deselected4.09s/native5.2s before repair. Existing native
+release-proof-admission emits stderr planned/refused/blocked/passed guidance,
+with exact owner/input repair, changed-input retry and missing-proof context.
+All original reasons/statuses/order, full-file early selection,164 families,
+eight pins, three2/1/1 children,90/60,21/2850 and85/75 BOTH remain unchanged.
+All 630 cases in the complete 17-owner cohort pass per runtime with fatal
+warnings/no skips or errors: Python3.11 115.07s/native116.282s and Python3.12
+117.69s/native118.985s. Native receipts:
+.gate-logs/observed/proof-admission-guidance-receiving{311,312}/
+v012-proof-admission-guidance-receiving{311,312}.json. Both bind unchanged tested
+source00e2824364e37c92206078c4a0c0dda861f3edbc1aef76ad4b6815c5cfb4397c.
+Eight pins1.78s/terminal0,278 contracts/actual mode1 plan(exit0),1157 targets/zero
+duplicates/parity, six Markdown, eight-path registration/SESSION/line checks and
+strict scope/Ruff pass. Retain mandatory normal commit collection, consume its
+native receipt and avoid another receipt-only cycle or unchanged accepted replay.
+The real safe plan is distinct from live admission; no final admission replay
+is justified by new prose, HEAD, timer or observer identity.
+
+The bounded user-cache inventory is terminal0/native0.3s: seven children,
+zero errors, largest77049856 allocated bytes. Native receipt:
+.gate-logs/observed/user-cache-inventory/v012-user-cache-inventory-fe2.json.
+This cannot clear GiB-scale capacity; no managed cache is removed. Latest
+native disk97percent/7.6GiB remains above95. Capacity HumanTodo stays UNFILED
+after connection refusal/no ID; no service change justifies another request.
+Keep original60907 and canonical/global/exact-SHA hosted/deployment/reviewed-head/
+promotion proof pending. All seven S98 items stay unchecked.
 
 ## Reviewed mutex source and current S98.4 Make receiving
 

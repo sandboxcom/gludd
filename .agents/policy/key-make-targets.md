@@ -440,6 +440,16 @@ Keep child deadlines distinct from the enclosing job budget.
 
 ### Admit and prove a release candidate
 
+Interpret release-proof-admission stderr AGENT_NEXT by outcome. Planned means
+no live prerequisite ran; refused names literal task/mode repair; blocked names
+the actual failed owner and changed input required before retry. Runtime focus
+refusal starts no watched child. Passed is scheduling admission after all owners,
+not full-gate or release evidence. Keep the original stdout/native reasons and
+failed receipts. For capacity, use existing lifecycle owners only for proven
+eligible resources. HumanTodo requires an actual request ID; API refusal remains
+unfiled until its service prerequisite changes. The [result record](../../docs/features/MAKE_RESULT_GUIDANCE.md#release-admission-teaches-bounded-next-actions-2026-10-22-utc)
+retains behavioral controls and proof limits.
+
 First inspect the existing admission plan:
 
 ```bash

@@ -96,7 +96,7 @@ ancestry from drifting independently.
 
 ## Session 98 — v0.1.2 release admission and hosted pipeline repairs
 
-S98.4 temporary disk-headroom policy and its original acceptance evidence are
+S98.4 admission-result continuation at reviewed fe2d6a53611a6e1fb38adf96d7fb1392a1069a5d retains16FAIL before repair and630PASS per required runtime; [the result record](docs/features/MAKE_RESULT_GUIDANCE.md#release-admission-teaches-bounded-next-actions-2026-10-22-utc) owns native proof, unchanged budgets and all seven open tasks. S98.4 temporary disk-headroom policy and its original acceptance evidence are
 retained verbatim in [the owning feature history](docs/features/RELEASE_PROOF_THROUGHPUT.md#retained-source-handoff-history).
 The explicitly authorized95limit and required restoration to90 remain unchanged.
 
