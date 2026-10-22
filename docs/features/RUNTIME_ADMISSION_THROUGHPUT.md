@@ -1,5 +1,9 @@
 # Runtime Admission Throughput
 
+The [current confined search-input record](RUNTIME_SEARCH_INPUT.md) retains
+S98.4's measured hosted span, preserved assertions and failing-first native
+receiving. Local input reduction supplies no hosted speed or release proof.
+
 ## Single-export cold-import boundary (2026-10-21 UTC)
 
 [The owning import feature](CODE_INTELLIGENCE_IMPORT_BOUNDARY.md) retains exact

@@ -9,6 +9,24 @@ Total tests: 129093 selected / 129117 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
+## Current S98.4 confined runtime input receiving
+
+Root receives tests/unit/test_make_help_audit.py and its owning
+[search-input record](docs/features/RUNTIME_SEARCH_INPUT.md) from exact
+51b782ba9b962d916f51ec04f35e5b9770ffb352 on the same candidate branch.
+Normal51b hooks collect129208selected/129232collected,24deselected/0errors,
+50.37s/native58.1s in test-count/20261022T192419Z-22212-6575438f.json.
+Canonical boundary RED is1FAIL/7PASS1.44s; complete help/collision receiving is
+72PASS per311/312,5.64s/6.33s. Exact receipts and the consumed private decision
+are in the owning record. Both original assertions/eight cases remain, five
+native controls are added, and production search/admission bounds are unchanged.
+No hosted saving, runtime-family repair, full gate or release proof is claimed.
+The private Pages23-case correction/decision is also fully consumed; Root receives
+it next. Normal current collection/source review remain pending. The prior51b
+research has independent APPROVE SOURCE ONLY, fully consumed at
+/tmp/gludd-v012-browser-source-51b782-source-review.md. Its frozen-packet readers
+are quiescent; this grants no acceptance or hosted authority.
+
 ## Current S98.4 hosted browser dependency research
 
 Root receives the bounded public source inspector from exact

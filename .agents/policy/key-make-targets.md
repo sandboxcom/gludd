@@ -436,6 +436,12 @@ log must pass that owned path explicitly to its existing native command; retain
 the namespace/ownership refusal. Use approved /tmp/gludd-* names for temporary
 transport artifacts, and resolve a refused mutation before dependent verification.
 
+For an input-boundary test, extract the current native recipe with its raw-value
+captures into a tiny owned fixture, retain the real tool and original assertions,
+and add an outside-root decoy/ordinary/-e mutation controls. The [search-input record](../../docs/features/RUNTIME_SEARCH_INPUT.md)
+retains complete-owner receiving; preserve the original admission, collection
+and exact-SHA gates before making any throughput claim.
+
 ### Cleanup, pinned browser prefetch and acceptance
 
 When building a focused source cohort, inspect a legacy guardrail owner's
