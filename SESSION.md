@@ -3,13 +3,54 @@
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: release-candidate/v012-git-mutex-20261022 eb772a658a01db4485087813e4478eb6c59cc328.
 Previously recorded development publication: 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 129273 selected / 129297 collected, 24 deselected, zero collection errors in48.75s/native54.1s during the last native guarded2ca8f8e8e108e3d03ff61bc30adb37a71e64c683 commit preflight. Native receipt: .gate-logs/observed/test-count/20261022T211547Z-47053-6f447087.json. This coherent working-checkout collection matches that clean candidate; earlier intermediate collections retain their disclosed unstaged-path scope. Collection is separate from behavioral, runtime, hosted and final-gate proof. Prior refs keep their original receipts; each normal source commit retains fresh collection without a receipt-only commit.
+Total tests: 129275 selected / 129299 collected, 24 deselected, zero collection errors in53.35s/native59.7s during the last native guarded64bafe6aab4aefac3205a8cc4348ecf6268e66b1 commit preflight. Native receipt: .gate-logs/observed/test-count/20261022T213702Z-96206-9c09bda0.json. This coherent working-checkout collection matches that clean candidate; earlier intermediate collections retain their disclosed unstaged-path scope. Collection is separate from behavioral, runtime, hosted and final-gate proof. Prior refs keep their original receipts; each normal source commit retains fresh collection without a receipt-only commit.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current required-tail input receiving from2ca8f8e
+## Current S98.4 working-checkout receiving after64bafe6
+
+Native tests-first Root reproduces unused-probe2FAIL and HTTPS5FAIL. After the
+minimal Make repairs, the complete deduplicated eleven-owner union passes471
+each on311/312,160.77s/168.62s, native165.326s/171.481s, zero errors/skips.
+Exact terminal receipts/digest and all failed private/collection inputs are in
+the [runtime record](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md). All model
+owners/readers and test sessions quiesce before Root's sequential source commits.
+Native promotion validation retains176families/21phases2850; all eight required
+pins pass1.75s/native3.3s at publication-probe-pins/v012-publication-probe-pins311.
+These are combined working-checkout scoped observations, not isolated
+intermediate-commit proof or a replacement for the original90/60 owner.
+
+Root owns Main/shared/Git. Repo-local HTTPS support has passed confined native
+controls; no live authentication/configuration or push has occurred in this
+receiving change. Newer repairs remain local. eb772 remains last hosted source:
+Build/PagesFAIL, Molecule all6PASS. One new clean source review and actual
+changed-input runtime-family repair remain pending before guarded publication.
+Capacity/full gate, global85/75 BOTH, exact-SHA deployment and promotion remain
+pending; all seven S98 items stay unchecked.
+
+## Retained S98.4 original-budget failure at64bafe6
+
+Native clean64bafe6aab4aefac3205a8cc4348ecf6268e66b1 has independent source-only
+approval, fully consumed after reviewer quiescence. Its actual unchanged90/60
+repair FAILS124/90.571s after2395mainPASS78.07s, HELP1PASS0.70s and the first
+two tail passes; native focus/watchdog ownership remains unfinished. No runtime
+repair receipt or successor GHA result exists. The earlier full255-case and
+11-tail component passes remain scoped. Exact artifacts/partial trace and
+separate live-worker regex sample: [runtime record](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md).
+Root owns Main/shared/Git. The17-case standalone Make40 startup proposal is
+consumed as a measured decline; it never loads Foundation, so no speculative
+patch lands. Two disjoint TMP owners now investigate actual root-Make unused
+probes and native repo-local HTTPS publication support; no Main/Git/CI
+mutation is delegated. Native gh HTTPS authentication is available; workspace
+SSH key is missing and no external-home key access is attempted. Preserve all
+native publication guards, original proofs and seven unchecked release tasks.
+Published eb772 remains the last hosted SHA, with Build/PagesFAIL/MoleculePASS.
+Full capacity/gate/global coverage, exact-SHA deployed-head proof and promotion
+remain pending. No unchanged admission retry or new scanner/observer/cache.
+
+## Retained required-tail input receiving from2ca8f8e
 
 Root consumes the terminal real-Git prerequisite-batching proposal and the
 separate measured security-scan decline. Canonical Main RED2FAIL4.46s/native5.8s

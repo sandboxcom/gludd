@@ -1,51 +1,46 @@
 # Release Proof Throughput
 
-## Published6ec94ab runtime failure and retained attribution
+## Active handoff and hosted authority
 
-Normal guarded publication verifies development6ec94ab4daf59e45b44720a44ffca19b2e7d0b23
-after exact served-manifest and2023+1+11/75.1s local admission. Exact Build
-39519193318 then fails311 admission at124/90.6s after2023/73.87s,help1/1.62s
-and ten tail passes. Its312 lane passes89.5s and fresh127723/127747collection,
-24deselected/0errors; the overall Build still fails and all eight shards remain
-censored/unknown. Native pipeline-status records open1/repaired11/resolved39,
-runs143. A new HEAD or the same-source local pass cannot repair this input.
+Use [SESSION](../../SESSION.md), the [current runtime record](RUNTIME_ADMISSION_CLEAN_SHA.md)
+and native work-item/active-work-status for the active branch, source, failed
+input and proof owner. The dated runs and old open/repaired/resolved counts
+below are historical evidence. They cannot clear a newer native failure or
+authorize another unchanged replay.
 
-Root owns the coupled diagnostic enhancement on development: extend the existing
-summary with opt-in validated wall spans, retain original counts/failures and
-separate exact run/worker/PID module totals. The [owning feature](XDIST_TRACE_SUMMARY.md#validated-test-protocol-wall-spans-v012)
-codifies47new controls, initial44FAIL/1PASS, repeated-module isolation RED,
-literal-option shell witness, final201PASS9.90s, and unchanged four-file native
-coverage431PASS70.85s at91.5line/85.5branch; summarizer98.2/95.6.
-The failed290-case70% aggregate receipt remains failed; the final cohort adds
-existing complete startup/retention owners without changing scope or floors.
-Main/tail raw profiles and native summaries are retained; parent waiting is
-not worker CPU and cross-worker sums are not combined elapsed time.
-Actual hosted311 cost repair, original90/60 family evidence, independent final
-review/full gate, exact-SHA CI, deployment and promotion remain missing.
-Disk97% still blocks expensive final release proof; no unchanged retry.
+Local focused tests provide fast feedback. Required hosted validation must run
+on the exact pushed candidate SHA, and deployment/publication follows its own
+workflow conditions:
 
-Independent5b10dd57eef9cc70f0b56fb34ca3dbfa9b7443f9 source review rejects duplicate
-START accounting with a native six-event witness; retain the negative decision.
-Root adds5failing controls and counted pending occurrences in the same summary
-owner. Complete437PASS71.34s/native73.4s measures unchanged four-file
-91.5line/85.6branch, summarizer98.3/95.8; no release authority follows.
-Native terminal6ec observations now record open2/repaired10/resolved40/runs145:
-WebKit23+1PASS416.52/51.18s/native472.4s and all six Molecule jobs pass, but
-Pages Chromium is cancelled during JS1 and deploy skips. Native annotation now identifies the unchanged20m0s job limit, and actual
-Ubuntu24.04.5 context establishes its runner baseline. The
-[Pages feature decision](PRESENTATION_JAVASCRIPT_COVERAGE.md#hosted-job-budget-and-required-ordering-2026-10-21-utc)
-preserves both JS0 engines, then dependent JS1, original20-minute budgets,
-600s children,85/75 coverage and required deployment predecessors. Parsed-YAML
-controls fail7/39PASS before repair, then whole five-owner acceptance165PASS6.74s.
-Separate setup cost is explicit; peak concurrency stays2. Source-only review,
-actual successor hosted coverage and deployment remain pending. Runtime311 remains open.
-Independent source decision approves7dcd1dd at
-/tmp/gludd-v012-candidate-7dcd1dd-source-review.md. Native ci-failure-repair
-records its Pages family locally repaired after complete232PASS7.11s at that
-clean exact source, not hosted-resolved. Commit collection127777/127801,
-24deselected/0errors47.34s/native52.7s supplies no full gate. The isolated
-pipeline-status process-cost enhancement remains the next active repair;
-Root owns its single Make writer and final receiving proof.
+| Trigger | Native workflow owner | Authority when its required work passes |
+|---|---|---|
+| Development or release-candidate push | [Build and Release](../../.github/workflows/build.yml), [Molecule](../../.github/workflows/molecule.yml), [Pages validation](../../.github/workflows/pages.yml) | Hosted validation for that exact SHA; retain every required workflow and job result. |
+| Master push | [Pages deploy](../../.github/workflows/pages.yml) after validate and javascript-coverage | Deployment of the presentation. |
+| Version tag v* | [Build release fan-in](../../.github/workflows/build.yml) | Release publication after required source proof and platform producers, followed by completeness and downloaded-artifact smoke verification. |
+| Explicit dispatch or schedule, with protected Azure live environment enabled | [Azure Container App live proof](../../.github/workflows/azure-containerapp-live.yml) | The actual selected environment's live-proof result, with its own required configuration and credentials. |
+
+A candidate push validates source before promotion. Pages deployment requires
+the master push condition and its two required predecessors. Version-tag
+publication requires the separate exact-source proof and release fan-in.
+Read the actual native outcome before attributing any of those authorities.
+Plan/configuration/source-only approval, a local component pass, pending,
+skipped or missing jobs cannot supply deployment or release proof.
+
+For hosted observation, select the existing branch-owned pipeline-status or
+ci-await producer with explicit repo/branch/SHA and documented variables.
+Keep generated current JSON producer-owned; preserve immutable failed runs.
+An authenticated CLI or configured Git transport proves neither a push nor
+hosted execution. Use normal guarded batch-push, verify-remote, then the native
+exact-SHA observer. Capacity, complete canonical gate, global85/75 BOTH,
+deployed reviewed-head acceptance and promotion remain separate requirements.
+
+## Historical6ec94ab runtime failure and retained attribution
+
+Normal guarded publication verifies development6ec94ab4daf59e45b44720a44ffca19b2e7d0b23 after exact served-manifest and2023+1+11/75.1s local admission. Exact Build 39519193318 then fails311 admission at124/90.6s after2023/73.87s,help1/1.62s and ten tail passes. Its312 lane passes89.5s and fresh127723/127747collection, 24deselected/0errors; the overall Build still fails and all eight shards remain censored/unknown. Native pipeline-status records open1/repaired11/resolved39, runs143. A new HEAD or the same-source local pass cannot repair this input.
+
+Root owns the coupled diagnostic enhancement on development: extend the existing summary with opt-in validated wall spans, retain original counts/failures and separate exact run/worker/PID module totals. The [owning feature](XDIST_TRACE_SUMMARY.md#validated-test-protocol-wall-spans-v012) codifies47new controls, initial44FAIL/1PASS, repeated-module isolation RED, literal-option shell witness, final201PASS9.90s, and unchanged four-file native coverage431PASS70.85s at91.5line/85.5branch; summarizer98.2/95.6. The failed290-case70% aggregate receipt remains failed; the final cohort adds existing complete startup/retention owners without changing scope or floors. Main/tail raw profiles and native summaries are retained; parent waiting is not worker CPU and cross-worker sums are not combined elapsed time. Actual hosted311 cost repair, original90/60 family evidence, independent final review/full gate, exact-SHA CI, deployment and promotion remain missing. Disk97% still blocks expensive final release proof; no unchanged retry.
+
+Independent5b10dd57eef9cc70f0b56fb34ca3dbfa9b7443f9 source review rejects duplicate START accounting with a native six-event witness; retain the negative decision. Root adds5failing controls and counted pending occurrences in the same summary owner. Complete437PASS71.34s/native73.4s measures unchanged four-file 91.5line/85.6branch, summarizer98.3/95.8; no release authority follows. Native terminal6ec observations now record open2/repaired10/resolved40/runs145: WebKit23+1PASS416.52/51.18s/native472.4s and all six Molecule jobs pass, but Pages Chromium is cancelled during JS1 and deploy skips. Native annotation now identifies the unchanged20m0s job limit, and actual Ubuntu24.04.5 context establishes its runner baseline. The [Pages feature decision](PRESENTATION_JAVASCRIPT_COVERAGE.md#hosted-job-budget-and-required-ordering-2026-10-21-utc) preserves both JS0 engines, then dependent JS1, original20-minute budgets, 600s children,85/75 coverage and required deployment predecessors. Parsed-YAML controls fail7/39PASS before repair, then whole five-owner acceptance165PASS6.74s. Separate setup cost is explicit; peak concurrency stays2. Source-only review, actual successor hosted coverage and deployment remain pending. Runtime311 remains open. Independent source decision approves7dcd1dd at /tmp/gludd-v012-candidate-7dcd1dd-source-review.md. Native ci-failure-repair records its Pages family locally repaired after complete232PASS7.11s at that clean exact source, not hosted-resolved. Commit collection127777/127801, 24deselected/0errors47.34s/native52.7s supplies no full gate. The isolated pipeline-status process-cost enhancement remains the next active repair; Root owns its single Make writer and final receiving proof.
 
 ## Problem and decision
 

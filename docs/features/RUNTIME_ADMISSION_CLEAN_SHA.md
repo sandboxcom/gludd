@@ -1,5 +1,166 @@
 # Clean-SHA runtime admission
 
+## Current receiving after64bafe6
+
+Root consumes both frozen TMP decisions; all model readers/executions quiesce.
+Only Make10's optional Ollama discovery and its existing install-check change
+for the runtime input. Preserve eager gate-SHA capture, TERM/fallback, worker
+integer/auto/0, container discovery, original selectors and all176families.
+
+Canonical tests-first unused-probe RED is2FAIL6.28s/native2/7.4s:
+.gate-logs/observed/root-make-probe-red/v012-root-make-probe-red312.json.
+Both ordinary and environment-priority calls finish every original native
+focus/watchdog assertion, then fail only the added count: Ollama16, TERM16,
+workers16, container16. The recursive default removes unused lookup; the
+consumer binds it once and retains missing-tool status and caller precedence.
+This is operation evidence, not measured speed or an original90/60 pass.
+
+The distinct HTTPS input reproduces5FAIL2.16s/native2/3.4s in
+.gate-logs/observed/https-publication-red/v012-https-publication-red312.json.
+Its complete source and receiving are documented in the separate
+docs/features/GITHUB_PUBLICATION_HTTPS.md proposal owner. At this
+receiving point no live auth/configuration, remote success or push has occurred.
+
+One deduplicated eleven-owner union passes471 each under installed311/312:
+160.77s/native165.326s and168.62s/native171.481s, fatal warnings, no skips or
+collection errors. Native observed-status confirms passed/inactive/exit0 for
+.gate-logs/observed/publication-probe-receiving/v012-publication-probe-receiving-canonical311.json
+and its canonical312 counterpart. Both bind tested source digest
+dd5cee8dba3d954f02739c8977af07b0f410406ab59e3ba94120a35bf7e71e12.
+This is combined working-checkout acceptance before sequential source commits,
+not isolated intermediate-commit proof, a full gate or hosted success.
+The union retains complete new73, original verify8/SSH3, both Make-contract
+owners, help throughput, variable-context, trace-input, reviewed-head196 and
+namespace59 owners. No test in an existing owner is altered.
+
+Failed diagnostics remain immutable: private tests.py shadows Main's tests
+package (0collected/1ERROR); the next/final comparison is10FAIL/10PASS15.86s.
+Its ordinary native case demonstrates16to0 unused lookups, while new harness
+controls expose inherited Make/PYTEST_ARGS carriers and one wrong legacy
+environment-priority count. The canonical additive owner isolates MAKEFLAGS,
+MFLAGS, MAKEOVERRIDES and inherited PYTEST_ARGS; all original assertions stay.
+The legacy environment-priority eager lookup remains1; CLI remains0.
+Canonical Ruff additionally requires its normal Main import-group separator.
+No third private execution or favorable wall comparison is claimed.
+
+Root's first combined receiving command guesses a nonexistent fixture filename:
+both runtimes collect0/pytest4, watched2/1.1s. Preserve run_ids
+v012-publication-probe-receiving311/312, their logs/XML/JSON. The actual prior
+producer receipt names test_pytest_param_fixture_collisions.py; correcting only
+that command input produces the471-case results above. Read exact prior native
+argv before constructing a reused cohort; never relabel a collection refusal.
+
+Make contract/duplicate/line checks, strict one-file test scopes and actual
+documented behavior are separate. The HTTPS mode1 plan returns0 without writes/
+auth/network. Deliberate missing Ollama and explicit missing SSH-key examples
+remain nonzero; neither is failure of those refusal controls. Original90/60,
+full capacity/gate/global85/75 BOTH, exact-SHA GHA/deployment and promotion remain
+pending; all seven release tasks stay unchecked. Newer repairs are local only.
+Last hosted eb772 remains Build/PagesFAIL and Molecule all6PASS.
+
+## Current original-budget failure at64bafe6
+
+Reviewed source is64bafe6aab4aefac3205a8cc4348ecf6268e66b1 on
+release-candidate/v012-git-mutex-20261022. Root owns Main/shared/Git/S98.4.
+Normal guarded collection selects129275 of129299 collected,24deselected,
+zero errors,53.35s/native59.7s; receipt:
+.gate-logs/observed/test-count/20261022T213702Z-96206-9c09bda0.json.
+Root consumes the complete independent APPROVE SOURCE ONLY decision at
+/tmp/gludd-v012-tail-64bafe6-source-review.md. All model readers/executions
+quiesce; source is clean and frozen before the actual original-bound repair.
+
+The existing watchdog's natural scan-9c9ddc4495b2409fbfa2ee0cb36bbc25
+terminates124/60.550s and its process group drains before runtime starts.
+No guard is disabled, scan killed or deadline changed to manufacture idle.
+The first actual changed-input312 repair then FAILS124/90.571s; enclosing
+ci-failure-repair exits2 and grants no runtime-family repair receipt.
+Main passes2395 in78.07s and fresh HELP passes1 in0.70s.
+Tail collects11; historical-focus and finalization pass, then native focus/
+watchdog ownership is unfinished. Remaining obligations stay unproved.
+
+Exact failed receipt:
+.gate-logs/observed/runtime-repair-64bafe6/v012-runtime-repair-64bafe6-312.json;
+matching trace and /tmp/gludd-v012-runtime-repair-64bafe6-312.log are retained.
+The tested source digest is
+915c5fe4c0f937583a0405d74ce5f69508167d9a46b0b972c75063385b808b79.
+Native trace summary is PARTIAL:4810events,2399starts,2398complete pairs,
+zero failure reports and one unfinished node. Exit0 is generation only.
+Main worker paired-wall totals67.121432s/66.877923s overlap; neither is CPU,
+critical path or a forecast. The unfinished node is not proved the sole cause.
+
+The17-case secrets-resource input, measured5.669940 paired-wall seconds on
+one worker, receives a bounded diagnosis and measured decline below. Its
+standalone fragment never loads Foundation. The distinct current runtime
+proposal investigates actual root-Make probe execution in the required native
+focus/watchdog case; no duplicate or savings is inferred from source presence.
+It preserves all native core/env/argv/status checks, previous measured declines
+and landed batching. Another TMP owner prepares repo-local HTTPS support: native ci-auth reports active
+sandboxcom authentication/protocolhttps/repo scope, while the remote is SSH
+and the workspace deploy key is missing. Neither owner mutates Main/Git/CI.
+Root receives tested postimages and owns shared help/contract/guidance.
+At most two execution/testing owners; no new scanner/parser/runner/cache.
+No unchanged original replay or publication bypass follows either proposal.
+All176families,2/1/1,90/60,21phases2850,85/75 BOTH,ZDD remain authoritative.
+
+The release-throughput guide now opens with the actual hosted trigger/proof map
+and links active handoff owners before dated history. Its first edit is refused
+at2533physical lines. Reflowing three historical paragraphs retains every word,
+link and fact and returns the unchanged less-than2500 checker to PASS. No line
+threshold, assertion or evidence is removed. Status-snapshot validation also
+passes; this documentation check is separate from acceptance/gate/hosted proof.
+
+## Consumed standalone Make40 startup decline
+
+Root consumes /tmp/gludd-v012-make-startup-throughput-proposal/decision.md
+and its complete terminal receipts. Original native failure-status/cleanup case
+passes1/0.72s, observed0/1.7s, before instrumentation. The complete original
+owner then passes17/6.06s, observed0/6.8s, with fatal warnings/no skips/errors.
+Profile:profile-14122-c5454d2662f239f9 under .gate-logs/test-files-cprofile.
+No third execution or speculative production postimage follows.
+
+The actual15 native Make calls parse a copied standalone Make40. They do not
+load Foundation or execute its TERM/worker probes. Two remaining cases inspect
+routing/text only. Parent communicate/poll5.697s/5.692s enclose actual children
+and reveal no child CPU/startup cost or redundant operation. All17 original
+assertions retain actual core/env/argv/status, below-four refusal, five workers,
+readonly baseline, malformed/new findings and disposable cleanup. This fixture
+uses the established controlled scanner, not a successful full repository scan.
+
+No Foundation patch can be justified by that workload. The distinct actual
+root-Make producer/plan/invalid-literal calls in the required native-focus case
+are the next diagnostic input. Preserve TERM capability/fallback, workers,
+ordinary/-e/literal inputs, aliases and exact gate capture; demonstrate actual
+unused work before changing source. All readers/children drain. Current disk
+measurement remains97percent/7.2GiB free; no unchanged cleanup/final gate follows.
+
+## Actual live-worker sample, separate from runtime
+
+Root captures one bounded native sample during that naturally scheduled scan,
+without starting another scan or changing its argv. Native ps/active-work-status
+bind worker99204 -> scanner99194 -> adapter99193 -> uv99192 -> shell99189 ->
+Make99181 -> watchdog57626, with installed311 and repository CWD. Intermediary
+rows remain explicitly unverified; actual parent relationships, tracked worker/
+scanner identities and the native scan receipt establish the chain.
+
+An initial observer start refuses before child launch because TMP OBSERVED_ROOT
+is outside the project-private item-progress boundary. No new sampler receipt
+or output exists from that refusal. Root changes only the root to the existing
+.gate-logs/observed, retains owned TMP log/output, rechecks the live chain and
+runs native sample for1second/10ms under max15/quiet10, heartbeat5/retain2.
+Native result0/3.8s is diagnostic only; worker identity is rechecked afterward.
+Receipt:.gate-logs/observed/secrets-worker-profile/v012-secrets-worker-99204.json.
+Raw output:/tmp/gludd-v012-secrets-throughput-proposal/evidence/live-worker-99204.sample.txt.
+
+The sample matches worker99204/parent99194 at17:44:11.387-0400. Its83main-thread
+samples include regex search/match/count frames; collapsed top rows report
+sre_ucs1_match34 and sre_ucs1_count19. This establishes regex activity in one
+worker/window. It does not identify a detector, Python function, file, CPU
+share, whole-scan cause or clean scan. No speculative scanner patch or second
+sampler follows. The next missing attribution is the actual Python operation/
+input binding; all27plugins, verification/full scope, canonical occurrence/
+baseline comparisons, readonly cleanup and60/300/five-worker policy remain.
+The retained earlier measured decline below keeps its original historical scope.
+
 ## Required-tail prerequisite batching
 
 Root consumes the terminal proposal and frozen postimages under
@@ -69,7 +230,7 @@ scope, baseline/plugin/occurrence comparisons, readonly bytes, native failures,
 five workers,60scan/300cooldown and owned-group cleanup. Do not replace traversal
 with a Git filename list or remove detectors/verification to obtain green.
 
-The next missing input is a bounded stack from a verified currently live worker
+At that earlier decision, the missing input is a bounded stack from a verified currently live worker
 of a naturally scheduled scan. Use ps and active-work-status to bind the fresh
 worker/scanner/watchdog, interpreter and workspace before and after sampling;
 expired625xx/662xx identities are not reusable authority. The decision retains
@@ -81,7 +242,8 @@ by itself. No new scanner, observer, daemon or proof cache is authorized.
 Firsthand upstream reports [433](https://github.com/Yelp/detect-secrets/issues/433)
 and [868](https://github.com/Yelp/detect-secrets/issues/868) motivate attribution
 and a tiny whitespace control; neither diagnoses this repository. [Apple's native sampling guidance](https://developer.apple.com/library/archive/documentation/Performance/Conceptual/CodeSpeed/Articles/DiagnosingSlowness.html)
-supports the next bounded diagnostic. No sampler has run or scan timeout cleared.
+supports that bounded diagnostic. That proposal ran no sampler and cleared no scan timeout;
+the later actual sample above retains its separate diagnostic scope.
 
 ## Retained original-budget failure at2ca8f8e
 

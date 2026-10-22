@@ -71,6 +71,17 @@ measurements, rejected approaches and the missing release proofs.
    src and scripts paths where the original child needs them. An import failure
    is failed diagnostic input, counts toward the profile bound and proves no
    speed benefit. Receive final fixtures in the ordinary canonical harness.
+   Keep run-watched OBSERVED_ROOT project-private (for example .gate-logs/observed);
+   owned TMP log/output paths are separate. A refused start creates no new receipt.
+   Inspect the actual fixture entrypoint/include graph before attributing startup:
+   a standalone Make fragment does not measure probes in the root entrypoint.
+   Use descriptive private test entrypoint names: a file named tests.py can shadow
+   Main's tests package even when Main root/src/scripts are on PYTHONPATH.
+   Native control fixtures must own their explicit Make/pytest inputs: isolate
+   inherited MAKEFLAGS/MFLAGS/MAKEOVERRIDES and PYTEST_ARGS when they would
+   override those controls. Preserve unrelated carriers, ordinary/-e precedence
+   and original assertions. Recover reused cohort filenames/argv from the native
+   receipt before launch; zero-case collection refusal supplies no acceptance.
 
 Native status readers must preserve the index as well as working bytes. The
 existing git-status owner uses Git's no-optional-locks mode, retains native
@@ -95,6 +106,9 @@ repo and branch; preserve another branch's record and let the producer refresh
 SHA/state. Missing runs and pending stay nonzero. Normal policy-guarded repair
 publication is allowed while final proof is blocked; native publication guards
 still apply, and source-only approval never clears their refusal.
+Candidate pushes trigger hosted validation; master Pages deployment and version-tag
+release publication have separate required conditions. Use the [trigger/proof map](docs/features/RELEASE_PROOF_THROUGHPUT.md#active-handoff-and-hosted-authority)
+before attributing a GHA result to deployment or release.
 
 Keep admission dependencies distinct from escalation dependencies. HumanTodo
 service/config/store/auth facts govern filing that request. Actual capacity

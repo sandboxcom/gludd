@@ -1994,17 +1994,23 @@ test-llama-game-gen: sync-llama-cpp
 # ── Local model serving (ollama) ────────────────────────────────────────────
 # OLLAMA_MODEL: model to pull (default: qwen2.5:0.5b, small + fast for E2E)
 OLLAMA_MODEL ?= qwen2.5:0.5b
+# Resolve the optional tool only for its owner; retain ordinary inherited exports.
+ifeq ($(origin _OLLAMA_BIN),environment)
 _OLLAMA_BIN := $(shell command -v ollama 2>/dev/null || echo "")
+else
+_OLLAMA_BIN = $(shell command -v ollama 2>/dev/null || echo "")
+endif
 _OLLAMA_URL := http://localhost:11434
 
 local-model-ollama: _local-model-ollama-install-check _local-model-ollama-serve
 
 _local-model-ollama-install-check:
-	@if [ -z "$(_OLLAMA_BIN)" ]; then \
+	@gludd_ollama_bin="$(_OLLAMA_BIN)"; \
+	if [ -z "$$gludd_ollama_bin" ]; then \
 		echo "ollama not found — install via: brew install ollama"; \
 		exit 1; \
-	fi
-	@echo "  ollama found at $(_OLLAMA_BIN)"
+	fi; \
+	echo "  ollama found at $$gludd_ollama_bin"
 
 _local-model-ollama-serve:
 	@if curl -sSf -o /dev/null "$(_OLLAMA_URL)/api/tags" 2>/dev/null; then \
