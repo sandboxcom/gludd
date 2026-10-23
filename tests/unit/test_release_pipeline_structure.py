@@ -445,7 +445,11 @@ class TestReleaseCandidateHostedValidation:
             "hosted_pr_branches",
         ),
         [
-            ("build.yml", ["development", "master", "main"], ["master", "main"]),
+            (
+                "build.yml",
+                ["development", "master", "main"],
+                ["master", "main", "development"],
+            ),
             (
                 "molecule.yml",
                 ["master", "main", "development"],
@@ -471,6 +475,30 @@ class TestReleaseCandidateHostedValidation:
         assert "branches-ignore" not in push
         assert self._strings(pull_request["branches"]) == hosted_pr_branches
         assert "workflow_dispatch" in events
+
+    @pytest.mark.parametrize(
+        ("pr_target_branch", "expected_premerge"),
+        [
+            ("master", True),
+            ("main", True),
+            ("development", True),
+            ("feature/example", False),
+            ("release-candidate/v012-example", False),
+            ("development-copy", False),
+            ("develop", False),
+        ],
+    )
+    def test_build_pr_filters_match_literal_target_branches(
+        self, pr_target_branch: str, expected_premerge: bool
+    ) -> None:
+        """PR base-branch validation remains separate from push release proof."""
+        events = self._events(self._workflow("build.yml"))
+        pull_request = self._mapping(events["pull_request"])
+        branches = self._strings(pull_request["branches"])
+
+        assert not {"branches-ignore", "paths", "paths-ignore"}.intersection(pull_request)
+        assert all(re.fullmatch(r"[A-Za-z0-9_/-]+", branch) for branch in branches)
+        assert (pr_target_branch in branches) is expected_premerge
 
     def test_pages_candidate_keeps_presentation_path_filter(self) -> None:
         events = self._events(self._workflow("pages.yml"))

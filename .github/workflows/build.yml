@@ -9,7 +9,7 @@ on:
       - 'release-candidate/**'
     tags: ["v*"]
   pull_request:
-    branches: [master, main]
+    branches: [master, main, development]
   workflow_dispatch:
     inputs:
       vllm_base_url:
