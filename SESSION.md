@@ -9,7 +9,38 @@ Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 bound gate waiter repair after16ef8dc
+## Current S98.4 native process metadata receiving after5e0f1c0
+
+Root owns Main/shared/Git/proof on the same branch. Local complete source
+5e0f1c0c59790bcb6ace0074fba23453f09d3924 retains1198PASS each311/312, source-only
+approval and normal129477/129501collection,24deselected/zeroerrors49.13s/
+native54.267s, separate lock54.180s, receipt
+.gate-logs/observed/test-count/20261023T105857Z-79973-32f0e713.json.
+Native plan/start/status acknowledges loaded5e daemon80475 while agent57626
+stays alive. There is no new full-gate or exact-SHA hosted/deployment proof.
+
+Before final proof, actual adapter inspection and independent immutable5e
+review identify padded lstart mismatch and unreaped terminal gate rejection.
+Canonical RED11FAIL/2PASS1.43s/native2.4s precedes existing start normalization
+and native terminal/identity readers. Keep the complete census; terminal true
+plus owned/gone retains association, owned alone never suffices, reused stays
+unassociated and unknown refuses every signal. All prior assertions/floors/
+bounds remain. Same family179 case now executes both boundaries, no new roster.
+Unchanged complete watchdog coverage284PASS each311/312 measures93.5line/
+87.5branch under85/75 BOTH. Complete14whole-file/class/two-node receiving
+passes1205each311268.93s/native272.238s and312274.76s/native278.230s,
+matching tested sourceb3652383 before this final handoff. Exact command/receipts
+remain in native v012-taskwaiter-native-metadata-receiving and the
+[native waiter record](docs/features/GATE_WAITER_PROTECTION.md).
+Independent native-metadata-source-review approves SOURCE ONLY; Root fully
+reads it and reviewer is quiescent. Normal fresh collection/commit remains
+required; no accepted source/routing changes follow this evidence update.
+After reviewed commit, native verified stop/start must reload80475; adoption
+does not prove activation. Original runtime admission runs alone, followed by
+exact-candidate proof. Workflow consent stays unanswered, HumanTodo UNFILED,
+all seven release tasks open. Existing native owners retain current observations.
+
+## Retained S98.4 bound gate waiter repair after16ef8dc
 
 Root owns Main/shared/Git/proof on the same candidate branch, from
 16ef8dc52c31878724a8107548687d5d4ede400a. That fixed source's normal collection

@@ -970,8 +970,33 @@ def _publish_waiter_gate_state(
     return payload
 
 
+def _native_start_views(root: Path, gate: cleanup_owner.ProcessRecord) -> cleanup_owner.ProcessRecord:
+    """Pass one padded native timestamp through both real observation adapters."""
+    raw = "Thu Oct  1 07:00:00 2026"
+    result = subprocess.CompletedProcess(["/bin/ps"], 0, stdout="  " + raw + "\n", stderr="")
+    with patch.object(subprocess, "run", return_value=result):
+        state, producer_start = background_owner._probe_pid_started_at(gate.pid)
+    assert state == "present" and producer_start == raw
+    producer_gate = cleanup_owner.ProcessRecord(
+        gate.pid, gate.ppid, 400, gate.command, pgid=gate.pid, started_at=producer_start,
+    )
+    _publish_waiter_gate_state(root, producer_gate)
+    parsed = cleanup_owner._parse_ps_line(
+        f"{gate.pid} {gate.ppid} {gate.pid} {raw} {gate.command}"
+    )
+    assert parsed is not None and parsed.started_at != producer_start
+    assert cleanup_owner._normalized_start_identity(parsed.started_at) == (
+        cleanup_owner._normalized_start_identity(producer_start)
+    )
+    return parsed
+
+
 @pytest.fixture
-def _producer_waiter_poll(_gate_waiter_poll: OwnedPoll) -> tuple[OwnedPoll, dict[str, object]]:
+def _producer_waiter_poll(
+    _gate_waiter_poll: OwnedPoll, monkeypatch: pytest.MonkeyPatch,
+) -> tuple[OwnedPoll, dict[str, object]]:
+    monkeypatch.setattr(background_owner, "_process_is_terminal", lambda _pid: False)
+    monkeypatch.setattr(background_owner, "_process_state", lambda _identity: "owned")
     root, records, _cwds, _deadlines, _sent = _gate_waiter_poll
     gate = records[2]
     payload = _publish_waiter_gate_state(root, gate)
@@ -1011,6 +1036,7 @@ def _gate_waiter_poll(_owned_poll: OwnedPoll) -> OwnedPoll:
 ])
 def test_live_gate_bound_waiter_protects_the_complete_tree(
     tmp_path: Path, _gate_waiter_poll: OwnedPoll, gate_marker: str, make_command: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A native bound waiter is a sibling of the gate, not its descendant."""
     root, records, _cwds, deadlines, sent = _gate_waiter_poll
@@ -1037,6 +1063,19 @@ def test_live_gate_bound_waiter_protects_the_complete_tree(
     (root / ".gate-background.pid").unlink(missing_ok=True)
     (root / ".gate-logs/gate-run.lock").unlink(missing_ok=True)
     assert watchdog._protected_pids(records, (root,)) == {52000, 52002, 52003, 52004}
+    assert sent == [(88888, signal.SIGTERM)]
+    native_gate = _native_start_views(root, gate)
+    records.append(native_gate)
+    assert watchdog._protected_pids(records, (root,)) == {52000, 52001, 52002, 52003, 52004}
+    records.remove(native_gate)
+    records.append(cleanup_owner.ProcessRecord(
+        native_gate.pid, native_gate.ppid, 400, "(make)",
+        pgid=native_gate.pgid, started_at=native_gate.started_at,
+    ))
+    _cwds[native_gate.pid] = None
+    monkeypatch.setattr(background_owner, "_process_is_terminal", lambda _pid: True)
+    monkeypatch.setattr(background_owner, "_process_state", lambda _identity: "gone")
+    assert {52000, 52002, 52003, 52004} <= watchdog._protected_pids(records, (root,))
     assert sent == [(88888, signal.SIGTERM)]
 
 
@@ -1187,6 +1226,50 @@ def test_native_gate_association_is_reread_before_any_waiter_signal(
     with pytest.raises(ValueError, match="native protection changed"):
         watchdog._terminate_verified(waiter, (root,))
     assert calls >= 2 and sent == []
+
+
+
+def test_native_waiter_start_tokens_use_the_actual_adapter_whitespace_boundary(
+    _producer_waiter_poll: tuple[OwnedPoll, dict[str, object]],
+) -> None:
+    poll, _payload = _producer_waiter_poll
+    root, records, _cwds, _deadlines, sent = poll
+    records[2] = _native_start_views(root, records[2])
+    assert watchdog._protected_pids(records, (root,)) == {52000, 52001, 52002, 52003, 52004}
+    assert sent == []
+
+
+@pytest.mark.parametrize(("terminal", "native_state", "outcome"), [
+    (True, "gone", "protected"),
+    (True, "owned", "protected"),
+    (None, "unknown", "refused"),
+    (True, "unknown", "refused"),
+    (True, "reused", "unassociated"),
+    (False, "owned", "unassociated"),
+])
+def test_unreaped_gate_waiter_uses_native_terminal_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    _producer_waiter_poll: tuple[OwnedPoll, dict[str, object]],
+    terminal: bool | None, native_state: str, outcome: str,
+) -> None:
+    poll, _payload = _producer_waiter_poll
+    root, records, cwds, _deadlines, sent = poll
+    gate = records[2]
+    records[2] = cleanup_owner.ProcessRecord(
+        gate.pid, gate.ppid, 400, "(make)", pgid=gate.pgid, started_at=gate.started_at,
+    )
+    cwds[gate.pid] = None
+    monkeypatch.setattr(background_owner, "_process_is_terminal", lambda _pid: terminal)
+    monkeypatch.setattr(background_owner, "_process_state", lambda _identity: native_state)
+    waiter = next(record for record in records if record.pid == 52002)
+    if outcome == "refused":
+        with pytest.raises(ValueError, match="native gate terminal identity is unavailable"):
+            watchdog._terminate_verified(waiter, (root,))
+    elif outcome == "protected":
+        assert {52000, 52002, 52003, 52004} <= watchdog._protected_pids(records, (root,))
+    else:
+        assert watchdog._protected_pids(records, (root,)).isdisjoint({52002, 52003, 52004})
+    assert sent == []
 
 
 @pytest.mark.parametrize("terminal_count", [64, 65])

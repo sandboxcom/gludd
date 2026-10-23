@@ -273,7 +273,14 @@ canonical-command validator after PID/marker retirement. An occupied PID's
 original start/PGID, registered CWD and gate role must still match; re-read that
 association during native signal validation, never infer a successful gate.
 Group actual waiters by observed CWD rather than probing empty historical roots.
-The existing family179 case checks live and terminal behavior. On actual signals,
+The existing family179 case checks live and terminal behavior. Normalize native
+start-token presentation only through the existing cleanup normalizer; never
+rewrite producer identity. Keep terminal zombies in the complete census. After
+matching recorded start/PGID, require positive native terminal observation plus
+the existing owned/gone identity outcome before retaining waiter association;
+owned alone is insufficient. Reused/foreign stay refused, unknown inspection
+cannot authorize signals. Fixture censuses must own the same native adapter
+responses; retain the actual two-adapter whitespace witness. On actual signals,
 attribute the sender from native logs; do not infer it from a test or stale task.
 A confirmed new defect during frozen proof needs retained RED, native controlled
 gate termination and exact session drain before edits. Keep the other guard alive

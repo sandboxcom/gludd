@@ -462,6 +462,21 @@ def _native_gate_identity(root: Path) -> background_owner.GateIdentity | None:
     return identity
 
 
+def _native_terminal_gate(identity: background_owner.GateIdentity) -> bool:
+    """Retain terminal association; unavailable inspection revokes signal authority."""
+    terminal = background_owner._process_is_terminal(identity.pid)
+    if terminal is None:
+        raise ValueError("native gate terminal identity is unavailable")
+    if not terminal:
+        return False
+    state = background_owner._process_state(identity)
+    if state in {"owned", "gone"}:
+        return True
+    if state == "reused":
+        return False
+    raise ValueError("native gate terminal identity is unavailable")
+
+
 def _protected_pids(records: list[cleanup_owner.ProcessRecord], roots: tuple[Path, ...]) -> set[int]:
     """Use native observer metadata conservatively; display absence grants nothing."""
     observed: list[dict[str, str]] = []
@@ -510,11 +525,20 @@ def _protected_pids(records: list[cleanup_owner.ProcessRecord], roots: tuple[Pat
                 continue
             if binding not in gate_pids and not recorded:
                 continue
-            if _owned_cwd(gate, (root,)) is None or not cleanup_owner._is_gate_owner_command(gate.command):
+            if (
+                identity is not None and identity.pid == binding
+                and (
+                    cleanup_owner._normalized_start_identity(gate.started_at)
+                    != cleanup_owner._normalized_start_identity(identity.pid_started_at)
+                    or gate.pgid != identity.process_group_id
+                )
+            ):
                 continue
-            if identity is not None and identity.pid == binding:
-                if gate.started_at != identity.pid_started_at or gate.pgid != identity.process_group_id:
-                    continue
+            if _owned_cwd(gate, (root,)) is None or not cleanup_owner._is_gate_owner_command(gate.command):
+                if identity is not None and identity.pid == binding and _native_terminal_gate(identity):
+                    owners.add(waiter.pid)
+                continue
+            if recorded:
                 owners.add(binding)
             # Deny-only protection covers normal terminal drain; it grants no proof
             # or signal authority and retains the native waiter's original bound.

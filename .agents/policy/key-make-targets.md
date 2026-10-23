@@ -131,6 +131,12 @@ PID still requires original start/PGID, owned CWD and native gate role. Re-read
 association on every signal validation; it supplies no terminal-success proof.
 Group current waiters by observed CWD before reading that root's native producer;
 do not resolve native Make for empty historical roots or create a proof cache.
+Cross-adapter lstart comparison uses the existing cleanup normalizer, preserving
+the stored producer identity. Retain zombies in the complete census and require
+matching recorded start/PGID, positive native terminal status and owned/gone
+identity for terminal association. owned alone is not terminal; unavailable
+inspection refuses signals, while ordinary live foreign CWD/role refusals stay.
+The same family179 case executes both native metadata controls.
 For a confirmed defect during frozen proof, preserve native signal/RED evidence,
 inspect the exact gate lock, use the existing make gate-kill verified apply owner
 and drain the exact waiting session before edits. That target is apply, not a

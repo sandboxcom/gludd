@@ -1,5 +1,83 @@
 # Native gate waiter protection
 
+## Current native process metadata repair after5e0f1c0
+
+The previous complete repair is committed locally as
+5e0f1c0c59790bcb6ace0074fba23453f09d3924:14files637insertions/18deletions.
+Its normal fresh collection passes129477selected/129501collected,
+24deselected/zeroerrors49.13s, native54.267s and separate lock54.180s:
+.gate-logs/observed/test-count/20261023T105857Z-79973-32f0e713.json.
+Native worktree-state verifies clean immediately after that commit.
+The native task-watchdog-start plan grants no activation; actual mode0
+acknowledges80475/startFriOct23 07:00:47 2026/PGID-SID80475.
+Native status and ps independently confirm it and agent guard57626 running.
+This activates5e only. There is no new full gate, hosted result or task closure.
+
+Before expensive final proof, inspection of both actual native adapters finds
+two further boundaries; independent immutable5e source review confirms them.
+cleanup._parse_ps_line splits/joins lstart fields, while the producer's
+_probe_pid_started_at only strips outer whitespace. Their equivalent native
+single-digit-day token therefore differs internally. Normalize only the
+cross-adapter comparison with the existing _normalized_start_identity; preserve
+the stored producer identity and its native fresh-process comparison unchanged.
+
+The complete native census also retains an unreaped terminal gate, whose argv
+is defunct and CWD unavailable. Do not filter that PID from the census or treat
+it as an ordinary live foreign process. After exact recorded start/PGID match,
+the existing producer _process_is_terminal must positively establish terminal
+state; only then may _process_state owned/gone retain waiter association.
+owned alone is insufficient because a terminal leader can have live group
+members. Reused remains unassociated; unavailable inspection raises refusal
+before any signal. Ordinary live CWD/role checks and original bounds remain.
+
+The additive whitespace witness executes both real observation adapters on the
+same padded token and restores its scoped subprocess seam before native Make
+resolution. Six terminal controls retain gone/owned, unavailable terminal/status,
+reused identity and a live non-gate negative. Existing fake producer fixtures
+now own their native terminal adapter responses, matching their controlled census;
+every earlier foreign/reuse assertion remains. The same family179 [make-pid]
+case also executes both new boundaries without new families/selectors/rosters.
+
+Canonical RED11FAIL/2PASS1.43s/native2.4s is retained at
+.gate-logs/observed/v012-taskwaiter-native-metadata-red/
+v012-taskwaiter-native-metadata-red311-5e0f1c0.json.
+Unknown controls capture the former three simulated TERM attempts, not host
+signals. Strict typing first refuses a non-exported subprocess alias; the actual
+shared standard-library seam replaces it. Ruff's nested-if refusal is repaired
+by the same combined predicate, with no suppression or changed assertion.
+
+The unchanged full watchdog/deadline coverage profile passes284cases each:
+3117.12s and3128.09s, native runs20261023T111346Z-83676-3dfb0026 and
+20261023T111534Z-84488-89c64176 under.gate-logs/observed/coverage-files.
+Audits.gate-logs/coverage-20261023T111354Z.json and
+.gate-logs/coverage-20261023T111544Z.json measure the complete source at
+93.5line/87.5branch, preserving85/85 aggregate and75/75 per-file floors.
+Raw reports use.gate-logs/v012-bound-gate-waiter-native-metadata-coverage311.json
+and312 sibling. Unit coverage does not supply global/deployed proof.
+
+All eight promotion pins pass1.73s/native3.3s before complete receiving of the
+same14whole-file/class/two-node union. It passes1205cases each:
+311268.93s/native272.238s and312274.76s/native278.230s, fatal warnings and
+zero skips/collection errors. Exact receipts under
+.gate-logs/observed/v012-taskwaiter-native-metadata-receiving are
+v012-taskwaiter-native-metadata-receiving311.json and312 sibling, both
+passed/inactive/native0 and tested source
+b365238370daf5ea07c335121317c84be6634696d34e86e0b9586c4409800ec1.
+Exact exec58760/16487 sessions are drained before this final evidence handoff.
+The full native argv in observed-status remains authoritative for replay.
+
+Independent /tmp/gludd-v012-taskwaiter-native-metadata-source-review.md
+approves SOURCE ONLY for that source, no blocking finding. Root fully reads it;
+reviewer readback/lint/quiescence completes without Main or process mutation.
+All prior artifacts and fixed source scopes remain unchanged. This final
+handoff changes only evidence prose, not accepted code, tests or routing.
+Validate its status/persistence/Make/Markdown consumers, then retain normal fresh
+collection for one complete source commit. The daemon80475 still has5e loaded: after reviewed
+commit, verify/drain that exact daemon through native task-watchdog-stop
+plan/apply and then consume a new task-watchdog-start acknowledgement/status.
+Keep agent57626 alive. Admission, final combined/full-gate and exact-SHA hosted/
+deployment/promotion proofs remain required; all seven S98 tasks remain open.
+
 ## Actual failure and containment (S98.4,2026-10-23 UTC)
 
 Candidate16ef8dc52c31878724a8107548687d5d4ede400a starts its complete local gate
@@ -154,7 +232,7 @@ watchdog/deadline owners:256PASS each3116.57s/native8.665s and
 source at93.0line/86.2branch percent, aggregate85/85 and per-file75/75 preserved.
 Raw reports are.gate-logs/v012-bound-gate-waiter-coverage311.json and312 sibling.
 This is unit coverage, not global release coverage or deployed/E2E execution.
-## Current acceptance and next action
+## Retained terminal-drain receiving before5e0f1c0
 
 The unchanged full watchdog profile now passes277cases each:3116.96s and
 3127.64s. Native coverage-files runs20261023T104207Z-10516-6863e418 and
