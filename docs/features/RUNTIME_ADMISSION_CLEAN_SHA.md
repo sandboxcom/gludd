@@ -1,5 +1,78 @@
 # Clean-SHA runtime admission
 
+## Generated probe environments after423153a
+
+Root owns Main/shared/Git/S98.4 on release-candidate/v012-git-mutex-20261022.
+The receiving base is423153a15ef1b3b7e6ba903399f76ed5eeb43336, whose normal guarded
+collection selects129405/129429,24deselected/zeroerrors49.55s,
+native0/54.775s and separate lock54.689s:
+.gate-logs/observed/test-count/20261023T035633Z-32732-a1450698.json.
+Both prior750-case authorization cohorts remain bound to their earlier tested
+source, not this fixture repair. Real workflow consent and publication remain
+pending; all seven S98 tasks stay unchecked.
+
+After the actual volume improves from98percent/5.7GiB to95percent/10GiB, a new
+native mode0 release-proof-admission clears capacity, gate configuration, task
+registration/integrity, all eight promotion pins (1.82s) and resource ownership
+(264 entries). Native capacity admits protected/recent876.6MiB scratch as soft
+pressure with zero inspection/cleanup errors. Its33 dry-run candidates are plans,
+not removals. HumanTodo service facts remain separate from admission.
+
+The next owner, check-test-env-writes, then refuses the generated PATH assignment
+at tests/unit/test_root_make_startup_probes.py:46. A bounded failing-first replay
+retains native Make2/1.250s:
+.gate-logs/observed/env-fixture-red/v012-env-fixture-red311-423153a.json.
+The checker and production Make behavior are unchanged. The generated shell
+adapter now copies the inherited environment, sets PATH on that private mapping
+only for the Ollama lookup, and passes it explicitly to os.execve. All18 original
+root-probe cases/assertions remain:16-to0 unused lookups, missing-tool status,
+ordinary/-e caller precedence, terminal/worker/container/SHA capture and no
+execution of the fake tool. No suppression, allowlist or parent environment write
+is added. The same native guard passes0/1.222s after the input correction:
+.gate-logs/observed/env-fixture-focus/v012-env-fixture-green311-423153a.json.
+Ruff and the separate strict test scope pass.
+
+Complete root-probe and environment-guard owners pass23 under3.11.14,
+11.36s/native12.426s, and3.12.15,14.39s/native15.786s:
+.gate-logs/observed/env-fixture-receiving/v012-env-fixture-receiving311.json and
+.gate-logs/observed/env-fixture-receiving/v012-env-fixture-receiving312-serial.json.
+Both bind tested source
+be52e6678b0631d4fdd59d4cc41f83769f59e08a0cc4d1d3ace1f77bf6f72dfb
+before this documentation/catalog receiving. The first simultaneous312 invocation
+is refused before execution because the identical CMD is reserved; no native
+receipt exists for v012-env-fixture-receiving312. It supplies no test evidence.
+Only the311 terminal receipt clears that ownership input for the serial312 run.
+Do not infer the cause of earlier unrecorded runs from this distinct refusal.
+
+The fast repair loop now names the existing cheap environment guard before broad
+receiving; its native policy already belongs to admission. The agent-facing
+catalog adds its no-variable read-only example. Native contract validation first
+refuses that entry because the existing owner is missing from human help; add its
+explicit help description before broader receiving. No new checker, runner or
+guard exception is introduced. Final complete six-owner receiving passes101 on
+each runtime,13.54s/native14.688s and14.47s/native15.743s, fatal warnings with
+zero collection errors/skips:
+.gate-logs/observed/env-fixture-receiving/v012-env-catalog-receiving311.json and
+.gate-logs/observed/env-fixture-receiving/v012-env-catalog-receiving312.json.
+Both bind source
+108067dcbc3c52af370d2b04ea8fcdee2231bdf90919c3a0a951907bcaed714b
+before this manual handoff/source commit. The union retains the complete root
+probe, environment guard, both catalog owners, snapshot and session persistence
+owners. Native contract289, actual static example0, Make lint/parity, line limits,
+all9 changed-path registrations, task integrity and Markdown/status validation
+pass. Normal fresh collection remains required before the repair commit; rerun
+native admission only after this input is accepted. Admission itself remains separate
+from independent review, the canonical full gate/global85-75 BOTH, exact-SHA
+hosted/deployment and promotion proof.
+
+Bounded existing model-cache investigation is retained in
+/tmp/gludd-v012-423153a-external-input-readback.md. Native inventory is complete
+for7 children, zero errors: default general-ludd parent allocates32768bytes and
+huggingface0; the model-cache override is absent. That measured default route
+cannot repair a GiB-scale deficit. No cache apply or invented allocation pressure
+occurs, and no claim is made about unmeasured storage. The source candidate and
+failed evidence remain intact while actual external inputs are pending.
+
 ## GitHub operator handoff receiving afterd54d7a5
 
 Root now prepares the already-required account-consent step as a reviewable

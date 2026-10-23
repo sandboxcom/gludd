@@ -25,14 +25,20 @@ measurements, rejected approaches and the missing release proofs.
    work-item/active-work-status and worktree-state for current task, owner,
    branch and source. Consume the existing owner's terminal receipt before
    starting another execution of that work; a yielded session is still active.
+   Serialize identical native CMD strings across runtimes when the reservation
+   owner refuses overlap; outer runtime variables or a new RUN_ID do not clear
+   that reservation. Its exact terminal receipt establishes the changed ownership.
 2. Prefer a small batch of compatible, already implemented release-required
    changes when their ownership, source and individual criteria are known.
    Two is a conservative pilot, not a measured optimum; one coupled repair is valid. Keep one
    shared-file/Git writer and the existing agent/testing concurrency ceilings.
    Do not add unrelated backlog work to fill a batch.
 3. Write and run the narrow failing regression, then repair its actual input.
-   Run cheap lint, strict typing and target-contract checks before a broad
-   positive replay. Evaluation/injection controls need a native unguarded witness
+   Run cheap lint, strict typing, make check-test-env-writes and target-contract
+   checks before a broad positive replay. Pytest fixtures use monkeypatch.setenv;
+   generated child programs receive an explicit copied environment through
+   subprocess or os.execve, retaining unrelated carriers and parent state.
+   Evaluation/injection controls need a native unguarded witness
    that executes the same payload, variable and origin; quote owned marker paths,
    remove only the owned witness and retain the guarded no-evaluation assertion.
    An inert payload cannot prove an evaluation guard. Changed Make targets also need their documented behavior;

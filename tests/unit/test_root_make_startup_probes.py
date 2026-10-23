@@ -41,12 +41,13 @@ def _probe_shell(tmp_path: Path, *, ollama_path: Path | None = None) -> tuple[Pa
         "if label is not None:\n"
         f"    with Path({str(log)!r}).open('a', encoding='utf-8') as output:\n"
         "        output.write(json.dumps(label) + '\\n')\n"
+        + "child_environment = dict(os.environ)\n"
         + (
             "if label == 'ollama':\n"
-            f"    os.environ['PATH'] = {str(ollama_path)!r}\n"
+            f"    child_environment['PATH'] = {str(ollama_path)!r}\n"
             if ollama_path is not None else ""
         )
-        + "os.execv('/bin/sh', ['/bin/sh', *sys.argv[1:]])\n",
+        + "os.execve('/bin/sh', ['/bin/sh', *sys.argv[1:]], child_environment)\n",
         encoding="utf-8",
     )
     wrapper.chmod(0o755)

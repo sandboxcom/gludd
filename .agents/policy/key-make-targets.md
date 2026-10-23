@@ -10,6 +10,19 @@ a misleading secret-scanner label. The [owning catalog record](../../docs/featur
 retains native checks and footer conformance. Static discovery and dry-run
 checks do not replace the documented actual behavior command.
 
+Run the existing static environment guard before broad fixture receiving:
+
+~~~sh
+make check-test-env-writes
+~~~
+
+There are no target variables. Native0 means no bare test environment writes;
+it supplies no runtime, full-gate or hosted proof. Native failure lists the input.
+Use monkeypatch.setenv in pytest fixtures. Generated programs pass a copied
+environment to subprocess or os.execve; retain unrelated carriers, caller
+precedence and all native assertions. The [probe receiving record](../../docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md#generated-probe-environments-after423153a)
+retains the actual failure and both-runtime acceptance.
+
 If a tool returns a session ID, drain that exact session to a terminal exit
 before starting the next command in a sequential batch. Awaiting a launch result
 does not await the launched process. Count yielded processes toward the existing
@@ -17,7 +30,10 @@ two-owner execution/testing limit. A failed exact edit or static check stops all
 dependent mutations/tests; inspect its native match count/status and correct the
 actual input before continuing. Quiesce every checkout reader and model owner
 before normal Git hooks can stash files. A static-check batch is still subject
-to these rules.
+to these rules. Identical native CMD strings can share a reservation despite
+different outer runtime variables. Serialize those runtime executions, consuming
+the first owner's exact terminal receipt before the next. A pre-start refusal
+creates no new receipt; never clear the guard or pad CMD/RUN_ID to evade it.
 
 ### Establish current state before changing it
 

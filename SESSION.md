@@ -1,6 +1,6 @@
 # Current release handoff
 
-Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
+Last Updated: 2026-10-23 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: release-candidate/v012-git-mutex-20261022 eb772a658a01db4485087813e4478eb6c59cc328.
 Previously recorded development publication: 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
 Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection errors in47.54s/native54.341s during the native guarded714ce2d65e3dbeec9d3dbbadced9f983c13c2a3d source commit preflight. Native receipt: .gate-logs/observed/test-count/20261022T234100Z-13723-e7e319e7.json. This is fixed714 evidence, not a later handoff-commit measurement; lock duration54.257s is distinct. Earlier23b/638/ef41/64 collections keep their actual refs/receipts. Collection is separate from runtime, full gate, hosted and deployment proof. Keep normal fresh collection per commit without repeating accepted source tests for a handoff alone.
@@ -9,7 +9,42 @@ Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 GitHub authorization receiving afterd54d7a5
+## Current S98.4 generated probe environment receiving after423153a
+
+Root owns Main/shared/Git on release-candidate/v012-git-mutex-20261022 from
+423153a15ef1b3b7e6ba903399f76ed5eeb43336. That commit's normal collection selects
+129405/129429,24deselected/zeroerrors49.55s/native54.775s, lock54.689s:
+.gate-logs/observed/test-count/20261023T035633Z-32732-a1450698.json.
+The fixed714 header keeps its own earlier source/receipt.
+
+Actual volume95percent/10GiB clears native capacity at the new admission attempt;
+876.6MiB protected/recent scratch is a soft trigger, and33 dry-run candidates are
+not removals. Gate configuration, task registration/integrity, eight promotion
+pins1.82s and264 resource entries pass. The next owner refuses the generated
+fixture's direct PATH environment assignment. Explicit inherited-environment
+copy plus os.execve conforms that child input; all original assertions and the
+checker remain. Exact RED2/1.250s, green guard0/1.222s and full23-case receiving
+each311/312 (11.36s/native12.426s and14.39s/native15.786s) are retained in the
+[owning repair](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md#generated-probe-environments-after423153a).
+The simultaneous312 launch was refused before execution/no receipt; only its
+serial replay after311 ownership ended supplies acceptance.
+
+Ruff/strict scope pass. The catalog now records the existing static guard, and
+the fast loop calls it before broad receiving. Complete six-owner receiving
+passes101 each311/312,13.54s/native14.688s and14.47s/native15.743s, at matching
+108067dcbc3c52af370d2b04ea8fcdee2231bdf90919c3a0a951907bcaed714b before this
+manual handoff. Exact receipts are env-fixture-receiving/
+v012-env-catalog-receiving311.json and v012-env-catalog-receiving312.json under
+.gate-logs/observed. Contract289, actual static example0, Make lint/parity,
+line/task/Markdown/status checks pass. Normal fresh collection remains required
+before commit.
+No production probe semantics,177 families/eight pins,90/60,2/1/1,21phases2850,
+85-75 BOTH, cleanup or branch/promotion gate changes. Real workflow scope is
+still absent and the operator request unanswered; HumanTodo remains UNFILED.
+Native admission, independent final review, full gate and exact-SHA hosted/
+deployment/promotion remain unproved; no release checkbox changes.
+
+## Retained S98.4 GitHub authorization receiving afterd54d7a5
 
 Root owns Main/shared/Git on release-candidate/v012-git-mutex-20261022 from
 d54d7a5c47b30295b40deddce4ac2e26ccbbc71f. Its normal collection selects

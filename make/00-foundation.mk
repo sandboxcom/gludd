@@ -602,6 +602,7 @@ help:
 		"  lint-python           Run the canonical Python Ruff gate (application + tests)" \
 		"  lint-make             Run duplicate-target, parity, and Make dry-run validation" \
 		"  lint-files            Run ruff linter on FILES only" \
+		"  check-test-env-writes  Static test environment guard; use fixture monkeypatch or explicit child env; no runtime/gate proof" \
 		"  check-molecule-yaml   Complete native inputs (MOLECULE_YAML_LINT_TIMEOUT_SECONDS=1..120, MOLECULE_YAML_VALIDATE_ONLY=0|1)" \
 		"  lint-markdown         Run locked Rumdl checks (MARKDOWN_FILES, RUMDL_CONFIG; MARKDOWNLINT_CONFIG alias)" \
 		"  lint-docstrings       Run locked Ruff docstring rules on DOCSTRING_FILES" \
