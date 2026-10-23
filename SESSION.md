@@ -3,13 +3,48 @@
 Last Updated: 2026-10-22 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: release-candidate/v012-git-mutex-20261022 eb772a658a01db4485087813e4478eb6c59cc328.
 Previously recorded development publication: 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
-Total tests: 129355 selected / 129379 collected, 24 deselected, zero collection errors in55.65s/native61.3s during the native guarded23b96a98bdcff7143f30596d50d67acdd1faebce commit preflight. Native receipt: .gate-logs/observed/test-count/20261022T230240Z-24620-adc48150.json. This is retained fixed23b source evidence, not a collection measurement of later caller receiving. Earlier638/ef41/64 collections keep their original scopes and receipts in the runtime record. Collection is separate from behavioral, runtime, hosted and final-gate proof. Each normal source commit retains fresh collection without a receipt-only commit.
+Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection errors in47.54s/native54.341s during the native guarded714ce2d65e3dbeec9d3dbbadced9f983c13c2a3d source commit preflight. Native receipt: .gate-logs/observed/test-count/20261022T234100Z-13723-e7e319e7.json. This is fixed714 evidence, not a later handoff-commit measurement; lock duration54.257s is distinct. Earlier23b/638/ef41/64 collections keep their actual refs/receipts. Collection is separate from runtime, full gate, hosted and deployment proof. Keep normal fresh collection per commit without repeating accepted source tests for a handoff alone.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 publication-caller receiving after23b96a9
+## Current S98.4 external prerequisites after tested code714ce2d
+
+Root owns Main/shared/Git on release-candidate/v012-git-mutex-20261022.
+Last tested code:714ce2d65e3dbeec9d3dbbadced9f983c13c2a3d. Independent
+source-only approval is fully consumed; model/read/test owners were quiescent
+before that original runtime proof.
+Actual177-family original312 repair passes2396MAIN/1HELP/11TAIL, all joined0,
+native0/81.472s under unchanged90/60, with native exact714 repair authority.
+The [runtime record](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md) and
+[caller decision](docs/features/PUBLICATION_CALLER_CONFORMANCE.md) retain all
+failed inputs,609-case receiving scopes and exact collection/review/runtime refs.
+This handoff-only update supplies no new implementation or new exact-SHA proof.
+
+Native714 pipeline status is pending/no exact runs, Build+Molecule missing and
+capacity hard_blocked=True; old Oct20 full gate stays FAIL. No newer push follows
+prior23b Git1/Make2 workflow-scope denial, and remote remains full
+eb772a658a01db4485087813e4478eb6c59cc328. Fifteen newer commits are local at714.
+One bounded existing-auth discovery reports only the same OAuth account and an
+unavailable public-agent connection; [actual receipt/limits](docs/features/GITHUB_PUBLICATION_HTTPS.md)
+remain separate from write authority. No token, private-key read, consent or
+unchanged publication retry. Human account authorization and Data volume below
+95percent are requested asynchronously. The source-only HumanTodo bootstrap
+[decision](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md#humantodo-bootstrap-decision-at714ce2d-source-plan-not-filing)
+now identifies existing native owners/defaults and safe credential transport.
+HumanTodo stays UNFILED until intended service/store and credential facts exist;
+no guessed queue, startup at97percent or user-created config requirement.
+
+Keep original source/receipt bindings. Do not rerun accepted609 receiving,
+original90/60, unpublished714 CI lookup or unchanged cleanup for this handoff.
+After actual authorization changes: verify-state, normal canonical batch-push,
+full expected-SHA verify-remote, native exact-SHA pipeline-status/ci-await.
+After capacity changes: final release-proof-admission before the expensive
+canonical gate. Full gate/global85-75 BOTH, exact hosted/deployed-head,
+reviewed-head and promotion remain pending; all seven S98 tasks stay unchecked.
+
+## Retained S98.4 publication-caller receiving after23b96a9
 
 Clean23b96a98bdcff7143f30596d50d67acdd1faebce has consumed independent
 source-only review. Actual original312 repair passes84.936s and normal

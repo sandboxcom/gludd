@@ -5,6 +5,37 @@ on release-candidate/v012-git-mutex-20261022, receiving from clean
 23b96a98bdcff7143f30596d50d67acdd1faebce. No model/test reader may overlap
 normal Git hooks. All seven S98 tasks remain unchecked.
 
+## Frozen code714ce2d proof and current prerequisite boundary
+
+The normal source commit is714ce2d65e3dbeec9d3dbbadced9f983c13c2a3d.
+Fresh guarded collection selects129357/129381,24deselected/zeroerrors47.54s;
+its native watcher passes0/54.341s, distinct from lock duration54.257s.
+Receipt:.gate-logs/observed/test-count/20261022T234100Z-13723-e7e319e7.json.
+Independent APPROVE SOURCE ONLY against full23b is fully consumed at
+/tmp/gludd-v012-714ce2d-source-review.md, with no blocking patch and the reviewer
+quiescent before the original replay.
+
+The actual changed177-family original312 replay passes2396MAIN78.16s,
+1HELP0.83s/11TAIL8.84s, all joined0, native0/81.472s under original90/60.
+Exact passed/inactive/0 receipt:
+.gate-logs/observed/runtime-repair-714ce2d/v012-runtime-repair-714ce2d-312.json.
+Native repair authority is recorded for full714; no earlier receipt is relabeled.
+The [runtime record](RUNTIME_ADMISSION_CLEAN_SHA.md) owns source digest and scope.
+
+No successor push/GHA follows the actual prior23b workflow-scope denial.
+The [bounded authentication decision](GITHUB_PUBLICATION_HTTPS.md) finds only the
+same OAuth account and an unavailable public-agent connection; account consent
+is still required. Native714 pipeline state remains pending/missing exact runs
+and capacity-hard-blocked. Full gate/global coverage, hosted/deployed-head and
+promotion are unproved; all seven release tasks remain unchecked.
+
+This later handoff codifies completed measurements without changing accepted
+implementation or inventing new proof for the documentation commit. Do not
+replay609 receiving or the original90/60 solely because these notes changed.
+Keep normal per-commit collection. After actual authorization changes, freeze
+the intended candidate and follow the normal guarded push/remote/exact-SHA CI
+owners; after capacity changes, re-enter final release admission and full proof.
+
 ## Measured omitted consumer and minimal repair
 
 The previous complete twelve-owner routing union passed738 each311/312 but

@@ -1,6 +1,39 @@
 # Repository-local GitHub HTTPS publication
 
-## Actual publication denial at23b96a9 (2026-10-22 UTC)
+## Current bounded existing-authentication decision at714ce2d
+
+No newer push follows the real prior23b denial. The last tested code is full
+714ce2d65e3dbeec9d3dbbadced9f983c13c2a3d; its local original312 repair passes
+81.472s, with no exact714 GHA runs. The [runtime record](RUNTIME_ADMISSION_CLEAN_SHA.md)
+retains source review, all2396/1/11 cases and separate full-gate limitations.
+
+Root performs one new bounded discovery of existing noninteractive alternatives,
+using the fixed Make owner /tmp/gludd-v012-auth-alternatives.mk. Its offline plan
+names ordinary gh auth status --hostname github.com for all existing accounts
+and ssh-add -l for already-loaded public identity fingerprints. There is no
+consent, unredacted token display/extraction, key-file read, config write or publication.
+
+The native all-account result reports only sandboxcom/keyring/HTTPS with
+repo,gist,read:org and no workflow scope; the token stays redacted. Public-agent
+inspection returns "Could not open a connection to your authentication agent."
+The combined owner retains accounts0/agent2 and enclosing2, native0.337s within
+30total/10quiet. Exact failed/inactive/2 receipt:
+.gate-logs/observed/auth-alternatives/v012-auth-alternatives-714ce2d.json;
+log:/tmp/gludd-v012-auth-alternatives-714ce2d.log. The native receipt has no trace,
+as this is CLI discovery, not pytest or a runtime proof.
+
+An unavailable agent connection does not prove absent private keys or authorize
+reading the default SSH directory. No observed existing alternative clears the
+actual OAuth write denial. Account reauthorization remains pending; do not
+repeat unchanged account/agent/transport checks, launch interactive consent,
+request tokens in chat or substitute older remote proof. Resume the documented
+normal guarded publication path only after the actual prerequisite changes.
+The [native HumanTodo bootstrap decision](RUNTIME_ADMISSION_CLEAN_SHA.md#humantodo-bootstrap-decision-at714ce2d-source-plan-not-filing)
+identifies the existing filing route and unresolved service/store/credential facts.
+No request is filed by that source-only plan. This handoff changes no implementation
+and grants no gate/release authority.
+
+## Retained actual publication denial at23b96a9 (2026-10-22 UTC)
 
 The normal guarded batch-push at clean
 23b96a98bdcff7143f30596d50d67acdd1faebce reaches native Git transport after

@@ -1,6 +1,125 @@
 # Clean-SHA runtime admission
 
-## Current publication-caller receiving after clean23b96a9
+## Current external prerequisites after tested code714ce2d
+
+Root owns S98.4/Main/shared/Git on release-candidate/v012-git-mutex-20261022.
+The last tested code is714ce2d65e3dbeec9d3dbbadced9f983c13c2a3d, clean before
+proof with0staged/0untracked. This handoff-only update preserves that fixed ref;
+it neither recertifies a later documentation SHA nor authorizes another replay.
+The [caller decision](PUBLICATION_CALLER_CONFORMANCE.md) retains complete
+receiving, REDs, source scope and the process other models should follow.
+
+Its normal collection selects129357/129381,24deselected/0errors47.54s.
+The native watcher passes0/54.341s at
+.gate-logs/observed/test-count/20261022T234100Z-13723-e7e319e7.json;
+collection-lock54.257s is a separate interval. Root fully consumes independent
+APPROVE SOURCE ONLY against23b at /tmp/gludd-v012-714ce2d-source-review.md.
+No blocking patch; reviewer/read/test owners quiesce and the existing secrets
+scan drains naturally. Native ps shows only the two existing watchdogs before
+original proof; neither is disabled.
+
+The actual177-family original312 repair passes2396MAIN78.16s,1HELP0.83s and
+11TAIL8.84s, joined all0, native0/81.472s under unchanged90total/60quiet.
+Receipt:.gate-logs/observed/runtime-repair-714ce2d/v012-runtime-repair-714ce2d-312.json;
+matching trace and /tmp/gludd-v012-runtime-repair-714ce2d-312.log remain retained.
+Tested source digest6b29dc397d15f7b162a4469efa9a0c6e4249af2b7cbf062be2edc99bc8af29ff.
+Native ci-failure-repair records the selected dc864ae family at full714 after
+invalidating old current authority and retaining prior23b history. This is local
+original-budget repair, not a full gate, hosted speed gain or deployment proof.
+
+One fresh pipeline-status for714 reports open0/repaired6/resolved49/runs160,
+no exact714 runs, Build+Molecule missing,0failed/0pending/0passed/2missing.
+Its generated current pointer remains producer-owned, pending/release_ready=false
+with capacity hard_blocked=True. The old Oct20 full gate stays FAIL.
+No push follows the actual prior23b OAuth workflow-scope denial; remote eb772
+remains the last verified/pushed source. Fifteen local commits follow it at714.
+Do not poll the same unpublished source or retry unchanged publication/cleanup.
+
+The [HTTPS record](GITHUB_PUBLICATION_HTTPS.md) now retains one bounded
+all-account/public-agent diagnostic: only the same sandboxcom OAuth account is
+reported, and the agent connection is unavailable. It is no private-key
+inventory or write-authorization proof. Actual account authorization and disk
+use below95percent are required changed inputs. Separate asynchronous human
+requests are pending. The source-only HumanTodo bootstrap decision below now
+identifies the existing native route. HumanTodo remains UNFILED until the actual
+canonical service/store and explicit credential binding are available; a plan is
+not a request or an ID.
+
+After actual credential authorization changes, use make verify-state, the same
+normal guarded batch-push with canonical explicit runtime/observer variables,
+full expected-SHA verify-remote and native pipeline-status/ci-await. Recheck final
+capacity admission before expensive final proof. A handoff edit alone justifies
+no repeated accepted source cohort or original-budget repair. Fresh normal
+collection remains required per commit. Full gate/global85-75 BOTH, exact-SHA
+hosted/deployed-head/reviewed-head and promotion remain pending; all seven
+release tasks stay unchecked.
+
+## HumanTodo bootstrap decision at714ce2d: source plan, not filing
+
+Root fully consumes /tmp/gludd-v012-human-blocker-bootstrap-decision.md after
+its owner reads it back and quiesces all sessions/readers. This is a frozen-source
+decision, with no startup, API/auth retry, credential inspection or Main change.
+The existing human-todo-module already supplies check/apply, explicit credential
+binding and returned-ID validation. No replacement queue, daemon implementation,
+supervisor, observer, cache or new Make target is required.
+
+The native client defaults to http://localhost:8000; the daemon defaults to
+127.0.0.1:8000. These resolve a declared address, not current availability or
+ownership. create_daemon_app uses GLUDD_CONFIG_DIR or native configuration
+discovery and the project overlay. README:280-307 explains that checkout config/
+is not automatically discovered. Selecting it explicitly does not establish the
+intended live service/store or permission to start another event loop. An explicit
+directory lacking general-ludd.yml can fall back to user configuration; do not
+use it to bypass the permitted-prefix boundary.
+
+Store precedence in src/general_ludd/db/session.py:171-195 is configured URL,
+DATABASE_URL, configured PostgreSQL host, then native SQLite. The SQLite fallback
+is declared durable storage, not intrinsically a temporary queue, but it does not
+prove the operator service uses it. GLUDD_DB_PATH cannot override a configured
+URL/host. Reuse the actual intended persistent store; never create a replacement
+TMP database to manufacture a returned ID. Do not require a user-created config
+file when an existing authorized native default resolves the fact.
+
+The collection client deliberately has no ambient GLUDD_AUTH_PSK fallback.
+Use the existing [explicit controller binding](MAKE_RESULT_GUIDANCE.md#explicit-controller-credentials)
+for the intended provisioned name, such as GLUDD_HUMAN_TODO_PSK; missing/empty
+binding must fail closed. Never copy the secret into chat, JSON, argv, logs or
+receipts. The public readback CLI separately reads GLUDD_AUTH_PSK; that transport
+difference must not be mistaken for collection-client fallback. GitHub OAuth and
+SSH credentials do not authenticate HumanTodo. Reuse actual request/agent fields;
+omit an unknown optional parent_agent_todo_id rather than inventing one.
+
+Prefer the already-owned canonical service. If a local full product startup is
+actually required, first clear capacity and establish intended config/store,
+port/resource ownership and an explicit authorized credential binding. The public
+source daemon wrapper suppresses child stdout/stderr; make bootstrap is
+init/lint/test/healthcheck, not service provisioning. The existing run-watched can
+instead bound the same foreground Gunicorn factory:
+gunicorn 'general_ludd.daemon:create_daemon_app()' with UvicornWorker, workers1,
+the native/default or confirmed bind, and visible access/error logs. Use the
+installed no-sync311 runtime, STALL_SECS=0, MAX_SECS=300 and the normal project
+observation root. No new supervisor, dependency acquisition, numeric-PID adoption
+or unrelated service termination is authorized. This is a conditional route,
+not a command executed at97percent disk use or persistent/ZDD deployment proof.
+
+Once those actual inputs exist, validate the complete retained request with
+human-todo-module HUMAN_TODO_VALIDATE_ONLY=1, then use mode0 for the authorized
+request. Supply HUMAN_TODO_ARGS_JSON with the complete real request and explicit
+nonsecret credential lookup expression; the mode alone is not a runnable input.
+Check-mode changed=true/id=null is not filing. Capture the genuine returned ID
+and read it back from the same service/store with the public human-todo show
+owner. Health/readiness alone cannot prove configured execution, storage identity,
+filing or human notification delivery. After a potentially committed failed POST,
+reconcile list/show before another write.
+
+Only unresolved service/store ownership and required credential provisioning
+need human facts; native defaults, path selection and health remain native work.
+Existing asynchronous questions stay pending. HumanTodo is still UNFILED; do not
+repeat a refused endpoint, start a guessed queue, demand manual files or weaken
+the95percent capacity guard. This plan grants no gate, CI, deployment or task
+completion evidence.
+
+## Retained publication-caller receiving after clean23b96a9
 
 Clean source23b96a98bdcff7143f30596d50d67acdd1faebce has fully consumed
 independent APPROVE SOURCE ONLY review at
