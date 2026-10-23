@@ -101,6 +101,46 @@ window; padded positives and missing/neighbor negatives retain the original
 command assertion. All 15 same-value/origin unguarded Make witnesses actually
 execute the owned marker; guarded controls retain no-evaluation and carriers.
 
+### Native Make parallel and inspection receiving after 98ba752
+
+Review of committed 98ba75247503661346c2ba442cf52580ef937282 raised a
+jobserver-loss hypothesis because the public recipe calls a macro containing
+recursive Make. Actual GNU Make 3.81 did not reproduce it. Confined native -j2
+creation and real registry execution completed without a jobserver warning, and
+the registration child retained its native jobserver-fds/auth flags and unrelated
+carrier. No production change, plus prefix, parser or new provider was justified.
+
+For plain agent-worktree, native -n/-q/-t controls under ordinary and -e execution
+return 0/1/0, preserving owned file bytes, mtimes and modes, all refs, current and
+frozen-peer
+indexes, source/checkpoint/lock state, registry absence and an owned observer
+sentinel; no creation, registration or new producer starts. Dry-run recipe text
+can contain a printed readiness command, so only an actual standalone readiness
+line constitutes a result. Query can stop before a later body; its nonmutation
+does not establish how a hypothetical plus-prefixed recipe would behave.
+
+The complete new seven-case owner passes in 4.08s, observed 5.0s on 3.11.14:
+worktree-creation-make-modes/worktree-creation-native-modes-red311-98ba752.json.
+The retained run identifier contains red, but the native outcome is passed:
+this is a disproved hypothesis, not a RED reproduction. The controls use the
+actual existing creation source graph and confined real Git/registry fixture.
+Only the test helper's optional Make argv and recorded child flags were added.
+The original 98ba752 source, 511-case coverage receipts and normal collection
+remain their original scope; new test receiving/review/collection is separate.
+
+The complete changed 72-case creation owner plus all seven new controls then
+passes on each installed runtime, with no production/configuration change:
+
+| Runtime | Cases | Pytest | Observed | Native worktree-creation-make-modes run |
+| --- | --- | --- | --- | --- |
+| 3.11.14 | 79 passed | 91.53s | 93.4s | worktree-creation-modes-owner311-98ba752 |
+| 3.12.15 | 79 passed | 92.04s | 94.1s | worktree-creation-modes-owner312-98ba752 |
+
+Both exact sessions drained terminal 0 under the original 120/60 bounds, fatal
+warnings, serial pytest and literal ID=. Source-only approval for 98ba752 is
+separate from this additive packet's normal collection, commit and final proofs.
+No unchanged 511-case production profile was replayed.
+
 The [GNU recipe-shell contract](https://www.gnu.org/software/make/manual/html_node/Execution.html)
 explains explicit shell failure propagation. The
 [Git worktree contract](https://git-scm.com/docs/git-worktree) documents private

@@ -74,6 +74,7 @@ class WorktreeCreation:
         self, target: str, *, fault: str = "", environment_override: bool = False,
         values: dict[str, str] | None = None, input_origin: str = "command-line",
         extra_goals: tuple[str, ...] = (), allow_development_bootstrap: bool = False,
+        make_options: tuple[str, ...] = (),
     ) -> subprocess.CompletedProcess[str]:
         environment = self.environment.copy()
         environment["GLUDD_CREATION_FAULT"] = fault
@@ -102,7 +103,7 @@ class WorktreeCreation:
         peers = self.git("for-each-ref", "--format=%(refname) %(objectname)", *peer_refs).stdout
         result = subprocess.run(
             [
-                self.real_make, "--no-print-directory",
+                self.real_make, "--no-print-directory", *make_options,
                 *(["-e"] if environment_override else []),
                 "-f", str(self.makefile), target, *extra_goals,
                 *([f"{name}={value}" for name, value in inputs.items()]
@@ -242,7 +243,8 @@ def _creation_fixture(
         "args = sys.argv[1:]\n"
         "with pathlib.Path(os.environ['GLUDD_CREATION_CALLS']).open('a') as output:\n"
         "    output.write(json.dumps({'kind':'registry', 'args':args, "
-        "'carrier':os.environ.get('GLUDD_CREATION_CARRIER')}) + '\\n')\n"
+        "'carrier':os.environ.get('GLUDD_CREATION_CARRIER'), "
+        "'makeflags':os.environ.get('MAKEFLAGS', '')}) + '\\n')\n"
         "if os.environ['GLUDD_CREATION_FAULT'] == 'registration-failure':\n"
         "    print('fixture native registration failure', file=sys.stderr); raise SystemExit(47)\n"
         "assert args[:5] == ['run', '--no-project', 'python', '-m', 'scripts.workstream_registry']\n"
