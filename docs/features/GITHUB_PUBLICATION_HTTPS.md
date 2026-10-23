@@ -1,6 +1,158 @@
 # Repository-local GitHub HTTPS publication
 
-## Current bounded existing-authentication decision at714ce2d
+## Make-owned workflow consent receiving afterd54d7a5
+
+Root owns S98.4/Main/shared/Git on release-candidate/v012-git-mutex-20261022.
+Receiving base:d54d7a5c47b30295b40deddce4ac2e26ccbbc71f. Its normal guarded
+collection selects129368/129392,24deselected/zeroerrors48.09s, native0/53.201s;
+lock53.117s is separate. Receipt:
+.gate-logs/observed/test-count/20261023T002520Z-41043-db0ac046.json.
+That is prior-commit collection, not new-source gate evidence.
+
+The real prior23b workflow-scope rejection remains. One bounded native account
+read atd54 still reports only sandboxcom/keyring/HTTPS with gist,read:org,repo:
+.gate-logs/observed/auth-current/v012-auth-current-d54d7a5.json,
+native0/0.327s with a redacted token. CLI0 is read authentication, not workflow
+write authority. The separate resource snapshot still measures97percent/6.1GiB:
+.gate-logs/observed/resource-pulse/v012-resource-pulse-d54d7a5.json,
+native0/3.705s, diagnostic only. Four selected runtime bindings
+(GLUDD_DAEMON_URL, GLUDD_CONFIG_DIR, GLUDD_HUMAN_TODO_PSK, GLUDD_AUTH_PSK) are
+absent in the presence-only native receipt
+.gate-logs/observed/human-input-presence/v012-human-input-presence-d54d7a5.json,
+native0/0.036s. No secret value is displayed and no API request is filed.
+
+Waiting had exposed another concrete process gap: no permanent Make owner could
+perform/reconcile the required operator consent step. Preparing that already
+required route makes the human action reviewable under the Make contract;
+it does not change the prerequisite or justify another unchanged push.
+
+The separate installed-primary research check is
+make -f /tmp/gludd-v012-workflow-auth-research.mk workflow-auth-help, exit0.
+GitHub CLI already supplies additional-scope refresh for its active stored
+account; inactive accounts need deliberate selection. Reuse that mature CLI,
+its native browser/device consent and credential store. Do not implement an
+OAuth/token manager or use reset/remove/insecure-storage/clipboard flags.
+The [retained firsthand March2022 report5355](https://github.com/cli/cli/issues/5355)
+supports the missing-workflow diagnosis in its older CLI context; actual23b Git
+rejection and the installed help own this candidate's facts and interface.
+
+Public read owner, with no variables:
+
+~~~sh
+make github-auth-status
+~~~
+
+It calls normal native gh auth status for github.com, preserves failed native
+status and prints actual accounts/scopes with normal token redaction. It emits
+gate_evidence=false/release_ready=false even on CLI0. Inspect the actual active
+account and scope before choosing another action; status does not grant write
+authorization and must not start consent.
+
+Public consent owner has exactly two inputs:
+GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY defaults1 and accepts literal0/1;
+GITHUB_WORKFLOW_AUTH_ACCOUNT defaults empty and is required for mode0.
+Foundation captures both raw values before startup/export expansion and unexports
+their public carriers. Safe preview:
+
+~~~sh
+make github-workflow-auth GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY=1 GITHUB_WORKFLOW_AUTH_ACCOUNT=sandboxcom
+~~~
+
+Mode1 performs no GH lookup, authentication, credential mutation or publication.
+It explains that workflow authority affects repositories covered by the existing
+credential. The example names the actually observed account; select the intended
+existing account explicitly rather than assuming the repository owner is the
+login. Any compatible existing collaborator account can be selected.
+
+Only an explicitly authorized operator starts the real consent step:
+
+~~~sh
+make github-workflow-auth GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY=0 GITHUB_WORKFLOW_AUTH_ACCOUNT=sandboxcom
+~~~
+
+Use this only after reviewing the account and scope impact. Task-level permission
+to push does not silently authorize an agent to open account-consent prompts;
+AGENTS.md's NO-PROMPT directive remains. Root has not invoked mode0 against the real GH credential store. An agent
+given explicit consent to start should use the existing bounded run-watched owner,
+visible heartbeat and no pytest trace; a potentially interrupted credential
+operation requires reconciliation. No new supervisor or observer is introduced.
+
+Mode0 requires an absolute selected gh executable, normal active-account status,
+and native gh api user --jq .login equality with the explicit account. It then
+requests only additional workflow scope on github.com, reads native status again
+and rechecks identity. The CLI owns its existing shared credential store; this
+is not repository-isolated credential storage. Coordinate any changes to that
+same account with its owner. Environment-provided credentials remain native CLI
+inputs; do not silently unset them to bypass a native refusal.
+
+Every required CLI failure retains native stderr/status and stops later phases.
+Before consent, credentials_may_have_changed=false; on/after consent it is true,
+including a post-consent account mismatch. Preserve that uncertainty and use the
+read owner before another write. No automatic credential rollback, token
+extraction, Git configuration edit, push or CI observation occurs. Returned0
+teaches verify-state, normal batch-push, full expected-SHA remote and exact-SHA
+CI verification after actual authorization is established; it supplies no gate
+or release authority.
+
+Canonical tests-first gives2FAIL/33deselected0.89s, native2/1.9s for the absent
+consent owner:
+.gate-logs/observed/workflow-auth-red/v012-workflow-auth-red311-d54d7a5.json.
+The first complete35-control focus retains34PASS/1FAIL7.43s/native8.4s:
+.gate-logs/observed/workflow-auth-focus/v012-workflow-auth-focus311.json.
+The new fixture incorrectly assumed relative PATH yields a relative command -v
+result on macOS. Replace only that input with a real native shell function;
+keep all127/no-provider assertions. Corrected focus passes35/7.14s/native8.1s:
+.gate-logs/observed/workflow-auth-focus/v012-workflow-auth-focus-final311.json.
+
+Two added read-owner controls and two strengthened existing transport controls
+then fail4/2.97s/native3.9s before read-owner/footer integration:
+.gate-logs/observed/workflow-auth-guidance-red/v012-workflow-auth-guidance-red311.json.
+All old transport status/order/no-success assertions remain. The batch-push
+failure footer now names the read owner and an explicit mode1 preview; it still
+requires a changed authorization input before retry and never starts consent.
+The payload controls also need a genuine negative witness. The owned repository
+path contains a space; an unquoted touch payload could create another file while
+the asserted marker stayed absent. Adding an unguarded native Make control first
+fails1/0.86s/native2/1.963s:
+.gate-logs/observed/workflow-auth-witness-red/v012-workflow-auth-witness-red311.json.
+Quote the marker with standard shlex.quote and require the same exact payload,
+variable and origin to create it in the unguarded control, then remove that owned
+marker before invoking guarded Main. All12 real Main argv/environment/environment-e
+Make/shell cases retain their original no-evaluation/no-provider assertions.
+Do not infer a passing evaluation guard from an inert or incorrectly quoted input.
+
+The final deduplicated16-owner union passes750 on each installed runtime with
+fatal warnings, no skips or collection errors: Python3.11.14 takes181.70s,
+native0/183.654s; Python3.12.15 takes189.45s, native0/191.456s.
+Exact passed/inactive terminal receipts:
+.gate-logs/observed/workflow-auth-receiving/v012-workflow-auth-receiving311-recorded.json
+and
+.gate-logs/observed/workflow-auth-receiving/v012-workflow-auth-receiving312.json.
+Both bind receiving source
+cbef723e0c96dafb5647970260b1713018575e85b814248506cf2fa911f74371
+before this manual handoff/source commit. The earlier311 invocation has no retained
+receipt or log and grants no evidence; only the recorded invocation is counted.
+The complete command, runtime environment and60/360 bounds remain in the native
+receipts; no source edit occurred between these two accepted runs.
+
+Ruff and separate strict scopes pass for both changed test owners. Native contract
+validation passes288 targets; duplicate discovery finds1164 declarations/zero
+duplicates. Make syntax/layout/parity, line limits, task registration, Markdown
+and status-snapshot validate-only checks pass. The actual documented offline
+preview returns0 without authentication or credential mutation. The actual
+github-auth-status example returns0/0.326s but still reports only sandboxcom,
+HTTPS/keyring and gist,read:org,repo; workflow is absent:
+.gate-logs/observed/github-auth-status-example/v012-github-auth-status-example311.json.
+The documented batch-push threshold1 example returns2 at the earlier dirty-tree
+guard; this does not prove that threshold, runtime or transport was reached.
+The complete native transport controls above verify the new footer separately.
+
+Normal fresh collection remains required before the source commit. No real
+mode0 consent, changed credential scope, new publication or hosted/deployment
+proof follows. All seven release tasks stay unchecked; full gate/global85-75 BOTH,
+exact-SHA hosted, deployment/reviewed-head and promotion remain unverified.
+
+## Retained bounded existing-authentication decision at714ce2d
 
 No newer push follows the real prior23b denial. The last tested code is full
 714ce2d65e3dbeec9d3dbbadced9f983c13c2a3d; its local original312 repair passes

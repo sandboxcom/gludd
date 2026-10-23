@@ -1,5 +1,37 @@
 # Clean-SHA runtime admission
 
+## GitHub operator handoff receiving afterd54d7a5
+
+Root now prepares the already-required account-consent step as a reviewable
+Make interface, after finding no permanent owner. The
+[authorization decision](GITHUB_PUBLICATION_HTTPS.md#make-owned-workflow-consent-receiving-afterd54d7a5)
+owns native CLI research, the read-only status owner, offline-default preview,
+explicit account binding, provider consent and uncertain-write reconciliation.
+This is a concrete blocker repair, not a source/receipt-only cycle for a stop
+challenge. No real consent flow has started and no unchanged publication retries.
+
+Prior d54 native collection is129368/129392 with24deselected/0errors48.09s,
+watcher53.201s distinct from lock53.117s. Its immutable receipt is
+.gate-logs/observed/test-count/20261023T002520Z-41043-db0ac046.json.
+Recent native diagnostics retain absent workflow scope, disk97percent/6.1GiB and
+four absent explicit HumanTodo runtime bindings. They grant no final admission.
+
+Canonical RED2/0.89s/native1.9s, retained34PASS/1fixtureFAIL7.43s/native8.4s,
+corrected35PASS7.14s/native8.1s and read/footer RED4/2.97s/native3.9s precede
+full receiving. No old assertion is removed; fixture input is conformed to actual
+macOS command resolution. A real unguarded payload witness also first fails1;
+quote its space-containing marker with shlex.quote before requiring that same
+payload to execute unguarded and remain inert in guarded Main.
+Complete16-owner receiving passes750 each311/312,181.70s/native183.654s and
+189.45s/native191.456s; both exact receipts and the matching receiving digest are
+in the authorization decision. This is focused receiving, not final combined
+acceptance. Contract288/1164 declarations, strict/Ruff and native static checks
+pass. The actual read example still lacks workflow; preview is offline and the
+batch-push safe example refuses at dirty-tree admission. Normal source collection
+and final required proofs remain pending. Keep exact714 runtime/source evidence
+below bound to714, not a new SHA.
+All seven S98 tasks remain unchecked and normal branch/promotion guards stay.
+
 ## Bounded external-input waiting after4b4d142
 
 Root owns the coupled S98.4 repair on release-candidate/v012-git-mutex-20261022.

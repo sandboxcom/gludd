@@ -4,6 +4,15 @@ override GLUDD_SANDBOXCOM_HTTPS_VALIDATE_ONLY := $(value SANDBOXCOM_HTTPS_VALIDA
 export GLUDD_SANDBOXCOM_HTTPS_VALIDATE_ONLY := $(value SANDBOXCOM_HTTPS_VALIDATE_ONLY)
 unexport SANDBOXCOM_HTTPS_VALIDATE_ONLY
 
+# Capture operator-owned workflow consent inputs before startup/export expansion.
+GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY ?= 1
+GITHUB_WORKFLOW_AUTH_ACCOUNT ?=
+override GLUDD_GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY := $(value GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY)
+export GLUDD_GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY := $(value GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY)
+override GLUDD_GITHUB_WORKFLOW_AUTH_ACCOUNT := $(value GITHUB_WORKFLOW_AUTH_ACCOUNT)
+export GLUDD_GITHUB_WORKFLOW_AUTH_ACCOUNT := $(value GITHUB_WORKFLOW_AUTH_ACCOUNT)
+unexport GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY GITHUB_WORKFLOW_AUTH_ACCOUNT
+
 # Capture hosted apt input before native startup/export expansion.
 PRESENTATION_BROWSER_APT_VALIDATE_ONLY ?= 1
 override GLUDD_PRESENTATION_BROWSER_APT_VALIDATE_ONLY := $(value PRESENTATION_BROWSER_APT_VALIDATE_ONLY)
@@ -992,6 +1001,8 @@ help:
 		"  git-push-sandboxcom   Guarded mirror push (PUSH_REMOTE, SSH_KEY; dry-run is not remote evidence)" \
 		"  git-pull-sandboxcom   Pull and rebase from sandboxcom/gludd" \
 		"  git-fetch-sandboxcom  Fetch from sandboxcom/gludd" \
+		"  github-auth-status       Read native GitHub accounts/scopes; authentication is not workflow write authority" \
+		"  github-workflow-auth     Preview GitHub workflow consent (GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY=1, GITHUB_WORKFLOW_AUTH_ACCOUNT=); operator owns mode 0" \
 		"  git-configure-sandboxcom-https  Repo-local gh HTTPS setup (SANDBOXCOM_HTTPS_VALIDATE_ONLY=1 plan, 0 apply); no push/CI proof" \
 		"  verify-remote BRANCH=<b> SHA=<sha> SSH_KEY=<path>  Native heads-ref proof with SSH or configured gh HTTPS; no CI proof" \
 		"  ship-async REF=<hash> [TARGET=master]  Run gate in background job; ff-only merge on green" \

@@ -145,6 +145,33 @@ actual child config assertions and every native outcome retained.
 
 ### GitHub publication transport
 
+Read existing GitHub accounts/scopes with make github-auth-status. Normal native
+CLI0 is authentication observation, not workflow write permission. This target
+never starts account consent. Preserve native read errors and inspect the cause.
+
+For the actually observed missing workflow scope, the safe preview is:
+
+~~~sh
+make github-workflow-auth GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY=1 GITHUB_WORKFLOW_AUTH_ACCOUNT=sandboxcom
+~~~
+
+Both variables are explicit. Mode1 is offline; its optional account data can
+also be empty. Mode0 requires the intended existing account, explicit operator
+instruction and GitHub's actual browser/device approval. Scope changes affect the
+existing shared GH credential and its covered repositories. The owner verifies
+native account identity before and after refresh and retains uncertain writes on
+any consent/postcheck failure. Reconcile with github-auth-status before another
+attempt. Never extract tokens, unset credential bindings as a bypass or infer
+consent from task-level push permission. The [authorization record](../../docs/features/GITHUB_PUBLICATION_HTTPS.md#make-owned-workflow-consent-receiving-afterd54d7a5)
+retains examples, native status boundaries and proof limits. Evaluation controls
+pair guarded Main with an unguarded native witness using the same payload,
+variable and origin; quote owned paths so a space cannot make the witness inert.
+Remove only the owned marker between controls and retain every guarded assertion.
+
+After actual authorization changes, use verify-state, normal guarded batch-push,
+full expected-SHA verify-remote and native exact-SHA CI owners. Neither this
+preview nor a returned consent command supplies gate or deployment evidence.
+
 When native ci-auth reports HTTPS but sandboxcom still uses SSH and no permitted
 key is available, use the [repo-local HTTPS owner](../../docs/features/GITHUB_PUBLICATION_HTTPS.md).
 Run make git-configure-sandboxcom-https SANDBOXCOM_HTTPS_VALIDATE_ONLY=1 for the

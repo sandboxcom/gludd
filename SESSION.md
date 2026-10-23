@@ -9,7 +9,54 @@ Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 bounded external-input waiting after4b4d142
+## Current S98.4 GitHub authorization receiving afterd54d7a5
+
+Root owns Main/shared/Git on release-candidate/v012-git-mutex-20261022 from
+d54d7a5c47b30295b40deddce4ac2e26ccbbc71f. Its normal collection selects
+129368/129392,24deselected/zeroerrors48.09s/native53.201s, lock53.117s;
+receipt:.gate-logs/observed/test-count/20261023T002520Z-41043-db0ac046.json.
+This is d54 commit collection, not new-source proof; the fixed714 header stays
+scoped to714. All prior source/runtime/collection and failure receipts remain.
+
+Current native diagnostics: auth-current/v012-auth-current-d54d7a5 passes0/0.327s
+but still reports sandboxcom/keyring/HTTPS without workflow. Resource-pulse/
+v012-resource-pulse-d54d7a5 passes0/3.705s as diagnostic only: disk97percent/6.1GiB.
+Human-input-presence/v012-human-input-presence-d54d7a5 passes0/0.036s with four
+explicit service/config/credential bindings absent and no secret values shown.
+These exact receipts live under .gate-logs/observed; HumanTodo remains UNFILED.
+No changed authorization/capacity or new hosted/deployment proof follows.
+
+The [owning authorization decision](docs/features/GITHUB_PUBLICATION_HTTPS.md#make-owned-workflow-consent-receiving-afterd54d7a5)
+now prepares a permanent Make handoff for the real blocker, using the existing
+GH CLI rather than a new auth manager. github-auth-status reads accounts/scopes;
+github-workflow-auth mode1 previews and mode0 requests operator-owned consent
+with explicit account and native pre/post identity checks. Root runs only the
+offline preview and read-only status against the real environment. Shared account/store scope impact,
+native failures and potential writes are explicit; no automatic push occurs.
+The strengthened failed-transport footer points to the read/preview owners.
+Public contract/help and raw input capture are part of the same receiving change.
+
+Canonical missing-owner RED2 precedes35 native controls; one new relative-PATH
+fixture error is retained and corrected using a real shell function with the
+same127/no-provider assertions. Corrected focus35PASS7.14s/native8.1s precedes
+read-owner/footer RED4/2.97s/native3.9s. A genuine unguarded payload witness then
+fails1/0.86s/native1.963s before correcting its space-containing path with
+shlex.quote; all guarded assertions remain. Final complete16-owner receiving
+passes750 each311/312,181.70s/native183.654s and189.45s/native191.456s.
+Exact passed/inactive receipts are workflow-auth-receiving/
+v012-workflow-auth-receiving311-recorded.json and
+v012-workflow-auth-receiving312.json under .gate-logs/observed, both bound to
+cbef723e0c96dafb5647970260b1713018575e85b814248506cf2fa911f74371
+before this handoff. An earlier311 invocation has no retained receipt/log and is
+unproved. Ruff, separate strict scopes,288-target contract/1164 declarations,
+Make lint/parity, line/task/Markdown/status checks pass. Actual status example0
+still lacks workflow; actual preview0 is offline, while batch-push's threshold1
+example refuses2 at dirty-tree admission and proves no transport. Normal fresh
+collection remains required before commit. All original status/order/no-success assertions,177
+families/eight pins/21phases2850,90/60,85-75 BOTH, ZDD/cleanup/retention and branch
+guards remain. No task checkbox or release-ledger membership changes.
+
+## Retained S98.4 bounded external-input waiting after4b4d142
 
 Root owns the coupled Main/shared/Git repair on release-candidate/v012-git-mutex-20261022,
 from frozen base4b4d1428262fd259ee590f6971562ca920ffc6d7. The stop hook now teaches

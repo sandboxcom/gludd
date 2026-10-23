@@ -50,6 +50,59 @@ require-sandboxcom-ssh-key:
 	fi; \
 	echo "sandboxcom SSH key available: $$KEY"
 
+# Existing GitHub CLI owns authentication and credential storage.
+define _github_workflow_auth_failure
+gludd_workflow_fail() { gludd_workflow_status=$$1; gludd_workflow_outcome=$$2; \
+	printf '%s\n' "AGENT_NEXT target=$$GLUDD_WORKFLOW_TARGET outcome=$$gludd_workflow_outcome native_status=$$gludd_workflow_status phase=$$GLUDD_WORKFLOW_PHASE credentials_may_have_changed=$$GLUDD_WORKFLOW_WRITES gate_evidence=false release_ready=false; preserve the native reason and reconcile existing account/credential state before retry; operator owns any consent and no push or CI proof follows" >&2; \
+	exit "$$gludd_workflow_status"; };
+endef
+
+define _github_workflow_gh_binary
+GLUDD_WORKFLOW_GH=$$(command -v gh) || { echo "gh is unavailable in the selected PATH" >&2; gludd_workflow_fail 127 failed; }; \
+case "$$GLUDD_WORKFLOW_GH" in /*) ;; *) echo "gh must resolve to an absolute executable" >&2; gludd_workflow_fail 127 refused ;; esac;
+endef
+
+.PHONY: github-auth-status github-workflow-auth
+github-auth-status:
+	@GLUDD_WORKFLOW_TARGET=github-auth-status; GLUDD_WORKFLOW_PHASE=gh-executable; GLUDD_WORKFLOW_WRITES=false; \
+	$(_github_workflow_auth_failure) \
+	$(_github_workflow_gh_binary) \
+	GLUDD_WORKFLOW_PHASE=authentication; \
+	"$$GLUDD_WORKFLOW_GH" auth status --hostname github.com || gludd_workflow_fail "$$?" failed; \
+	echo "AGENT_NEXT target=github-auth-status outcome=observed native_status=0 gate_evidence=false release_ready=false; interpret the actual accounts and scopes: a zero exit is read authentication, not workflow write authorization; for missing workflow scope preview make github-workflow-auth GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY=1 GITHUB_WORKFLOW_AUTH_ACCOUNT= and obtain operator consent before mode 0; do not repeat unchanged failed transport" >&2
+
+# Preview is offline; apply delegates account consent to the existing GitHub CLI.
+github-workflow-auth:
+	@GLUDD_WORKFLOW_TARGET=github-workflow-auth; GLUDD_WORKFLOW_PHASE=validate-mode; GLUDD_WORKFLOW_WRITES=false; \
+	$(_github_workflow_auth_failure) \
+	GLUDD_WORKFLOW_MODE="$$GLUDD_GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY"; \
+	GLUDD_WORKFLOW_ACCOUNT="$$GLUDD_GITHUB_WORKFLOW_AUTH_ACCOUNT"; \
+	case "$$GLUDD_WORKFLOW_MODE" in 0|1) ;; *) echo "GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY must be literal 0 or 1" >&2; gludd_workflow_fail 2 refused ;; esac; \
+	if [ "$$GLUDD_WORKFLOW_MODE" = 1 ]; then \
+		printf 'PLAN github-workflow-auth host=github.com additional_scope=workflow expected_account=%s credentials_changed=false auth_checked=false\n' "$$GLUDD_WORKFLOW_ACCOUNT"; \
+		echo "This requests additional workflow authority for the existing GitHub credential and its covered repositories. Review the selected account and obtain operator approval for GitHub consent." ; \
+		echo "AGENT_NEXT target=github-workflow-auth outcome=planned native_status=0 gate_evidence=false release_ready=false; operator-owned step: use GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY=0 with an explicit GITHUB_WORKFLOW_AUTH_ACCOUNT only after account consent is authorized; preview performs no authentication, credential mutation, publication or CI" >&2; \
+		exit 0; \
+	fi; \
+	GLUDD_WORKFLOW_PHASE=account-input; \
+	[ -n "$$GLUDD_WORKFLOW_ACCOUNT" ] || { echo "Select the existing account explicitly with GITHUB_WORKFLOW_AUTH_ACCOUNT" >&2; gludd_workflow_fail 2 refused; }; \
+	GLUDD_WORKFLOW_PHASE=gh-executable; \
+	$(_github_workflow_gh_binary) \
+	GLUDD_WORKFLOW_PHASE=authentication; \
+	"$$GLUDD_WORKFLOW_GH" auth status --active --hostname github.com || gludd_workflow_fail "$$?" failed; \
+	GLUDD_WORKFLOW_PHASE=account-identity; \
+	GLUDD_WORKFLOW_ACTUAL=$$("$$GLUDD_WORKFLOW_GH" api user --hostname github.com --jq .login) || gludd_workflow_fail "$$?" failed; \
+	[ "$$GLUDD_WORKFLOW_ACTUAL" = "$$GLUDD_WORKFLOW_ACCOUNT" ] || { echo "The active GitHub account differs from the explicitly selected account" >&2; gludd_workflow_fail 2 refused; }; \
+	echo "Starting native GitHub consent for the selected existing account; approval occurs at GitHub."; \
+	GLUDD_WORKFLOW_PHASE=consent; GLUDD_WORKFLOW_WRITES=true; \
+	"$$GLUDD_WORKFLOW_GH" auth refresh --hostname github.com --scopes workflow || gludd_workflow_fail "$$?" failed; \
+	GLUDD_WORKFLOW_PHASE=post-authentication; \
+	"$$GLUDD_WORKFLOW_GH" auth status --active --hostname github.com || gludd_workflow_fail "$$?" failed; \
+	GLUDD_WORKFLOW_PHASE=post-identity; \
+	GLUDD_WORKFLOW_ACTUAL=$$("$$GLUDD_WORKFLOW_GH" api user --hostname github.com --jq .login) || gludd_workflow_fail "$$?" failed; \
+	[ "$$GLUDD_WORKFLOW_ACTUAL" = "$$GLUDD_WORKFLOW_ACCOUNT" ] || { echo "The post-consent account differs; reconcile the actual credential state" >&2; gludd_workflow_fail 2 refused; }; \
+	echo "AGENT_NEXT target=github-workflow-auth outcome=returned native_status=0 gate_evidence=false release_ready=false; inspect the actual scopes and account output; native consent returns no publication or CI proof; use make verify-state, normal guarded make batch-push and full expected-SHA remote/exact-SHA CI verification after authorization is established" >&2
+
 # Repo-local HTTPS publication; Foundation captures the mode before startup.
 # Only this recipe performs local configuration. Plan performs no auth/network IO.
 define _sandboxcom_publication_failure

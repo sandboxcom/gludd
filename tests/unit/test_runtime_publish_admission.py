@@ -362,6 +362,9 @@ def test_transport_failure_after_green_admission_never_records_success(
     assert "gate_evidence=false release_ready=false" in output
     assert "actual credential authorization" in output and "workflow scope" in output
     assert "make verify-state" in output and "unchanged publication" in output
+    assert "make github-auth-status" in output
+    assert "make github-workflow-auth GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY=1" in output
+    assert "GITHUB_WORKFLOW_AUTH_ACCOUNT=" in output
     assert "Pushed gludd-test-runtime-publish" not in output
 
 

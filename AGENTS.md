@@ -32,7 +32,10 @@ measurements, rejected approaches and the missing release proofs.
    Do not add unrelated backlog work to fill a batch.
 3. Write and run the narrow failing regression, then repair its actual input.
    Run cheap lint, strict typing and target-contract checks before a broad
-   positive replay. Changed Make targets also need their documented behavior;
+   positive replay. Evaluation/injection controls need a native unguarded witness
+   that executes the same payload, variable and origin; quote owned marker paths,
+   remove only the owned witness and retain the guarded no-evaluation assertion.
+   An inert payload cannot prove an evaluation guard. Changed Make targets also need their documented behavior;
    preserve expected refusal statuses. For promoted failures, update the native
    manifest, independent seeds/counts and literal rosters together, then drain
    all eight current check-gate-failure-promotions pins (six predecessors plus
@@ -228,6 +231,15 @@ A legacy whole guardrail test owner can recursively run global collection/lint/A
    challenges, rerun unchanged failures or manufacture source/receipt-only changes.
    A new challenge token, elapsed time or handoff SHA is no changed prerequisite.
    Resume the native owner only after its actual required input changes.
+   For GitHub workflow authorization, use make github-auth-status and the offline
+   make github-workflow-auth GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY=1
+   GITHUB_WORKFLOW_AUTH_ACCOUNT= preview. Read actual account/scopes; CLI0 is not
+   workflow write authority. Mode0 requests account consent for the existing
+   shared GH credential and requires explicit operator instruction plus an
+   explicit selected account. Preserve native failures and reconcile possible
+   credential changes through the read owner before another consent attempt.
+   The [authorization record](docs/features/GITHUB_PUBLICATION_HTTPS.md#make-owned-workflow-consent-receiving-afterd54d7a5)
+   owns the interface; normal publication, gate and exact-SHA proof remain required.
 
 ## Make Target Selection Contract
 
