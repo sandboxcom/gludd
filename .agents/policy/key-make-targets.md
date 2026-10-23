@@ -123,6 +123,22 @@ keeping the other guard alive. Each stop needs its verified plan and actual
 mode0; the [lifecycle record](../../docs/features/WATCHDOG_SECRETS_LIFECYCLE.md)
 retains the exact sequence and separate activation evidence.
 
+The existing task-watchdog owner protects a direct gate-wait sibling through
+its literal expected PID and registered CWD, including terminal drain through
+the existing current producer identity/canonical-command owner after PID/marker
+retirement. Match physical root/namespace and complete native identity. An occupied
+PID still requires original start/PGID, owned CWD and native gate role. Re-read
+association on every signal validation; it supplies no terminal-success proof.
+Group current waiters by observed CWD before reading that root's native producer;
+do not resolve native Make for empty historical roots or create a proof cache.
+For a confirmed defect during frozen proof, preserve native signal/RED evidence,
+inspect the exact gate lock, use the existing make gate-kill verified apply owner
+and drain the exact waiting session before edits. That target is apply, not a
+plan. Keep the other guard alive; after reviewed repair, use the existing native
+task-watchdog-start owner and consume its actual acknowledgement/status.
+The [waiter record](../../docs/features/GATE_WAITER_PROTECTION.md) retains the
+ABORTED proof, changed stop prerequisite, exact cohorts and missing final proofs.
+
 For the full versioned resource inventory, keep RESOURCE_OWNERSHIP_PATHS empty.
 A single-file scan against that complete manifest reports every other entry as
 stale. The documented full-scope native check retains264 resources; do not

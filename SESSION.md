@@ -9,7 +9,52 @@ Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 literal script-reference receiving afterfa50e0b
+## Current S98.4 bound gate waiter repair after16ef8dc
+
+Root owns Main/shared/Git/proof on the same candidate branch, from
+16ef8dc52c31878724a8107548687d5d4ede400a. That fixed source's normal collection
+selects129428/129452,24deselected/zeroerrors64.79s/native70.055s, separate
+lock69.968s, receipt.gate-logs/observed/test-count/20261023T084634Z-66975-76f89145.json.
+Its native admission, source-only review and979PASS each311/312 remain valid
+only for their actual source/scope. Its complete gate is ABORTED, not green:
+the task watchdog's matching SIGTERM log records expose unprotected sibling
+gate-wait/shell/sleep children while the gate itself remains protected.
+Native verified task-watchdog-stop drains57964 with the agent guard alive;
+the confined RED1 and canonical RED6FAIL/15PASS precede required repair.
+Native gate-kill then verifies31529/start/root/namespace, records10targets/
+no surviving PIDs and preserves the changed cancellation lock. Exact outer7530
+drainsABORTED/native2 before Main edits. Full failed/partial evidence remains.
+
+Independent review then rejects live-only protection: a legitimate waiter can
+remain asleep after native gate/PID-marker retirement. Retain CHANGES REQUIRED
+/tmp/gludd-v012-taskwaiter-source-review.md and the rejected live-only bytes;
+the earlier1035/256/70 receipts stay historical at their fixedef0be3f4 source.
+Terminal RED12FAIL/15PASS1.21s/native2.2s precedes current producer association
+through existing native JSON/identity/canonical-command owners. Require physical
+root/namespace and complete native identity; occupied PID start/PGID, CWD and
+gate role must still match. Re-read association before every signal; no new
+deadline, observer, cache or signal permission. Snapshot grouping avoids native
+Make resolution for roots with no actual bound waiter.
+Family179's existing case retains all earlier assertions and now checks both
+live operation and terminal drain.178predecessors/11TAIL/profile-last,
+three2/1/1,90/60 and21phases2850 remain. Current277-case full watchdog coverage
+passes each311/312,93.4line/87.1branch, with85/75 BOTH retained. Complete corrected
+14whole-file/class/two-node receiving1198PASS each311248.81s/native252.110s and
+312261.99s/native265.522s, matching tested source6becd283 before this evidence
+handoff. Exact terminal receipts/commands remain in the feature and native
+v012-taskwaiter-terminal-receiving owner. Independent
+/tmp/gludd-v012-taskwaiter-terminal-source-review.md approves SOURCE ONLY;
+Root fully reads it and reviewer is quiescent. Prior rejection stays unchanged.
+Normal collection/commit, native activation and final exact-candidate proof
+remain pending; this receiving never supplies a new full-gate or CI verdict.
+The [native waiter record](docs/features/GATE_WAITER_PROTECTION.md) retains exact
+receipts, actual missing-filename/zero-collection refusal, decisions and next
+Make owners. Normal fresh commit collection, independent review, native daemon
+activation, complete gate and exact-SHA hosted/deployment/promotion remain
+required. Source-only proofs never close any of the seven S98 tasks.
+Workflow consent stays pending; no unchanged push retry. HumanTodo is UNFILED.
+
+## Retained S98.4 literal script-reference receiving afterfa50e0b
 
 Root retains the same Main/shared/Git/proof ownership. Frozen
 fa50e0b099b59d3681cc243501f61c9b31d6f895 has actual native admission0,

@@ -1405,6 +1405,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_makefile_audit_deep.py::TestScriptReferencesExist::test_all_scripts_exist",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "watchdog-bound-gate-waiter",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_task_watchdog.py::test_live_gate_bound_waiter_protects_the_complete_tree[make-pid]",
+      "full_gate_phase": "test"
     }
   ]
 }

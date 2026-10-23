@@ -265,6 +265,22 @@ Disk's temporary display delegates to the existing tmp-gludd-usage owner for one
 
 The watchdog secrets check uses the existing native observer for the complete process lifecycle; a direct-child timeout alone does not drain descendants. Keep the 60-second scan, 300-second cooldown and current installed interpreter. Legacy/default test fixtures must confine command workspace as well as state and mock the actual adapter seam before an integration call. Preserve exact timeout/signal evidence and unknown-after-interruption semantics. See the [watchdog lifecycle](docs/features/WATCHDOG_SECRETS_LIFECYCLE.md). Historical observer pointers cannot produce owners when the complete native process snapshot contains no stream_command.py command; the cleanup owner preserves gate PID/lock protection in that empty case. A live observer still requires complete metadata and retains both display-cap refusals. Never treat a truncated display, CWD alone or an unverified PID as termination authority.
 
+A native gate and its bound gate-wait process can be separate trees. The existing
+task-watchdog protection owner binds exactly one literal expected PID and the
+registered root before protecting the waiter's complete tree. Preserve protection
+through terminal drain using the existing current native producer identity and
+canonical-command validator after PID/marker retirement. An occupied PID's
+original start/PGID, registered CWD and gate role must still match; re-read that
+association during native signal validation, never infer a successful gate.
+Group actual waiters by observed CWD rather than probing empty historical roots.
+The existing family179 case checks live and terminal behavior. On actual signals,
+attribute the sender from native logs; do not infer it from a test or stale task.
+A confirmed new defect during frozen proof needs retained RED, native controlled
+gate termination and exact session drain before edits. Keep the other guard alive
+and verify native startup acknowledgement after the reviewed repair. The
+[waiter record](docs/features/GATE_WAITER_PROTECTION.md) retains the failed proof,
+negative controls, eight-pin promotion and complete acceptance scope.
+
 Full-tree secret checks reuse the existing readonly baseline owner with --scan-cores; upstream scan --baseline can return zero after adding findings. The owner compares its private pre/post inventories through the existing canonical baseline manager's finding_counts, preserves native failures and rejects baseline overrides through pinned native grammar before settings postprocessing. The same namespace refuses native plugin-list, truthy-string and allowlisted-only modes because they return before inventory refresh; empty --string=, regex values and literal filenames keep upstream meaning. Default hook behavior remains unchanged. Recorder fixtures execute the real wrapper and capture actual outer/child argv independently; never invent a transport token to satisfy an old pin. The [security record](docs/security/audit-observability.md#full-scan-refresh-and-finding-admission-2026-10-21) preserves failing-first controls, native source/caller coverage, full-target behaviors and release proof limits.
 
 Coverage scope follows native execution evidence. The shared auditor's imported JSON/XML preserves generic numeric admission but cannot certify E2E execution; only completed owned native shards attach e2e_branch_* fields. Preserve failed native status before reading stale measurements, both85/75 floors and progress/cleanup. Field/context names or an E2E test-file location grant no deployment proof. The [coverage contract](docs/E2E_COVERAGE_AUDIT_CONTRACT.md#imported-reports-and-execution-ownership) names the existing owners and failing-first controls.

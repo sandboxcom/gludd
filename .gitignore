@@ -50,6 +50,8 @@ build/
 .gate-status
 .gate-status.next
 .gate-status.running
+# Native cancellation evidence remains local, alongside the other gate status files.
+/.gate-terminalized
 .gate-lite-status
 .gate-lite-failed
 .gate-background.pid
