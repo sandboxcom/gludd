@@ -18,7 +18,7 @@ from scripts import makefile_layout
 from tests.unit.test_observed_command import _command, _current_status
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 179
+EXPECTED_FAMILY_COUNT = 180
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 EXPECTED_MAIN_PYTEST_FLAGS = (
@@ -220,6 +220,7 @@ REVIEWED_FINALIZATION = (
     "tests/unit/test_task_watchdog.py::test_unit_watchdog_fault_logs_belong_to_the_test_namespace",
     "tests/unit/test_makefile_audit_deep.py::TestScriptReferencesExist::test_all_scripts_exist",
     "tests/unit/test_task_watchdog.py::test_live_gate_bound_waiter_protects_the_complete_tree[make-pid]",
+    "tests/unit/test_push_discipline_checks.py::TestVerifyRemoteAfterPush::test_verify_remote_compares_sha",
     "tests/unit/test_dependency_profiles.py::test_selected_profile_locks_preserve_controller_jsonpointer_requirement",
 )
 
@@ -273,7 +274,7 @@ def test_runtime_admission_retains_entire_roster_and_fresh_help(tmp_path: Path) 
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
     assert "tests/unit/test_makefile_audit_deep.py" not in str(rows[0]["files"])
     tail = rows[2]["files"]
-    assert isinstance(tail, list) and len(tail) == 11
+    assert isinstance(tail, list) and len(tail) == 12
     assert tail[-1] == (
         "tests/unit/test_dependency_profiles.py::"
         "test_selected_profile_locks_preserve_controller_jsonpointer_requirement"
@@ -1029,7 +1030,7 @@ def test_coverage_suite_provenance_failure_has_one_exact_native_route(tmp_path: 
         if index:
             assert node not in selection
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 179
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
     assert payload["families"][149]["id"] == "native-full-scan-success-inventory"
     assert payload["families"][150] == {
         "id": "coverage-native-suite-provenance",
@@ -1093,7 +1094,7 @@ def test_uv_prune_native_failure_has_one_exact_native_route(tmp_path: Path) -> N
         assert node.split("::", 1)[0] not in selection
     assert counts == [1, 0, 0]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 179
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
     assert payload["families"][150]["id"] == "coverage-native-suite-provenance"
     assert payload["families"][151] == {
         "id": "uv-prune-native-failure-status",
@@ -1129,7 +1130,7 @@ def test_uv_prune_inherited_policy_has_one_exact_native_route(tmp_path: Path) ->
     assert counts == [1, 0, 0]
     assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 179
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
     assert payload["families"][151]["id"] == "uv-prune-native-failure-status"
     assert payload["families"][152] == {
         "id": "uv-prune-inherited-policy-context", "owner_target": OWNER,
@@ -1160,7 +1161,7 @@ def test_shared_uv_inventory_has_one_exact_native_route(tmp_path: Path) -> None:
     assert all(node.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 179
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
     assert payload["families"][152]["id"] == "uv-prune-inherited-policy-context"
     assert payload["families"][153] == {
         "id": "shared-uv-cache-inventory-exposure", "owner_target": OWNER,
@@ -1200,7 +1201,7 @@ def test_git_handoff_failures_have_exact_native_routes(
     assert all(node_selector.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 179
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
     assert payload["families"][153]["id"] == "shared-uv-cache-inventory-exposure"
     assert payload["families"][154:156] == [
         {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
@@ -1292,6 +1293,8 @@ CANDIDATE_PROOF_PROMOTIONS = (
      "TestScriptReferencesExist::test_all_scripts_exist"),
     ("watchdog-bound-gate-waiter", "tests/unit/test_task_watchdog.py::"
      "test_live_gate_bound_waiter_protects_the_complete_tree[make-pid]"),
+    ("verify-remote-recipe-boundary", "tests/unit/test_push_discipline_checks.py::"
+     "TestVerifyRemoteAfterPush::test_verify_remote_compares_sha"),
 )
 
 WORK_ITEM_PROMOTIONS = (
@@ -1318,13 +1321,13 @@ def test_make_safety_and_guidance_have_exact_native_routes(
         assert isinstance(selection, list)
         selections.append(selection)
     expected = [0, 0, 1] if promoted_family in {
-        "make-local-script-reference-boundary", "watchdog-bound-gate-waiter",
+        "make-local-script-reference-boundary", "watchdog-bound-gate-waiter", "verify-remote-recipe-boundary",
     } else [1, 0, 0]
     assert [selection.count(node_selector) for selection in selections] == expected
     assert all(node_selector.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 179
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
     assert [family["id"] for family in payload["families"][154:156]] == [
         "git-async-live-owner-handoff", "git-async-completed-owner-adoption",
     ]

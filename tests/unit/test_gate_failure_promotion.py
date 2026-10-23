@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 179
+EXPECTED_FAMILY_COUNT = 180
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -229,7 +229,7 @@ def test_native_reviewed_finalization_executes_in_bounded_early_admission(test_n
     recipes = executable.split("$(MAKE) --no-print-directory test-files")
     assert len(recipes) == 4
     selectors = recipes[3].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
-    assert len(selectors) == 11 and selectors.count(node) == 1
+    assert len(selectors) == 12 and selectors.count(node) == 1
     assert node not in recipes[1] and node not in recipes[2]
     phase = next(item for item in manifest["runtime_contract"]["phases"] if item["target"] == family["owner_target"])
     assert (phase["budget_class"], phase["max_seconds"], phase["quiet_seconds"]) == ("fast", 90, 60)
@@ -1832,6 +1832,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "pytest-native-trace-protocol", "trace-summary-result-guidance",
         "presentation-hosted-apt-literal-mode", "git-status-native-index-readonly",
         "publication-native-command-envelope", "make-local-script-reference-boundary", "watchdog-bound-gate-waiter",
+        "verify-remote-recipe-boundary",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (

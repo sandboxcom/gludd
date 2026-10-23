@@ -350,6 +350,117 @@ The private source bridge is not production. Root must land only the dynamic-ROO
 
 No live GH authentication/configuration, HTTPS success, push, hosted CI, full gate, deployment or release acceptance was performed here. Native bare-remote probes bind the actual verify result recipe without its auth prerequisite; they prove that body's ref/status behavior only. Private Main-startup probes include the proposed early fragment before the real Makefile; direct integrated Main startup still requires Root's receiving run.
 
+## Complete verify-remote recipe evidence (2026-10-23 UTC)
+
+The full gate at `980edc262b232536c09c57c4a83dc3c2db5c7993` exposed
+`TestVerifyRemoteAfterPush::test_verify_remote_compares_sha` in
+`unit-3a:batch-022`: 1 FAIL, 419 PASS, 1 SKIP in 38.91s.
+The native log is `.gate-logs/gate-20261023114821-5452e13e.log`.
+The test inspected only 500 characters after the target label. Existing
+validation and outcome guidance moved the actual `git ls-remote` and
+`VERIFIED` branches beyond that window. The complete production recipe still
+performed the comparison; shortening validation or adding evidence tokens to
+comments would not repair the test's input boundary.
+
+The repair reads the complete literal tab-indented recipe and retains both
+original assertions. Six added controls derive their positive input from the
+actual native Make fragment, pad it beyond 500 characters and retain @, +@ and
+-@ prefixes. Negative controls remove each required token or use a short empty
+recipe followed by a neighboring target containing both decoy tokens. The
+neighbor must never supply the inspected target's evidence. These are recipe
+source controls. The existing independent confined real-Git owner,
+`tests/unit/test_git_https_publication.py`, owns actual heads-ref, matching-SHA,
+mismatch and transport behavior; its complete receiving remains required.
+
+Before the extraction repair, the eight-case class produced 5 FAIL / 3 PASS
+in 0.65s, including false refusal of padded valid recipes and false acceptance
+of the neighboring target. Retained watched RED:
+`v012-verify-rule-boundary-red/v012-verify-rule-boundary-red311-980edc2.json`.
+After repair, all 8 PASS on installed Python 3.11 (0.59s) and 3.12 (0.79s),
+under `v012-verify-rule-boundary-green` with run IDs ending green311/green312.
+Strict file checking also exposed 45 existing missing return annotations and
+two calls to that untyped assertion. Return annotations and import grouping
+were conformed; all original assertions remain. Ruff, strict scope and the
+environment-write guard then passed.
+
+Family 180, `verify-remote-recipe-boundary`, selects that original positive
+case once in the existing TAIL. All 179 predecessors, independent family
+counts, literal rosters and exact routes remain. The 12-selector TAIL keeps the
+dependency-profile case last. Complete the native eight-pin owner before the
+complete changed routing owners and callers, including
+`tests/unit/test_runtime_publish_admission.py`. The original three children,
+2/1/1 workers, 90/60 runtime boundary, 21 phases/2850 seconds, coverage floors,
+fatal warnings, cleanup and promotion requirements remain.
+
+The same full gate later exhausted its selected 7200-second outer limit during
+`unit-3a:batch-031`. Its native state ended `timed_out` at
+2026-10-23T13:48:22.041255+00:00; signed gate status records cancelled rc143,
+the run log records ABORTED timeout7200, and outer exec75158 drained with Make2.
+Native cleanup released the gate lock; subsequent ownership/process reads show
+no test workers. The earlier assertion failure remains separate from the
+later timeout. Post-failure batches are diagnostic only; later lanes and final
+coverage remain unproved.
+
+Complete-run examples now use the existing canonical `GATE_TIMEOUT=21600`
+default from `make/00-foundation.mk`, within gate-wait's unchanged hard ceiling.
+Only the guide/contract example changes; the native watcher, per-test/phase
+deadlines, runtime admission, batch size16, worker1 and exact-resume0 remain.
+A chosen 7200-second run is bounded diagnostic execution, with no guarantee of
+complete release proof. Drain an expired owner before another execution.
+Never extend an active receipt or manually rewrite its state. Native
+authenticated resume can reuse preflights only; a fresh all-shard attestation
+still owns complete unit proof. Progress percentages and ETAs can change as
+later lane sizes arrive and provide no completion or performance claim.
+
+The old TASKS and BUGS current headers concatenated long incident histories
+into one line and exceeded bounded displays. Their complete original bytes
+remain at immutable980edc2:TASKS.md and immutable980edc2:BUGS.md; native
+git-show-file-to exports at that full SHA retain original source context.
+Current leading paragraphs are replaced with a bounded handoff and those exact
+retrieval commands. Ledger checkbox records and all later bug entries remain.
+Use the feature for detailed decisions and native owners for current status.
+
+The first complete seven-owner repair run at fixed source
+`967c9d2163337f779181eaa08ee637d7c633cd18c74b2aad7f2e32ae4d5c2163`
+retains 3 FAIL / 544 PASS in129.00s/native130.439s, under
+`v012-verify-rule-repair/v012-verify-rule-repair311.json`.
+The three failures share one missed independent TAIL-length pin: 11 must
+become12 after the new selector. Its exact-once, three-child and budget
+assertions remain. This source correction precedes replay; the failed receipt
+is never relabeled. Initial metadata/ledger/doc receiving at that same source
+passed195 per runtime (3.11:7.69s;3.12:9.56s). New capacity handoff text requires
+its own metadata receiving; unchanged native Git behavior retains its scope.
+
+Live admission then refuses its first capacity owner at96.0percent against the
+hard95 limit. Scratch889.6MiB is a separate soft trigger; eight eligible scratch
+removals have zero errors but make no volume progress. None of the remaining
+eight admission owners starts. Fresh native inventory of the exact shared UV
+leaf measures nine entries, zero errors and about685MiB of child allocations.
+The existing installed-interpreter prune plans, then applies with FORCE0,
+300seconds/heartbeat5/quiet0/retention20. Native run
+`20261023T141554Z-7088-9b3216cc` removes23001 files/628.6MiB and passes.
+Post-prune disk still reports96percent. Removed cache allocations establish no
+physical capacity clearance; no unchanged prune or admission retry follows.
+
+Native checkout-retirement plans preserve two locked agent worktrees and refuse
+two unmerged codex worktrees. The other two peers have dirty/saved work.
+All six checkpoints and refs remain; no retirement, unlock or unregister is
+applied. Measured peer venv entries of76KiB/15MiB supply no GiB-scale remedy,
+and the existing venv owner preserves the invoking checkout. Keep the existing
+pending capacity/workflow input requests and HumanTodo UNFILED status.
+Bounded source-repair acceptance, normal collection/source checkpoints and
+source-only review remain allowed under release rule6. Final candidate sealing,
+combined replay, full gate and publication/deployment evidence stay blocked
+until their actual prerequisites clear. No passing component receipt clears
+the hard capacity refusal.
+
+Record normative documentation before combined receiving. Keep subsequent
+measurements in native receipts and clearly labeled operating history; reuse
+focused acceptance only for its actual unchanged bytes, tests, configuration,
+interpreter and scope. A new commit still needs its required exact-SHA full
+gate, hosted CI and deployment proof. The focused checks above close none of the
+seven active S98 release items.
+
 ## Primary and practitioner references
 
 - [GH auth status](https://cli.github.com/manual/gh_auth_status) documents active-account/hostname selection and the JSON exit-status distinction.

@@ -40,17 +40,20 @@ creates no new receipt; never clear the guard or pad CMD/RUN_ID to evade it.
 Read current tracking views together before work:
 
 ~~~console
-make show-lines FILE=TASKS.md START=1 END=9
-make show-lines FILE=BUGS.md START=1 END=5
+make show-lines FILE=TASKS.md START=1 END=3
+make show-lines FILE=BUGS.md START=1 END=3
 make cat-file FILE=config/ratchet.yml
-make cat-file FILE=SESSION.md
+make show-lines FILE=SESSION.md START=1 END=42
 ~~~
 
 Task identities use the existing canonical numeric-dot or uppercase-hyphenated grammar. Legacy labels such as S76.1a and S78.W10 retain explicit aliases after canonical primary names S76-1A and S78-W10; source/status/evidence remains historical. Run make validate-task-ledger before treating the current identity inventory as usable. Checked-only duplicates also refuse. The [task-source record](../../docs/features/BACKLOG_AUDIT_TASK_SOURCES.md#canonical-identity-and-duplicate-checked-claims-2026-10-22-utc) retains failing-first controls and the complete first-child guard. A repaired current ledger cannot recertify malformed immutable source/baseline ledgers or grant release authority.
 
-TASKS and BUGS keep compact current pointers above their full retained history.
-A seven-line active-task search can still truncate because each line contains a
-large evidence history. These windows establish navigation, not a changed task
+TASKS and BUGS keep compact current pointers above their retained records.
+Their earlier full leading headers remain at immutable980edc2; the current
+pointers name native export commands. SESSION's current section precedes
+explicitly retained sections. Use these short current windows first, then read
+historical sections only for a concrete need. An active-task search can still
+truncate on old long lines. These windows establish navigation, not a changed task
 definition or proof. Read the selected task's full criteria and owning feature
 before implementation/closure; complete native guards still evaluate the ledger.
 An older collection paragraph keeps its own source/ref and native artifact;
@@ -650,8 +653,16 @@ holds the candidate or resources:
 
 ```bash
 make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0 WORK_ITEM_ID=S98.4 OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=20
-make gate-background-observed GATE_TIMEOUT=7200 GATE_POLL_INTERVAL=60 GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=0 GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 WORK_ITEM_ID=S98.4
+make gate-background-observed GATE_TIMEOUT=21600 GATE_POLL_INTERVAL=60 GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=0 GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 WORK_ITEM_ID=S98.4
 ```
+
+Use the existing 21600-second canonical outer default for complete release
+proof. The prior 7200-second example expired during an actual partial run;
+shorter bounds provide diagnostic execution only. Preserve every child/phase
+deadline and drain the exact expired owner before another execution. Never
+extend an active receipt or rewrite generated status. The
+[recipe and outer-budget record](../../docs/features/GITHUB_PUBLICATION_HTTPS.md#complete-verify-remote-recipe-evidence-2026-10-23-utc)
+retains the failure, controls and proof limits.
 
 The observed owner runs the canonical make gate policy and records the outer
 lifecycle required by native receipt finalization. Run it once; a second gate

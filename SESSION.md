@@ -9,7 +9,39 @@ Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 native process metadata receiving after5e0f1c0
+## Current S98.4 complete-recipe receiving after actual980 gate
+
+Root owns Main/shared/Git/proof from980edc262b232536c09c57c4a83dc3c2db5c7993.
+Its normal collection129484/129508,24deselected/zeroerrors47.46s/native52.565s,
+lock52.480s, is fixed980 evidence at
+.gate-logs/observed/test-count/20261023T113156Z-53615-e32a743a.json.
+Exact980 independent source review and1205PASS per runtime preceded its full gate.
+That gate records P05 extraction1FAIL/419PASS/1SKIP38.91s, then timeout7200
+during unit-3a:batch-031. Native signedFAIL/cancelled143, released lock and
+drained outer75158 are retained; later diagnostics provide no complete proof.
+New boundary controls RED5FAIL/3PASS0.65s become8PASS each311/3120.59s/0.79s.
+The original two assertions and native SHA comparison remain; complete rule
+extraction rejects neighboring evidence. Family180 adds one TAIL selector
+before the retained final profile case. Full-run examples use existing21600
+outer default; all child deadlines/settings/coverage/cleanup stay.
+Current capacity admission fails96percent/hard95 after8eligible scratch removals.
+Native UV prune23001files/628.6MiB still leaves96percent; four checkout plans
+refuse locked/unmerged owners, with all six checkpoints/refs preserved.
+First complete repair547 retains3FAIL/544PASS129.00s/native130.439s at fixed
+967c9d21 source: one missed TAIL-length11 pin is corrected to12 with all other
+assertions intact. Keep that failed receipt; initial195metadata passes per runtime
+retain their fixed967c9d21 source. Bounded repair/normal collection remain allowed;
+final proof waits for real capacity/workflow inputs. No unchanged retry.
+Next: native eight pins, complete affected owners on both runtimes, normal
+collection/commit, independent source binding, admission and fresh exact-SHA
+full/hosted/deployment proofs. No checkbox closes. Workflow consent remains
+unanswered, HumanTodo UNFILED; native actual guard54013 still runs unchanged
+watchdog source, agent57626 alive. No new activation is claimed.
+The [publication record](docs/features/GITHUB_PUBLICATION_HTTPS.md#complete-verify-remote-recipe-evidence-2026-10-23-utc)
+owns decisions and scope. TASKS/BUGS leading histories are retained at immutable
+980:TASKS.md/BUGS.md through native git-show-file-to; keep current headers bounded.
+
+## Retained S98.4 native process metadata receiving after5e0f1c0
 
 Root owns Main/shared/Git/proof on the same branch. Local complete source
 5e0f1c0c59790bcb6ace0074fba23453f09d3924 retains1198PASS each311/312, source-only

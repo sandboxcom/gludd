@@ -135,6 +135,23 @@ and profile restoration; test ordinary teardown and a newer/restored owner.
 The [role record](docs/features/XDIST_TRACE_SUMMARY.md#native-session-role-and-lifecycle-boundary-s9842026-10-22-utc)
 retains separate RED/coverage/runtime receipts and proof limits.
 
+Structural Make checks must inspect the complete literal rule. Fixed character
+windows can hide valid commands and borrow neighboring-target evidence. Keep
+original assertions and add padded native-source positives plus missing-command
+and neighboring-target negatives. The
+[publication record](docs/features/GITHUB_PUBLICATION_HTTPS.md#complete-verify-remote-recipe-evidence-2026-10-23-utc)
+retains the actual P05 failure and independent native Git proof limits.
+Complete release gates use the existing 21600-second outer default; smaller
+bounds are diagnostic. Keep all child/phase deadlines and release settings,
+drain the exact terminal owner, and retain every unfinished lane as unproved.
+Progress percentages and ETAs are diagnostic as lane counts become known.
+
+Keep current TASKS/BUGS/SESSION handoffs bounded. Retain detailed decisions in
+the owning feature and historical source refs. Retrieve an old full header
+through native git-show-file-to at its explicit immutable SHA when needed;
+never concatenate every prior incident into the current paragraph. Preserve
+the actual ledger records, failed receipts and required completion proofs.
+
 ### Make results teach the next action
 
 Candidate hosted proof requires the canonical exact-SHA push event. Keep the
