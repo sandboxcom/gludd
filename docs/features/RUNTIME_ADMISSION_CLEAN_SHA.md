@@ -1,6 +1,78 @@
 # Clean-SHA runtime admission
 
-## Current external prerequisites after tested code714ce2d
+## Bounded external-input waiting after4b4d142
+
+Root owns the coupled S98.4 repair on release-candidate/v012-git-mutex-20261022.
+The frozen receiving base is4b4d1428262fd259ee590f6971562ca920ffc6d7, whose normal
+collection selects129357/129381,24deselected/zeroerrors48.81s, native0/54.283s;
+collection-lock54.195s is separate. Exact receipt:
+.gate-logs/observed/test-count/20261023T000850Z-35062-350f2770.json.
+That is the earlier handoff commit's collection, not new-source acceptance.
+
+Repeated stop challenges exposed missing guidance in scripts/codex_stop_hook.py:
+pending tasks always block stopping, but the reason only says to execute another
+task even when progress needs a genuinely unavailable external input. Keep that
+blocking decision, fresh challenge, selected native focus, ratchet/milestone
+semantics and exact-SHA/deployment requirements. Add explicit ask-once,
+interruptible waiting in intervals no longer than60s, preserving the open task,
+failed evidence and pending request. A new challenge/elapsed time is no changed
+prerequisite. Do not re-finalize, retry unchanged failures or manufacture
+source/receipt-only changes solely to appease the hook. AGENTS.md and the mandatory
+Make guide codify the same existing event-loop/no-repeat policy.
+
+Four new cases cover initial/continuation attempts with and without selected
+focus. Canonical tests-first gives4FAIL/13deselected0.76s, native2/1.8s:
+.gate-logs/observed/stop-wait-red/v012-stop-wait-red311-4b4d142.json.
+All fail on the absent external-input guidance after the old blocking decision
+and challenge assertions pass. No original case/assertion is removed.
+
+Focused Ruff first finds one import-group issue, repaired without suppression.
+Strict scope first rejects mixed bare/package module identities for task_scope
+and item_progress. Preserve all runtime package imports while making TYPE_CHECKING
+imports use the existing bare-script convention; annotate original test fixtures
+without changing their assertions. Separate source/test strict scopes then pass.
+No native checker option, Make target, pending latch or release criterion changes.
+
+The initial complete five-owner union passes209 each311/312,10.09s/8.69s.
+The311 coverage owner nevertheless correctly FAILS1/native11.955s because the
+hook has92.9percent lines and65percent branches: the combined87percent report
+cannot satisfy85aggregate/75per-file BOTH line and branch. Retain failed receipt
+.gate-logs/observed/coverage-files/20261023T002116Z-39087-b5c36653.json and audit
+.gate-logs/coverage-20261023T002128Z.json. The initial312 receipt is
+.gate-logs/observed/stop-wait-receiving/v012-stop-wait-receiving312.json,
+native0/9.747s. Passing assertions did not make that coverage gate green.
+
+Add seven genuine error/entrypoint controls: four malformed inventory shapes
+must emit blocking protocol JSON, a missing task ledger cannot clear a ratchet,
+an active milestone without excluded backlog stays open, and the native module
+entrypoint retains blocking JSON. No original case/assertion changes.
+Final complete union passes216 each311/312,10.58s/9.07s, with no skips/errors and
+fatal warnings. The311 native coverage owner passes0/12.242s, measuring all70
+hook statements and all20 branches at100percent without exclusions or relaxed
+thresholds. Report:.gate-logs/v012-stop-wait-coverage311.json; audit:
+.gate-logs/coverage-20261023T002316Z.json; exact terminal receipt:
+.gate-logs/observed/coverage-files/20261023T002304Z-39662-000c70c1.json.
+The312 exact passed/inactive/0 receipt is
+.gate-logs/observed/stop-wait-receiving/v012-stop-wait-receiving-final312.json,
+native10.046s, tested source digest
+c9612162a41992964ef3420147c3628c59df5d2ed04db2f276e9908c68ad7c07.
+The five complete owners are test_codex_stop_hook, test_codex_stop_guard_contract,
+test_active_work_status, test_pytest_param_fixture_collisions and
+test_status_snapshot under tests/unit/. Both exact native terminal receipts are
+fully consumed before any later handoff edit.
+
+These are working-checkout focused receipts before manual handoff/source commit;
+the100percent measurement covers the changed hook, not global project coverage.
+Normal per-commit collection remains pending. No new full gate, hosted run,
+authorization, capacity clearance, filed HumanTodo or deployment is claimed.
+No plugin TypeScript/configuration is changed and no restart is required.
+
+This is a bounded real repair, not permission to keep editing a frozen candidate
+while waiting. Once accepted/committed, await the already-requested inputs. Keep
+the exact714 source/runtime proofs below scoped to714; do not rerun its609-case
+receiving, original90/60 or unpublished CI lookup solely for this guidance change.
+
+## Retained external prerequisites after tested code714ce2d
 
 Root owns S98.4/Main/shared/Git on release-candidate/v012-git-mutex-20261022.
 The last tested code is714ce2d65e3dbeec9d3dbbadced9f983c13c2a3d, clean before

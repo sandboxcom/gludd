@@ -221,6 +221,14 @@ For a test that only checks a command's input boundary, use the exact current na
 
 A legacy whole guardrail test owner can recursively run global collection/lint/Ansible checks. Form focused cohorts from complete affected policy classes and structural nodes; retain every global check in the canonical gate and mandatory normal commit collection. Identify a timeout's exact unfinished node through the native trace summary, preserve the failed receipt and original child bounds, and never infer its cause from another runtime's last node. The [browser receiving record](docs/features/PRESENTATION_JAVASCRIPT_COVERAGE.md#focused-acceptance-must-not-recurse-into-global-checks) retains the concrete scope correction.
 
+9. When the next release step requires external user input, retain the open task,
+   actual failed evidence and the existing pending input request. Ask once, then
+   use the host's interruptible input/event tool with waits no longer than60s.
+   Keep the pending-work latch active. Do not finalize into repeated stop
+   challenges, rerun unchanged failures or manufacture source/receipt-only changes.
+   A new challenge token, elapsed time or handoff SHA is no changed prerequisite.
+   Resume the native owner only after its actual required input changes.
+
 ## Make Target Selection Contract
 
 Watched pytest diagnostics opt into the existing native trace with RUN_WATCHED_PYTEST_TRACE=1; mode0 preserves ordinary/inherited behavior. Publication owns mode1 for both watchers, without changing90/60,2/1/1 or proof authority. Native trace_path/run_id and failed artifacts remain producer-owned; no trace/cause/performance claim may be inferred from a different run. Explicit empty RUN_ID/LOG use existing automatic native identities, not a manual fixture. Optional observer arguments preserve CMD's shell positional parameters; retain the native two-mode regression. See the mandatory guide and [publication trace record](docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#retain-a-native-trace-for-publication-admission-2026-10-21).

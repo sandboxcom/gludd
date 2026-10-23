@@ -9,7 +9,37 @@ Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 external prerequisites after tested code714ce2d
+## Current S98.4 bounded external-input waiting after4b4d142
+
+Root owns the coupled Main/shared/Git repair on release-candidate/v012-git-mutex-20261022,
+from frozen base4b4d1428262fd259ee590f6971562ca920ffc6d7. The stop hook now teaches
+ask-once, interruptible waiting no longer than60s while retaining the open item,
+failed proof and pending request. The blocking decision and original proof gates
+are unchanged. Runtime imports remain package-qualified; typing imports conform
+to the existing script convention. No checker waiver or plugin restart is used.
+
+The [owning decision](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md#bounded-external-input-waiting-after4b4d142)
+retains4-case RED, initial209PASS/65percent-branch coverage failure, all original
+assertions and seven added native input/entrypoint controls. Final full five-owner
+receiving passes216 each311/312,10.58s/native12.242s coverage and
+9.07s/native10.046s. The hook measures100percent lines and branches under85/75
+BOTH; this is focused hook coverage, not a global gate. Exact terminal receipts:
+.gate-logs/observed/coverage-files/20261023T002304Z-39662-000c70c1.json and
+.gate-logs/observed/stop-wait-receiving/v012-stop-wait-receiving-final312.json.
+Ruff and separate strict source/test scopes pass. Normal collection is still
+required before the source commit; the header retains its actual714 measurement.
+
+After the bounded repair is accepted/committed, use the host's interruptible
+input/event tool to await the already-pending authorization/capacity questions.
+A new stop challenge, elapsed time or handoff SHA changes neither prerequisite.
+Do not create another source/receipt-only cycle or retry the unchanged auth,
+endpoint, cleanup or unpublished CI lookup. No local startup at97percent disk.
+The existing HumanTodo route is established in source; real filing remains
+UNFILED pending intended service/store and explicit credential facts. Required
+full gate/global85-75 BOTH, exact-SHA hosted/deployed-head/reviewed-head and
+promotion remain unverified; all seven S98 tasks remain unchecked.
+
+## Retained S98.4 external prerequisites after tested code714ce2d
 
 Root owns Main/shared/Git on release-candidate/v012-git-mutex-20261022.
 Last tested code:714ce2d65e3dbeec9d3dbbadced9f983c13c2a3d. Independent

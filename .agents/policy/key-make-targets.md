@@ -809,6 +809,15 @@ missing-proof records and
 
 ### Human input and external blockers
 
+If the next action requires external user input, retain its actual failed receipt,
+open work item and existing pending question. Ask once, then await input through
+the host's interruptible input/event tool in intervals no longer than60s.
+A continuation/stop challenge supplies no changed prerequisite. Keep the pending
+latch active and avoid repeated final responses, unchanged failing checks and
+source/receipt-only changes. After the actual input changes, resume the named
+native Make owner. The [waiting decision](../../docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md#bounded-external-input-waiting-after4b4d142)
+retains failing-first coverage and the distinction from release proof.
+
 Use the existing HumanTodo module through the supported Make owner:
 
 ```console
