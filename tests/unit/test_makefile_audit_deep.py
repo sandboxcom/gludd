@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from scripts.makefile_layout import compose_makefile
+from scripts.makefile_layout import compose_makefile, local_script_references
 
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
@@ -126,10 +126,48 @@ def test_prereq_targets_ignore_nested_make_expansion() -> None:
 
 
 def _script_refs(text: str) -> set[str]:
-    refs: set[str] = set()
-    for m in re.finditer(r"scripts/([a-zA-Z_][a-zA-Z0-9_./-]+\.(?:py|sh|mjs))", text):
-        refs.add(m.group(0))
-    return refs
+    return local_script_references(text)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("scripts/local.py", {"scripts/local.py"}),
+        ("./scripts/local.sh", {"scripts/local.sh"}),
+        ("/project/scripts/local.mjs", {"scripts/local.mjs"}),
+        ("$(CURDIR)/scripts/local.py", {"scripts/local.py"}),
+        ("https://example.invalid/upstream/scripts/remote.sh", set()),
+        ("HTTP://example.invalid/upstream/scripts/remote.py", set()),
+        ("'https://example.invalid/upstream/scripts/remote.sh'", set()),
+        ('"https://example.invalid/upstream/scripts/remote.mjs"', set()),
+        (
+            "curl https://example.invalid/scripts/remote.sh scripts/local.py",
+            {"scripts/local.py"},
+        ),
+        (
+            "curl https://example.invalid/scripts/remote.sh;scripts/local.py",
+            {"scripts/local.py"},
+        ),
+        (
+            "curl https://example.invalid/scripts/remote.sh&scripts/local.py",
+            {"scripts/local.py"},
+        ),
+        (
+            "curl https://example.invalid/scripts/remote.sh|scripts/local.py",
+            {"scripts/local.py"},
+        ),
+        (
+            "(curl https://example.invalid/scripts/remote.sh);scripts/local.py",
+            {"scripts/local.py"},
+        ),
+        ("file:///project/scripts/local.sh", {"scripts/local.sh"}),
+        ("https: scripts/local.py", {"scripts/local.py"}),
+    ],
+)
+def test_script_refs_preserve_local_paths_around_external_http_sources(
+    text: str, expected: set[str],
+) -> None:
+    assert _script_refs(text) == expected
 
 
 def _recipe_body(content: str, target_name: str) -> str:
@@ -252,6 +290,25 @@ class TestScriptReferencesExist:
         assert not missing, f"{len(missing)} script ref(s) missing from disk:\n" + "\n".join(
             f"  {r}" for r in sorted(missing)[:10]
         )
+
+
+def test_script_audit_keeps_native_local_existence_assertion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(f"{__name__}.ROOT", tmp_path)
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "present.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    remote = "curl https://example.invalid/upstream/scripts/remote.sh; "
+    native_assertion = TestScriptReferencesExist().test_all_scripts_exist
+
+    native_assertion(remote + "scripts/present.sh")
+    with pytest.raises(AssertionError) as failure:
+        native_assertion(remote + "scripts/missing.sh")
+    message = str(failure.value)
+    assert message.splitlines()[0] == "1 script ref(s) missing from disk:"
+    assert message.splitlines()[1].strip() == "scripts/missing.sh"
+    assert "scripts/remote.sh" not in message
 
 
 # ── 4. .PHONY coverage ───────────────────────────────────────────────────────

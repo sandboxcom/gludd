@@ -46,6 +46,15 @@ measurements, rejected approaches and the missing release proofs.
    manifest, independent seeds/counts and literal rosters together, then drain
    all eight current check-gate-failure-promotions pins (six predecessors plus
    two Make consumers) before the complete routing cohort.
+   Literal Make script audits use the existing layout owner's HTTP(S)-aware
+   classifier. Preserve the original local missing-file assertion and use
+   confined present/missing files plus mixed URL/local separator controls.
+   Preserve the fresh-HELP file exclusion from MAIN; route this exact audit
+   selector through existing TAIL before the original last profile guard. Keep
+   independent TAIL counts synchronized; the eight-pin roster also owns that
+   exclusion, selector count and original final position.
+   The [script-reference record](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md#literal-script-reference-admission-after-fa50e0b)
+   retains the full-gate failure, additive regression and exact early route.
 4. Form one deduplicated acceptance union from complete changed test owners and
    affected consumers. Run that union on each required installed runtime after
    the known repairs are ready. Keep each item's criteria/evidence separate.

@@ -1,5 +1,133 @@
 # Clean-SHA runtime admission
 
+## Literal script-reference admission after fa50e0b
+
+Root retains Main/shared/Git/S98.4 ownership on the candidate branch. Frozen
+fa50e0b099b59d3681cc243501f61c9b31d6f895 passes its nine native admission owners;
+the runtime child joins2396/1/11 with native0/80.543s inside90total/60quiet.
+Independent source-only approval is retained at
+/tmp/gludd-v012-fa50e0b-source-review.md. Its final21-owner combined acceptance
+passes893 each on3.11.14 (195.48s/native197.448s) and3.12.15
+(194.13s/native196.329s), with matching tested source
+a782d4dec7e428da9935b20f69d7ddab028e9a81222c9125f5ac532d3d26ca6c.
+Native receipts are .gate-logs/observed/release-proof-combined/
+v012-fa50e0b-combined311.json and v012-fa50e0b-combined312.json.
+
+The actual full gate at that SHA then FAILS, retaining
+.gate-logs/gate-20261023074307-fe8f7480.log and native run
+20261023T074307Z-fe8f7480. All35 preflights, including181 integration files with
+zero failures in517.6s, lint, typing and collection pass. The isolated unit child
+fails1/34PASS4.87s at
+tests/unit/test_makefile_audit_deep.py::TestScriptReferencesExist::test_all_scripts_exist.
+Later shards and coverage are not started; the signed attestation is failed.
+Its two reported paths, scripts/build/configure-apt.sh and
+scripts/build/configure-apt-sources.sh, occur inside fixed upstream runner-image
+HTTPS research URLs in make/00-foundation.mk. They are external inputs, while
+the audit's substring classifier wrongly treats them as missing project files.
+
+The existing scripts/makefile_layout.py owner now exposes literal
+local_script_references. Ordered matching consumes HTTP(S) source tokens before
+embedded scripts/ fragments. Whitespace, quotes and shell separators end that
+exclusion; existing relative, absolute and Make-prefixed local references remain.
+The audit delegates classification to that owner. Its original missing-file
+assertion and stale-reference set are unchanged, as are all research URLs,
+retrieval bounds, refusal statuses and result guidance. Fifteen additive boundary
+cases retain py/sh/mjs, mixed remote/local and separator controls. A separate
+confined control executes the original assertion: a present local script passes
+beside a remote URL, and exactly one missing local script still fails.
+
+Canonical RED retains11FAIL/34PASS1.13s/native2 about2.1s at
+.gate-logs/observed/v012-script-ref-red/v012-script-ref-red311-fa50e0b.json.
+The first four-owner receiving retains1FAIL/94PASS23.61s/native24.5s:
+v012-script-ref-receiving/v012-script-ref-green311.json under the same root.
+All classifier and original audit cases pass; the new control incorrectly pins
+plain exception formatting despite pytest assertion rewriting. Its corrected
+control asserts the actual missing count/path and exclusion of the remote path,
+preserving the original assertion and failure behavior.
+
+Initially promote the original failing node into MAIN of the existing runtime
+owner as make-local-script-reference-boundary, family178. Update the native manifest,
+independent seed/counts, both literal rosters and open-ended tail expectations
+together. Routing RED retains4FAIL/4PASS1.22s/native3.3s; the intermediate
+7PASS/1FAIL1.72s/native3.1s identifies a missed independent literal roster.
+A refused exact edit changes no bytes; native lint also rejects a167-character
+line before broad receiving. Split its literal across the existing two lines,
+retaining the2499-line policy. Final eight pins pass1.70s/native3.1s:
+.gate-logs/observed/v012-script-ref-routing/v012-script-ref-routing-green311-final.json.
+Native structural validation still retains21phases/2850seconds. Original
+three-child2/1/1 scheduling,90/60, descendant drain, fatal warnings and85/75 BOTH
+remain. Moving this cheap node earlier is routing, not a measured hosted saving.
+
+Complete641-case receiving then retains1FAIL/640PASS150.88s/native152.2s at
+.gate-logs/observed/v012-script-ref-receiving/v012-script-ref-receiving311.json.
+The unchanged fresh-HELP assertion requires this entire audit file to remain
+absent from MAIN. Preserve that assertion and its original selector: move only
+the new exact node to existing TAIL. Its independent roster and the added
+family's exact route now require counts0/0/1; every predecessor keeps1/0/0.
+A refused two-match exact edit stops the dependent seed edit until its actual
+function context is read and bounded. The correction retains three children,
+existing selectors/flags and native status/drain. Corrected Tail routing passes
+all eight pins1.82s and the original fresh-HELP control1/0.44s under one actual
+native0/4.3s compound watcher:
+.gate-logs/observed/v012-script-ref-tail-routing/v012-script-ref-tail-routing311.json.
+The existing eight-pin roster test also now independently excludes this audit
+file from MAIN, preserving the same original constraint if a future edit
+changes both rosters. Those final eight pins pass1.72s/native3.2s:
+.gate-logs/observed/v012-script-ref-tail-routing/v012-script-ref-tail-pins311.json.
+The next native cohort collects647 and retains4FAIL/643PASS168.26s/native169.5s
+at v012-script-ref-receiving/v012-script-ref-receiving311-tail.json.
+Three reviewed-finalization cases pin nine original selectors; the profile
+composition guard independently requires its selector last. Preserve that last
+assertion and insert the new exact node before the profile guard. Conform the
+independent selector count to ten: nine original selectors plus this one.
+The same existing eight-pin roster now also independently requires ten TAIL
+selectors and the original last profile selector. This carries every observed
+sequence constraint into cheap admission without adding a child or observer.
+Expanded eight pins pass1.82s, then all five affected original structural
+cases pass0.54s, native0/4.5s for the actual whole command:
+.gate-logs/observed/v012-script-ref-tail-routing/v012-script-ref-tail-boundaries311.json.
+Complete stable receiving passes647 each:3.11.14/149.63s/native150.773s and
+3.12.15/171.68s/native172.967s, zero skips/collection errors with -W error retained.
+The union is fourteen complete test files, the complete variable-consistency
+policy class and two existing structural link nodes. It includes the complete
+runtime-publication consumer required for a cohort-schedule change. Both actual
+receiving receipts bind unchanged tested source
+1ccb5f974b464d87d8bb8a647bbde8edc7d980568c8fd7032082b0a2813d73b0,
+before this final manual handoff:
+.gate-logs/observed/v012-script-ref-receiving/v012-script-ref-receiving311-final.json
+and v012-script-ref-receiving312-final.json. The raw commands retain all selectors,
+-n 0, fatal warnings, PID-owned ID= basetemps and explicit installed-runtime tuples.
+Drain311 before launching the identical312 CMD; no reservation guard changes.
+
+The unchanged config/coverage_makefile_layout.ini profile covers both native
+files through the complete audit/layout/split owners:79PASS each runtime,
+55.72s/native57.833s on311 and48.98s/native51.594s on312. Native receipts are
+.gate-logs/observed/coverage-files/20261023T083129Z-25438-ebadff18.json and
+20261023T083303Z-28968-8d9718ad.json. Actual data reports are
+.gate-logs/v012-script-ref-layout-coverage311.json and its312 counterpart.
+Both native audits measure97.8percent lines/93.9percent branches aggregate;
+makefile_layout96.7/92.3 and split_makefile98.4/95.0 each clear75/75, with85/85
+aggregate floors unchanged. Audit reports retain
+.gate-logs/coverage-20261023T083227Z.json and coverage-20261023T083355Z.json.
+These are unit-source measurements, with no deployed/E2E or full-project claim.
+At most two bounded test owners overlap receiving and coverage after native ps
+shows only the existing guards; the original runtime admission still runs alone.
+This is no measured hosted timing or global resource-lease claim.
+
+Ruff and separate native/test strict scopes pass. Final Markdown/line checks,
+contract289 and native Make validation1164/zero duplicates pass. After the final
+manual handoff edit, complete status/persistence owners and the two structural
+link nodes pass59 each:311/1.66s/native2.6s and312/1.96s/native3.0s.
+Exact receipts under .gate-logs/observed/v012-script-ref-handoff are
+v012-script-ref-handoff311.json and v012-script-ref-handoff312.json.
+Mandatory normal fresh collection precedes the source commit; accepted source
+replay is not repeated for this manual receipt update alone. A new frozen candidate
+still needs admission, independent review, combined acceptance, the complete
+canonical gate and exact-SHA hosted/deployment/reviewed-head/promotion proof.
+The fresh native GitHub read still lacks workflow scope; the existing operator
+consent request remains pending. HumanTodo is UNFILED and separate from admission.
+All seven S98 tasks remain open; prior passes and this repair do not close them.
+
 ## Generated probe environments after423153a
 
 Root owns Main/shared/Git/S98.4 on release-candidate/v012-git-mutex-20261022.

@@ -9,7 +9,51 @@ Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 generated probe environment receiving after423153a
+## Current S98.4 literal script-reference receiving afterfa50e0b
+
+Root retains the same Main/shared/Git/proof ownership. Frozen
+fa50e0b099b59d3681cc243501f61c9b31d6f895 has actual native admission0,
+independent source-only approval and21-owner combined893PASS each311/312.
+Those fixed-source receipts and normal129405/129429,24deselected/zeroerrors
+collection remain in the [current repair record](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md#literal-script-reference-admission-after-fa50e0b)
+and /tmp/gludd-v012-fa50e0b-local-proof.md; the714 header remains historical.
+
+That SHA's full gate FAILS at the original local-script existence assertion:
+1FAIL/34PASS4.87s in the isolated child, after35 passing preflights including181
+integration files/zero failures517.6s. Later shards/coverage do not start.
+Retain .gate-logs/gate-20261023074307-fe8f7480.log and its failed attestation.
+Two fixed external HTTPS research paths were wrongly classified as local files.
+The existing layout owner now owns HTTP(S)-aware literal classification; all
+original assertions, skip entries, research URLs and retrieval/result bounds
+remain. Fifteen additive boundaries and the original assertion's confined
+present/missing control retain genuine RED11FAIL/34PASS before the repair.
+
+Family178 first enters MAIN, then complete641-case receiving retains
+1FAIL/640PASS150.88s/native152.2s at the unchanged fresh-HELP assertion. Move only
+that new selector to existing TAIL; preserve the audit-file exclusion from MAIN,
+original HELP selector, three-child2/1/1,90/60 and21phase2850 contracts. Routing RED4FAIL/4PASS and the
+intermediate missed literal pin remain. Prior MAIN pins pass1.70s/native3.1s;
+corrected TAIL pins1.82s plus original fresh-HELP1/0.44s pass native0/4.3s.
+The existing eight-pin roster independently retains the MAIN audit-file
+exclusion; those eight pins pass1.72s/native3.2s. The next647-case cohort retains
+4FAIL/643PASS168.26s/native169.5s at old TAIL count/last-position pins. Preserve
+the original profile-last assertion and insert the new selector before it;
+conform nine original selectors plus one new to an independent ten. The same
+eight-pin roster now also owns that exact count and original last selector.
+Expanded eight pins1.82s plus all five affected structural cases0.54s pass
+native0/4.5s; the feature retains that exact command/receipt scope.
+The feature retains the separate new-control formatting failure, refused exact
+edit and corrected lint input. Complete receiving647PASS each311/312 retains149.63s/native150.773s and
+171.68s/native172.967s at matching tested1ccb5f97 source before this handoff.
+Unchanged native layout coverage79PASS each measures97.8lines/93.9branches,
+both files above75/75 and aggregate85/85 preserved. Exact commands, scope and
+receipts remain in the feature. Final tracking checks and normal fresh commit
+collection precede a new frozen candidate. Full gate,
+exact-SHA hosted/deployment/reviewed-head/promotion remain unproved; all seven
+S98 tasks stay open. Native github-auth-status still shows no workflow scope;
+the existing operator consent request is pending, and HumanTodo stays UNFILED.
+
+## Retained S98.4 generated probe environment receiving after423153a
 
 Root owns Main/shared/Git on release-candidate/v012-git-mutex-20261022 from
 423153a15ef1b3b7e6ba903399f76ed5eeb43336. That commit's normal collection selects
