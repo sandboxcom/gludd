@@ -1,3 +1,24 @@
+# Validate opt-in rerun flags before startup/export or ci-view prerequisites.
+ifneq ($(filter ci-rerun,$(MAKECMDGOALS)),)
+CI_RERUN_DEBUG ?= 0
+CI_RERUN_FAILED_ONLY ?= 0
+override GLUDD_CI_RERUN_DEBUG := $(value CI_RERUN_DEBUG)
+override GLUDD_CI_RERUN_FAILED_ONLY := $(value CI_RERUN_FAILED_ONLY)
+export GLUDD_CI_RERUN_DEBUG := $(value CI_RERUN_DEBUG)
+export GLUDD_CI_RERUN_FAILED_ONLY := $(value CI_RERUN_FAILED_ONLY)
+unexport CI_RERUN_DEBUG CI_RERUN_FAILED_ONLY
+ifneq (x$(value GLUDD_CI_RERUN_DEBUG)x,x0x)
+ifneq (x$(value GLUDD_CI_RERUN_DEBUG)x,x1x)
+$(error CI_RERUN_DEBUG must be literal 0 or 1)
+endif
+endif
+ifneq (x$(value GLUDD_CI_RERUN_FAILED_ONLY)x,x0x)
+ifneq (x$(value GLUDD_CI_RERUN_FAILED_ONLY)x,x1x)
+$(error CI_RERUN_FAILED_ONLY must be literal 0 or 1)
+endif
+endif
+endif
+
 # Keep HTTPS configuration mode literal before native startup/export expansion.
 SANDBOXCOM_HTTPS_VALIDATE_ONLY ?= 1
 override GLUDD_SANDBOXCOM_HTTPS_VALIDATE_ONLY := $(value SANDBOXCOM_HTTPS_VALIDATE_ONLY)
@@ -786,6 +807,8 @@ help:
 		"" \
 		"  --- Git ---" \
 		"  ci-cancel             Plan an emergency single-run request (RUN, CI_CANCEL_VALIDATE_ONLY=1; explicit apply=0)" \
+		"  ci-rerun              Guarded run request; CI_RERUN_DEBUG=0|1, CI_RERUN_FAILED_ONLY=0|1 (both default0), CI_FAILURE_VALIDATE_ONLY=1 plans" \
+		"  ci-rerun-help         Read installed gh rerun flag help without authentication or a remote write" \
 		"  (Single-source policy: features land on development first, then merge to master)" \
 		"  git-status            Show git status" \
 		"  batch-push            Publish a guarded candidate (default COMMIT_THRESHOLD=5; contract threshold=1 refuses; SSH_KEY)" \

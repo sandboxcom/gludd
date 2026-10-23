@@ -226,6 +226,38 @@ real branch to verify-remote with explicit permitted SSH_KEY; use the existing
 pipeline-status for required exact-SHA hosted results. A missing-key or absent-ref
 behavioral example is an expected nonzero control, not successful remote proof.
 
+### Diagnostic Actions reruns
+
+Diagnostic GHA work can proceed independently of release-candidate readiness.
+The existing ci-rerun owner observes the exact run into its native ledger and
+retains guard-rerun, explicit unchanged-run permission and a nonempty reason.
+It writes no Git ref or workflow file. Missing workflow-file push scope does not
+establish a rerun refusal; the actual GitHub response determines that capability.
+No release, publication, capacity, original 90/60 or coverage guard is relaxed.
+
+Read installed flag semantics through make ci-rerun-help. Its native --failed
+includes dependencies; it is not an exact one-job selector. CI_RERUN_DEBUG and
+CI_RERUN_FAILED_ONLY accept literal 0|1 and default 0. Direct ci-rerun invocations
+capture and validate both inputs before startup exports or ci-view prerequisites,
+including environment/-e values. Other targets retain their own inputs.
+
+The documented example is offline and makes no remote observation, ledger write
+or rerun request:
+
+~~~sh
+make ci-rerun RUN=123 CI_FAILURE_REPOSITORY=sandboxcom/gludd CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_RERUN_ALLOW_UNCHANGED=0 CI_RERUN_REASON=none CI_RERUN_DEBUG=1 CI_RERUN_FAILED_ONLY=1 CI_FAILURE_VALIDATE_ONLY=1
+~~~
+
+For an authorized diagnostic request, use its real RUN, existing native ledger,
+CI_RERUN_ALLOW_UNCHANGED=1, an auditable changed-logging reason, both diagnostic
+flags set to 1 and CI_FAILURE_VALIDATE_ONLY=0. Preserve the selected installed runtime.
+Native 0 means one request was accepted, not queued work, a passed test, a source
+repair or release proof. Follow the exact run/attempt through ci-run-summary and
+existing pipeline-status/ci-await as appropriate. A nonzero or interrupted write
+remains unknown: retain its native status and reconcile before another request.
+The [diagnostic record](../../docs/features/beta4-dual-track-ci/exact-sha-promotion.md#diagnostic-reruns-with-changed-logging-2026-10-23)
+retains failing-first native controls and proof limits.
+
 ### Choose the next action from evidence
 
 | Current input | Next action |

@@ -724,3 +724,93 @@ Normal commit collection, independent candidate review, receiving acceptance,
 canonical full gate, exact-SHA push CI and immutable hosted timing remain pending.
 A failed receipt remains history; neither this source packet nor a later
 handoff closes S98.4 or authorizes promotion.
+
+### Diagnostic reruns with changed logging (2026-10-23)
+
+Diagnostic CI can run before release-candidate readiness. The existing guarded
+`ci-rerun` owner now accepts literal `CI_RERUN_DEBUG=0|1` and
+`CI_RERUN_FAILED_ONLY=0|1`, both defaulting to 0. Ordinary calls retain their
+exact native argv. Opting in appends `--debug` and/or `--failed` after the
+existing repository/run arguments. Installed `make ci-rerun-help` confirms that
+`--failed` includes dependencies; it is not an exact one-job selection.
+
+The native ledger observation still precedes `guard-rerun`, unchanged-run
+permission and a nonempty auditable reason. Direct-goal raw flags are captured
+before startup exports and prerequisites, including command-line, environment
+and `-e` carriers. Invalid flags refuse before observation or evaluation.
+The [mandatory guide](../../../.agents/policy/key-make-targets.md#diagnostic-actions-reruns)
+and target contract retain an offline plan: no remote observation, ledger write
+or rerun request occurs. Success guidance identifies the exact run/reason and
+one accepted request only. Failure preserves native status and marks the write
+unknown until native observation reconciles a possibly applied request.
+
+The existing ledger's [guarded rerun record](../CI_FAILURE_LEDGER.md) retains
+the failure-family policy and prior research. This packet adds no HTTP research,
+runner, polling owner, dispatcher, cache, Git mutation or Python production code.
+The actual API response decides rerun authority; missing workflow-file push
+scope is not evidence that rerunning an existing workflow is forbidden.
+
+Acceptance starts at isolated source `008f879dbea79fdead27994a5948df4bc07b7d52`.
+New `tests/unit/test_ci_rerun_diagnostics.py` executes the real Make recipes
+and native ledger CLI against a harmless `gh` recorder. Controls retain actual
+metadata/jobs/guard ordering, default argv, all flag combinations, offline plans,
+native refusal/status, unrelated goals, private-carrier spoof resistance and
+owned unguarded evaluation witnesses before guarded no-evaluation assertions.
+Every predecessor test remains intact.
+
+| Scope | Pytest result | Native elapsed/status | Worktree-relative receipt |
+| --- | --- | --- | --- |
+| RED 3.11 | 47 FAIL, 19.81s | 20.9s / exit2 | `.gate-logs/observed/v012-ci-rerun-debug-red/20261023T233615Z-40469-199e2c07.json` |
+| New owner GREEN 3.11 | 77 PASS, 12.59s | 13.5s / exit0 | `.gate-logs/observed/v012-ci-rerun-debug-green311/20261023T233750Z-50847-e3eb3f80.json` |
+| Complete 3.11 | 575 PASS, 30.94s | 32.054s / exit0 | `.gate-logs/observed/v012-ci-rerun-debug-union311/20261023T234154Z-63943-a2e1a9cf.json` |
+| Complete 3.12 | 575 PASS, 33.71s | 34.702s / exit0 | `.gate-logs/observed/v012-ci-rerun-debug-union312/20261023T234243Z-66236-70a18cab.json` |
+
+All exact test sessions are terminal and drained; native observed-status confirms
+both complete unions inactive and passed. Acceptance uses one pytest process,
+fatal warnings, literal `ID=`, installed runtimes and project-private native traces.
+Narrow tests retain 90/60 seconds; the complete eight-owner union uses 300/60
+diagnostic acceptance bounds without changing publication/runtime owners.
+The union retains all eight owners: `test_ci_rerun_diagnostics.py`,
+`test_ci_failure_ledger.py`, `test_ci_failure_ledger_concurrency.py`,
+`test_workflow_failure_class_guards.py`, `test_make_target_contract.py`,
+`test_ci_cancel_contract.py`, `test_make_help_audit.py` and
+`test_pytest_param_fixture_collisions.py`, all under `tests/unit/`.
+The installed help, offline example, Make lint, 290-target contract, strict new-test
+typing, Ruff, test-environment guard and native tracked-file line limits pass.
+Markdown lint remains unproved here: its native owner refuses because the
+peer lacks the hardcoded locked `.venv/bin/rumdl`; no install or sync was attempted.
+No new Python production coverage measurement follows from this Make-only repair;
+85% aggregate / 75% per-file line AND branch floors and ZDD remain unchanged.
+
+A debug request against published run `39826135809` supplies diagnostic logs
+for that run's original source, not proof of local source repairs. Request
+acceptance, queued work, terminal CI, canonical exact-SHA push proof and release
+publication remain separate. No actual API request is included in these source
+receipts. Normal collection, independent review, receiving, canonical full gate,
+exact-SHA hosted success and immutable timing remain required as applicable.
+Neither diagnostic readiness nor this source packet closes S98.4 or relaxes the
+original 90/60 publication/runtime bounds, capacity, coverage or promotion rules.
+
+Root then executed one actual diagnostic request at 2026-10-23T23:43:12Z,
+using this peer's direct ci-rerun target, explicit installed3.11 and the existing
+absolute Main CI ledger. Native ci-view and guard-rerun preceded
+`gh run rerun -R sandboxcom/gludd 39826135809 --debug --failed`.
+The explicit unchanged-source reason requested debug evidence for the published
+eb772a6 runtime timeout, with no source-fix or release-proof claim. The existing
+watcher receipt is `.gate-logs/observed/v012-diagnostic-build-rerun/v012-debug-build39826135809-request-008f879.json`;
+it passed in2.585s with write_outcome=accepted. Root drained exact exec27607
+and read native observed-status; request success alone proves no test result.
+No credential consent, workflow-file push or new candidate was needed for this
+actual existing-run Actions operation.
+
+A subsequent native `ci-run-summary RUN=39826135809` reports the same published
+full SHA eb772a658a01db4485087813e4478eb6c59cc328, workflow in_progress and
+gate3.12 in_progress, with four completed successes and two skipped jobs visible.
+Its nonzero status remains: work is unfinished. All eight shard timing rows are
+pending/censored; no speed or gate improvement follows. The current printed
+summary does not identify the attempt number, which must be reconciled through
+the existing native observation before attributing later artifacts. This live
+observation is separate from both575-case source receipts and all newer local
+source. Later failure or completion still needs the actual native result.
+The selected flag proof covers direct CLI/environment ordinary/-e inputs;
+prerequisite invocation and later file/target-specific settings are unproved.

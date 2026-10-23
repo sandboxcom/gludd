@@ -502,15 +502,14 @@
     },
     {
       "name": "ci-rerun",
-      "make_variables": [
-        "RUN",
-        "CI_FAILURE_REPOSITORY",
-        "CI_FAILURE_LEDGER",
-        "CI_RERUN_ALLOW_UNCHANGED",
-        "CI_RERUN_REASON",
-        "CI_FAILURE_VALIDATE_ONLY"
-      ],
-      "behavior": "make ci-rerun RUN=123 CI_FAILURE_REPOSITORY=sandboxcom/gludd CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_RERUN_ALLOW_UNCHANGED=0 CI_RERUN_REASON=none CI_FAILURE_VALIDATE_ONLY=1"
+      "make_variables": ["RUN", "CI_FAILURE_REPOSITORY", "CI_FAILURE_LEDGER", "CI_RERUN_ALLOW_UNCHANGED",
+        "CI_RERUN_REASON", "CI_RERUN_DEBUG", "CI_RERUN_FAILED_ONLY", "CI_FAILURE_VALIDATE_ONLY"],
+      "behavior": "make ci-rerun RUN=123 CI_FAILURE_REPOSITORY=sandboxcom/gludd CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_RERUN_ALLOW_UNCHANGED=0 CI_RERUN_REASON=none CI_RERUN_DEBUG=1 CI_RERUN_FAILED_ONLY=1 CI_FAILURE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-rerun-help",
+      "make_variables": [],
+      "behavior": "make ci-rerun-help"
     },
     {
       "name": "ci-recover-runner-acquisition",

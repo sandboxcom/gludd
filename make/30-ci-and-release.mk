@@ -1460,7 +1460,26 @@ ci-rerun: ci-view
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-rerun RUN=<run-id>"; exit 1; fi
 	@case "$(CI_RERUN_ALLOW_UNCHANGED)" in 0|1) ;; *) echo "CI_RERUN_ALLOW_UNCHANGED must be 0 or 1"; exit 2 ;; esac
 	@$(PYTHON) scripts/ci_failure_ledger.py guard-rerun --run "$(RUN)" --ledger "$(CI_FAILURE_LEDGER)" $(if $(filter 1,$(CI_RERUN_ALLOW_UNCHANGED)),--allow-unchanged --reason "$(CI_RERUN_REASON)",) $(if $(filter 1,$(CI_FAILURE_VALIDATE_ONLY)),--validate-only,)
-	@if [ "$(CI_FAILURE_VALIDATE_ONLY)" = "1" ]; then echo "CI_RERUN_VALIDATE_ONLY_PASS"; else gh run rerun -R "$(CI_FAILURE_REPOSITORY)" "$(RUN)"; fi
+	@ci_rerun_guide() { printf '%s\n' "AGENT_NEXT target=ci-rerun outcome=$$1 native_status=$$2 run=$(RUN) reason=$(CI_RERUN_REASON) debug=$$GLUDD_CI_RERUN_DEBUG failed_only=$$GLUDD_CI_RERUN_FAILED_ONLY gate_evidence=false release_ready=false $$3" >&2; }; \
+	if [ "$(CI_FAILURE_VALIDATE_ONLY)" = "1" ]; then \
+		printf 'CI_RERUN_VALIDATE_ONLY_PASS debug=%s failed_only=%s rerun_requested=false\n' "$$GLUDD_CI_RERUN_DEBUG" "$$GLUDD_CI_RERUN_FAILED_ONLY"; \
+		ci_rerun_guide planned 0 'next_owner=ci-rerun; offline plan performs no remote observation, ledger write or rerun request'; \
+	else \
+		set --; \
+		if [ "$$GLUDD_CI_RERUN_DEBUG" = 1 ]; then set -- "$$@" --debug; fi; \
+		if [ "$$GLUDD_CI_RERUN_FAILED_ONLY" = 1 ]; then set -- "$$@" --failed; fi; \
+		gh run rerun -R "$(CI_FAILURE_REPOSITORY)" "$(RUN)" "$$@"; CI_RERUN_STATUS=$$?; \
+		if [ "$$CI_RERUN_STATUS" -eq 0 ]; then \
+			ci_rerun_guide requested 0 'write_outcome=accepted next_owner=ci-run-summary; native zero accepts one request only; observe the exact run and attempt before claiming queued or completed work'; \
+		else \
+			ci_rerun_guide failed "$$CI_RERUN_STATUS" 'write_outcome=unknown next_owner=ci-run-summary; preserve native failure and reconcile the exact run/attempt before retrying a possibly applied request'; \
+		fi; \
+		exit "$$CI_RERUN_STATUS"; \
+	fi
+
+.PHONY: ci-rerun ci-rerun-help
+ci-rerun-help:
+	@gh run rerun --help
 
 # Recover one exact-SHA run only when all non-success jobs never started and
 # GitHub annotated each with its hosted-runner acquisition failure. The guard
