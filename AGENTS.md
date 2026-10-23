@@ -2,6 +2,13 @@
 
 ## Release Proof Throughput (READ FIRST)
 
+Before each dispatch wave run make check-system-load. Keep at most three
+subagents, two coding/testing owners, one public HTTP research owner and one
+Git writer. Mutating agents require isolated registered worktrees; read-only
+Main audits do not authorize source edits. Set the installed runtime explicitly
+on status readers as well as tests. The [pipeline/agentic audit](docs/features/GHA_PIPELINE_PROMOTION_AUDIT.md)
+records actual failures, native repairs, phase ownership and missing proofs.
+
 1. During release stabilization, prioritize the active milestone and its required repairs. Do not start unrelated backlog work or pad dispatch waves while release blockers remain.
 2. Keep one proof owner and one explicit missing-proof record per milestone task; use [Release Proof Throughput](docs/features/RELEASE_PROOF_THROUGHPUT.md). Distinguish implementation, focused acceptance, source review, full gate, exact-SHA CI, and completion.
 3. Before candidate sealing, final combined replay, or a full gate, run `make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0`. Plan mode and passing scheduling admission are NEVER gate or release evidence.

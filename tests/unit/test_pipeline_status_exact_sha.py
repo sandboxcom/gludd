@@ -1126,3 +1126,95 @@ def test_pipeline_verdict_observation_requires_matching_snapshot_identity(
     assert pipeline_status._publish_snapshot(parsed, summary, sha=observed_sha)
     assert history.read_bytes() == before
     assert restart.read_text() == "2"
+
+
+@pytest.mark.parametrize(("case", "code", "action", "outcome"), [
+    ("missing", 2, "establish_exact_sha_push_evidence", "missing"),
+    ("partial", 2, "establish_exact_sha_push_evidence", "missing"),
+    ("pending", 2, "await_exact_sha_runs", "pending"),
+    ("failed", 1, "repair_hosted_failure", "failed"),
+    ("passed", 0, "collect_required_deployment_proof", "passed"),
+])
+def test_hosted_guidance_distinguishes_missing_runs_from_active_runs(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    case: str, code: int, action: str, outcome: str,
+) -> None:
+    runs = [_run("Build and Release", 124), _run("Molecule Tests", 101)]
+    if case == "missing":
+        runs = []
+    elif case == "partial":
+        runs = runs[:1]
+    elif case == "pending":
+        runs[0] = _run("Build and Release", 124, status="in_progress", conclusion="")
+    elif case == "failed":
+        runs[0] = _run("Build and Release", 124, conclusion="failure")
+    monkeypatch.setattr(pipeline_status, "fetch_runs", lambda *_a, **_k: runs)
+    assert pipeline_status.main(["--remote-only", "--sha", SHA]) == code
+    captured = capsys.readouterr()
+    assert f"AGENT_NEXT target=pipeline-status outcome={outcome}" in captured.err
+    assert f"hosted_next_action={action}" in captured.err
+    assert f"sha={SHA}" in captured.err
+    assert "gate_evidence=false release_ready=false" in captured.err
+    assert "AGENT_NEXT" not in captured.out
+    marker = {0: "CI GREEN", 1: "CI RED", 2: "CI PENDING"}[code]
+    assert f"{marker}: sha={SHA}" in captured.out
+
+
+@pytest.mark.parametrize("missing", [False, True])
+def test_hosted_next_action_remains_separate_from_hard_local_capacity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: bool,
+) -> None:
+    path, args = _capacity_snapshot_sources(tmp_path, monkeypatch, "in_progress", "")
+    if missing:
+        monkeypatch.setattr(pipeline_status, "fetch_runs", lambda *_a, **_k: [])
+    monkeypatch.setattr(automatic_disk_cleanup, "inspect_usage",
+                        lambda: automatic_disk_cleanup.DiskSnapshot(173.0, 96.0))
+    assert pipeline_status.main(args) == 2
+    record = json.loads(path.read_text())
+    assert record["evidence"]["capacity"]["hard_blocked"] is True
+    for item in record["evidence"]["missing_proofs"].values():
+        assert item["next_action"] == "clear_hard_capacity_before_local_proofs"
+        assert item["hosted_next_action"] == (
+            "establish_exact_sha_push_evidence" if missing else "await_exact_sha_runs"
+        )
+    assert record["release_ready"] is False and record["gate_evidence"] is False
+
+
+@pytest.mark.parametrize("case", ["planned", "lookup-error", "snapshot-error"])
+def test_hosted_guidance_preserves_plans_and_observation_failures(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], case: str,
+) -> None:
+    def lookup(*_a: object, **_k: object) -> list[dict[str, object]]:
+        if case == "planned":
+            pytest.fail("offline plan must not query GitHub")
+        if case == "lookup-error":
+            raise pipeline_status.PipelineStatusError("fixture lookup refusal")
+        return [_run("Build and Release", 124), _run("Molecule Tests", 101)]
+    monkeypatch.setattr(pipeline_status, "fetch_runs", lookup)
+    if case == "snapshot-error":
+        monkeypatch.setattr(pipeline_status, "_publish_snapshot", lambda *_a, **_k: False)
+    args = ["--remote-only", "--sha", SHA]
+    if case == "planned":
+        args.append("--validate-only")
+    assert pipeline_status.main(args) == (0 if case == "planned" else 2)
+    captured = capsys.readouterr()
+    outcome = "planned" if case == "planned" else "lookup_error"
+    assert f"AGENT_NEXT target=pipeline-status outcome={outcome}" in captured.err
+    assert "gate_evidence=false release_ready=false" in captured.err
+    assert "outcome=passed" not in captured.err
+
+
+def test_advisory_hosted_guidance_cannot_replace_native_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class RefusedGuidance:
+        calls = 0
+        def write(self, _text: str) -> None:
+            self.calls += 1
+            raise OSError("fixture advisory stream refusal")
+    stream = RefusedGuidance()
+    monkeypatch.setattr(pipeline_status, "fetch_runs", lambda *_a, **_k: [])
+    with monkeypatch.context() as scope:
+        scope.setattr(sys, "stderr", stream)
+        assert pipeline_status.main(["--remote-only", "--sha", SHA]) == 2
+    assert stream.calls == 1

@@ -9,37 +9,37 @@ Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
 
-## Current S98.4 complete-recipe receiving after actual980 gate
+## Current S98.4 pipeline and agentic audit
 
-Root owns Main/shared/Git/proof from980edc262b232536c09c57c4a83dc3c2db5c7993.
-Its normal collection129484/129508,24deselected/zeroerrors47.46s/native52.565s,
-lock52.480s, is fixed980 evidence at
-.gate-logs/observed/test-count/20261023T113156Z-53615-e32a743a.json.
-Exact980 independent source review and1205PASS per runtime preceded its full gate.
-That gate records P05 extraction1FAIL/419PASS/1SKIP38.91s, then timeout7200
-during unit-3a:batch-031. Native signedFAIL/cancelled143, released lock and
-drained outer75158 are retained; later diagnostics provide no complete proof.
-New boundary controls RED5FAIL/3PASS0.65s become8PASS each311/3120.59s/0.79s.
-The original two assertions and native SHA comparison remain; complete rule
-extraction rejects neighboring evidence. Family180 adds one TAIL selector
-before the retained final profile case. Full-run examples use existing21600
-outer default; all child deadlines/settings/coverage/cleanup stay.
-Current capacity admission fails96percent/hard95 after8eligible scratch removals.
-Native UV prune23001files/628.6MiB still leaves96percent; four checkout plans
-refuse locked/unmerged owners, with all six checkpoints/refs preserved.
-First complete repair547 retains3FAIL/544PASS129.00s/native130.439s at fixed
-967c9d21 source: one missed TAIL-length11 pin is corrected to12 with all other
-assertions intact. Keep that failed receipt; initial195metadata passes per runtime
-retain their fixed967c9d21 source. Bounded repair/normal collection remain allowed;
-final proof waits for real capacity/workflow inputs. No unchanged retry.
-Next: native eight pins, complete affected owners on both runtimes, normal
-collection/commit, independent source binding, admission and fresh exact-SHA
-full/hosted/deployment proofs. No checkbox closes. Workflow consent remains
-unanswered, HumanTodo UNFILED; native actual guard54013 still runs unchanged
-watchdog source, agent57626 alive. No new activation is claimed.
-The [publication record](docs/features/GITHUB_PUBLICATION_HTTPS.md#complete-verify-remote-recipe-evidence-2026-10-23-utc)
-owns decisions and scope. TASKS/BUGS leading histories are retained at immutable
-980:TASKS.md/BUGS.md through native git-show-file-to; keep current headers bounded.
+Root source checkpoint is aa494265cc427fe79a706461859c6532dec223f2; current source edits are not published.
+Normal collection129497/129521,24deselected/zeroerrors53.95s/native59.382s
+is fixed aa494265 evidence at .gate-logs/observed/test-count/20261023T144831Z-73491-676dbecf.json.
+That checkpoint has independent SOURCE ONLY approval and742repair cases per runtime.
+Current hosted-status repair has11RED/11GREEN and724complete cases on311/312.
+Its fixed source159b170b237a5569aff4a7247cf7a6cfc7e4b5847a8a446cf6d352e74688c5e8
+passes registered whole-source coverage99.2line/98.8branch with85/75BOTH unchanged.
+Native311 receipt coverage-files/20261023T182411Z-45386-6a49738d;312
+hosted-next-action-receiving/hosted-next-action-union312-aa49426, both terminal0.
+Latest pushed eb772a658a01db4485087813e4478eb6c59cc328 still has Build3.12 runtime90.5timeout
+and Pages Chromium acquisition600stimeout;all6Molecule jobs passed. New source has no hosted run.
+pipeline-status now distinguishes missing push runs from active runs and separates hosted_next_action
+from local capacity next_action;stdout/native statuses/history invalidation remain.
+Isolated agent-v012-gha-build-phase repairs destructive draft --cleanup-tag:2FAIL/4PASS RED,
+then6GREEN and303complete cases on each runtime. Main receiving/commit/hosted proof pending.
+agent-v012-gha-research:12cases each runtime,14HTTP200body sources;failed HTML size56 retained.
+Rendered official API closes the needs/if raw-source gap;Main receiving remains pending.
+Audits confirm commit-lock lifetime,bulk wrong-branch/foreign-dirt integration,upstream-count,
+HTTPS route,worktree false-success,Pages input-filter and readonly-DMG risks;repairs need native RED.
+Installer descendant survival remains a hypothesis;no production leak or resolution is claimed.
+One isolated status read created an unwanted3.14environment;tests retain explicit311/312.
+Root preserves that failure and all refs/checkpoints;native cleanup awaits lifecycle authority.
+Subsequent waves measure load first:three agents,two coding/testing owners,isolated mutations,one Git writer.
+Original980 failed gate/cancelled143/timeout7200 and all earlier collection/source receipts stay historical.
+Next:normal source checkpoints,independent review,canonical receiving;no release checkbox closes.
+Final admission still waits for actual disk clearance96percent/hard95;workflow consent unanswered.
+HumanTodo UNFILED. Keep pending inputs and native owners;no unchanged refused proof/transport retry.
+[Phase/agentic record](docs/features/GHA_PIPELINE_PROMOTION_AUDIT.md) owns decisions,evidence and all missing proofs.
+Original TASKS/BUGS leading histories remain immutable980;use native git-show-file-to,keep current windows bounded.
 
 ## Retained S98.4 native process metadata receiving after5e0f1c0
 

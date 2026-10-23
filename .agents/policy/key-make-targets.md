@@ -265,9 +265,21 @@ cross-SHA gate/CI authority; native freshness guards remain mandatory.
 The existing result owners emit short AGENT_NEXT prompts. They advise the next
 action; they do not execute it or create gate/release proof.
 
+pipeline-status preserves its existing stdout and native status while stderr
+distinguishes missing push evidence, active runs, failures, plans and observation
+errors. Its native missing-proof rows retain legacy capacity next_action and
+add hosted_next_action. Local hard capacity still blocks final local proof;
+it does not replace the separate guarded repair-publication prerequisite.
+Use the [phase/agentic audit](../../docs/features/GHA_PIPELINE_PROMOTION_AUDIT.md)
+before assigning parallel work or attributing a workflow to deployment.
+
+
 | Target/result | Required model action |
 |---|---|
 | Candidate SHA has no hosted runs | Inspect push filters and actual remote visibility. Canonical proof requires exact-SHA push runs; manual dispatch is not a substitute. Use normal guarded repair publication, verify-remote and the same pipeline-status producer with branch-owned PIPELINE_STATUS_OUTPUT. All publication, full-gate and deployment guards remain. |
+| pipeline-status outcome=missing | No matching push run exists for every required workflow. Establish exact-SHA push evidence through verify-state, github-auth-status, normal guarded publication, full-SHA verify-remote and this same producer; inspect actual filters if already published. Keep selected-account consent explicit. Do not wait for a nonexistent run. |
+| pipeline-status outcome=pending | Matching runs exist. Use native ci-await for that SHA, retain failures and avoid cancelling useful push runs. |
+| pipeline-status outcome=passed | Retain the actual hosted checks and obtain required canonical gate/coverage, master deployment and tag-publication proofs. This outcome closes no release item by itself. |
 | pipeline-status output ownership refusal | Preserve the existing repo/branch record. Select the same producer with an explicit output for the requested repo/branch; never hand-edit or adopt the foreign current JSON. Missing/pending remain nonzero. |
 | Admission blocked on capacity | Read the native cause: volume pressure is hard; scratch is a soft cleanup trigger and protected/recent scratch may be admitted when volume is healthy, without inspection/cleanup errors. disk-check is diagnostic, not admission. Repair actual capacity through existing authorized owners or HumanTodo escalation. Service/config/store/auth govern filing; admission can resume after capacity clears even if filing is pending. Preserve all owners and final proofs. |
 | work-item planned | Inspect explicit mode0 status; no focus selection, active-ledger eligibility check or runtime admission occurred. |
