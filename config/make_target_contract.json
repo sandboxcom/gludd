@@ -2108,13 +2108,12 @@
       ],
       "behavior": "make require-dual-track-green SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa DUAL_TRACK_CI_VALIDATE_ONLY=1"
     },
+    {"name": "agent-worktree", "make_variables": ["BRANCH", "ACTIVE_WORKSTREAM_REGISTRY"], "behavior": "make agent-worktree BRANCH= ACTIVE_WORKSTREAM_REGISTRY="},
+    {"name": "agent-worktree-base", "make_variables": ["BRANCH", "BASE", "ACTIVE_WORKSTREAM_REGISTRY"], "behavior": "make agent-worktree-base BRANCH= BASE= ACTIVE_WORKSTREAM_REGISTRY="},
+    {"name": "agent-worktree-dev", "make_variables": ["BRANCH", "ACTIVE_WORKSTREAM_REGISTRY"], "behavior": "make agent-worktree-dev BRANCH= ACTIVE_WORKSTREAM_REGISTRY="},
     {
       "name": "workstream-register",
-      "make_variables": [
-        "BRANCH",
-        "WORKTREE",
-        "ACTIVE_WORKSTREAM_REGISTRY"
-      ],
+      "make_variables": ["BRANCH", "WORKTREE", "ACTIVE_WORKSTREAM_REGISTRY"],
       "behavior": "make workstream-register BRANCH=contract/workstream WORKTREE=/tmp/gludd-workstream-contract ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json"
     },
     {

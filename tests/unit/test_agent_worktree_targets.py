@@ -8,14 +8,15 @@ of test_gate_background_targets.py and test_makefile_targets.py.
 
 from __future__ import annotations
 
+import re
 import subprocess
-import uuid
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from scripts.makefile_layout import compose_makefile
 
+from tests.unit.test_agent_worktree_creation_fail_closed import WorktreeCreation, _creation_fixture
+from tests.unit.test_single_native_commit_collection import _block
 from tests.unit.test_worktree_prune_preservation import (
     test_cleanup_alias_applies_the_real_registered_native_retirement as _assert_native_retirement,
 )
@@ -31,14 +32,16 @@ def _content() -> str:
     return compose_makefile(MAKEFILE)
 
 
-def _recipe(target: str) -> str:
-    """Return the full recipe body for a make target (asserts existence)."""
-    content = _content()
-    marker = f"\n{target}:"
-    assert marker in content, f"Makefile target '{target}' not found"
-    start = content.index(marker) + len(marker)
-    nxt = content.find("\n\n", start)
-    return content[start:nxt] if nxt != -1 else content[start:]
+def _recipe(target: str, *, source: str | None = None) -> str:
+    """Inspect the complete literal rule and its actual shared creation body."""
+    content = _content() if source is None else source
+    rule = _block(content, target)
+    if "$(call _agent-worktree-create," in rule:
+        macro = re.search(r"^define _agent-worktree-create\n.*?^endef\n",
+                          content, re.MULTILINE | re.DOTALL)
+        assert macro is not None, "Missing invoked worktree creation macro"
+        rule += "\n" + macro.group()
+    return rule
 
 
 class TestAgentWorktreeTargetsExist:
@@ -114,6 +117,33 @@ class TestAgentWorktreeRecipeShape:
         )
 
 
+@pytest.mark.parametrize("creation_graph_target", [
+    "agent-worktree", "agent-worktree-base", "agent-worktree-dev",
+])
+def test_creation_recipe_graph_keeps_padded_native_command(creation_graph_target: str) -> None:
+    source = _content().replace(
+        f"{creation_graph_target}:\n", f"{creation_graph_target}:\n\t# " + "padding " * 1000 + "\n",
+        1,
+    )
+    assert "git worktree add" in _recipe(creation_graph_target, source=source)
+
+
+@pytest.mark.parametrize("creation_graph_target", [
+    "agent-worktree", "agent-worktree-base", "agent-worktree-dev",
+])
+def test_creation_recipe_graph_never_borrows_neighbor_commands(creation_graph_target: str) -> None:
+    source = _content().replace("git worktree add", "git worktree list")
+    source += "\ncreation-neighbor:\n\tgit worktree add unrelated unrelated\n"
+    assert "git worktree add" not in _recipe(creation_graph_target, source=source)
+
+
+def test_creation_recipe_graph_requires_its_invoked_macro() -> None:
+    source = re.sub(r"^define _agent-worktree-create\n.*?^endef\n", "",
+                    _content(), flags=re.MULTILINE | re.DOTALL)
+    with pytest.raises(AssertionError, match="Missing invoked"):
+        _recipe("agent-worktree", source=source)
+
+
 @pytest.mark.skipif(
     not MAKEFILE.exists(),
     reason="Makefile not present — cannot run end-to-end make targets",
@@ -122,85 +152,16 @@ class TestAgentWorktreeLifecycle:
     """End-to-end: actually create a worktree, then clean it up."""
 
     @pytest.fixture
-    def lifecycle_repo(self, tmp_path: Path) -> Iterator[tuple[Path, str]]:
-        """Build a disposable git repository for worktree mutations."""
-        repo = tmp_path / "repo"
-        repo.mkdir()
-        subprocess.run(
-            ["git", "init"],
-            cwd=repo,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        subprocess.run(
-            ["git", "config", "user.email", "tests@example.invalid"],
-            cwd=repo,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        subprocess.run(
-            ["git", "config", "user.name", "Gludd Tests"],
-            cwd=repo,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        (repo / "Makefile").write_text(compose_makefile(MAKEFILE), encoding="utf-8")
-        (repo / "seed.txt").write_text("seed\n", encoding="utf-8")
-        subprocess.run(
-            ["git", "add", "Makefile", "seed.txt"],
-            cwd=repo,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        subprocess.run(
-            ["git", "commit", "-m", "test: seed isolated repository"],
-            cwd=repo,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-
-        # Unique branch per test run so parallel pytest workers never collide.
-        tag = uuid.uuid4().hex[:12]
-        branch = f"agent-test-{tag}"
-        yield repo, branch
-        # Hard cleanup: never leave a worktree behind on a test failure.
-        wt = Path("/tmp/gludd-worktrees") / branch
-        subprocess.run(
-            ["git", "worktree", "remove", str(wt), "--force"],
-            cwd=repo,
-            check=False,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "branch", "-D", branch],
-            cwd=repo,
-            check=False,
-            capture_output=True,
-        )
+    def lifecycle_repo(self, tmp_path: Path) -> WorktreeCreation:
+        """Confine native source/tools/registry; run real owner registration."""
+        return _creation_fixture(tmp_path)
 
     def test_agent_worktree_creates_isolated_checkout(
         self,
-        lifecycle_repo: tuple[Path, str],
+        lifecycle_repo: WorktreeCreation,
     ) -> None:
-        repo, branch = lifecycle_repo
-        result = subprocess.run(
-            [
-                "make",
-                "--no-print-directory",
-                "agent-worktree",
-                f"BRANCH={branch}",
-                "UV=true",
-                f"ACTIVE_WORKSTREAM_REGISTRY={repo / '.active-workstreams.json'}",
-            ],
-            cwd=repo,
-            capture_output=True,
-            text=True,
-        )
+        repo, branch = lifecycle_repo.root, lifecycle_repo.branch
+        result = lifecycle_repo.invoke("agent-worktree")
         assert result.returncode == 0, (
             f"agent-worktree failed (rc={result.returncode}):\n"
             f"stdout={result.stdout}\nstderr={result.stderr}"
@@ -221,8 +182,9 @@ class TestAgentWorktreeLifecycle:
         )
         # It is a valid git checkout with its own HEAD.
         head = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            [lifecycle_repo.real_git, "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=str(wt),
+            env=lifecycle_repo.environment,
             capture_output=True,
             text=True,
             check=False,
@@ -233,8 +195,9 @@ class TestAgentWorktreeLifecycle:
         )
         # The worktree is linked to the repo (shows up in `git worktree list`).
         listing = subprocess.run(
-            ["git", "worktree", "list"],
+            [lifecycle_repo.real_git, "worktree", "list"],
             cwd=repo,
+            env=lifecycle_repo.environment,
             capture_output=True,
             text=True,
             check=True,

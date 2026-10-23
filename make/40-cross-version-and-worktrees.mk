@@ -664,31 +664,88 @@ feature-done:
 # -> proven release-promote -> native planned agent-cleanup. Read-only
 # research tasks skip this entirely — they do not touch the working tree.
 
-# Create an isolated worktree for a subagent. Usage:
-#   make agent-worktree BRANCH=agent-fix-slurm
-# Prints "WORKTREE_PATH=<path>" for the subagent to work in. If the branch
-# already exists (re-dispatch / resume), the worktree is attached to it
-# instead of being re-created from scratch.
-agent-worktree:
-	@[ -n "$(BRANCH)" ] || { echo "Usage: make agent-worktree BRANCH=agent-<name>"; exit 1; }
-	@WORKTREE_PATH="/tmp/gludd-worktrees/$(BRANCH)"; \
-	mkdir -p /tmp/gludd-worktrees; \
-	git worktree add "$$WORKTREE_PATH" -b "$(BRANCH)" 2>/dev/null || git worktree add "$$WORKTREE_PATH" "$(BRANCH)"; \
-	$(MAKE) --no-print-directory workstream-register BRANCH="$(BRANCH)" WORKTREE="$$WORKTREE_PATH" ACTIVE_WORKSTREAM_REGISTRY="$(ACTIVE_WORKSTREAM_REGISTRY)"; \
-	echo "WORKTREE_PATH=$$WORKTREE_PATH"; \
-	echo "Worktree ready at $$WORKTREE_PATH on branch $(BRANCH)"
+# All three creation targets share native failure and identity checks. Existing
+# branches are attached deliberately, never as a retry after an arbitrary error.
+# Creation does not require a clean caller: its index and working bytes are owned
+# by the caller and must remain untouched. Partial creation is retained on failure.
+define _agent-worktree-create
+	@branch='$(subst ','"'"',$(BRANCH))'; base_ref='$(subst ','"'"',$(1))'; mode='$(2)'; \
+	WORKTREE_PATH="/tmp/gludd-worktrees/$$branch"; pinned_base=; phase=branch-name; \
+	fail_creation() { \
+		creation_status="$$1"; \
+		printf '%s\n' "AGENT_NEXT target=$@ outcome=failed phase=$$phase native_status=$$creation_status branch=$$branch worktree=$$WORKTREE_PATH pinned_base=$$pinned_base gate_evidence=false release_ready=false next_action=inspect-native-error-and-reconcile-retained-state-before-retry; do not force-remove, reset, unlock or prune"; \
+		exit "$$creation_status"; \
+	}; \
+	git check-ref-format --branch "$$branch" >/dev/null || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	if [ "$$mode" = development ]; then \
+		phase=development-ref; \
+		if git show-ref --verify --quiet refs/heads/development; then :; else \
+			creation_status=$$?; \
+			[ "$$creation_status" -eq 1 ] || fail_creation "$$creation_status" >&2; \
+			git branch development master || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+		fi; \
+	fi; \
+	phase=base-ref; \
+	pinned_base=$$(git rev-parse --verify --end-of-options "$$base_ref^{commit}") || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	phase=repository; \
+	common_dir=$$(git rev-parse --path-format=absolute --git-common-dir) || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	common_dir=$$(cd "$$common_dir" && pwd -P) || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	phase=branch-ref; existing_branch=0; pinned_source="$$pinned_base"; \
+	if git show-ref --verify --quiet "refs/heads/$$branch"; then \
+		existing_branch=1; \
+		pinned_source=$$(git rev-parse --verify --end-of-options "refs/heads/$$branch^{commit}") || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+		if [ "$$mode" != resume ]; then \
+			phase=existing-branch-base; \
+			git merge-base --is-ancestor "$$pinned_base" "$$pinned_source" || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+		fi; \
+	else \
+		creation_status=$$?; \
+		[ "$$creation_status" -eq 1 ] || fail_creation "$$creation_status" >&2; \
+	fi; \
+	phase=worktree-path; \
+	[ ! -e "$$WORKTREE_PATH" ] && [ ! -L "$$WORKTREE_PATH" ] || fail_creation 2 >&2; \
+	[ ! -L '/tmp/gludd-worktrees' ] || fail_creation 2 >&2; \
+	mkdir -p '/tmp/gludd-worktrees' || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	physical_root=$$(cd '/tmp/gludd-worktrees' && pwd -P) || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	expected_path="$$physical_root/$$branch"; \
+	parent_path=$$(dirname "$$expected_path"); \
+	while [ ! -e "$$parent_path" ] && [ ! -L "$$parent_path" ]; do parent_path=$$(dirname "$$parent_path"); done; \
+	physical_parent=$$(cd "$$parent_path" && pwd -P) || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	[ "$$physical_parent" = "$$parent_path" ] || fail_creation 2 >&2; \
+	phase=worktree-add; \
+	if [ "$$existing_branch" -eq 1 ]; then \
+		git worktree add "$$WORKTREE_PATH" "$$branch" || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	else \
+		git worktree add "$$WORKTREE_PATH" -b "$$branch" "$$pinned_source" || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	fi; \
+	phase=checkout-path; \
+	actual_path=$$(git -C "$$WORKTREE_PATH" rev-parse --show-toplevel) || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	[ "$$actual_path" = "$$expected_path" ] || fail_creation 2 >&2; \
+	phase=checkout-repository; \
+	actual_common=$$(git -C "$$WORKTREE_PATH" rev-parse --path-format=absolute --git-common-dir) || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	actual_common=$$(cd "$$actual_common" && pwd -P) || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	[ "$$actual_common" = "$$common_dir" ] || fail_creation 2 >&2; \
+	phase=checkout-branch; \
+	actual_branch=$$(git -C "$$WORKTREE_PATH" symbolic-ref --quiet --short HEAD) || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	[ "$$actual_branch" = "$$branch" ] || fail_creation 2 >&2; \
+	phase=checkout-source; \
+	actual_source=$$(git -C "$$WORKTREE_PATH" rev-parse --verify HEAD) || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	[ "$$actual_source" = "$$pinned_source" ] || fail_creation 2 >&2; \
+	phase=registration; \
+	$(MAKE) --no-print-directory workstream-register BRANCH="$$branch" WORKTREE="$$WORKTREE_PATH" ACTIVE_WORKSTREAM_REGISTRY='$(subst ','"'"',$(3))' || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	printf '%s\n' "WORKTREE_PATH=$$WORKTREE_PATH" "Worktree ready at $$WORKTREE_PATH on branch $$branch from $$base_ref"; \
+	printf '%s\n' "AGENT_NEXT target=$@ outcome=passed branch=$$branch pinned_source=$$pinned_source pinned_base=$$pinned_base registered=true gate_evidence=false release_ready=false next_action=work-in-the-verified-registered-checkout-and-complete-item-acceptance-before-integration" >&2
+endef
 
-# Create an isolated worktree at an explicit base ref. Usage:
-#   make agent-worktree-base BRANCH=release-sync BASE=sandboxcom/master
+# Plain creation starts at HEAD; a preexisting branch resumes its pinned source.
+agent-worktree:
+	@[ -n '$(subst ','"'"',$(BRANCH))' ] || { echo "Usage: make agent-worktree BRANCH=agent-<name>"; echo "AGENT_NEXT target=$@ outcome=refused native_status=1 next_action=supply-BRANCH gate_evidence=false release_ready=false" >&2; exit 1; }
+	$(call _agent-worktree-create,HEAD,resume,$(ACTIVE_WORKSTREAM_REGISTRY))
+
+# Explicit base creation/resume must retain the requested base in its ancestry.
 agent-worktree-base:
-	@[ -n "$(BRANCH)" ] && [ -n "$(BASE)" ] || { echo "Usage: make agent-worktree-base BRANCH=agent-<name> BASE=<ref>"; exit 1; }
-	@WORKTREE_PATH="/tmp/gludd-worktrees/$(BRANCH)"; \
-	mkdir -p /tmp/gludd-worktrees; \
-	git rev-parse --verify "$(BASE)^{commit}" >/dev/null 2>&1 || { echo "ERROR: BASE $(BASE) is not a valid commit"; exit 1; }; \
-	git worktree add "$$WORKTREE_PATH" -b "$(BRANCH)" "$(BASE)" 2>/dev/null || git worktree add "$$WORKTREE_PATH" "$(BRANCH)"; \
-	$(MAKE) --no-print-directory workstream-register BRANCH="$(BRANCH)" WORKTREE="$$WORKTREE_PATH" ACTIVE_WORKSTREAM_REGISTRY="$(ACTIVE_WORKSTREAM_REGISTRY)"; \
-	echo "WORKTREE_PATH=$$WORKTREE_PATH"; \
-	echo "Worktree ready at $$WORKTREE_PATH on branch $(BRANCH) from $(BASE)"
+	@[ -n '$(subst ','"'"',$(BRANCH))' ] && [ -n '$(subst ','"'"',$(BASE))' ] || { echo "Usage: make agent-worktree-base BRANCH=agent-<name> BASE=<ref>"; echo "AGENT_NEXT target=$@ outcome=refused native_status=1 next_action=supply-BRANCH-and-BASE gate_evidence=false release_ready=false" >&2; exit 1; }
+	$(call _agent-worktree-create,$(BASE),base,$(ACTIVE_WORKSTREAM_REGISTRY))
 
 # Positive native retention; no unlock, activity renewal or checkpoint mutation.
 WORKTREE_RETAIN_REASON ?=
@@ -735,9 +792,9 @@ agent-cleanup:
 # Logical workstreams represent model-agent ownership and therefore cannot be
 # inferred from OS PIDs.  Registration is explicit and shared by all worktrees.
 workstream-register:
-	@[ -n "$(BRANCH)" ] && [ -n "$(WORKTREE)" ] || { echo "Usage: make workstream-register BRANCH=<name> WORKTREE=<path>"; exit 2; }
-	@UV_NO_SYNC=0 $(UV) run --no-project python -m scripts.workstream_registry register --branch "$(BRANCH)" --worktree "$(WORKTREE)" \
-		$(if $(ACTIVE_WORKSTREAM_REGISTRY),--registry "$(ACTIVE_WORKSTREAM_REGISTRY)")
+	@[ -n '$(subst ','"'"',$(BRANCH))' ] && [ -n '$(subst ','"'"',$(WORKTREE))' ] || { echo "Usage: make workstream-register BRANCH=<name> WORKTREE=<path>"; exit 2; }
+	@UV_NO_SYNC=0 $(UV) run --no-project python -m scripts.workstream_registry register --branch '$(subst ','"'"',$(BRANCH))' --worktree '$(subst ','"'"',$(WORKTREE))' \
+		$(if $(ACTIVE_WORKSTREAM_REGISTRY),--registry '$(subst ','"'"',$(ACTIVE_WORKSTREAM_REGISTRY))')
 
 workstream-unregister:
 	@[ -n "$(BRANCH)" ] || { echo "Usage: make workstream-unregister BRANCH=<name>"; exit 2; }

@@ -856,6 +856,21 @@ refuse the same file under flat/package module names before checking. The
 retains the actual refusal and strict individual PASS receipts. Select the same
 installed runtime for both; no package-layout or suppression change is needed.
 
+The three native creation owners verify their actual resulting path, repository,
+branch and pinned source before successful active-owner registration and READY.
+Plain agent-worktree resumes an existing branch; explicit base/dev requires the
+requested base in its ancestry. Use literal BRANCH, BASE and registry values,
+quote whole assignments and one guarded target per invocation. Failed add,
+lookup or registration retains its native error and partial state. Inspect it
+before retrying; use the existing explicit registration owner only after that
+reconciliation. An active registry entry at another physical path is refused;
+same physical-path renewal remains valid. Never replace a refusal with force
+removal, reset, unlock or prune.
+The [creation record](../../docs/features/MAKE_HELPER_BOOTSTRAP_DIAGNOSTICS.md#verified-native-worktree-creation-s9842026-10-23)
+retains exact native RED/GREEN and the private-root fixture boundary. Its safe
+contract examples deliberately pass empty required inputs and expect Error1/Make2;
+they create nothing and supply no release proof.
+
 `make agent-worktree-dev BRANCH=feature-name` creates an isolated branch from
 development. For a bounded source repair, use
 `make ship-commit-files FILES='explicit paths' MSG='one tested change' PUSH=0`;

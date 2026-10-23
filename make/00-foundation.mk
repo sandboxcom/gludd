@@ -1,3 +1,11 @@
+# Reject evaluated creation data before any native startup/export child.
+# This is scoped to the public creation goals, preserving unrelated Make callers.
+ifneq ($(filter agent-worktree agent-worktree-base agent-worktree-dev,$(MAKECMDGOALS)),)
+ifneq (,$(findstring $$,$(value BRANCH)$(value BASE)$(value ACTIVE_WORKSTREAM_REGISTRY)))
+$(error worktree creation inputs must be literal data; AGENT_NEXT outcome=refused native_status=2 next_action=use-literal-BRANCH-BASE-and-registry gate_evidence=false release_ready=false)
+endif
+endif
+
 # Keep HTTPS configuration mode literal before native startup/export expansion.
 SANDBOXCOM_HTTPS_VALIDATE_ONLY ?= 1
 override GLUDD_SANDBOXCOM_HTTPS_VALIDATE_ONLY := $(value SANDBOXCOM_HTTPS_VALIDATE_ONLY)
@@ -424,6 +432,7 @@ export TERM
 SSH_KEY ?= $(HOME)/.ssh/sandboxcom_gludd_rsa
 
 _MULTIWORD_VALUE_GOALS := \
+    agent-worktree agent-worktree-base agent-worktree-dev \
     copy-file feature-done feature-start git-add git-branch git-checkout git-cherry-pick-list \
     git-commit git-commit-file git-commit-files git-merge git-reset git-restore git-tag-move \
     git-tag-push lint-files lint-fix-files lint-markdown lint-docstrings release-cut release-deploy release-promote release-upload-assets \

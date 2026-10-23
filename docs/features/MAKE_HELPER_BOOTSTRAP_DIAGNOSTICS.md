@@ -1,5 +1,143 @@
 # Make helper bootstrap diagnostics
 
+## Verified native worktree creation (S98.4,2026-10-23)
+
+The three public creation targets previously continued after native Git add or
+registration failure and printed ready with exit 0. The development variant did
+not register its owner. The existing Make recipes now share one creation body:
+pin the requested base and intended branch source, distinguish branch absence
+from lookup failure, execute one native add, verify physical checkout/repository/
+branch/SHA, then run the existing atomic registration owner before readiness.
+
+Plain agent-worktree starts at HEAD and deliberately resumes a preexisting
+branch at its pinned source. Explicit agent-worktree-base and agent-worktree-dev
+also require an existing source to descend from the requested pinned base.
+Development is created from master only when the native development ref is
+conclusively absent. Failed queries and bootstrap/add/register errors retain
+their actual diagnostics and nonzero status. No arbitrary error triggers fallback.
+The caller's staged or untracked work and an unrelated frozen candidate remain
+usable; no clean-tree, final-gate or capacity prerequisite was added.
+
+BRANCH, BASE and ACTIVE_WORKSTREAM_REGISTRY are literal creation inputs. The
+direct public goal guard rejects dollar evaluation before startup children.
+Ordinary quotes remain literal through native registration. Ordinary environment
+versus file defaults, -e environment precedence and command-line selection remain.
+Custom aliases and target-specific contexts must supply literal data; the direct
+goal controls do not establish arbitrary-wrapper evaluation protection. Keep one
+guarded goal per invocation, quote whole assignments and split intentional goals.
+
+Only verified creation plus successful registration prints WORKTREE_PATH and
+ready. Success guidance grants no acceptance, gate, hosted or release proof.
+Failure guidance names the actual phase, native status and retained path/source.
+A registration failure can leave a valid checkout and branch. Inspect that state
+before the narrow repair; do not retry creation blindly or force-remove, reset,
+unlock or prune. Reconcile the original native error and ownership before using
+the explicit workstream-register owner for the verified existing checkout.
+
+The existing registry mutation now refuses to reassign an active selected branch
+to a different physical path or an unverifiable recorded path. It checks under
+its existing flock and preserves the original entry and peers on refusal. Renewal
+at the same path, a symlink alias or the macOS /tmp alias remains valid. Explicit
+inactive replacement remains valid. Atomic write failures already propagate:
+no new API, lock, cache, readback or no-op-tool workaround was introduced. Release
+of an existing logical owner remains an explicit lifecycle decision.
+
+The safe contract examples deliberately exercise required-input refusal:
+
+~~~sh
+make agent-worktree BRANCH= ACTIVE_WORKSTREAM_REGISTRY=
+make agent-worktree-base BRANCH= BASE= ACTIVE_WORKSTREAM_REGISTRY=
+make agent-worktree-dev BRANCH= ACTIVE_WORKSTREAM_REGISTRY=
+~~~
+
+Each retains native Error 1/Make 2 and outcome=refused without mutation.
+For actual creation select an owned branch, explicit base where applicable, the
+intended registry and installed runtime; work in the reported verified checkout.
+This target supplies no retirement, acceptance or release permission.
+
+Native pre-change RED is 12 failures in 12.04s: add 53 and registration 47 were
+hidden by ready 0, while development omitted registry execution. Receipt:
+worktree-creation-red/worktree-creation-inputs-red311-4604.json.
+The first 30-case core passes in 26.23s, observed 27.2s on 3.11.14:
+worktree-creation-focus/worktree-creation-green311-4604.json.
+An earlier unquoted fixture-tool path returned shell 126; that retained mixed
+diagnostic supplies no registration-47 proof. The expanded pre-registry union
+passes 164 cases in 77.23s, observed 78.8s:
+worktree-creation-receive/worktree-creation-boundaries311-4604.json.
+
+A second native RED proves all three targets reassign another active path:
+worktree-creation-red/worktree-active-owner-red311-4604.json, 3 failures in 3.75s.
+The atomic owner repair passes 11 native/unit controls in 5.53s, observed 6.6s:
+worktree-creation-focus/worktree-active-owner-green311-4604.json.
+
+Complete receiving retains all five canonical coverage_workstream_prune owners,
+the complete changed creation/worktree/branch/UV owners, three managed callers,
+confinement and two contract nodes. Functional source, tests and the full existing
+two-file coverage profile remain unchanged across these serial native runs:
+
+| Runtime | Cases | Pytest | Observed | Native coverage-files run |
+| --- | --- | --- | --- | --- |
+| 3.11.14 | 511 passed | 164.21s | 165.9s | 20261023T203752Z-49915-c14b1118 |
+| 3.12.15 | 511 passed | 230.53s | 233.2s | 20261023T204142Z-68375-3781f29e |
+
+Both native audits pass 93.6% aggregate lines/86.2% branches; registry 99.0/95.8
+and pruning 92.0/84.4 each clear the unchanged 75% file floors. Audit artifacts
+are coverage-20261023T204037Z.json and coverage-20261023T204536Z.json.
+The target contract crossed 2500 lines after adding the three creation entries.
+After the 3.11 owner drained, only those entries and the already changed register
+variable list were compacted to 2498 lines, preserving parsed configuration.
+Fresh contract/link receiving passes three nodes in 1.18s, observed 2.3s:
+worktree-creation-metadata/worktree-creation-contract311-4604.json.
+The 3.12 complete run consumes that final configuration; this metadata repair
+does not justify another unchanged production-profile replay.
+
+Fixtures retain the exact native rules, shared macro and guards, replacing only
+the fixed temporary root with an owned fixture root. Real Git and atomic native
+registration use an explicit private registry, never UV=true. Every native result
+preserves the caller's index, staged/untracked bytes and peer refs, plus a real
+locked frozen peer's source, index, checkpoint and lock record. Original lifecycle
+assertions remain. Complete literal-rule/macro checks replace a 500-character
+window; padded positives and missing/neighbor negatives retain the original
+command assertion. All 15 same-value/origin unguarded Make witnesses actually
+execute the owned marker; guarded controls retain no-evaluation and carriers.
+
+The [GNU recipe-shell contract](https://www.gnu.org/software/make/manual/html_node/Execution.html)
+explains explicit shell failure propagation. The
+[Git worktree contract](https://git-scm.com/docs/git-worktree) documents private
+linked metadata and shared common-directory refs, supporting native identity
+checks. These primary bodies were reviewed from the accepted bounded research
+receipt.
+
+### Firsthand worktree ownership reports
+
+The [worktree question](https://stackoverflow.com/questions/41545293/branch-is-already-checked-out-at-other-location-in-git-worktrees)
+opened on 2017-01-09; the retrieved API reports last activity on 2025-09-07.
+In the [highest-scoring answer](https://stackoverflow.com/a/41546512), torek
+explains why an existing branch attachment is protected. Its pruning advice is
+conditional on the old worktree actually having been removed; an existing
+worktree retains ownership. It is not an accepted-answer or project permission.
+
+[Tom Ellis's firsthand report](https://stackoverflow.com/a/76664209), dated
+2023-07-11, describes a forgotten rebase still using the branch even though the
+other worktree's apparent checkout did not explain the refusal. That author's
+resolution applies to their own operation. For this repair, these reports
+corroborate preserving native add failure and verifying ownership instead of
+reporting READY from a superficial HEAD observation. They authorize no abort,
+prune, forced attachment or metadata deletion here.
+
+Actual question and all nine answer bodies were reviewed from the native
+worktree-research-live-311-aa494265 receipt: two HTTP 200 responses, no additional
+pages, question JSON line 3 and answers line 9. The
+[earlier project record](BETA4_DUAL_TRACK_CI.md) predates this body review.
+Linked commits and comments were not fetched, so no exact Git-version claim is
+adopted from other answers. This is practitioner context; the native acceptance
+and release proofs above retain their separate authority.
+
+This is control-plane ZDD with no service restart. Independent review, normal
+collection, the canonical full gate, unchanged 85/75 line and branch coverage,
+and exact-SHA hosted/deployment proofs remain required. These are source-repair
+receipts, not release completion.
+
 ## Quoted observed commands
 
 `run-watched` preserves ordinary quoted child arguments, including quoted
