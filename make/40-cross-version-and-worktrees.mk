@@ -300,20 +300,74 @@ _gate-refresh-body:
 _gate-fresh-check: check-gate-fresh
 	@true
 
-# Internal: serialize commit-shaped targets so parallel subagents cannot race on
-# the git index (staging sweeps, index-lock errors). Uses flock (Linux) with a
-# Python fcntl fallback (macOS). The lock file persists for the process lifetime;
-# when make exits, fd 9 closes and the lock auto-releases. This is LAYER 1 of the
-# commit-serialization guardrail (AGENTS.md). LAYER 2 is the enforce-commit-lock
-# plugin that wraps the ENTIRE bash tool call boundary.
+# The existing repository mutex spans one native Make transaction, including
+# staging, every guard, collection, index revalidation and commit. A prerequisite
+# shell cannot retain a lock for later recipes. Private entry validates the
+# inherited native flock; an environment label or inode match alone grants none.
 _gate-mutation-guard:
 	@$(UV) run python scripts/gate_run_lock.py assert-inactive "$(GATE_RUN_LOCK)" "$$PPID"
 
+.PHONY: _commit-lock-acquire _gate-mutation-guard git-commit commit-no-verify git-commit-no-verify git-amend-msg repo-commit ship-commit ship-commit-files git-commit-file test-and-commit commit-bootstrap commit-and-ship commit-and-ship-push _commit-locked-git-commit _commit-locked-commit-no-verify _commit-locked-git-commit-no-verify _commit-locked-git-amend-msg _commit-locked-repo-commit _commit-locked-ship-commit _commit-locked-ship-commit-files _commit-locked-git-commit-file _commit-locked-test-and-commit _commit-locked-commit-bootstrap _commit-locked-commit-and-ship _commit-locked-commit-and-ship-push
+
+# Native Make inspection owns its statuses and creates no transaction artifacts.
+# Capture only native options at parse time, before command assignments are added.
+override _commit-native-flags := $(MAKEFLAGS)
+override _commit-native-first := $(if $(filter --%,$(firstword $(_commit-native-flags))),,$(firstword $(_commit-native-flags)))
+override _commit-native-mode := $(if $(findstring q,$(_commit-native-first))$(filter -q --question,$(_commit-native-flags)),query,$(if $(findstring n,$(_commit-native-first))$(filter -n --just-print --dry-run --recon,$(_commit-native-flags)),dry-run,$(if $(findstring t,$(_commit-native-first))$(filter -t --touch,$(_commit-native-flags)),touch,execute)))
+override _commit-native-goals := $(filter git-commit commit-no-verify git-commit-no-verify git-amend-msg repo-commit ship-commit ship-commit-files git-commit-file test-and-commit commit-bootstrap commit-and-ship commit-and-ship-push,$(MAKECMDGOALS))
+ifneq ($(_commit-native-mode),execute)
+ifneq ($(_commit-native-goals),)
+$(info AGENT_NEXT target=$(_commit-native-goals) outcome=planned native_status=$(if $(filter query,$(_commit-native-mode)),1,0) mode=$(_commit-native-mode) gate_evidence=false release_ready=false source_checkpoint=false next_action=Native Make inspection executes no staging collection commit or target touch; retain Make's actual status and use the ordinary target only after source and ownership prerequisites.)
+endif
+endif
+
+define _commit-transaction
+$(if $(filter execute,$(_commit-native-mode)),+@$(UV) run python scripts/stream_command.py --commit-transaction --label commit-transaction --make-target "$@" --make "$(MAKE)" --makefile "$(firstword $(MAKEFILE_LIST))" --observed-root "$(OBSERVED_ROOT)" --heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" --quiet-secs "$(OBSERVED_QUIET_SECS)" --max-secs "$(OBSERVED_MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)",@true)
+endef
+
 _commit-lock-acquire: _gate-mutation-guard
-	@exec 9>/tmp/gludd-commit.lock; \
-	flock -n 9 2>/dev/null || python3 -c "import fcntl; f=open('/tmp/gludd-commit.lock'); \
-	  fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)" 2>/dev/null || { \
-	    echo "COMMIT-LOCK: another commit is in flight. Retry serially." >&2; exit 1; }
+	@$(UV) run python -P src/general_ludd/git_automation/locking.py --assert-transaction
+
+git-commit:
+	@[ -n "$(MSG)" ] || { echo "Usage: make git-commit MSG='message'" >&2; exit 1; }
+	$(call _commit-transaction)
+
+commit-no-verify:
+	$(call _commit-transaction)
+
+git-commit-no-verify:
+	$(call _commit-transaction)
+
+git-amend-msg:
+	$(call _commit-transaction)
+
+repo-commit:
+	$(call _commit-transaction)
+
+ship-commit:
+	$(call _commit-transaction)
+
+ship-commit-files:
+	$(call _commit-transaction)
+
+git-commit-file:
+	$(call _commit-transaction)
+
+test-and-commit:
+	$(call _commit-transaction)
+
+commit-bootstrap:
+	$(call _commit-transaction)
+
+commit-and-ship:
+	$(call _commit-transaction)
+
+commit-and-ship-push:
+	$(call _commit-transaction)
+
+ifneq ($(filter _commit-locked-%,$(MAKECMDGOALS)),)
+.NOTPARALLEL:
+endif
 
 # Commit recipes that intentionally pass --no-verify still enforce the same
 # staged-content quality boundary once. Normal commit paths use the real
@@ -328,7 +382,7 @@ _pre-commit-content-guard: _pre-commit-secrets-guard
 	@$(MAKE) --no-print-directory check-file-line-limits FILE_LINE_LIMIT_POLICY="$(FILE_LINE_LIMIT_POLICY)" FILE_LINE_LIMIT_STAGED=1
 	@$(MAKE) --no-print-directory check-duplicate-code DUPLICATE_CODE_CONFIG="$(DUPLICATE_CODE_CONFIG)" DUPLICATE_CODE_ENGINE="$(DUPLICATE_CODE_ENGINE)" DUPLICATE_CODE_SOURCE=staged DUPLICATE_CODE_BASE_REF=HEAD DUPLICATE_CODE_CURRENT_REF=HEAD DUPLICATE_CODE_VALIDATE_ONLY=0
 
-git-commit: _gate-fresh-check _commit-lock-acquire _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard _pre-commit-spec-quality-guard
+_commit-locked-git-commit: _commit-lock-acquire _gate-fresh-check _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard _pre-commit-spec-quality-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit MSG='message'"; exit 1; fi
 	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check
@@ -340,7 +394,7 @@ git-commit: _gate-fresh-check _commit-lock-acquire _commit-lint-guard _commit-do
 	@$(MAKE) --no-print-directory check-gate-fresh
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
-commit-no-verify: _pre-commit-content-guard _gate-fresh-check _commit-lock-acquire _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _edit-commit-atomicity-guard
+_commit-locked-commit-no-verify: _commit-lock-acquire _pre-commit-content-guard _gate-fresh-check _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _edit-commit-atomicity-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-no-verify MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
@@ -349,19 +403,19 @@ commit-no-verify: _pre-commit-content-guard _gate-fresh-check _commit-lock-acqui
 # The --no-verify flag skips ONLY the pre-commit hook stash, NOT the gate.
 # There is no GLUDD_CI_IS_GATE bypass — the fresh+green .gate-status check is
 # unconditional. Run `make gate` and have it pass; that is the only path.
-git-commit-no-verify: _pre-commit-content-guard _gate-fresh-check _commit-lock-acquire
+_commit-locked-git-commit-no-verify: _commit-lock-acquire _pre-commit-content-guard _gate-fresh-check
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit-no-verify MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
 # git-amend-msg: amend the last commit message (--amend --no-edit equivalent),
 # enforcing gate check. Cannot bypass the gate via --amend.
-git-amend-msg: _pre-commit-content-guard _gate-fresh-check _commit-lock-acquire
+_commit-locked-git-amend-msg: _commit-lock-acquire _pre-commit-content-guard _gate-fresh-check
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-amend-msg MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git commit --amend --no-verify -m "$(MSG)"
 
-repo-commit: _pre-commit-content-guard _commit-lock-acquire _commit-lint-guard _commit-docstring-guard
+_commit-locked-repo-commit: _commit-lock-acquire _pre-commit-content-guard _commit-lint-guard _commit-docstring-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make repo-commit MSG='message'"; exit 1; fi
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
@@ -372,7 +426,7 @@ repo-commit: _pre-commit-content-guard _commit-lock-acquire _commit-lint-guard _
 # Allowlisted from the local _gate-fresh-check (CI is the gate for
 # subagent-dispatched pushes; see test_commit_gate_freshness.py ALLOWLIST_NO_GATE).
 PUSH ?= 0
-ship-commit: _pre-commit-content-guard _commit-lock-acquire _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _push-parameter-audit _pre-commit-stash-audit _edit-commit-atomicity-guard
+_commit-locked-ship-commit: _commit-lock-acquire _pre-commit-content-guard _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _push-parameter-audit _pre-commit-stash-audit _edit-commit-atomicity-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make ship-commit MSG='message'"; exit 1; fi
 	@STAGED_FILES=$$(git diff --cached --name-only | LC_ALL=C sort); \
 		if [ -n "$(SHIP_COMMIT_EXPECTED_FILES)" ]; then \
@@ -402,16 +456,16 @@ ship-commit: _pre-commit-content-guard _commit-lock-acquire _commit-lint-guard _
 # ship-commit-files: atomic staging + commit under the commit lock. Bundles
 # `git-add` + `ship-commit` so one subagent's `git add -A` cannot sweep
 # another's staged files. Usage: make ship-commit-files FILES='...' MSG='...'
-ship-commit-files: _commit-lock-acquire
+_commit-locked-ship-commit-files: _commit-lock-acquire
 	@[ -n "$(FILES)" ] || { echo "Usage: make ship-commit-files FILES='...' MSG='...'"; exit 1; }
 	@$(MAKE) --no-print-directory git-add FILES='$(FILES)'
-	@$(MAKE) --no-print-directory ship-commit MSG='$(MSG)' SHIP_COMMIT_EXPECTED_FILES='$(FILES)'
+	@$(MAKE) --no-print-directory _commit-locked-ship-commit MSG='$(MSG)' SHIP_COMMIT_EXPECTED_FILES='$(FILES)'
 
-commit-and-ship: lint-fix git-add-all
-	@$(MAKE) --no-print-directory ship-commit MSG='$(MSG)'
+_commit-locked-commit-and-ship: _commit-lock-acquire lint-fix git-add-all
+	@$(MAKE) --no-print-directory _commit-locked-ship-commit MSG='$(MSG)'
 
-commit-and-ship-push: lint-fix git-add-all
-	@$(MAKE) --no-print-directory ship-commit MSG='$(MSG)'
+_commit-locked-commit-and-ship-push: _commit-lock-acquire lint-fix git-add-all
+	@$(MAKE) --no-print-directory _commit-locked-ship-commit MSG='$(MSG)'
 	@$(MAKE) --no-print-directory development-push
 	@$(MAKE) --no-print-directory ci-verdict
 

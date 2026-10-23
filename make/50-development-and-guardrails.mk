@@ -221,7 +221,7 @@ preflight: disk-cleanup-preflight check-plugin-liveness
 	@echo "========================================"
 	@$(UV) run python -c "import json, sys; from general_ludd.quality.preflight import run_preflight; r = run_preflight(); json.dump(r, sys.stdout, indent=2); sys.exit(0 if r['overall'] == 'PASS' else 1)"
 
-test-and-commit: _commit-lock-acquire
+_commit-locked-test-and-commit: _commit-lock-acquire
 	@echo "Running preflight checks..."
 	@$(MAKE) preflight
 	@echo "Running tests before commit..."

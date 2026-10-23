@@ -14,12 +14,12 @@ import tempfile
 import time
 import uuid
 from collections import deque
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from types import FrameType, MappingProxyType
-from typing import TYPE_CHECKING, Any, BinaryIO, NamedTuple, Protocol, TypedDict
+from typing import TYPE_CHECKING, Any, BinaryIO, NamedTuple, Protocol, TypedDict, cast
 
 DEFAULT_OBSERVED_ROOT = Path(".gate-logs/observed")
 DEFAULT_HEARTBEAT_SECS = 30.0
@@ -34,9 +34,10 @@ _NAME_CHARS = frozenset(
 
 
 class _ChildCwdOptions(TypedDict, total=False):
-    """Only the explicitly supplied child cwd; keep inherited-call kwargs unchanged."""
+    """Only supplied native child options; keep ordinary caller kwargs unchanged."""
 
     cwd: Path | str
+    pass_fds: tuple[int, ...]
 
 
 class _ProgressAdmission(Protocol):
@@ -354,6 +355,7 @@ def stream_command(
     environment: Mapping[str, str] | None = None,
     cwd: Path | str | None = None,
     startup_metadata: Mapping[str, object] | None = None,
+    pass_fds: tuple[int, ...] = (),
 ) -> int:
     """Run ``command`` with live output, bounded waits, and atomic status.
 
@@ -364,6 +366,8 @@ def stream_command(
     """
     if not command:
         raise ValueError("command must not be empty")
+    if not isinstance(pass_fds, tuple) or any(type(fd) is not int or fd < 3 for fd in pass_fds):
+        raise ValueError("pass_fds must be a tuple of native nonstandard descriptors")
     if heartbeat_seconds < 0 or quiet_seconds < 0 or max_seconds < 0:
         raise ValueError("observer durations must be non-negative")
     if termination_grace_seconds <= 0:
@@ -480,6 +484,8 @@ def stream_command(
         child_environment["GLUDD_XDIST_TRACE_TRUNCATE"] = "0"
 
     child_cwd: _ChildCwdOptions = {"cwd": cwd} if cwd is not None else {}
+    if pass_fds:
+        child_cwd["pass_fds"] = pass_fds
     try:
         process = subprocess.Popen(
             list(command),
@@ -1509,8 +1515,25 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return args
 
 
+def _commit_transaction_cli(argv: Sequence[str]) -> int:
+    """Dispatch only Make commits while retaining this actual native observer."""
+    import runpy
+
+    owner_path = Path(__file__).resolve().parents[1] / "src/general_ludd/git_automation/locking.py"
+    owner = runpy.run_path(str(owner_path), run_name="gludd_native_commit_lock")
+    callback = owner.get("main")
+    if not callable(callback):
+        raise ValueError("native commit lock owner is unavailable")
+    return cast(Callable[..., int], callback)(
+        argv, observer_fn=stream_command, identity_fn=_new_run_id, require_make_target=True,
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Execute the selected run, status, or bounded-tail operation."""
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments[:1] == ["--commit-transaction"]:
+        return _commit_transaction_cli(arguments[1:])
     args = _parse_args(argv)
     try:
         if args.runtime_startup:

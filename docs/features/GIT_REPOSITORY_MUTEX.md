@@ -271,6 +271,131 @@ Neither source change clears capacity97percent/7.8GiB,
 original60907, full canonical gate/global coverage, exact-SHA all-shard hosted/
 deployment/reviewed-head or guarded promotion proof. All seven tasks stay open.
 
+## Native Make transaction receiving (2026-10-23 UTC)
+
+S98.4 receives this source in the isolated agent-v012-commit-transaction
+worktree from4604eeccc90ce9e89e575a8641ba1213a15f9925. The former
+_commit-lock-acquire prerequisite closed its flock descriptor before later
+staging/check/commit recipes. Its global temporary path also did not share
+the established repository mutex. Two actual Make callers reproduce the
+unheld common-directory lock during collection in both one checkout and
+linked worktrees:2FAIL/1PASS4.91s/native5.9s at
+.gate-logs/observed/commit-transaction-red/commit-transaction-native-red311-4604.json.
+Only the old global lock path is confined to fixture scratch; the native
+recipes, real Git operations and assertion intent remain.
+
+The existing git_repo_lock now spans one native transaction. Twelve public
+commit entrypoints retain their names and original bodies in private rules,
+including both commit-and-ship composites' original lint/staging work.
+The existing stream_command.py is the real OS observer entrypoint with literal
+--label commit-transaction. A lazy fixed-source runpy dispatch loads this
+checkout's locking.py and supplies this actual observer/identity function.
+Source inspection rejected a locking.py process merely importing the observer:
+the existing process/protection inventory requires the native source role and
+literal label. This record preserves that decision; the
+[phase audit](GHA_PIPELINE_PROMOTION_AUDIT.md) separates source acceptance from
+remaining release proof. Status/tail remain independent of the lazy commit import. No new runner, mutex, daemon, scanner or proof cache
+is introduced.
+
+Private entry requires the actual inherited regular-file descriptor to match
+the common-directory inode and pass native nonblocking exclusive flock.
+An environment marker or fstat match alone grants no authority. Missing,
+closed, foreign, same-inode independent and native-integer-overflow descriptors
+refuse before staging. Validation uses the existing selected UV/runtime,
+including an actual UV/no-sync control that creates no environment; an ambient
+internal interpreter marker cannot select /usr/bin/true to skip validation.
+The existing observer passes only owned lock/native jobserver descriptors,
+retains ordinary caller kwargs, and drains the native process group before
+ordinary signal/timeout return. Installed GNU Make3.81 parent sibling and
+-j2 controls retain actual concurrency and warnings; private ordering is
+conditional on an actual private child goal.
+
+All public/private transaction rules and the lock/gate guard are explicitly
+phony. Same-named root files therefore cannot silently turn an action into
+an up-to-date result, and the fixture retains their original bytes.
+GNU Make inspection captures only this invocation's native options before
+command assignments. Public -q/-t/-n use native phony inspection, emit planned
+source_checkpoint=false guidance and execute no staging, collection, commit,
+target touch or observer update. Actual native statuses remain query1 and
+touch/dry-run0, including with a prior current receipt. An initial helper
+query1 produced Make2; a first-word-only predicate missed literal -q after
+--no-print-directory, and indirect recursive prefixes behave differently under
+touch. Those native failures and the bounded flag witness are retained.
+Do not infer a checkpoint or proof from any inspection result.
+
+The original complete five-owner focused cohort passes237/85.03s/native86.7s
+before the later phony/inspection repair. The final inspection cohort passes
+20/12.31s/native13.6s at
+.gate-logs/observed/commit-transaction-make-modes/commit-transaction-native-inspection311-4604.json.
+It retains Make's statuses, absent/unchanged current pointers, source/index
+bytes, all twelve dry-run routes and actual jobserver success. Existing guard,
+single fresh collection, exact scope/tree, drift/failure and mutation assertions
+remain; only native private-rule selectors and owned adapters conform.
+The native controls substitute harmless adapters only at the existing quality/
+collection boundaries. They certify the transaction boundary, not a full gate.
+
+Final ordinary receiving of the frozen production changes from4604 passes
+1658 tests on EACH installed Python3.11.14 and3.12.15, with fatal warnings:
+357 complete mutex tests,527 complete observer tests and774 remaining consumers.
+The deduplicated39-owner union is partitioned into8/12/19 complete owners;
+every partition retains its original300 total/60 quiet seconds. Exact receipts
+under .gate-logs/observed are
+commit-transaction-mutex-receiving/commit-transaction-mutex-receiving{311,312}-4604.json,
+commit-transaction-observer-receiving/commit-transaction-observer-receiving{311,312}-4604.json
+and commit-transaction-consumer-receiving/commit-transaction-consumer-receiving{311,312}-4604.json.
+Native elapsed seconds are87.129/85.751,65.199/79.551 and165.882/192.020,
+respectively. Identical commands ran sequentially across runtimes.
+
+Whole unchanged Python311 coverage profiles retain85aggregate/75each LINE
+AND BRANCH: mutex357 gives locking96.1% line/88.2% branch at
+.gate-logs/coverage-20261023T200304Z.json; observer673 gives aggregate91.8/86.0
+at .gate-logs/coverage-20261023T201706Z.json. Individual observer files are
+active_work_status85.0/82.1, stream_command91.5/84.7, summarize98.8/97.1 and
+trace_plugin96.7/87.5. These actual Python311 measurements grant no Python312
+coverage claim; Python312 has the complete ordinary receiving above.
+
+Preserve both original39-owner timeouts: instrumented coverage timed out124
+at300.561s and ordinary receiving timed out124 at300.542s. The latter retains
+the actual logical-Makefile AST failure in the new fixture. Its isolated RED
+failed1 in18.56s; the fixture-only compose_makefile correction then passed the
+complete native/layout owners165 in83.18s/native85.3s. Production coverage
+bytes, original assertions and canonical profile were unchanged. Before broad
+receiving for Make-reading tests, run the existing
+tests/unit/test_makefile_layout.py::test_tests_read_the_logical_makefile_instead_of_only_the_entrypoint
+through test-files with explicit inputs. Use compose_makefile even for an
+unsplit fixture. This cheap existing check localizes the observed defect;
+neither the partition nor trace spans prove hosted speed improvement.
+
+Normal per-commit collection, independent source review, Main receiving,
+canonical full gate and exact-SHA hosted/deployment proof remain separate.
+A required followup must release the common Git mutation mutex before any
+hosted wait: public push composites still hold it through their original
+publication calls in this packet. Obtain an actual blocked-wait/linked-writer
+RED, preserve PUSH audits, condition/order/native statuses and GNU Make
+n/q/t no-mutation controls, then receive that change with the hosted owner.
+Current receipts cannot certify that later source.
+
+Successful native signal/drain controls do not certify denied OS inspection.
+A terminal zero means the required children returned zero; inspect actual
+commit output/worktree-state before claiming a new commit. Bare independent
+git-add remains a single-coordinator mutation boundary and tree revalidation
+still refuses uncooperative index drift. No foreign rollback or force unlock
+is authorized.
+
+Stop dispatching Git writers and drain old commit processes before activating
+new harness source across worktrees. Keep application generations serving.
+Rollback also drains active transactions before a source revert, preserving
+stable mutex inodes, index/worktree bytes, refs, checkpoints and failed receipts.
+This is no service, schema, account, deployment or publication migration.
+The [GNU recipe shell contract](https://www.gnu.org/software/make/manual/html_node/Execution.html)
+and [.ONESHELL limitations](https://www.gnu.org/software/make/manual/html_node/One-Shell.html),
+retrieved through the bounded phase research owner, explain why a prerequisite
+or global one-shell setting cannot provide a whole transaction lifetime.
+The first-hand inode/fork reports below retain the long-lived operational
+context; native tests establish this project's actual boundary.
+All seven release items remain open until the canonical complete gate and
+required exact-SHA hosted/deployment/promotion proofs.
+
 ## Verification
 
 - `tests/unit/test_git_automation_locking.py` proves PID/thread ownership, fork

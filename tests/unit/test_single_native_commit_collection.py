@@ -95,7 +95,10 @@ def _source() -> str:
     blocks.extend(_block(tests, target) for target in ("test-count", "collect-check"))
     blocks.extend(
         _block(commits, target)
-        for target in ("_pre-commit-secrets-guard", "_pre-commit-content-guard", "ship-commit", "ship-commit-files")
+        for target in (
+            "_pre-commit-secrets-guard", "_pre-commit-content-guard",
+            "_commit-locked-ship-commit", "_commit-locked-ship-commit-files",
+        )
     )
     return "\n".join(blocks)
 
@@ -126,9 +129,12 @@ def _run(
     log = tmp_path / "capture.jsonl"
     env.update({"PATH": f"{tmp_path}{os.pathsep}{env['PATH']}", "CAPTURE_LOG": str(log)})
     env.update(state or {})
+    # The native mutex is measured by test_make_commit_transaction. This existing
+    # capture seam still owns the unchanged guard/body/collection assertions.
+    selected_target = "_commit-locked-" + target if target in {"ship-commit", "ship-commit-files"} else target
     result = subprocess.run(
         [
-            "make", "--no-print-directory", target, "MSG=collection admission",
+            "make", "--no-print-directory", selected_target, "MSG=collection admission",
             f"OBSERVED_ROOT={tmp_path / 'observed'}", "OBSERVED_HEARTBEAT_SECS=13",
             "OBSERVED_QUIET_SECS=901", "OBSERVED_MAX_SECS=3601",
             "OBSERVED_RETAIN_RUNS=7", "OBSERVED_TAIL_LINES=80",
@@ -389,7 +395,8 @@ def test_each_commit_invocation_recollects_even_after_prior_success(tmp_path: Pa
     ("scripts/collection_lock.py --run", "scripts/collection_lock.py --resource bypass"),
     ("pytest tests/ --co", "pytest tests/unit/ --co"),
     ("--heartbeat-secs", "--missing-heartbeat-secs"),
-    ("ship-commit: _pre-commit-content-guard", "ship-commit:"),
+    ("_commit-locked-ship-commit: _commit-lock-acquire _pre-commit-content-guard",
+     "_commit-locked-ship-commit: _commit-lock-acquire"),
 ])
 def test_capture_contract_detects_owner_and_guard_mutations(tmp_path: Path, old: str, new: str) -> None:
     text = _source()

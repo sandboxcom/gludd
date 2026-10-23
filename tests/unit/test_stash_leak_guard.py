@@ -99,11 +99,17 @@ class TestStashLeakGuard:
         """
         content = compose_makefile(MAKEFILE)
 
-        commit_line = [ln for ln in content.split("\n") if ln.startswith("git-commit:") or ln.startswith("git-commit ")]
+        commit_line = [
+            ln for ln in content.split("\n")
+            if ln.startswith(("_commit-locked-git-commit:", "_commit-locked-git-commit "))
+        ]
         assert commit_line, "git-commit target must exist"
         assert "_stash-leak-guard" in commit_line[0], "git-commit must list _stash-leak-guard as a prerequisite"
 
-        ship_line = [ln for ln in content.split("\n") if ln.startswith("ship-commit:") or ln.startswith("ship-commit ")]
+        ship_line = [
+            ln for ln in content.split("\n")
+            if ln.startswith(("_commit-locked-ship-commit:", "_commit-locked-ship-commit "))
+        ]
         assert ship_line, "ship-commit target must exist"
         assert "_stash-leak-guard" in ship_line[0], "ship-commit must list _stash-leak-guard as a prerequisite"
 
