@@ -676,8 +676,11 @@ def _assert_make_transaction(repo_path: str, descriptor: str) -> int:
 
 def _native_make_options() -> tuple[str, tuple[int, ...]]:
     """Retain native inspection modes and GNU Make pipe/FIFO jobserver semantics."""
-    tokens = shlex.split(os.environ.get("MAKEFLAGS", "").partition(" -- ")[0])
-    short = tokens[0] if tokens and not tokens[0].startswith("-") and "=" not in tokens[0] else ""
+    prefix = re.split(r"(?:^|\s)--(?=\s|$)", os.environ.get("MAKEFLAGS", ""), maxsplit=1)[0]
+    tokens = shlex.split(prefix)
+    boolean_letters = r"[bBdeikLmnpqrRsStvw]+"
+    short = tokens[0] if tokens and re.fullmatch(boolean_letters, tokens[0]) else ""
+    short += "".join(token[1:] for token in tokens if re.fullmatch("-" + boolean_letters, token))
     for mode, letter, long_flags in (
         ("query", "q", {"-q", "--question"}),
         ("dry-run", "n", {"-n", "--just-print", "--dry-run", "--recon"}),
@@ -795,6 +798,7 @@ def _run_make_transaction(
         )
     outcome = "passed" if result == 0 else "failed"
     next_action = (
+        "Only the mutation child finished; public publication and CI children retain their own status. "
         "A local source checkpoint is not full-gate or exact-SHA hosted/deployment proof; "
         "retain its collection and obtain independent source review."
         if result == 0 else
@@ -802,7 +806,7 @@ def _run_make_transaction(
         "failed child/input before reconciliation or another commit."
     )
     print(
-        f"AGENT_NEXT target={target} outcome={outcome} native_status={result} "
+        f"AGENT_NEXT target={target} phase=mutation outcome={outcome} native_status={result} "
         f"gate_evidence=false release_ready=false next_owner=observed-status "
         f"label=commit-transaction run_id={run_id}; {next_action}",
         file=sys.stderr,

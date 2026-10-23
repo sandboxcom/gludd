@@ -106,6 +106,12 @@ if args and args[0] == "collect":
     event("collect")
     barrier("collect")
     raise SystemExit(int(os.environ.get("TRANSACTION_COLLECT_RC", "0")))
+if args and args[0] == "publish":
+    event(args[1])
+    barrier(args[1])
+    result = (os.environ.get("TRANSACTION_PUBLICATION_RC", "0")
+              if args[1] == os.environ.get("TRANSACTION_PUBLICATION_FAIL_TARGET") else "0")
+    raise SystemExit(int(result))
 if args and args[0] == "guard":
     event("guard-" + args[1])
     raise SystemExit(75 if args[1] == os.environ.get("TRANSACTION_FAIL_GUARD") else 0)
@@ -119,6 +125,12 @@ def _block(text: str, name: str) -> str | None:
 
 
 def _native_rules() -> str:
+    foundation = (ROOT / "make/00-foundation.mk").read_text(encoding="utf-8")
+    provider = re.search(
+        r"^# Shared native Make inspection grammar\.\n.*?^# End shared native Make inspection grammar\.\n",
+        foundation, re.MULTILINE | re.DOTALL,
+    )
+    assert provider is not None, "native fixtures must load the actual shared provider graph"
     sources = [
         (ROOT / "make" / name).read_text(encoding="utf-8")
         for name in (
@@ -130,7 +142,10 @@ def _native_rules() -> str:
     names = ["_commit-lock-acquire", "git-add", "git-add-all", *TARGETS]
     names.extend("_commit-locked-" + name for name in TARGETS)
     blocks = [block for name in names if (block := _block(text, name)) is not None]
-    macro = re.search(r"^define _commit-transaction\n.*?^endef\n", text, re.MULTILINE | re.DOTALL)
+    macros = re.findall(
+        r"^define _commit-(?:transaction|publication)\n.*?^endef\n",
+        text, re.MULTILINE | re.DOTALL,
+    )
     frontend = re.search(
         r"^# Native Make inspection owns.*?(?=^define _commit-transaction\n)",
         text, re.MULTILINE | re.DOTALL,
@@ -141,7 +156,7 @@ def _native_rules() -> str:
     )
     phony = re.search(r"^\.PHONY: _commit-lock-acquire _gate-mutation-guard[^\n]*\n", text, re.MULTILINE)
     return (
-        (frontend.group() if frontend else "") + (macro.group() if macro else "")
+        provider.group() + (frontend.group() if frontend else "") + "".join(macros)
         + (scheduling.group() if scheduling else "")
         + (phony.group() if phony else "") + "\n".join(blocks)
     )
@@ -180,6 +195,7 @@ class NativeTransaction:
         self, *, case: str = "first", target: str = "ship-commit-files",
         filename: str = "first.txt", block: bool = False, state: dict[str, str] | None = None,
         make_flags: tuple[str, ...] = (), pass_fds: tuple[int, ...] = (), uv: str | None = None,
+        push: str = "0",
     ) -> subprocess.Popen[str]:
         environment = dict(self.environment)
         environment.update({
@@ -188,7 +204,7 @@ class NativeTransaction:
         })
         return subprocess.Popen(
             ["make", "--no-print-directory", *make_flags, target, f"FILES={filename}",
-             f"FILE={self.state / 'message.txt'}", f"MSG=owned {case}", "PUSH=0",
+             f"FILE={self.state / 'message.txt'}", f"MSG=owned {case}", f"PUSH={push}",
              f"UV={uv or shlex.join((sys.executable, str(self.state / 'adapter.py')))}"],
             cwd=self.root, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             pass_fds=pass_fds,
@@ -240,7 +256,8 @@ def _write_fixture_inputs(root: Path, state: Path) -> None:
         "OBSERVED_ROOT := .gate-logs/observed\nOBSERVED_HEARTBEAT_SECS := 2\n"
         "OBSERVED_QUIET_SECS := 0\nOBSERVED_MAX_SECS := 30\nOBSERVED_RETAIN_RUNS := 20\n"
         + guards + "\ntest-count collect-check:\n\t@" + helper + " collect\n"
-        "check-gate-fresh preflight dist lint-fix development-push ci-verdict batch-push:\n\t@true\n" + native
+        "check-gate-fresh preflight dist lint-fix:\n\t@true\n"
+        "development-push ci-verdict batch-push:\n\t+@" + helper + " publish $@\n" + native
     )
     (root / "Makefile").write_text(makefile, encoding="utf-8")
     source = root / "src" / "general_ludd" / "git_automation"
@@ -850,3 +867,331 @@ def test_native_query_touch_and_dry_run_preserve_source_and_current_pointer(
         fixture.events()[len(original_events):],
     )
     assert all(not (fixture.root / name).exists() for name in TARGETS)
+
+
+@pytest.mark.parametrize("target,push,phase", [
+    ("ship-commit", "1", "batch-push"),
+    ("ship-commit-files", "1", "batch-push"),
+    ("commit-and-ship", "1", "batch-push"),
+    ("commit-and-ship-push", "0", "development-push"),
+    ("commit-and-ship-push", "1", "ci-verdict"),
+])
+@pytest.mark.parametrize("make_flags", [(), ("-e",)])
+def test_publication_wait_releases_native_mutex_for_linked_writer(
+    tmp_path: Path, target: str, push: str, phase: str, make_flags: tuple[str, ...],
+) -> None:
+    first = _fixture(tmp_path / "repo", tmp_path / "state")
+    linked = tmp_path / "linked"
+    _git(first.root, "worktree", "add", "-q", "-b", "owned-publisher-peer", str(linked))
+    _write_fixture_inputs(linked, first.state)
+    second = NativeTransaction(linked, first.state, first.environment)
+    if target != "ship-commit-files":
+        _git(first.root, "add", "first.txt")
+    one = first.start(
+        target=target, push=push, block=True, make_flags=make_flags,
+        state={"TRANSACTION_BLOCK_PHASE": phase},
+    )
+    two: subprocess.Popen[str] | None = None
+    progressed = False
+    mutex_held = False
+    events_before_release: list[str] = []
+    receipt_state = ""
+    try:
+        _wait_for(first.state / ("first." + phase), one)
+        receipt = json.loads(
+            (first.root / ".gate-logs/observed/commit-transaction/current.json").read_text(),
+        )
+        receipt_state = str(receipt["state"])
+        two = second.start(case="second", filename="second.txt")
+        deadline = time.monotonic() + 8
+        while not (first.state / "second.commit").exists():
+            if two.poll() is not None or one.poll() is not None or time.monotonic() >= deadline:
+                break
+            time.sleep(0.01)
+        progressed = (first.state / "second.commit").exists()
+        if progressed:
+            _drain(two)
+            assert two.returncode == 0
+            assert one.poll() is None, "publication adapter must remain blocked during peer commit"
+            assert _git(linked, "show", "HEAD:second.txt").stdout == "second.txt\n"
+        with (first.root / ".git/gludd-git.lock").open("r+") as handle:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                mutex_held = True
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        events_before_release = first.events()
+    finally:
+        first.release()
+        output_one = _drain(one)
+        output_two = _drain(two) if two is not None else ("", "")
+    assert one.returncode == 0, output_one
+    assert two is not None and two.returncode == 0, output_two
+    assert progressed, (
+        "linked writer could not commit while publication was blocked",
+        phase, mutex_held, receipt_state, events_before_release, output_one, output_two,
+    )
+    assert not mutex_held, "publication wait retained the mutation mutex after the peer drained"
+    assert receipt_state == "passed", "mutation receipt must finish before publication starts"
+    assert "phase=mutation" in output_one[1]
+    assert "public-post-commit" in output_one[0] + output_one[1]
+    events = first.events()
+    assert events.index("first:commit") < events.index("first:" + phase)
+    assert events.index("first:" + phase) < events.index("second:commit")
+
+
+def _publication_events(fixture: NativeTransaction) -> list[str]:
+    phases = {"batch-push", "development-push", "ci-verdict"}
+    return [event.partition(":")[2] for event in fixture.events() if event.partition(":")[2] in phases]
+
+
+@pytest.mark.parametrize("target,push,expected", [
+    ("ship-commit", "0", ()),
+    ("ship-commit", "1", ("batch-push",)),
+    ("ship-commit-files", "0", ()),
+    ("ship-commit-files", "1", ("batch-push",)),
+    ("commit-and-ship", "0", ()),
+    ("commit-and-ship", "1", ("batch-push",)),
+    ("commit-and-ship-push", "0", ("development-push", "ci-verdict")),
+    ("commit-and-ship-push", "1", ("batch-push", "development-push", "ci-verdict")),
+])
+@pytest.mark.parametrize("make_flags", [(), ("-e",), ("-j2",)])
+def test_public_post_actions_preserve_original_conditions_order_and_jobserver(
+    tmp_path: Path, target: str, push: str, expected: tuple[str, ...], make_flags: tuple[str, ...],
+) -> None:
+    fixture = _fixture(tmp_path / "repo", tmp_path / "state")
+    if target != "ship-commit-files":
+        _git(fixture.root, "add", "first.txt")
+    process = fixture.start(target=target, push=push, make_flags=make_flags)
+    stdout, stderr = _drain(process)
+    assert process.returncode == 0, (stdout, stderr)
+    assert _publication_events(fixture) == list(expected)
+    assert _git(fixture.root, "show", "HEAD:first.txt").stdout == "first.txt\n"
+    events = fixture.events()
+    for phase in expected:
+        assert events.index("first:commit") < events.index("first:" + phase)
+    assert "phase=mutation outcome=passed" in stderr
+    assert "public publication and CI children retain their own status" in stderr
+    assert (stdout + stderr).count("phase=public-post-commit outcome=passed") == 1
+    assert "phase=public-post-commit outcome=failed" not in stdout + stderr
+    assert "warning" not in stderr.lower()
+
+
+@pytest.mark.parametrize("target,failed_child,expected", [
+    ("ship-commit-files", "batch-push", ("batch-push",)),
+    ("commit-and-ship-push", "batch-push", ("batch-push",)),
+    ("commit-and-ship-push", "development-push", ("batch-push", "development-push")),
+    ("commit-and-ship-push", "ci-verdict", ("batch-push", "development-push", "ci-verdict")),
+])
+@pytest.mark.parametrize("make_flags", [(), ("-e",)])
+def test_failed_post_child_preserves_commit_status_and_stops_later_children(
+    tmp_path: Path, target: str, failed_child: str, expected: tuple[str, ...],
+    make_flags: tuple[str, ...],
+) -> None:
+    fixture = _fixture(tmp_path / "repo", tmp_path / "state")
+    if target != "ship-commit-files":
+        _git(fixture.root, "add", "first.txt")
+    process = fixture.start(
+        target=target, push="1", make_flags=make_flags,
+        state={"TRANSACTION_PUBLICATION_FAIL_TARGET": failed_child, "TRANSACTION_PUBLICATION_RC": "73"},
+    )
+    stdout, stderr = _drain(process)
+    assert process.returncode == 2, (stdout, stderr)
+    assert _publication_events(fixture) == list(expected)
+    assert "Error 73" in stderr
+    assert "phase=mutation outcome=passed" in stderr
+    assert f"phase=public-post-commit outcome=failed native_status=2 failed_child={failed_child}" in stderr
+    assert "phase=public-post-commit outcome=passed" not in stdout + stderr
+    assert _git(fixture.root, "show", "HEAD:first.txt").stdout == "first.txt\n"
+    assert _git(fixture.root, "diff", "--cached", "--name-only").stdout == ""
+    receipt = json.loads((fixture.root / ".gate-logs/observed/commit-transaction/current.json").read_text())
+    assert receipt["state"] == "passed" and receipt["exit_code"] == 0
+    with (fixture.root / ".git/gludd-git.lock").open("r+") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+@pytest.mark.parametrize("target", [
+    "ship-commit", "ship-commit-files", "commit-and-ship", "commit-and-ship-push",
+])
+@pytest.mark.parametrize("failure", ["TRANSACTION_COLLECT_RC", "TRANSACTION_COMMIT_RC"])
+@pytest.mark.parametrize("make_flags", [(), ("-e",)])
+def test_mutation_failure_starts_no_public_post_action(
+    tmp_path: Path, target: str, failure: str, make_flags: tuple[str, ...],
+) -> None:
+    fixture = _fixture(tmp_path / "repo", tmp_path / "state")
+    if target != "ship-commit-files":
+        _git(fixture.root, "add", "first.txt")
+    before = _git(fixture.root, "rev-parse", "HEAD").stdout
+    process = fixture.start(target=target, push="1", make_flags=make_flags, state={failure: "73"})
+    stdout, stderr = _drain(process)
+    assert process.returncode != 0
+    assert "Error 73" in stdout + stderr
+    assert "phase=mutation outcome=failed" in stderr
+    assert _publication_events(fixture) == []
+    assert "phase=public-post-commit" not in stdout + stderr
+    assert _git(fixture.root, "rev-parse", "HEAD").stdout == before
+    assert "first.txt" in _git(fixture.root, "diff", "--cached", "--name-only").stdout.splitlines()
+
+
+@pytest.mark.parametrize("target", [
+    "ship-commit", "ship-commit-files", "commit-and-ship", "commit-and-ship-push",
+])
+@pytest.mark.parametrize("flag,status", [("-n", 0), ("-q", 1), ("-t", 0)])
+@pytest.mark.parametrize("make_flags", [(), ("-e",)])
+@pytest.mark.parametrize("prior_observation", [False, True])
+def test_publication_inspection_modes_preserve_source_pointer_and_no_post_action(
+    tmp_path: Path, target: str, flag: str, status: int, make_flags: tuple[str, ...],
+    prior_observation: bool,
+) -> None:
+    fixture = _fixture(tmp_path / "repo", tmp_path / "state")
+    with (fixture.root / "Makefile").open("a") as stream:
+        stream.write(
+            "\n$(info FIXTURE_NATIVE MAKEFLAGS=[$(MAKEFLAGS)] MFLAGS=[$(MFLAGS)] "
+            "captured=[$(_commit-native-flags)] short=[$(_commit-native-short)] "
+            "mode=[$(_commit-native-mode)] origin=$(origin MAKEFLAGS))\n",
+        )
+    if prior_observation:
+        previous = fixture.start()
+        assert _drain(previous) and previous.returncode == 0
+    pointer = fixture.root / ".gate-logs/observed/commit-transaction/current.json"
+    pointer_before = pointer.read_bytes() if pointer.exists() else None
+    head_before = _git(fixture.root, "rev-parse", "HEAD").stdout
+    index_before = (fixture.root / ".git/index").read_bytes()
+    events_before = fixture.events()
+    mutex = fixture.root / ".git/gludd-git.lock"
+    mutex_before = mutex.read_bytes() if mutex.exists() else None
+    process = fixture.start(
+        case="inspection", target=target, push="1", make_flags=(*make_flags, flag),
+    )
+    stdout, stderr = _drain(process)
+    assert process.returncode == status, (stdout, stderr)
+    assert f"outcome=planned native_status={status}" in stdout + stderr
+    assert "source_checkpoint=false" in stdout + stderr
+    assert "outcome=passed" not in stdout + stderr
+    assert fixture.events() == events_before
+    assert _git(fixture.root, "rev-parse", "HEAD").stdout == head_before
+    assert (fixture.root / ".git/index").read_bytes() == index_before
+    assert (pointer.read_bytes() if pointer.exists() else None) == pointer_before
+    assert (mutex.read_bytes() if mutex.exists() else None) == mutex_before
+    assert all(not (fixture.root / name).exists() for name in (
+        *TARGETS, "batch-push", "development-push", "ci-verdict",
+    ))
+
+
+@pytest.mark.parametrize("flag", ["-n", "-q", "-t"])
+@pytest.mark.parametrize("make_flags", [(), ("-e",)])
+def test_publication_inspection_guard_has_native_unguarded_mutation_witness(
+    tmp_path: Path, flag: str, make_flags: tuple[str, ...],
+) -> None:
+    fixture = _fixture(tmp_path / "repo", tmp_path / "state")
+    entrypoint = fixture.root / "Makefile"
+    source = compose_makefile(entrypoint)
+    macro = re.search(r"^define _commit-publication\n.*?^endef\n", source, re.MULTILINE | re.DOTALL)
+    assert macro is not None
+    condition = "$(filter execute,$(_commit-native-mode))"
+    assert macro.group().count(condition) == 1
+    unguarded = macro.group().replace(condition, "execute", 1)
+    source = source.replace(macro.group(), unguarded, 1)
+    # A literal recursive envelope supplies the native q/t witness as well as n.
+    assert source.count("\t$(call _commit-publication)\n") == 4
+    source = source.replace("\t$(call _commit-publication)\n", "\t+$(call _commit-publication)\n")
+    # Query must also pass the preceding mutation noop to reach the post recipe.
+    assert source.count("\t$(call _commit-transaction)\n") == 12
+    source = source.replace("\t$(call _commit-transaction)\n", "\t+$(call _commit-transaction)\n")
+    entrypoint.write_text(source, encoding="utf-8")
+    before = _git(fixture.root, "rev-parse", "HEAD").stdout
+    index = (fixture.root / ".git/index").read_bytes()
+    process = fixture.start(case="inspection", push="1", make_flags=(*make_flags, flag))
+    stdout, stderr = _drain(process)
+    assert _publication_events(fixture) == ["batch-push"], (stdout, stderr)
+    assert "inspection:collect" not in fixture.events() and "inspection:commit" not in fixture.events()
+    assert _git(fixture.root, "rev-parse", "HEAD").stdout == before
+    assert (fixture.root / ".git/index").read_bytes() == index
+    assert not (fixture.root / ".gate-logs").exists()
+
+
+def _mode_classification_source() -> str:
+    # Keep the exact provider/prefix/declarations; only the fixture input binding changes.
+    prefix = _native_rules().split("define _commit-transaction\n", 1)[0]
+    assert prefix.count("$(MAKEFLAGS)") == 1
+    assert "override _commit-native-mode :=" in prefix
+    prefix = prefix.replace("$(MAKEFLAGS)", "$(value CLASSIFIER_FLAGS)", 1)
+    return prefix + "\n.PHONY: classifier\nclassifier:\n\t@printf '%s\\n' '$(_commit-native-mode)'\n"
+
+
+@pytest.mark.parametrize("flags,expected", [
+    ("", "execute"), ("erR -- MSG=plain", "execute"),
+    (" --no-print-directory -qe", "query"),
+    (" --no-print-directory -ne", "dry-run"),
+    (" --no-print-directory -te", "touch"),
+    (" --no-print-directory -srqke", "query"),
+    (" --no-print-directory -srnke", "dry-run"),
+    (" --no-print-directory -tsrke", "touch"),
+    ("--question -- MSG=owned", "query"),
+    ("--just-print -- MSG=owned", "dry-run"),
+    ("--touch -- MSG=owned", "touch"),
+    ("nrR -- MSG=owned", "dry-run"),
+    ("q -- MSG=literal -n", "query"),
+    ("-- MSG=literal -q -n -t", "execute"),
+    (" -- MSG=literal -q", "execute"),
+    ("-- MSG=don't parse -qe", "execute"),
+    ("-I/tmp/query-nqt", "execute"),
+    ("-Iquerynqt", "execute"),
+    ("-I /tmp/query-nqt", "execute"),
+    ("--directory=/tmp/query-nqt", "execute"),
+    ("--jobserver-auth=fifo:/tmp/nqt", "execute"),
+    ("-j2 -l4", "execute"),
+    ("--no-print-directory -Lne", "dry-run"),
+    ("--no-print-directory -Sqe", "query"),
+    ("--no-print-directory -Iquery -n", "dry-run"),
+    ("--no-print-directory -Iquery -- MSG=literal -n", "execute"),
+    ("-qnt", "query"), ("t", "touch"),
+])
+def test_native_make_and_python_mode_owners_share_the_complete_flag_grammar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, flags: str, expected: str,
+) -> None:
+    selected = tmp_path / "mode-classification.mk"
+    selected.write_text(_mode_classification_source(), encoding="utf-8")
+    result = subprocess.run(
+        ["make", "--no-print-directory", "-f", str(selected), "classifier", "CLASSIFIER_FLAGS=" + flags],
+        cwd=tmp_path, env=_environment(), capture_output=True, text=True, timeout=15, check=False,
+    )
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert result.stdout.strip() == expected
+    assert not result.stderr
+    monkeypatch.setenv("MAKEFLAGS", flags)
+    assert locking._native_make_options() == (expected, ())
+
+
+@pytest.mark.parametrize("provider,unguarded_mode", [
+    ("_native-make-option-prefix", "query"),
+    ("_native-make-remove-letters", "execute"),
+    ("_native-make-boolean-cluster", "query"),
+])
+@pytest.mark.parametrize("origin", ["environment_override", "command_line"])
+def test_shared_provider_overrides_reject_replacement_with_native_unguarded_witness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: str, unguarded_mode: str, origin: str,
+) -> None:
+    source = _mode_classification_source()
+    binding = "override " + provider + " ="
+    assert source.count(binding) == 1
+    unguarded = source.replace(binding, provider + " =", 1)
+    make_flags: tuple[str, ...] = ()
+    assignments = ["CLASSIFIER_FLAGS=n"]
+    if origin == "environment_override":
+        monkeypatch.setenv(provider, "q")
+        make_flags = ("-e",)
+    else:
+        assignments.append(provider + "=q")
+    selected = tmp_path / "provider-ownership.mk"
+    for contents, expected in ((source, "dry-run"), (unguarded, unguarded_mode)):
+        selected.write_text(contents, encoding="utf-8")
+        result = subprocess.run(
+            ["make", "--no-print-directory", *make_flags, "-f", str(selected), "classifier", *assignments],
+            cwd=tmp_path, env=_environment(), capture_output=True, text=True, timeout=15, check=False,
+        )
+        assert result.returncode == 0, (result.stdout, result.stderr)
+        assert result.stdout.strip() == expected
+        assert not result.stderr

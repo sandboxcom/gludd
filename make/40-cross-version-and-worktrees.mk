@@ -311,18 +311,46 @@ _gate-mutation-guard:
 
 # Native Make inspection owns its statuses and creates no transaction artifacts.
 # Capture only native options at parse time, before command assignments are added.
-override _commit-native-flags := $(MAKEFLAGS)
-override _commit-native-first := $(if $(filter --%,$(firstword $(_commit-native-flags))),,$(firstword $(_commit-native-flags)))
-override _commit-native-mode := $(if $(findstring q,$(_commit-native-first))$(filter -q --question,$(_commit-native-flags)),query,$(if $(findstring n,$(_commit-native-first))$(filter -n --just-print --dry-run --recon,$(_commit-native-flags)),dry-run,$(if $(findstring t,$(_commit-native-first))$(filter -t --touch,$(_commit-native-flags)),touch,execute)))
+# MAKEFLAGS may put combined short switches after long options (for example -qe).
+# The foundation provider stops definitions and excludes argument/path words.
+override _commit-native-flags := $(strip $(call _native-make-option-prefix,$(MAKEFLAGS)))
+override _commit-native-short := $(call _native-make-boolean-cluster,$(filter-out -%,$(firstword $(_commit-native-flags)))) $(foreach option,$(filter-out --%,$(filter -%,$(_commit-native-flags))),$(call _native-make-boolean-cluster,$(patsubst -%,%,$(option))))
+override _commit-native-mode := $(if $(findstring q,$(_commit-native-short))$(filter --question,$(_commit-native-flags)),query,$(if $(findstring n,$(_commit-native-short))$(filter --just-print --dry-run --recon,$(_commit-native-flags)),dry-run,$(if $(findstring t,$(_commit-native-short))$(filter --touch,$(_commit-native-flags)),touch,execute)))
 override _commit-native-goals := $(filter git-commit commit-no-verify git-commit-no-verify git-amend-msg repo-commit ship-commit ship-commit-files git-commit-file test-and-commit commit-bootstrap commit-and-ship commit-and-ship-push,$(MAKECMDGOALS))
 ifneq ($(_commit-native-mode),execute)
 ifneq ($(_commit-native-goals),)
-$(info AGENT_NEXT target=$(_commit-native-goals) outcome=planned native_status=$(if $(filter query,$(_commit-native-mode)),1,0) mode=$(_commit-native-mode) gate_evidence=false release_ready=false source_checkpoint=false next_action=Native Make inspection executes no staging collection commit or target touch; retain Make's actual status and use the ordinary target only after source and ownership prerequisites.)
+$(info AGENT_NEXT target=$(_commit-native-goals) outcome=planned native_status=$(if $(filter query,$(_commit-native-mode)),1,0) mode=$(_commit-native-mode) gate_evidence=false release_ready=false source_checkpoint=false next_action=Native Make inspection executes no staging collection commit publication CI wait or target touch; retain Make's actual status and use the ordinary target only after source and ownership prerequisites.)
 endif
 endif
 
 define _commit-transaction
 $(if $(filter execute,$(_commit-native-mode)),+@$(UV) run python scripts/stream_command.py --commit-transaction --label commit-transaction --make-target "$@" --make "$(MAKE)" --makefile "$(firstword $(MAKEFILE_LIST))" --observed-root "$(OBSERVED_ROOT)" --heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" --quiet-secs "$(OBSERVED_QUIET_SECS)" --max-secs "$(OBSERVED_MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)",@true)
+endef
+
+# Hosted CI may wait after publication; these fixed public actions never retain the mutation lock.
+# Keep recursive post actions inert during native query/dry-run/touch inspection.
+define _commit-publication
+$(if $(filter execute,$(_commit-native-mode)),+@set -eu; \
+	commit_publication_rc=0; commit_publication_phase=batch-push; \
+	if [ "$(PUSH)" = "1" ]; then \
+		$(MAKE) --no-print-directory batch-push || commit_publication_rc=$$?; \
+	fi; \
+	$(if $(filter commit-and-ship-push,$@),\
+		if [ "$$commit_publication_rc" -eq 0 ]; then \
+			commit_publication_phase=development-push; \
+			$(MAKE) --no-print-directory development-push || commit_publication_rc=$$?; \
+		fi; \
+		if [ "$$commit_publication_rc" -eq 0 ]; then \
+			commit_publication_phase=ci-verdict; \
+			$(MAKE) --no-print-directory ci-verdict || commit_publication_rc=$$?; \
+		fi; \
+	) \
+	if [ "$$commit_publication_rc" -eq 0 ]; then \
+		echo "AGENT_NEXT target=$@ phase=public-post-commit outcome=passed native_status=0 gate_evidence=false release_ready=false: Requested public post-commit actions finished after mutation lock release. Retain the mutation receipt and actual publication/CI receipts. A local checkpoint or child result supplies no full-gate deployment or release proof."; \
+	else \
+		echo "AGENT_NEXT target=$@ phase=public-post-commit outcome=failed native_status=$$commit_publication_rc failed_child=$$commit_publication_phase gate_evidence=false release_ready=false: Preserve the applied local commit and exact failed publication/CI evidence. Repair that child input before retrying publication; do not repeat the source commit or adopt an older remote as proof." >&2; \
+	fi; \
+	exit "$$commit_publication_rc",@true)
 endef
 
 _commit-lock-acquire: _gate-mutation-guard
@@ -346,9 +374,11 @@ repo-commit:
 
 ship-commit:
 	$(call _commit-transaction)
+	$(call _commit-publication)
 
 ship-commit-files:
 	$(call _commit-transaction)
+	$(call _commit-publication)
 
 git-commit-file:
 	$(call _commit-transaction)
@@ -361,9 +391,11 @@ commit-bootstrap:
 
 commit-and-ship:
 	$(call _commit-transaction)
+	$(call _commit-publication)
 
 commit-and-ship-push:
 	$(call _commit-transaction)
+	$(call _commit-publication)
 
 ifneq ($(filter _commit-locked-%,$(MAKECMDGOALS)),)
 .NOTPARALLEL:
@@ -451,7 +483,7 @@ _commit-locked-ship-commit: _commit-lock-acquire _pre-commit-content-guard _comm
 		fi; \
 		echo "Committing staged changes..."; \
 		if git diff --cached --quiet; then echo "Nothing to commit"; else git commit -n -m "$(MSG)"; fi
-	@if [ "$(PUSH)" = "1" ]; then $(MAKE) --no-print-directory batch-push; else echo "Committed locally. Use PUSH=1 to push, or make batch-push separately."; fi
+	@if [ "$(PUSH)" != "1" ]; then echo "Committed locally. Use PUSH=1 to push, or make batch-push separately."; fi
 
 # ship-commit-files: atomic staging + commit under the commit lock. Bundles
 # `git-add` + `ship-commit` so one subagent's `git add -A` cannot sweep
@@ -466,8 +498,6 @@ _commit-locked-commit-and-ship: _commit-lock-acquire lint-fix git-add-all
 
 _commit-locked-commit-and-ship-push: _commit-lock-acquire lint-fix git-add-all
 	@$(MAKE) --no-print-directory _commit-locked-ship-commit MSG='$(MSG)'
-	@$(MAKE) --no-print-directory development-push
-	@$(MAKE) --no-print-directory ci-verdict
 
 delete-file:
 	@[ -n "$(FILES)" ] || { echo "Usage: make delete-file FILES='file1 file2'"; exit 1; }

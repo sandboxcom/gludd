@@ -396,6 +396,142 @@ context; native tests establish this project's actual boundary.
 All seven release items remain open until the canonical complete gate and
 required exact-SHA hosted/deployment/promotion proofs.
 
+## Public post-commit publication boundary (2026-10-23 UTC)
+
+The next packet starts from source checkpoint 0c4c3ac. Its native RED used the
+actual public/private Make recipes and common-directory mutex: while a bounded
+publication adapter waited, a real linked-worktree writer could not commit.
+Both ordinary Make and -e failed, the independent inode probe remained locked
+and the mutation receipt stayed running. The first commit already existed.
+This is a mutation-lifetime defect; a hosted CI wait must not reserve the Git
+writer for the duration of remote execution.
+
+The public wrapper now finishes its supervised mutation transaction before
+running its existing publication actions. Staging, every existing guard,
+expected-file comparison, collection, staged-tree recheck and commit remain
+inside the mutex. Local PUSH!=1 output is retained. Original post-action
+conditions and call order are explicit:
+
+| Public target | PUSH=0 after mutation | PUSH=1 after mutation |
+| --- | --- | --- |
+| ship-commit | No publication | batch-push |
+| ship-commit-files | No publication | batch-push |
+| commit-and-ship | No publication | batch-push |
+| commit-and-ship-push | development-push then ci-verdict | batch-push then development-push then ci-verdict |
+
+The first nonzero publication child stops later children and remains nonzero.
+The applied local commit and its native mutation receipt are preserved; repair
+the failed publication/CI input and use that native owner instead of repeating
+the commit. Private guidance now says phase=mutation and explicitly leaves
+public publication/CI status pending. Public-post-commit success guidance is
+emitted only after every requested post action returns zero. Neither message
+is a full-gate, deployment or release verdict.
+
+The hosted owner separately owns saved full-SHA verification and the real
+all-required CI heartbeat. These local controls substitute only a bounded
+publication adapter; they do not prove real hosted integration. After those
+sources are integrated, combined receiving must exercise the actual canonical
+publisher/wait macro while a linked writer progresses. No new waiter, runner,
+mutex, daemon, cache or observation schema belongs to this packet.
+
+One canonical provider lives in make/00-foundation.mk immediately after
+unexport SANDBOXCOM_HTTPS_VALIDATE_ONLY, between the Shared native Make
+inspection grammar markers. Its only definitions are the private override
+functions _native-make-option-prefix, _native-make-remove-letters and
+_native-make-boolean-cluster. It captures no flags eagerly and executes no
+subprocess. Each consumer retains its own three private capture/mode bindings
+and loads the actual provider graph in its native fixture. Environment -e and
+command-line replacement controls retain the same scalar input and include
+an active unguarded witness; private function data cannot replace the grammar.
+
+The inspection controls exposed a second concrete input defect. GNU Make3.81
+with -e/-q supplied MAKEFLAGS=' --no-print-directory -qe'. The old first-word
+and exact-short-option checks classified it as execute. The native guarded
+query started mutation observation and returned2; related dry-run/touch cases
+also failed their inspection contract. Additional native measurements retained
+-srqke, -srnke and -tsrke after the long option. Read actual serialized flags;
+do not infer them solely from argv.
+
+The existing Make and Python owners now stop at the standalone -- assignment
+barrier and recognize boolean-only short words before it: the first bare
+cluster and every single-dash cluster, plus exact long synonyms. The boolean
+letters are bBdeikLmnpqrRsStvw. Argument/path words such as -Iquerynqt, separate
+-I arguments, -j2, long directory options and definition tails cannot supply
+q/n/t. Paired cases execute the exact Make prefix/helper/declaration bytes with
+only a fixture input binding, and the existing Python owner. Unmatched quotes
+and literal flags after -- remain data. The host omitted -I from one native
+parse-time prefix; that argv case alone grants no I-exclusion proof.
+
+A native query can stop at an earlier ordinary recipe before a later plus
+recipe. An inert mutation witness proves no guard. The owned unguarded witness
+therefore makes the preceding mutation noop and the post envelope literally
+recursive and forces only the post condition. All six n/q/t ordinary/-e
+witnesses execute the same bounded publication payload while preserving source
+HEAD/index and creating no observer. Guarded controls retain native0/1/0,
+preserve current pointers and start no publication or target-touch artifact.
+This diagnostic witness is confined to its fixture; production keeps the
+guarded native envelope.
+
+Retain the actual failures and scoped GREEN results:
+
+- Blocked linked writer RED:2 failed/8 deselected20.46s, native21.6s,
+  commit-publication-red/commit-publication-linked-red311-0c4.json.
+- Extended controls:45 failed/67 passed116.15s, native118.0s. Separate16
+  mistaken stderr-only assertions,24 real -e inspection failures and5 inert
+  witnesses. Existing observer-merged Error73 assertions now inspect combined
+  stdout/stderr without weakening status/state checks.
+- Actual flag diagnostic:1 failed1.03s/native2.1s,
+  commit-publication-flags-diagnostic/commit-publication-flags-input311-0c4.json.
+- Shared scalar grammar and active witnesses:34 passed2.75s/native3.7s,
+  commit-publication-grammar/commit-publication-grammar311-0c4.json.
+- Complete new controls before the canonical provider move:140 passed99.61s/native101.4s,
+  commit-publication-controls/commit-publication-controls-fixed311-0c4.json.
+  These retain four-target PUSH conditions/order, ordinary/-e/-j2 jobserver,
+  native post failures, no post action after mutation failure and all inspection
+  source/index/current-pointer/touch assertions.
+- Canonical provider acceptance:36 passed1.99s/native2.8s at
+  commit-publication-provider/commit-publication-provider-input311-0c4.json:
+  actual provider graph/Python grammar28, native override/witness6, actual
+  public -e/-q inspection1 and conformed original guard-policy node1.
+- The previously omitted precommit-quality structural node failed1 in0.65s:
+  commit-publication-policy-red/commit-publication-policy-red311-0c4.json.
+  Its original contentguard/hook assertions now inspect the actual private
+  mutation bodies and also assert public-wrapper linkage; none was removed.
+
+Current-source Ruff, separate strict typing, environment-write guard, target
+contract289 and Make1176/0duplicate checks passed. The cheap logical-Makefile
+AST guard passed before the new control replay; its final receipt is
+commit-publication-layout/commit-publication-layout-final311-0c4.json.
+Final current-source receiving covers all42 deduplicated complete owners on
+both installed runtimes:1917 passed each, no skips. The unchanged eight-owner
+mutex coverage profile contributes503 each:311209.61s/native211.383s and
+312199.46s/native202.063s. Preserve native coverage-files receipts
+20261023T214145Z-76769-2bd4ed38.json and20261023T214548Z-5826-41385103.json,
+with immutable audits coverage-20261023T214516Z.json and
+coverage-20261023T214910Z.json. Locking line96.1 on both, branch88.2/87.5,
+passes original85aggregate/75each LINE AND BRANCH. This is coverage-envelope
+acceptance, not ordinary or full-gate proof. Exact unchanged scope reuse avoids
+a redundant503 replay while retaining canonical root configuration and fixtures.
+
+The complete ordinary observer12 owners contribute527 each in66.68s/native68.239s
+and93.14s/native95.191s; retain commit-publication-observer native receipts
+commit-publication-observer311-0c4.json andcommit-publication-observer312-0c4.json.
+The remaining22 complete ordinary owners contribute887 each in202.65s/
+native206.076s and204.88s/native207.960s; retain commit-publication-consumers
+receipts commit-publication-consumers311-0c4.json and
+commit-publication-consumers312-0c4.json. Every session drained terminal0 under
+original300total/60quiet, literal ID=, fatal warnings and serial-n0. Separate
+runtime commands serialized; at most two admitted cohort slots overlapped.
+
+Native staged-content preflight passed9.3s: retain
+owned six-path receipt post-commit-staged-preflight/
+post-commit-staged-preflight311-0c4.json, baseline3510/new0 clones, and actual
+Main-installed Markdown lint. These measurements provide no hosted timing claim.
+Normal commit collection, independent review, Main receiving, actual combined
+publisher/watcher and linked-writer acceptance, canonical complete gate and
+exact-SHA hosted/deployment/promotion proofs remain pending. Prior observer
+coverage is reusable only for its actual unchanged source/configuration/runtime/scope.
+
 ## Verification
 
 - `tests/unit/test_git_automation_locking.py` proves PID/thread ownership, fork
