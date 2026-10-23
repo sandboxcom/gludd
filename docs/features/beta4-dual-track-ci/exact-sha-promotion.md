@@ -652,3 +652,75 @@ isolated Make/CLI/test/documentation change; immutable observations and the
 existing atomic ledger remain intact. Current source review, exact-SHA hosted
 success and canonical gate/coverage remain required, and disk admission is not
 bypassed.
+
+### Molecule groups preserve push SHA identity (2026-10-23)
+
+The standalone Molecule workflow grouped runs by workflow, full ref and event.
+Different push SHAs on one branch therefore shared a pending group. GitHub's
+default pending-run replacement still applies when `cancel-in-progress` is false.
+Molecule now uses Build's existing conditional SHA selection while retaining
+its full-ref/event namespace:
+
+```yaml
+group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}-${{ github.ref }}-${{ github.event_name }}
+cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+```
+
+Distinct development/candidate push SHAs and dispatch SHAs resolve separately;
+updates to the same PR still coalesce. Different PRs, refs and event types stay
+separate, while repeated identical source retains one group. The six shards,
+`max-parallel: 3`, `fail-fast: false`, 45-minute job timeout, read permission, triggers
+and native command remain intact. No queue setting or capacity bound increases.
+
+The [primary concurrency manual](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+and [Community discussion #5435](https://github.com/orgs/community/discussions/5435),
+opened 2021-09-02, document the long-lived pending-run surprise.
+The [retained research record](../../RELEASE_READINESS.md#long-lived-github-actions-artifact-failures)
+explains why disabling active cancellation alone cannot preserve queued commits.
+This packet uses that record and Root's fixed scope of 14 source bodies; it adds no
+public retrieval or source expansion. These sources establish the generic
+failure mode, without attributing a particular hosted cancellation or speedup.
+
+Patched isolated acceptance is based on
+`14bca32a9a4524472df9d09739163450a0514524` in
+`/private/tmp/gludd-worktrees/agent-v012-gha-build-phase`.
+The three new source-contract methods in
+`tests/unit/test_release_pipeline_structure.py` consume actual YAML, retain all
+predecessor assertions, render only the pinned literal grammar, and cover eight
+context pairs plus exact expression/cancellation and native-policy checks.
+They supply no GitHub server scheduling evidence. Receipts below are relative
+to that worktree; all exact sessions are terminal and drained.
+
+| Scope | Pytest result | Native elapsed/status | Receipt |
+| --- | --- | --- | --- |
+| RED 3.11 | 4 FAIL / 6 PASS, 0.81s | 1.895s / exit2 | `.gate-logs/observed/v012-molecule-concurrency-red/20261023T201328Z-64625-86828f41.json` |
+| Narrow GREEN 3.11 | 10 PASS, 0.52s | 1.361s / exit0 | `.gate-logs/observed/v012-molecule-concurrency-green311/20261023T201350Z-65039-b62df421.json` |
+| Complete 3.11 | 257 PASS, 10.76s | 11.601s / exit0 | `.gate-logs/observed/v012-molecule-concurrency-union311/20261023T201405Z-65863-14ed4e18.json` |
+| Complete 3.12 | 257 PASS, 12.85s | 14.104s / exit0 | `.gate-logs/observed/v012-molecule-concurrency-union312/20261023T201433Z-68113-e7fd0332.json` |
+
+The RED failures are the literal source pin and distinct development push,
+candidate push and dispatch SHAs. Six prior-behavior controls already pass.
+The complete eight-owner union retains:
+
+- `tests/unit/test_release_pipeline_structure.py`
+- `tests/unit/test_concurrency_group_formula.py`
+- `tests/unit/test_ci_gate_matrix_full.py`
+- `tests/unit/test_github_actions_deep.py`
+- `tests/unit/test_workflow_edge_cases_deep.py`
+- `tests/unit/test_ci_hosted_environment_contract.py`
+- `tests/unit/test_pytest_param_fixture_collisions.py`
+- `tests/integration/test_molecule_ci_e2e.py`
+
+All watched acceptance uses one pytest process (`-n 0`), fatal warnings, literal `ID=`, installed
+3.11/3.12 selection, `RUN_WATCHED_PYTEST_TRACE=1`, project-private observations and the original
+90s total / 60s quiet bounds.
+Ruff, strict changed-owner typing, test-environment guard and native line limits
+pass. These are configuration/source checks; no new aggregate coverage
+measurement or hosted timing result follows.
+
+This control-plane repair preserves ZDD and 85% aggregate / 75% per-file line AND
+branch floors. Root's packet inspection supplies source acceptance only.
+Normal commit collection, independent candidate review, receiving acceptance,
+canonical full gate, exact-SHA push CI and immutable hosted timing remain pending.
+A failed receipt remains history; neither this source packet nor a later
+handoff closes S98.4 or authorizes promotion.

@@ -500,6 +500,114 @@ class TestReleaseCandidateHostedValidation:
         assert all(re.fullmatch(r"[A-Za-z0-9_/-]+", branch) for branch in branches)
         assert (pr_target_branch in branches) is expected_premerge
 
+    def _molecule_group(
+        self, event_name: str, git_ref: str, commit_sha: str
+    ) -> str:
+        """Render the pinned source grammar, without modeling GitHub scheduling."""
+        workflow = self._workflow("molecule.yml")
+        concurrency = self._mapping(workflow["concurrency"])
+        group = concurrency["group"]
+        assert isinstance(group, str)
+        selector = "${{ github.event_name == 'pull_request' && github.ref || github.sha }}"
+        rendered = group.replace(
+            selector, git_ref if event_name == "pull_request" else commit_sha
+        )
+        for name, value in {
+            "github.workflow": "Molecule Tests",
+            "github.event_name": event_name,
+            "github.ref": git_ref,
+            "github.sha": commit_sha,
+        }.items():
+            rendered = rendered.replace("${{ " + name + " }}", value)
+        assert "${{" not in rendered, "unrecognized concurrency expression"
+        return rendered
+
+    def test_molecule_concurrency_preserves_sha_ref_and_event_inputs(self) -> None:
+        concurrency = self._mapping(self._workflow("molecule.yml")["concurrency"])
+
+        assert concurrency == {
+            "group": (
+                "${{ github.workflow }}-"
+                "${{ github.event_name == 'pull_request' && github.ref || github.sha }}-"
+                "${{ github.ref }}-${{ github.event_name }}"
+            ),
+            "cancel-in-progress": "${{ github.event_name == 'pull_request' }}",
+        }
+
+    @pytest.mark.parametrize(
+        "concurrency_pair",
+        [
+            (
+                "push", "refs/heads/development", "a" * 40,
+                "push", "refs/heads/development", "b" * 40, False,
+            ),
+            (
+                "push", "refs/heads/release-candidate/v012", "a" * 40,
+                "push", "refs/heads/release-candidate/v012", "b" * 40, False,
+            ),
+            (
+                "workflow_dispatch", "refs/heads/development", "a" * 40,
+                "workflow_dispatch", "refs/heads/development", "b" * 40, False,
+            ),
+            (
+                "pull_request", "refs/pull/42/merge", "a" * 40,
+                "pull_request", "refs/pull/42/merge", "b" * 40, True,
+            ),
+            (
+                "pull_request", "refs/pull/42/merge", "a" * 40,
+                "pull_request", "refs/pull/43/merge", "a" * 40, False,
+            ),
+            (
+                "push", "refs/heads/development", "a" * 40,
+                "workflow_dispatch", "refs/heads/development", "a" * 40, False,
+            ),
+            (
+                "push", "refs/heads/development", "a" * 40,
+                "push", "refs/heads/master", "a" * 40, False,
+            ),
+            (
+                "push", "refs/heads/development", "a" * 40,
+                "push", "refs/heads/development", "a" * 40, True,
+            ),
+        ],
+        ids=(
+            "development-push-shas",
+            "candidate-push-shas",
+            "dispatch-shas",
+            "same-pr-coalesces",
+            "different-prs",
+            "push-and-dispatch",
+            "same-sha-different-refs",
+            "same-source-repeat",
+        ),
+    )
+    def test_molecule_concurrency_pair_uses_actual_workflow_group(
+        self, concurrency_pair: tuple[str, str, str, str, str, str, bool]
+    ) -> None:
+        first_event, first_ref, first_sha, second_event, second_ref, second_sha, shared = (
+            concurrency_pair
+        )
+
+        first = self._molecule_group(first_event, first_ref, first_sha)
+        second = self._molecule_group(second_event, second_ref, second_sha)
+
+        assert (first == second) is shared
+
+    def test_molecule_concurrency_retains_native_job_limits_and_permissions(self) -> None:
+        workflow = self._workflow("molecule.yml")
+        jobs = self._mapping(workflow["jobs"])
+        molecule = self._mapping(jobs["molecule"])
+        strategy = self._mapping(molecule["strategy"])
+
+        assert workflow["permissions"] == {"contents": "read"}
+        assert molecule["timeout-minutes"] == 45
+        assert strategy == {
+            "fail-fast": False,
+            "max-parallel": 3,
+            "matrix": {"shard": [1, 2, 3, 4, 5, 6]},
+        }
+        assert self._mapping(molecule["env"])["SHARD_COUNT"] == 6
+
     def test_pages_candidate_keeps_presentation_path_filter(self) -> None:
         events = self._events(self._workflow("pages.yml"))
         push = self._mapping(events["push"])
