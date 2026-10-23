@@ -1,5 +1,114 @@
 # GHA pipeline and agentic promotion audit
 
+## Current source inventory and next owners
+
+This is a manual source/evidence inventory for2026-10-23 UTC. Every checkpoint
+below still needs canonical receiving and the required final proofs. No row is
+a released or fully staged v0.1.2 item. All seven release tasks remain open;
+132 backlog items are outside that stop gate. Current generated observations
+remain owned by pipeline-status, work-item and the native observed command.
+
+| Implemented source | Immutable checkpoint | Actual local acceptance and review scope |
+| --- | --- | --- |
+| Missing versus active hosted-run guidance |4604eeccc90ce9e89e575a8641ba1213a15f9925 |724 each runtime;311 whole pipeline profile99.2% line/98.8% branch; source-only approval. Its normal collection included the owned untracked11-case early research prototype, so it is not a clean immutable-tree inventory. |
+| Draft recovery preserves existing release tag |5b19a00a01df3cbc75c076bc8b31973eb0d93fbd |303 each runtime; source-only approval. |
+| Build validates development pull requests |14bca32a9a4524472df9d09739163450a0514524 |335 each runtime; source-only approval. |
+| Pages path filters include actual build inputs |3779b7b8d58762400b4336c40f0cf06f290cac13 |367 each runtime; source-only approval. |
+| Bounded primary and firsthand pipeline research |c93ea84cbc40b0165e8d70d4dbe20c1d07c81a5f |120 each runtime and14 actual source bodies; source-only approval. |
+| Actual remote batch count and saved candidate identity |81962c636afbc512c149826e33dcfcd10a8eb0fb |734 cases each runtime:722PASS/12 unchanged legacy SKIP. Source-only approval; twelve AB audit gaps remain unproved. |
+| Native common-repository commit transaction |0c4c3ac8780043a240957f74b52974f043321d28 |1658 each runtime;311 whole mutex96.1/88.2 and observer aggregate91.8/86.0, all per-file floors. Source-only approval; later publication-lock release is a separate packet. |
+| Read observed evidence without UV environment creation |573b589b938f1d00b604fee7f4762f338b1db99d |298 each runtime; source-only approval. Select existing compatible PYTHON explicitly; UV variables alone no longer select those readers. |
+| Molecule groups preserve distinct push SHAs |008f879dbea79fdead27994a5948df4bc07b7d52 |257 each runtime; source-only approval. Actual GitHub scheduling/timing remains unmeasured. |
+| Retire unsafe bulk and legacy Master merge routes |d3e70a73a27578c79e067f7a5a1c5b319bd91fc3 |401 each runtime; whole2-script311 coverage97.1/94.4; source-only approval. Managed live callers and two raw aliases remain a separate repair. |
+| Verify native creation before READY and preserve active path ownership |98ba75247503661346c2ba442cf52580ef937282 |511 each runtime; both whole profiles93.6/86.2. Independent review requested a native jobserver/inspection witness; seven later native controls passed and disproved that hypothesized fault, without a production patch. Independent review is reconciled to source-only approval. |
+| Bounded firsthand linked-worktree ownership research |c7bf0eb32c57fb14745887b2287163a374659845 |132 each runtime; two actual HTTP200 bodies with nine answers. Normal collection129521/129545,24 deselected,45.11s/native50.9s at test-count/20261023T211136Z-56711-ded9e6fa. Source-only approval. |
+| Preserve native creation jobserver/inspection behavior |54413f173d2b0fecdc84ac6923e58a1ae3b499fd |79 each runtime; seven additive native controls, no production change; source-only approval. |
+| Saved development identity through guarded publication |fd8b187a75db48aedbddfc756f5851d6ead0de15 |1178 each:1166PASS/12 unchanged legacy SKIP. Source-only approval; real combined Hosted receiving remains pending. |
+| Release mutation mutex before public publication |abdc86b513e15485657380159febe6134d36d67c |1917 each runtime across42 complete owners; both whole mutex profiles96.1line/88.2and87.5branch. Normal129802/129826,24 deselected,51.36s/native56.7 at test-count/20261023T220621Z-88505-b5c7ca2a. Independent source review pending. |
+
+The local checkpoints above were separately collected through normal Make
+commit owners. Their source reviews, focused receipts and collection do not
+supply a new canonical gate, exact-SHA hosted/deployment proof or task closure.
+The original4604 collection provenance qualifier is intentional; do not
+relabel its untracked prototype as the final12-case research source.
+
+Six code boundaries are being repaired and received independently:
+
+- The existing publisher will prepare a real selected work-item focus before
+  transport, verify the saved remote SHA and invoke the existing bounded
+  status-heartbeat with required-terminal mode. Pending/missing/stale/lookup
+  errors never supply success. Native focus preparation is administrative;
+  the actual later command_admission owns the wait reservation. Branch/SHA
+  default outputs preserve explicit foreign records; deterministic snapshot
+  output refusal stops rather than repeating twelve unchanged failures.
+- Public post-commit publication must follow mutation-lock release. A real
+  linked-writer RED was followed by native green while the first publication
+  adapter stayed blocked. Its final42-owner receiving passed1917 each runtime,
+  followed by local checkpoint abdc86b. Actual combined hosted receiving remains
+  pending; the first mutation receipt cannot certify the later public children.
+- development-push will delegate to the native publisher with an expected
+  branch/full-SHA pair, transport-aware auth and saved-SHA refspec. A real
+  transport-time HEAD movement proved the old race; raw SHA with-u also proved
+  missing upstream tracking, so the native narrow tracking step retains its
+  own possibly-applied transport failure. Local checkpoint fd8b187 has1166PASS/
+  twelve unchanged legacy SKIP each runtime; combined Hosted receiving is pending.
+- Managed runtime/promotion callers must distinguish integration and retirement
+  plans from application/removal, verify native markers before cleanup and
+  preserve candidates when an owned receiver or acceptance is unavailable.
+  Existing49/12-module profiles remain whole; readiness also retains its whole
+  three-module profile. Native aliases, plan consumers and readiness builder
+  have genuine RED evidence; no weaker automatic fallback is authorized.
+- Native logical release binds canonical branch, physical worktree and full HEAD
+  before selected retirement. The first whole profile passed308 tests but failed
+  branch coverage; genuine direct CLI/state controls repair that actual gap,
+  preserving the complete profile and both original floors. Cleanup plans still
+  authorize no deletion. Managed callers must receive this native source.
+- The remaining legacy merged-worktree helper genuinely deleted ignored proof
+  and a selected branch despite an active gate, then ignored unregister failure.
+  Three native RED cases precede a shell-only/stdlib compatibility refusal;
+  five narrow GREEN controls preserve the live gate, refs, index and proof.
+  Whole coverage and complete consumer receiving remain pending.
+
+The actual GNU Make3.81 combined cluster after a long option exposed a shared
+inspection defect. Mutex owns one three-function pure-Make provider in the
+existing foundation; publisher/commit consumers receive that same graph and
+matching native/Python controls. Preserve assignment barriers, option arguments,
+ordinary/-e context, real unguarded witnesses and original n/q/t statuses.
+The creation jobserver concern was disproved natively; do not add+ or a parser
+to that target without an actual failing input.
+
+The current operator-authorized wave uses six independent implementation lanes,
+one Git/publication writer and at most four admitted local test cohorts, within
+the unchanged eight-worker resource ceiling. Root consumes every exact terminal
+session before a dependent mutation. Read-only source reviews overlap those
+lanes. Normal source checkpoints and compatible combined receiving remain
+distinct from final release proof. No throughput optimum or hosted speedup is
+claimed.
+
+Fresh native auth still reports active sandboxcom/HTTPS with gist,read:org,repo
+and NO workflow scope. The existing explicit-account consent request is pending;
+no mode0 authorization, repair push, manual dispatch or new GHA proof has run.
+The latest measured hosted runs below remain the Oct22 eb772a6 failures/success.
+Fresh native disk is97% with6.6GiB available, above unchanged hard95. The bounded
+capacity audit found about495MB eligible bytecode plus disposable caches,
+not sufficient proven clearance. Its dry-run89 removal label means eligibility,
+not deletion; no cleanup was applied and protected source/evidence/toolchains
+stay protected. HumanTodo remains unfiled.
+
+AGENTS now removes instructions to bulk-merge, immediately clean pending
+worktrees, delegate Git to code workers or use the global-temp task wrapper.
+It names coherent explicit file ownership, current wave caps, native observed
+execution and separate plan/application/proof authority. The mandatory guide
+adds existing line-limit/logical-Makefile preflight and fixture environment
+repr boundaries after actual late failures. These instructions are source
+changes requiring their own normal receiving; they are no final proof.
+
+Older sections below retain their fixed measurements and source refs. A prior
+96-percent measurement or earlier source header cannot replace current native
+inputs or recertify an old receipt.
+
+
+
 S98.4, 2026-10-23 UTC. This record covers local and hosted build phases,
 parallel source work, Make results and release proof. An inspected or locally
 repaired phase is not a successful hosted run. All seven v0.1.2 tasks remain open.
@@ -35,7 +144,7 @@ development-repair publication route or grant credential consent.
 
 | Phase | Existing execution / authority | Required result and present limit |
 | --- | --- | --- |
-| Local dispatch | work-item,active-work-status,check-system-load | Check ownership/load before each wave;three agents maximum,two coding/testing owners,one public HTTP research owner,one Git writer. Mutating agents require isolated worktrees. |
+| Local dispatch | work-item,active-work-status,check-system-load | Check ownership/load before each wave; use the current operator-authorized six implementation lanes/four admitted local cohorts, one public HTTP research owner and one Git writer. Mutating agents require isolated registered worktrees; native eight-worker and hard95-percent final limits remain. |
 | Local source repair | test-files,lint-files,separate typecheck-scope | Native failing-first regression,complete affected owners and original assertions. Focused green is source acceptance. |
 | Source checkpoint | ship-commit-files PUSH=0 | Explicit paths,content/index guards and one fresh normal collection. A local commit supplies no publication or CI proof. |
 | Candidate publication | Existing guarded batch/repair push,verify-remote | Canonical push event,full exact SHA and actual remote verification. Keep batching,auth/runtime guards and unchanged-failure refusal. |

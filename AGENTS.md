@@ -2,11 +2,18 @@
 
 ## Release Proof Throughput (READ FIRST)
 
-Before each dispatch wave run make check-system-load. Keep at most three
-subagents, two coding/testing owners, one public HTTP research owner and one
-Git writer. Mutating agents require isolated registered worktrees; read-only
-Main audits do not authorize source edits. Set the installed runtime explicitly
-on status readers as well as tests. The [pipeline/agentic audit](docs/features/GHA_PIPELINE_PROMOTION_AUDIT.md)
+The operator's 2026-10-23 request to maximize parallel implementation and hosted
+CI work overrides the default three-agent/two-owner ceiling below for this
+active release audit. Use six independent implementation lanes in isolated
+registered worktrees and one Git/publication writer. Admit at most four local
+test cohorts while actual native worker leases, current load and disk permit;
+the existing eight-worker resource ceiling and final95percent disk limit stay.
+Reserve test slots explicitly; coding and source review continue while tests or
+hosted CI run. A blocked hosted lane names its actual prerequisite and pending
+request; continue eligible independent repairs without unchanged failed retries.
+Before every dispatch wave run make check-system-load. Keep one public HTTP
+research owner. Read-only Main audits do not authorize source edits. Set the
+installed runtime explicitly on status readers as well as tests. The [pipeline/agentic audit](docs/features/GHA_PIPELINE_PROMOTION_AUDIT.md)
 records actual failures, native repairs, phase ownership and missing proofs.
 
 1. During release stabilization, prioritize the active milestone and its required repairs. Do not start unrelated backlog work or pad dispatch waves while release blockers remain.
@@ -41,10 +48,15 @@ measurements, rejected approaches and the missing release proofs.
    shared-file/Git writer and the existing agent/testing concurrency ceilings.
    Do not add unrelated backlog work to fill a batch.
 3. Write and run the narrow failing regression, then repair its actual input.
-   Run cheap lint, strict typing, make check-test-env-writes and target-contract
-   checks before a broad positive replay. Pytest fixtures use monkeypatch.setenv;
+   Run cheap lint, strict typing, make check-test-env-writes, target-contract
+   and existing file line limits before broad positive receiving. Make-reading
+   tests also run the existing logical-Makefile AST check first; its native
+   owner and explicit command are in the mandatory guide.
+   Pytest fixtures use monkeypatch.setenv;
    generated child programs receive an explicit copied environment through
    subprocess or os.execve, retaining unrelated carriers and parent state.
+   Copied environment fields use repr=False; failures show owned fields rather
+   than ambient credentials. Preserve the actual failed receipt privately.
    Evaluation/injection controls need a native unguarded witness
    that executes the same payload, variable and origin; quote owned marker paths,
    remove only the owned witness and retain the guarded no-evaluation assertion.
@@ -705,29 +717,30 @@ Older non-isolated new-file preference and~5–6 worktree-disk cap remain source
 
 ### Worktree-per-subagent (file-editing tasks MANDATORY)
 
-Any mutating subagent gets isolated branch+worktree agent-<short-descriptive-name>; no shared main files, push, master merge or own subagents. Main orchestrator lifecycle:
-`make agent-worktree BRANCH=agent-<name>`→WORKTREE_PATH=/tmp/gludd-worktrees/agent-<name>; agent edits/commits there; main merges/cleans. Existing branch redispatch attaches fresh worktree.
-Legacy example `make agent-merge BRANCH=agent-<name>` means --no-ff master fan-in; current development-first discipline/lifecycle uses `make agent-merge-dev BRANCH=<name>`. Both example forms remain preserved, not independent authority to bypass current guards.
-`make agent-worktree-list` diagnoses. No isolated agents live→clean-worktree-venvs. docs/ORCHESTRATION.md§4/§5 apply.
+Any mutating subagent gets an isolated registered branch/worktree and explicitly owned paths. The coordinator owns all project Git mutations and shared tracking.
+Use the native agent-worktree creation owner with explicit BRANCH and required BASE; consume its actual verified path/registration result before dispatch. On native refusal, reconcile partial state without reset, force removal or pruning.
+Use development-merge-forward with a reviewed pinned SOURCE, MODE=content and APPLY=0 from clean development for planning. Guarded apply, receiving acceptance and exact resulting-SHA proofs remain required. Legacy agent-merge, agent-merge-dev and worktree-merge-all are not promotion authority.
+Use agent-worktree-list, worktree-state and active-work-status to inspect actual ownership. An absent model agent or old status pointer does not authorize cleanup.
 
 ### Git Worktree Lifecycle — Merge or Clean Up
 
-Every worktree MUST merge to development BEFORE cleanup: agent-merge-dev then IMMEDIATELY agent-cleanup, one atomic unit. No lingering after session; final list only main checkout. >24h unmerged worktree, missing remote branch or abandoned commits violates worktree-health-check; resolve all before gate green.
-worktree-merge-all attempts --no-ff development merges, reports conflicts and cleans successes. Health script checks age/reachability/remote. Older320MB/worktree and~5–6 concurrent worktree agents cap remain disk rationale, not override of3.
+Retain unreceived source worktrees and their dirty bytes, index, refs, ignored evidence, locks and checkpoints while proof is pending. A session boundary, age warning or missing remote is a diagnosed input, never authority to force integration or removal.
+After reviewed guarded integration, plan agent-cleanup with the exact BRANCH, canonical WORKTREE and AGENT_CLEANUP_VALIDATE_ONLY=1. Apply literal0 only with native ownership release and all merge/lock/archive fences; a zero plan has integrated or removed nothing. Never combine an unproved merge and cleanup into an assumed atomic success.
+Do not invoke worktree-merge-all for current work. The release audit retains its actual wrong-branch/foreign-autocommit/hidden-failure evidence and the separately reviewed retirement packet. Source-only retirement and canonical release completion remain different claims.
 
-#### ⚠️ KNOWN GAP: git locking is broken inside worktrees (read before running a wide worktree wave)
+#### Historical Git locking failure and current proof limits
 
-Historical verified2026-07-14 git_automation/locking.py git_repo_lock source locator treated .git as directory; worktree .git FILE fell back to in-process RLock, not cross-process. Read-only/own-branch routine commits stay low-risk; concurrent merge/tag/push MUST serialize main, no two owners same wave. The old proposed git-common-dir fix and docs/design/NEXT_RELEASE_BETA2_SPEC.md/docs/MULTITASKING_POLICY.md are context, not current-runtime verification.
+The verified2026-07-14 source treated a worktree .git file as a directory and fell back to an in-process RLock. Preserve that historical failure without treating it as current source verification. The existing common-directory mutex and native Make transaction each require their own reviewed source/receipts; see docs/features/GIT_REPOSITORY_MUTEX.md. Keep one Git/publication writer. A mutation-only receipt cannot certify later hosted observation; release the mutation mutex before waiting and prove the actual linked-writer boundary.
 
 ### Subagent dispatch reliability rules
 
 Every task needs timeout, under5min/default300000ms; split longer or main owns observable run. enforce-deadline records /tmp/gludd-task-deadlines.json, warns TASK DEADLINE EXCEEDED/stale; orchestrator resplits/replaces/foregrounds. task_watchdog polls5s, records kills to /tmp/gludd-task-killed.json and applies SIGTERM→SIGKILL through native owner.
-Use `make task CMD='...'`; GLUDD_TASK_DEADLINE_ENABLED=0 disables detection, GLUDD_TASK_TIMEOUT_MS sets limit; watchdog-auto starts owner. NEVER dispatch make gate (~40min) to subagent; main-loop observable background owner, not cancelled5min task. ONE focused task; file-editing dispatches must specify exactly one file. The source also permits multi-file tasks; retain that tension rather than choosing a looser scope. Read-only is reliable; prompt enough context. No filler refill.
+Use the existing run-watched owner with explicit project-private OBSERVED_ROOT, installed runtime and native command bounds. The old global-temp task wrapper is not the parallel execution route. Root owns the complete canonical gate through its existing observed owner and original bounds. Dispatch one coherent defect with an explicit minimal roster of production, test and documentation paths; do not assign one file then let the worker expand its scope. Preserve native cleanup, active reservations and exact terminal receipts. Read-only reviews can overlap independent code/tests; do not refill with unrelated backlog.
 
 ### Main-thread command restriction (ANTI-STALL RULE)
 
-Source allowlist: ci-verdict-fast(<1s), Task dispatch, ship-commit via subagent. NEVER run on the main thread: make gate/test-unit/test/qa/e2e/validate/lint/typecheck/collect/smoke, git-add-all/commit-no-verify/git-push-branch-nv and ANY>3s.
-The same source permits bounded foreground work with streams/heartbeats and later requires >~30s backgrounding; preserve this scope tension, not a blanket bypass. Serialized ship ownership remains mandatory.
+Root owns Git and publication. Launch long existing Make owners through nonblocking native sessions with visible progress, then continue independent code/review work in other registered worktrees. Code workers do not commit or publish.
+A yielded session remains active until its exact terminal receipt is consumed. Preserve its native bounds, stdout/status, cleanup and ownership; do not replace it or start dependent writes. A fast launch is not successful execution. Follow the mandatory guide's canonical gate owner instead of selecting a legacy shortcut from this historical runbook.
 
 #### Background-gate workflow (canonical way to run a long gate)
 

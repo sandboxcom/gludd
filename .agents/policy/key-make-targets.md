@@ -23,10 +23,46 @@ environment to subprocess or os.execve; retain unrelated carriers, caller
 precedence and all native assertions. The [probe receiving record](../../docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md#generated-probe-environments-after423153a)
 retains the actual failure and both-runtime acceptance.
 
+For a complete scoped repair, the coordinator first stages only the exact
+owned paths and verifies worktree-state. The existing standalone content owner
+catches whitespace/EOF, secret, staged-line and clone failures before coverage:
+
+~~~console
+make _pre-commit-content-guard FILE_LINE_LIMIT_POLICY=config/file_line_limits.json DUPLICATE_CODE_CONFIG=config/duplicate_code.json DUPLICATE_CODE_ENGINE=/Users/shawnwilson/gludd/.opencode/node_modules/.bin/jscpd UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
+~~~
+
+Run that exact child through the existing run-watched owner with explicit
+project-private observation inputs and bounded progress. Reuse the verified
+absolute existing duplicate engine when an isolated checkout lacks its own;
+do not install another engine or bypass the guard. The child hard-pins staged
+source, HEAD baseline/current and literal live validation. Its fixers can
+change owned working bytes; a refusal stops dependent coverage and requires
+native index/worktree reconciliation. Zero measures staged content only:
+normal collection, source checkpoint, full gate and exact-SHA CI remain separate.
+No new preflight target, runner or cache is needed.
+
+Before broad receiving, run the existing line-limit check on working bytes.
+For changed Make-reading tests, also run the existing logical-Makefile AST node
+through test-files with the installed runtime selected as documented below:
+
+~~~console
+make check-file-line-limits FILE_LINE_LIMIT_POLICY=config/file_line_limits.json FILE_LINE_LIMIT_STAGED=0
+make test-files TESTFILES=tests/unit/test_makefile_layout.py::test_tests_read_the_logical_makefile_instead_of_only_the_entrypoint PYTEST_ARGS='-q -W error -n 0' ID= UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
+~~~
+
+The line check retains strict<2500; new untracked paths still need the normal
+staged check. Keep added contract entries compact without altering unrelated
+entries or the limit. The AST node retains its original assertion and requires
+compose_makefile even for an unsplit fixture. These cheap checks caught actual
+late receiving failures; they provide no full-gate or exact-SHA evidence.
+Copied environment fixtures hide ambient carriers from repr and failure dumps
+while retaining their values for the actual child.
+
 If a tool returns a session ID, drain that exact session to a terminal exit
 before starting the next command in a sequential batch. Awaiting a launch result
-does not await the launched process. Count yielded processes toward the existing
-two-owner execution/testing limit. A failed exact edit or static check stops all
+does not await the launched process. Count yielded processes toward the active
+AGENTS wave's execution/testing cap; two owners is the default unless explicit
+operator steering changes that cap. A failed exact edit or static check stops all
 dependent mutations/tests; inspect its native match count/status and correct the
 actual input before continuing. Quiesce every checkout reader and model owner
 before normal Git hooks can stash files. A static-check batch is still subject
