@@ -48,6 +48,12 @@ if args and args[0] == "guard":
     kind = "guard"
 elif "scripts/stream_command.py" in args:
     kind = "tail" if "--tail" in args else "observe"
+if kind == "uv" and args[:2] == ["run", "python"]:
+    child_environment = dict(os.environ)
+    child_environment["CAPTURE_GUARD_CHILD"] = "1"
+    os.execve(sys.executable, [sys.executable, *args[2:]], child_environment)
+if kind == "git" and os.environ.get("CAPTURE_GUARD_CHILD") == "1" and args[:1] != ["--no-optional-locks"]:
+    kind = "guard-git"
 temp = os.environ.get("ANSIBLE_LOCAL_TEMP", "")
 event = {"kind": kind, "args": args, "ansible_tmp": temp,
          "tmp_exists": bool(temp and Path(temp).is_dir())}
@@ -61,12 +67,23 @@ if kind == "tail":
     print("123537 tests collected in 56.00s (capture fixture)")
     raise SystemExit(int(os.environ.get("TAIL_RC", "0")))
 if kind == "uv":
-    hook = args[-1]
+    assert args[:3] == ["run", "pre-commit", "run"]
+    hook = args[3]
     raise SystemExit(1 if hook == os.environ.get("FAIL_GUARD") else 0)
+if kind == "guard-git":
+    if args == ["write-tree"]:
+        print("guard-context-tree")
+    raise SystemExit(0)
 if args == ["rev-parse", "--local-env-vars"]:
     print("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_CONFIG_PARAMETERS", sep=chr(10))
 elif args == ["diff", "--cached", "--name-only"]:
     print(os.environ.get("STAGED_FILES", "src/feature.py\ntests/unit/test_feature.py"))
+elif args == ["--no-optional-locks", "diff", "--cached", "--name-only", "-z", "--"]:
+    names = os.environ.get("STAGED_FILES", "src/feature.py\ntests/unit/test_feature.py")
+    for filename in names.splitlines():
+        sys.stdout.buffer.write(os.fsencode(filename) + bytes((0,)))
+elif args == ["--no-optional-locks", "diff", "--cached", "--name-only", "--diff-filter=U", "-z", "--"]:
+    pass
 elif args == ["write-tree"]:
     counter = Path(os.environ["CAPTURE_LOG"] + ".trees")
     count = int(counter.read_text() if counter.exists() else "0") + 1
@@ -125,7 +142,10 @@ def _run(
         "git-add:\n\t@git add $(FILES)\n" + guard_blocks + "\n" + (text or _source()),
         encoding="utf-8",
     )
-    env = {key: value for key, value in os.environ.items() if key not in {"MAKEFLAGS", "MFLAGS", "MAKELEVEL"}}
+    env = {
+        key: value for key, value in os.environ.items()
+        if key not in {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "CAPTURE_GUARD_CHILD"}
+    }
     log = tmp_path / "capture.jsonl"
     env.update({"PATH": f"{tmp_path}{os.pathsep}{env['PATH']}", "CAPTURE_LOG": str(log)})
     env.update(state or {})
@@ -189,10 +209,21 @@ def _success_contract(
     assert len(_commits(events)) == 1
     guards = {event["args"][1] for event in events if event["kind"] == "guard"}
     assert guards == set(GUARDS)
-    hooks = [event["args"][-1] for event in events if event["kind"] == "uv"]
+    hooks = [event["args"][3] for event in events if event["kind"] == "uv"]
     assert hooks == ["trailing-whitespace", "end-of-file-fixer", "detect-secrets-readonly"]
-    trees = [index for index, event in enumerate(events) if event["args"] == ["write-tree"]]
+    assert [event["args"] for event in events if event["kind"] == "uv"] == [
+        ["run", "pre-commit", "run", hook, "--files", *FILES.split()] for hook in hooks
+    ]
+    trees = [
+        index for index, event in enumerate(events)
+        if event["kind"] == "git" and event["args"] == ["write-tree"]
+    ]
     assert len(trees) == 2
+    context_trees = [
+        index for index, event in enumerate(events)
+        if event["kind"] == "guard-git" and event["args"] == ["write-tree"]
+    ]
+    assert context_trees and max(context_trees) < trees[0]
     collected = events.index(observes[0])
     committed = events.index(_commits(events)[0])
     assert trees[0] < collected < trees[1] < committed
@@ -322,7 +353,7 @@ def test_collection_failure_refuses_commit_and_preserves_bounded_diagnostics(tmp
     assert f"COLLECTION ERRORS DETECTED (rc={rc}" in result.stdout
     tails = [event["args"] for event in events if event["kind"] == "tail"]
     assert len(tails) == 1 and tails[0][tails[0].index("--tail") + 1] == "80"
-    assert sum(event["args"] == ["write-tree"] for event in events) == 1
+    assert sum(event["kind"] == "git" and event["args"] == ["write-tree"] for event in events) == 1
 
 
 @pytest.mark.parametrize("failure", ["first", "second", "both"])
@@ -334,7 +365,9 @@ def test_failed_native_tree_capture_refuses_before_unnecessary_work(tmp_path: Pa
     assert not _commits(events)
     assert len(_observes(events)) == (1 if failure == "second" else 0)
     assert "staged index changed" not in result.stderr
-    assert sum(event["args"] == ["write-tree"] for event in events) == (2 if failure == "second" else 1)
+    assert sum(
+        event["kind"] == "git" and event["args"] == ["write-tree"] for event in events
+    ) == (2 if failure == "second" else 1)
 
 
 def test_success_tail_failure_also_refuses_commit(tmp_path: Path) -> None:

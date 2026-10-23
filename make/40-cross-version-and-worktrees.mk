@@ -406,9 +406,51 @@ endif
 # pre-commit hooks and do not repeat these checks.
 .PHONY: _pre-commit-secrets-guard
 _pre-commit-secrets-guard:
-	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run pre-commit run trailing-whitespace
-	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run pre-commit run end-of-file-fixer
-	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run pre-commit run detect-secrets-readonly
+	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run python -P -c 'import os, subprocess, sys; exec( \
+		"def native_status(code):\n" \
+		"    return code if code >= 0 else 128 - code\n" \
+		"def run_native(arguments, **options):\n" \
+		"    try:\n" \
+		"        return subprocess.run(arguments, check=False, **options)\n" \
+		"    except OSError as error:\n" \
+		"        print(\"AGENT_NEXT target=_pre-commit-secrets-guard outcome=failed native_status=127 failed_input=native-executable gate_evidence=false release_ready=false next_action=repair-native-executable-before-retry reason=\" + repr(str(error)), file=sys.stderr)\n" \
+		"        raise SystemExit(127)\n" \
+		"inventory = run_native([\"git\", \"--no-optional-locks\", \"diff\", \"--cached\", \"--name-only\", \"-z\", \"--\"], stdout=subprocess.PIPE)\n" \
+		"if inventory.returncode:\n" \
+		"    status = native_status(inventory.returncode)\n" \
+		"    print(f\"AGENT_NEXT target=_pre-commit-secrets-guard outcome=failed native_status={status} failed_owner=git-staged-paths gate_evidence=false release_ready=false next_action=repair-native-index-query-before-hook-retry\", file=sys.stderr)\n" \
+		"    raise SystemExit(status)\n" \
+		"if inventory.stdout and not inventory.stdout.endswith(bytes((0,))):\n" \
+		"    print(\"AGENT_NEXT target=_pre-commit-secrets-guard outcome=refused native_status=2 failed_input=unterminated-staged-NUL-inventory gate_evidence=false release_ready=false next_action=repair-native-Git-output-before-hook-retry\", file=sys.stderr)\n" \
+		"    raise SystemExit(2)\n" \
+		"paths = [os.fsdecode(name) for name in inventory.stdout.split(bytes((0,))) if name]\n" \
+		"if not paths:\n" \
+		"    print(\"AGENT_NEXT target=_pre-commit-secrets-guard outcome=empty native_status=0 staged_files=0 hook_commands=0 gate_evidence=false release_ready=false next_action=no-staged-scope-was-measured\", file=sys.stderr)\n" \
+		"    raise SystemExit(0)\n" \
+		"unsupported = next((name for name in paths if name.startswith(\"-\")), None)\n" \
+		"if unsupported is not None:\n" \
+		"    print(\"AGENT_NEXT target=_pre-commit-secrets-guard outcome=refused native_status=2 failed_input=option-looking-staged-path gate_evidence=false release_ready=false next_action=repair-owned-root-filename-before-hook-retry path=\" + repr(unsupported), file=sys.stderr)\n" \
+		"    raise SystemExit(2)\n" \
+		"unmerged = run_native([\"git\", \"--no-optional-locks\", \"diff\", \"--cached\", \"--name-only\", \"--diff-filter=U\", \"-z\", \"--\"], stdout=subprocess.PIPE)\n" \
+		"if unmerged.returncode:\n" \
+		"    status = native_status(unmerged.returncode)\n" \
+		"    print(f\"AGENT_NEXT target=_pre-commit-secrets-guard outcome=failed native_status={status} failed_owner=git-unmerged-paths gate_evidence=false release_ready=false next_action=repair-native-index-query-before-hook-retry\", file=sys.stderr)\n" \
+		"    raise SystemExit(status)\n" \
+		"if unmerged.stdout:\n" \
+		"    print(\"AGENT_NEXT target=_pre-commit-secrets-guard outcome=refused native_status=1 failed_input=unmerged-index gate_evidence=false release_ready=false next_action=reconcile-owned-merge-through-native-Git-before-hook-retry\", file=sys.stderr)\n" \
+		"    raise SystemExit(1)\n" \
+		"from pre_commit.staged_files_only import staged_files_only\n" \
+		"from pre_commit.store import Store\n" \
+		"with staged_files_only(Store().directory):\n" \
+		"    for command in (\"pre-commit run trailing-whitespace\", \"pre-commit run end-of-file-fixer\", \"pre-commit run detect-secrets-readonly\"):\n" \
+		"        result = run_native([*sys.argv[1:], \"run\", *command.split(), \"--files\", *paths])\n" \
+		"        if result.returncode:\n" \
+		"            status = native_status(result.returncode)\n" \
+		"            hook = command.rsplit(\" \", 1)[1]\n" \
+		"            print(f\"AGENT_NEXT target=_pre-commit-secrets-guard outcome=failed native_status={status} failed_hook={hook} gate_evidence=false release_ready=false next_action=inspect-native-hook-output-and-preserve-applied-fixer-state-before-retry\", file=sys.stderr)\n" \
+		"            raise SystemExit(status)\n" \
+		"print(f\"AGENT_NEXT target=_pre-commit-secrets-guard outcome=passed native_status=0 staged_files={len(paths)} hook_commands=3 selection=native-hook-output gate_evidence=false release_ready=false next_owner=_pre-commit-content-guard next_action=retain-native-output-and-run-staged-line-and-clone-guards; skipped-hooks-measure-no-matching-files\", file=sys.stderr)\n" \
+	)' $(UV)
 
 _pre-commit-content-guard: _pre-commit-secrets-guard
 	@$(MAKE) --no-print-directory check-file-line-limits FILE_LINE_LIMIT_POLICY="$(FILE_LINE_LIMIT_POLICY)" FILE_LINE_LIMIT_STAGED=1

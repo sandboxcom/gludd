@@ -532,6 +532,173 @@ publisher/watcher and linked-writer acceptance, canonical complete gate and
 exact-SHA hosted/deployment/promotion proofs remain pending. Prior observer
 coverage is reusable only for its actual unchanged source/configuration/runtime/scope.
 
+## Explicit staged hook scope during merges (2026-10-23 UTC)
+
+A clean merge can leave every formatter and secret hook skipped while
+`_pre-commit-content-guard` returns zero. During Main receiving of immutable
+abdc86b, the three native pre-commit commands selected merge-conflict files,
+not all cleanly merged staged paths. That receipt measured the later line/clone
+checks; it did not establish three-hook acceptance for the merged files.
+
+The existing `_pre-commit-secrets-guard` now captures the actual cached Git
+filename inventory with NUL delimiters and passes each filename as a distinct
+`--files` argument to the same configured hooks. One selected installed UV
+Python invocation uses `-P` to exclude implicit CWD imports and passes the
+unchanged UV argv prefix to all three children. Explicit PYTHONPATH carriers
+retain their original meaning.
+The configured hooks run inside the pinned pre-commit owner's
+`staged_files_only(Store().directory)` context, using its existing configured
+cache and native restoration. Terminal success follows context exit. The
+forced public PIP index, hook order, hook filters,
+readonly baseline owner and stop-at-first-failure behavior remain intact.
+Spaces and newlines survive native Git and pre-commit transport without shell
+splitting. Git errors retain their native status; a signaled child retains the
+shell-equivalent 128-plus-signal status. Neither the dispatcher nor its Git reads
+stage files, move refs, change configuration or broaden selection to all files.
+
+Four native diagnostics constrain that design. Passing `./--name` does not make
+a root option-looking filename safe: installed pre-commit normalizes it and the
+real formatter receives an option. The guard refuses such scope before running
+a hook, preserving the filename and staged state for an owned native correction.
+Also, explicit `--files` bypasses pre-commit's ordinary unmerged-index refusal.
+The same guard therefore retains an explicit readonly native cached U-path
+query and refuses unmerged entries before any hook. No temporary hook config,
+path alias, UI-output parser, replacement runner or second mutex is introduced.
+
+Third, explicit filenames alone select working bytes. Native staged-bad /
+working-clean and staged-clean / working-bad formatter and secret witnesses
+first reproduce the original implicit hooks' correct index behavior, then expose
+the candidate's false success or false failure. The mature context restores that
+byte-view boundary and native fixer conflict handling; cached paths alone are
+never index-content proof. Hook failure and signal paths restore unstaged bytes
+through that same established owner, without custom rollback.
+
+Fourth, the new Python `-c` bootstrap initially imports untracked CWD modules
+that the original installed pre-commit entrypoint does not import in the same
+controlled context. Real `pre_commit.py` and `subprocess.py` witnesses execute
+in ordinary and `-e` modes before the repair. The existing native `-P` primitive
+removes only that implicit import input; no sys.path rewrite, `-I`, carrier
+stripping or replacement module loader is added. Active unguarded witnesses,
+original installed-entrypoint controls and exact bootstrap argv/startup records
+prove both non-execution and preservation of an explicit PYTHONPATH carrier.
+
+An empty inventory returns `outcome=empty`, zero hook commands and no measured
+staged scope. Deleted-only input retains the configured hooks' native skips.
+A completed command reports only its exact staged scope and native selection;
+a skipped hook measures no matching files. No result supplies security coverage,
+full-gate, exact-SHA CI, deployment or release proof. A failed fixer can change
+working bytes while leaving the index and refs unchanged: inspect that state,
+repair the actual input and preserve the existing transaction's later index
+identity checks. A new observer ID or handoff SHA is not an input repair.
+
+Native controls use small private Git repositories and conflict-free merges
+with the installed pinned formatter hooks and real readonly secret owner.
+The first source RED is four merge refusals missing in ordinary and `-e` modes;
+the same run retains a separate unsupported-filename diagnostic (5 FAIL/2 PASS,
+6.05s/native7.080s, `merge-staged-guard-red/merge-staged-guard-red311-abdc.json`).
+The narrowed filename diagnostic retains 1 FAIL/2 PASS at
+`merge-staged-grammar/merge-staged-grammar311-abdc.json`.
+The first explicit-files candidate passes 45 controls but fails both unresolved
+index controls (27.72s/native29.0s,
+`merge-staged-guard-focus/merge-staged-guard-focus311-abdc.json`).
+After the native U-path repair, all 51 controls pass in 22.91s/native24.1s at
+`merge-staged-guard-focus/merge-staged-guard-fixed311-abdc.json`, retaining Git
+73/signal, hook 73/signal, malformed NUL, empty/deleted scope, native fixer
+changes, exact argv, inherited carriers and source/index/ref assertions.
+That receipt does not cover differing staged and working bytes. Source review
+then produces all eight byte-view REDs (9.85s/native11.008s,
+`merge-staged-index-red/merge-staged-index-red311-abdc.json`). Bounded installed
+API signature/type/docstring introspection and four native context controls pass
+8.51s/native9.997s at
+`merge-staged-context-api/merge-staged-context-api311-abdc.json` before the
+production context is selected. Direct external-package file reads remain
+refused; no source-file dump or new inspection runner bypasses that boundary.
+
+The existing collection recorder initially swallowed the new Python dispatch:
+all three original hook-failure nodes then returned zero (3 FAIL,
+`merge-staged-capture-red/merge-staged-capture-red311-abdc.json`).
+Its adapter now executes that exact stdlib child, supplies the native NUL
+protocol and records the real hook argument position. Every original collection,
+guard, order and index assertion remains; exact forwarded filenames are added.
+The six focused consumer/layout controls pass at
+`merge-staged-capture-green/merge-staged-capture-green311-abdc.json`.
+The fixture's own minimal project fixes its observed UV outside-project warning
+without synchronization, installation or warning suppression.
+The mature context's own native index read then reveals a second recorder
+boundary: 66 PASS/1 FAIL at
+`merge-staged-context-focus/merge-staged-context-focus311-abdc.json`.
+The fixture now records that child phase separately with raw argv unchanged;
+its original two commit identity checks, failure injections and collection
+ordering remain exact. The complete two changed owners pass 101 cases in
+63.61s/native64.748s with no skips at
+`merge-staged-context-green/merge-staged-context-green311-abdc.json`.
+
+The later complete six-owner results retain 213 cases per runtime before the
+import repair (311: 101+112 under approved actual-scope reuse; 312: 135.12s/native
+137.366s). They do not certify implicit-CWD isolation. The next native four-case
+RED proves actual module execution in 2.49s/native3.416s at
+`merge-staged-shadow-red/merge-staged-shadow-red311-abdc.json`.
+The `-P` repair first passes all four in 5.97s/native6.950s at
+`merge-staged-shadow-green/merge-staged-shadow-green311-abdc.json`.
+After pinning the carrier observation to the exact owned bootstrap argv, both
+complete changed owners pass 105 cases (67 formatting/context + 38 collection), no
+skips, 67.74s/native69.050s at
+`merge-staged-safe-path-focus/merge-staged-safe-path-focus311-abdc.json`.
+All preceding failures and the earlier passed receipts keep their own source
+and scope; new staging preflight and final affected receiving remain required.
+
+Final frozen-source receiving is green on both installed runtimes, with no
+skips and the original canonical root configuration, fatal warnings, serial
+`-n 0`, literal `ID=` and 300/60 watched bounds. The complete guard/consumer
+union contains these six owners:
+
+~~~text
+tests/unit/test_precommit_formatting_admission.py
+tests/unit/test_single_native_commit_collection.py
+tests/unit/test_scoped_admission_targets.py
+tests/unit/test_precommit_quality_guards.py
+tests/unit/test_makefile_layout.py
+tests/unit/test_make_target_contract.py
+~~~
+
+The unchanged 105-case ordinary311 receipt above is reused only for its actual
+complete two-owner scope, as explicitly admitted after the current staged
+preflight made no source/test fix. The other four complete311 owners pass
+112 cases in 39.20s/native40.242s at
+`merge-safe-path-receiving/merge-safe-path-remaining311-abdc.json`.
+The complete six-owner312 union passes all 217 in 119.67s/native121.233s at
+`merge-safe-path-receiving/merge-safe-path-all312-abdc.json`.
+These are 217 accepted cases per runtime; the reuse is not a new run or gate.
+
+Keep the complete `tests/unit/test_make_commit_transaction.py` caller owner
+separate to retain its original bound. All 292 pass on311
+(185.06s/native188.268s) and312 (185.90s/native189.258s), at
+`merge-safe-path-caller/merge-safe-path-caller311-abdc.json` and
+`merge-safe-path-caller/merge-safe-path-caller312-abdc.json`.
+That native fixture deliberately substitutes the content guard. It verifies
+caller/locking/staging/collection/publication compatibility; the real installed
+hooks and index-byte behavior are measured by the dedicated guard owner and
+actual staging preflight. Do not attribute hook-content proof to that stub.
+The seven complete owners therefore account for 509 accepted cases per runtime.
+
+Every exact observer session is terminal, and all new receipts were read.
+The current five-path staging preflight passes all three actual hooks, line5
+and the unchanged clone baseline3510/new0 in native11.719s, at
+`merge-safe-path-staged-preflight/merge-safe-path-staged-preflight311-abdc86b.json`.
+No production Python, registered coverage profile or 85/75 line/branch floor is
+changed. Native Source acceptance remains separate from normal per-commit
+collection, immutable review, combined integration, the canonical full gate and
+required exact-SHA push CI/deployment/release proof.
+
+These are installed native behavior/API observations, not an attributed
+long-lived upstream
+defect or a new forum finding. The existing bounded research owner may add
+relevant primary/practitioner evidence separately. The change is a build-time
+boundary with no application restart or migration; ZDD and rollback remain a
+source revert through the existing Git owner. The affected-owner receiving
+above is complete; normal collection, immutable review and all final release
+proofs remain separate and pending.
+
 ## Verification
 
 - `tests/unit/test_git_automation_locking.py` proves PID/thread ownership, fork
