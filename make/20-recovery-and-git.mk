@@ -367,7 +367,7 @@ cleanup-stale-tmp: ## Remove stale gludd-owned temp dirs/files from ~/tmp (APPLY
 
 
 
-opencode-db-stats: ## Bounded read-only OpenCode table counts (OPENCODE_DB, OPENCODE_DATA_DIR, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_MAINTENANCE_VALIDATE_ONLY)
+opencode-db-stats: ## Bounded SQL-readonly OpenCode table counts and page metadata (OPENCODE_DB, OPENCODE_DATA_DIR, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_MAINTENANCE_VALIDATE_ONLY)
 	@$(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py stats \
 		$(if $(filter command line environment,$(origin OPENCODE_DB)),--db "$(OPENCODE_DB)",) \
 		$(if $(strip $(OPENCODE_DATA_DIR)),--data-dir "$(OPENCODE_DATA_DIR)",) \

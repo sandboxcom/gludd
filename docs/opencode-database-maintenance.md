@@ -46,6 +46,119 @@ session disappear or prevents OpenCode from starting.
    Long SQLite and file-cleanup phases emit periodic heartbeats and still stop
    at their configured time or entry bound.
 
+## SQL-readonly storage metadata (S98.4, 2026-10-23 UTC)
+
+The existing stats owner retains table counts and now observes four fixed
+SQLite metadata values through the same mode=ro/query_only connection:
+page_size, page_count, freelist_count and auto_vacuum. One read transaction
+binds schema, counts and metadata to the same snapshot. The original busy
+timeout, global deadline, native error status and connection cleanup remain.
+No arbitrary SQL input, helper, target, variable, schema or cache is introduced.
+
+Only after every original count and all four scalar reads succeed does
+phase=stats-storage report page_size_bytes, page_count, freelist_count,
+auto_vacuum and reusable_page_bytes. The last value is freelist_count multiplied
+by page_size: space reusable inside SQLite, not proven filesystem reclamation.
+physical_reclaimable_bytes remains unknown. Missing, malformed, negative,
+inconsistent or timed-out metadata supplies no terminal storage measurement;
+retain actual native errors rather than turning missing data into zero.
+
+mutation=false means no SQL data write. It does not promise byte-immutable
+shared-memory coordination. The result states readonly_scope=sql-data and
+shm_coordination=possible. Keep DB/WAL bytes, application rows, file presence
+and modes invariant in frozen controls. Record any SHM byte difference as
+diagnostic existing SQLite coordination, without expecting a change on every
+platform. Do not force an immutable URI, prewarm a reader or checkpoint a
+fixture to manufacture byte invariance.
+
+### Actual requirement discovery and retained failures
+
+The isolated source is cb7c71e30c485277e4b8a45be4c0521dfe5df60c in
+agent-v012-worktree-create. The first cold-WAL native control failed all three
+auto_vacuum modes0/1/2 on the unchanged stats reader: SHM bytes changed while
+DB/WAL bytes, file presence and modes remained. That original3FAIL/0.85s,
+native1.702s, is retained at
+.gate-logs/observed/opencode-storage-red/opencode-storage-red311-cb7.json.
+It failed before row or new-field assertions, so it is not missing-field RED.
+
+Root explicitly revised the NEW hypothesis controls after that observation:
+preserve SQL data/DB/WAL and presence/modes, record native SHM coordination,
+and make no byte-immutability or physical-saving claim. All predecessor
+assertions remain. Under that explicit specification, the corrected controls
+then reached missing-field RED on OLD production:3FAIL/0.78s, native1.8s at
+.gate-logs/observed/opencode-storage-red/opencode-storage-fields-red311-cb7.json.
+The minimal fixed-metadata change passes those three cases0.54s/native1.3s at
+.gate-logs/observed/opencode-storage-green/opencode-storage-fields-green311-cb7.json.
+All22 additive controls then pass1.42s/native2.6s under installed3.11.14 at
+.gate-logs/observed/opencode-storage-focus/opencode-storage-controls311-cb7.json.
+They cover all three modes, native WAL writer/snapshot, missing/corrupt/busy
+inputs, both deadline boundaries, ten malformed scalar cases, readonly/fixed
+SQL and actual Make/config plans under ordinary and -e precedence. All59
+predecessor cases remain for complete receiving; none was removed or weakened.
+
+Ruff, separate strict source/test typing, test-environment guard, tracked line
+limits,292 target contracts, Make/parity checks, installed Markdown lint and
+the exact registered configuration-plan example pass. One new unused test
+assignment first failed Ruff F841; dependent tests stopped until it was removed.
+No assertion changed for that correction.
+
+Root's exact-five-path staged content guard passes native7.9s at
+.gate-logs/observed/opencode-storage-staged-preflight/opencode-storage-staged-preflight311-cb7c71e.json.
+The whole unchanged config/coverage_opencode_db_maintenance.ini profile then
+passes all81cases on EACH installed runtime, including all59predecessors:
+Python 3.11: 1.95s/native3.560s; Python 3.12: 2.53s/native4.935s.
+Native coverage receipts are
+.gate-logs/observed/coverage-files/20261023T231047Z-19052-2ce55d06.json
+and .gate-logs/observed/coverage-files/20261023T231139Z-19958-97b2ddc4.json.
+Audits .gate-logs/coverage-20261023T231050Z.json and
+.gate-logs/coverage-20261023T231144Z.json both measure the complete script at
+92.8%LINE/88.4%BRANCH, retaining85aggregate/75each BOTH and fatal warnings.
+
+Six complete generic consumers add161PASS on EACH runtime:
+Python 3.11: 35.50s/native36.543s; Python 3.12: 45.91s/native47.240s, at
+.gate-logs/observed/opencode-storage-receiving/opencode-storage-generic311-cb7.json
+and .gate-logs/observed/opencode-storage-receiving/opencode-storage-generic312-cb7.json.
+Their exact roster is:
+
+- tests/unit/test_make_help_throughput.py
+- tests/unit/test_make_target_contract.py
+- tests/unit/test_makefile_layout.py
+- tests/unit/test_markdown_docs_deep.py
+- tests/unit/test_pytest_param_fixture_collisions.py
+- tests/unit/test_makefile_targets_deep.py::TestVariableConsistency
+
+The deduplicated receiving union is242PASS per runtime:81whole-profile plus161
+generic consumers. Native commands retain300total/60quiet, one worker for
+generic acceptance and fatal warnings; identical runtime commands run serially.
+Every exact session is terminal. Source, tests, configuration and index stayed
+fixed through all four runs; only this final receipt update follows.
+
+These are source/consumer measurements. Root retains final Markdown validation,
+normal per-commit collection, source commit/review and canonical receiving.
+No actual global stats observation, data maintenance, physical reclamation,
+capacity clearance, complete gate, exact-SHA hosted/deployment or release
+acceptance follows. All seven release tasks remain open.
+
+### Capacity observation does not authorize history deletion
+
+The actual 2026-10-23 audit measured98% disk use/4.8GiB available and an explicit
+candidate OpenCode file of16,338,862,080logical bytes. It did not prove that
+filename is the active client's database or that its size is reclaimable.
+The existing native30-day preview returned40candidate sessions/4240rows and
+4,202,090TEXT/BLOB lower-bound bytes, limit_reached=false, mutation=false.
+That is neither an upper bound nor physical savings, and supplies no deletion
+authorization. Its selector spans the chosen DB, uses creation time and
+recursive descendants, and has no project filter; retained history can cross
+projects. Never infer authority to prune from a large file.
+
+A configuration-only stats plan still reads no database metadata. Keep the
+registered validate-only example as a plan, then use actual readonly mode only
+for the intended existing path after reviewing the source and native evidence.
+Read-only metadata, internal free pages and a plan do not clear capacity, grant
+an offline maintenance write, prove backup/headroom, or supply a full gate,
+exact-SHA hosted/deployment result or release completion. The existing safety
+contract and firsthand recovery evidence below retain their authority.
+
 ## Target selection
 
 Run the narrowest target that solves the problem.
@@ -53,7 +166,7 @@ Run the narrowest target that solves the problem.
 | Target | Mutates session DB? | OpenCode may be running? | Purpose |
 |---|---:|---:|---|
 | `make opencode-disk` | No | Yes | Show database, WAL, tool-output, and log disk use. |
-| `make opencode-db-stats` | No | Yes | Show table row counts and resolved database size. Counts are only a point-in-time observation. |
+| `make opencode-db-stats` | No | Yes | Show table counts and fixed page metadata in one read snapshot; internal reusable bytes are not physical reclamation. |
 | `make opencode-db-schema` | No | Yes | Diagnose schema/version differences; it is not a cleanup step. |
 | `make opencode-db-sample` | No | Yes | Diagnose timestamp representation before changing retention logic; it is not a cleanup step. |
 | `make opencode-db-prune OPENCODE_MAINTENANCE_VALIDATE_ONLY=1` | No | Yes | Preview the exact bounded session trees, table-level cascade counts, and a conservative payload-byte estimate from one read snapshot. |

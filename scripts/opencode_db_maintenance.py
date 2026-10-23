@@ -396,12 +396,45 @@ def inspect_database(
         phase=report,
     )
     try:
+        if report == "stats":
+            connection.execute("BEGIN")
         tables = sorted(_table_names(connection))
         if report == "stats":
             for table in tables:
                 row = connection.execute(f"SELECT COUNT(*) FROM {_quoted(table)}").fetchone()
                 count = int(row[0]) if row else 0
                 emit(f"phase=stats table={table} rows={count}")
+            storage: dict[str, int] = {}
+            for name, statement in (
+                ("page_size_bytes", "PRAGMA page_size"),
+                ("page_count", "PRAGMA page_count"),
+                ("freelist_count", "PRAGMA freelist_count"),
+                ("auto_vacuum", "PRAGMA auto_vacuum"),
+            ):
+                if time.monotonic() >= deadline:
+                    raise MaintenanceTimeoutError("readonly storage inspection exceeded its time budget")
+                scalar = connection.execute(statement).fetchone()
+                if scalar is None or len(scalar) != 1 or type(scalar[0]) is not int:
+                    raise MaintenanceError(f"readonly storage metadata is not one integer: {name}")
+                storage[name] = int(scalar[0])
+            if (
+                storage["page_size_bytes"] <= 0
+                or storage["page_count"] < 0
+                or storage["freelist_count"] < 0
+                or storage["freelist_count"] > storage["page_count"]
+                or storage["auto_vacuum"] not in (0, 1, 2)
+            ):
+                raise MaintenanceError("readonly storage metadata is negative or inconsistent")
+            if time.monotonic() >= deadline:
+                raise MaintenanceTimeoutError("readonly storage inspection exceeded its time budget")
+            emit(
+                f"phase=stats-storage page_size_bytes={storage['page_size_bytes']} "
+                f"page_count={storage['page_count']} freelist_count={storage['freelist_count']} "
+                f"auto_vacuum={storage['auto_vacuum']} "
+                f"reusable_page_bytes={storage['page_size_bytes'] * storage['freelist_count']} "
+                "physical_reclaimable_bytes=unknown mutation=false "
+                "readonly_scope=sql-data shm_coordination=possible"
+            )
         elif report == "schema":
             for table in tables:
                 columns = ",".join(sorted(_columns(connection, table)))
