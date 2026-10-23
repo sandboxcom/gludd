@@ -2397,7 +2397,8 @@
     {
       "name": "worktree-cleanup-merged",
       "make_variables": [],
-      "behavior": "make worktree-cleanup-merged"
+      "behavior": "make worktree-cleanup-merged",
+      "expected_result": "Native status 2/refused; no inventory, child tools, mutation or cleanup. Preserve the configured registry and reconcile exact native branch/path/full SHA before using the existing selected validate-only owner; no empty registry override, guessed file, force removal or implicit unregister."
     },
     {
       "name": "watchdog-start",

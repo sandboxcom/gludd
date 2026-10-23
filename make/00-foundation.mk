@@ -842,7 +842,7 @@ help:
 		"  agent-merge          Legacy master helper; use agent-merge-dev then release-promote" \
 		"  agent-worktree-list           List active git worktrees" \
 		"  worktree-commit-changes MSG='...'  Commit all changes in the current worktree" \
-		"  worktree-cleanup-merged       Remove worktrees whose branches are merged into development" \
+		"  worktree-cleanup-merged       Retired: exits 2; use selected native retirement plan" \
 		"  merge-commit-nv MSG='...'     Complete an in-progress merge commit without pre-commit hooks" \
 		"  self-improve-local-proposal  Owned local GGUF proposal worker (SELF_IMPROVE_MODEL_PATH/PROMPT_FILE/PROPOSAL_FILE)" \
 		"  azure-self-improve-auth-args  Emit validated NUL arguments for one least-privilege Azure SP command" \
