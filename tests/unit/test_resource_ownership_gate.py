@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
+import subprocess
+import sys
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
@@ -400,7 +405,9 @@ def test_inventory_semantic_identity_preserves_duplicate_counts() -> None:
         owner="run",
         acquisition="tempfile.TemporaryDirectory()",
         teardown="context-manager-exit",
-        source_hash="a" * 64,
+        source_hash=hashlib.sha256(
+            b"temp-artifact\0run\0tempfile.TemporaryDirectory()\0context-manager-exit",
+        ).hexdigest(),
         owned=True,
     )
     second = ResourceEvidence(
@@ -592,7 +599,13 @@ def test_inventory_writer_is_deterministic_compact_and_round_trips(
             owner="run",
             acquisition=f"tempfile.TemporaryDirectory(prefix='{index}-')",
             teardown="context-manager-exit",
-            source_hash=f"{index:064x}",
+            source_hash=hashlib.sha256(
+                (
+                    "temp-artifact\0run\0"
+                    f"tempfile.TemporaryDirectory(prefix='{index}-')\0"
+                    "context-manager-exit"
+                ).encode(),
+            ).hexdigest(),
             owned=True,
         )
         for index in range(300)
@@ -717,3 +730,153 @@ def test_secrets_baseline_regeneration_preserves_exact_inventory_filter() -> Non
         r"^config/resource_ownership_inventory\.json$"
     ) in makefile
     assert makefile.count("--exclude-files '$(SECRETS_EXCLUDE_FILES)'") == 1
+
+
+@dataclass(frozen=True)
+class _NativeResourceInventory:
+    """Confined real-checker inputs; ambient carriers stay out of fixture repr."""
+
+    root: Path
+    source: Path
+    inventory: Path
+    evidence: ResourceEvidence
+    environment: dict[str, str] = field(repr=False)
+
+
+def _native_resource_inventory(tmp_path: Path) -> _NativeResourceInventory:
+    findings = _scan(
+        tmp_path,
+        "import subprocess\n\ndef run():\n"
+        "    proc = subprocess.Popen(['worker'])\n"
+        "    try:\n        proc.poll()\n"
+        "    finally:\n        proc.terminate()\n        proc.wait()\n",
+    )
+    assert len(findings) == 1
+    evidence = findings[0]
+    assert evidence.owned is True
+    assert evidence.teardown == "proc.terminate(); proc.wait()"
+    payload = "\0".join((evidence.kind, evidence.owner, evidence.acquisition, evidence.teardown))
+    assert evidence.source_hash == hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    inventory = tmp_path / "inventory.json"
+    write_inventory(inventory, findings)
+    fixture = _NativeResourceInventory(
+        tmp_path, tmp_path / "app" / "sample.py", inventory, evidence, dict(os.environ),
+    )
+    for name in ("MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES"):
+        fixture.environment.pop(name, None)
+    return fixture
+
+
+_RESOURCE_DESCRIPTOR_CHANGES = {
+    "kind": "client",
+    "owner": "another_owner",
+    "acquisition": "subprocess.Popen(['another-worker'])",
+    "teardown": "proc.wait()",
+}
+
+
+@pytest.mark.parametrize("resource_descriptor_field", _RESOURCE_DESCRIPTOR_CHANGES)
+def test_inventory_loader_rejects_descriptor_fingerprint_mismatch(
+    tmp_path: Path,
+    resource_descriptor_field: str,
+) -> None:
+    fixture = _native_resource_inventory(tmp_path)
+    payload = json.loads(fixture.inventory.read_text(encoding="utf-8"))
+    entry = payload["resources"][0]
+    entry[resource_descriptor_field] = _RESOURCE_DESCRIPTOR_CHANGES[resource_descriptor_field]
+    assert entry["source_hash"] == fixture.evidence.source_hash
+    fixture.inventory.write_text(json.dumps(payload), encoding="utf-8")
+    before = fixture.inventory.read_bytes()
+
+    with pytest.raises(ValueError, match="inventory fingerprint mismatch"):
+        load_inventory(fixture.inventory)
+
+    assert fixture.inventory.read_bytes() == before
+
+
+@pytest.mark.parametrize("resource_descriptor_field", _RESOURCE_DESCRIPTOR_CHANGES)
+def test_inventory_validation_rejects_descriptor_fingerprint_mismatch(
+    tmp_path: Path,
+    resource_descriptor_field: str,
+) -> None:
+    fixture = _native_resource_inventory(tmp_path)
+    declared = {
+        "kind": replace(fixture.evidence, kind=_RESOURCE_DESCRIPTOR_CHANGES["kind"]),
+        "owner": replace(fixture.evidence, owner=_RESOURCE_DESCRIPTOR_CHANGES["owner"]),
+        "acquisition": replace(fixture.evidence, acquisition=_RESOURCE_DESCRIPTOR_CHANGES["acquisition"]),
+        "teardown": replace(fixture.evidence, teardown=_RESOURCE_DESCRIPTOR_CHANGES["teardown"]),
+    }[resource_descriptor_field]
+    assert declared.source_hash == fixture.evidence.source_hash
+
+    errors = validate_inventory([fixture.evidence], {declared.key(): declared})
+
+    assert any(error.startswith("inventory fingerprint mismatch:") for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("resource_inventory_case", "expected_make_status", "expected_native_status", "outcome"),
+    [
+        ("native", 0, 0, "RESOURCE_OWNERSHIP_PASS resources=1"),
+        ("location-only", 0, 0, "RESOURCE_OWNERSHIP_PASS resources=1"),
+        ("teardown-only", 2, 2, "inventory fingerprint mismatch:"),
+        ("acquisition-only", 2, 2, "inventory fingerprint mismatch:"),
+        ("wrong-path", 2, 1, "stale inventory:"),
+    ],
+)
+def test_native_inventory_fingerprint_admission_preserves_fields_and_location(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    resource_inventory_case: str,
+    expected_make_status: int,
+    expected_native_status: int,
+    outcome: str,
+) -> None:
+    fixture = _native_resource_inventory(tmp_path)
+    payload = json.loads(fixture.inventory.read_text(encoding="utf-8"))
+    entry = payload["resources"][0]
+    if resource_inventory_case == "location-only":
+        entry["line"] += 100
+        entry["column"] += 2
+    elif resource_inventory_case == "teardown-only":
+        entry["teardown"] = _RESOURCE_DESCRIPTOR_CHANGES["teardown"]
+    elif resource_inventory_case == "acquisition-only":
+        entry["acquisition"] = _RESOURCE_DESCRIPTOR_CHANGES["acquisition"]
+    elif resource_inventory_case == "wrong-path":
+        entry["path"] = "app/foreign.py"
+    assert entry["source_hash"] == fixture.evidence.source_hash
+    fixture.inventory.write_text(json.dumps(payload), encoding="utf-8")
+    inventory_before = fixture.inventory.read_bytes()
+    source_before = fixture.source.read_bytes()
+    interpreter = Path(sys.executable)
+    environment = interpreter.parent.parent
+    result = subprocess.run(
+        [
+            "make", "--no-print-directory", "check-resource-ownership",
+            f"RESOURCE_OWNERSHIP_ROOT={fixture.root}",
+            f"RESOURCE_OWNERSHIP_PATHS={fixture.source}",
+            f"RESOURCE_OWNERSHIP_INVENTORY={fixture.inventory}",
+            "RESOURCE_OWNERSHIP_WRITE=0",
+            f"PYTHON={interpreter}", f"SYSTEM_PYTHON={interpreter}",
+            f"UV_PROJECT_ENVIRONMENT={environment}", f"VIRTUAL_ENV={environment}",
+            "UV_NO_SYNC=1",
+            f"UV_PYTHON={sys.version_info.major}.{sys.version_info.minor}",
+            "UV_PYTHON_DOWNLOADS=never",
+        ],
+        cwd=Path(__file__).resolve().parents[2],
+        env=fixture.environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    assert result.returncode == expected_make_status, result.stdout + result.stderr
+    assert outcome in result.stdout + result.stderr
+    assert main(
+        ["--root", str(fixture.root), "--inventory", str(fixture.inventory), str(fixture.source)],
+    ) == expected_native_status
+    observed = capsys.readouterr()
+    assert outcome in observed.out + observed.err
+    if expected_native_status:
+        assert "RESOURCE_OWNERSHIP_PASS" not in result.stdout + observed.out
+    assert fixture.inventory.read_bytes() == inventory_before
+    assert fixture.source.read_bytes() == source_before

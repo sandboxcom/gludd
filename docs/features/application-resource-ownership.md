@@ -23,6 +23,68 @@ class `close`/`aclose`, a FastAPI shutdown owner, a structured task group, or a
 tracked registry that is cancelled and awaited. Injected clients and external
 model endpoints remain caller-owned and are never stopped by Gludd.
 
+## Descriptor fingerprint consistency (2026-10-24 UTC)
+
+The existing fingerprint is SHA-256 over the UTF-8, NUL-delimited tuple of
+kind, owner, acquisition and teardown. Its lowercase 64-hex format, schema 1
+and counted semantic identity remain unchanged. Path stays part of semantic
+identity; line and column stay relocation-tolerant review coordinates.
+
+A native WRITE=0 pass exposed a metadata gap: a manually described four-entry
+observer teardown retained the correct native hash for a six-entry teardown.
+The loader checked hash syntax, and counted identity matched that hash, so
+validation passed without verifying the declared descriptor text. Preserve that
+pass as limited historical evidence; it never established descriptor consistency.
+The separate exact baseline-row correction is not part of this checker repair.
+
+The collector and validator now reuse the existing digest algorithm through
+`_resource_hash`. The loader recomputes it before accepting a record. The direct
+`validate_inventory` API also reports `inventory fingerprint mismatch:` instead
+of allowing inconsistent inventory declarations to match current findings.
+Malformed declarations retain the CLI's input-error status 2; actual drift
+remains status 1, and native valid input remains 0. GNU Make retains its nonzero
+wrapper status. Existing shape, ownership, duplicate-count, source-scope and
+relocation checks remain. No schema field, scanner, cache, runner, profile,
+baseline rewrite or new admission authority is introduced.
+
+### Native failing-first controls and bounded acceptance
+
+At source base ccb8f792c0a252dccef35302f37ac47e615917ec, the new 13-case cohort
+first records 10 FAIL / 3 PASS in 1.34s, native 2.356s:
+`.gate-logs/observed/resource-fingerprint-red/resource-fingerprint-red311-ccb8f79.json`.
+The actual current Make WRITE=0 target wrongly reports PASS for teardown-only
+and acquisition-only changes that retain the correct native hash. The loader
+accepts all four altered digest fields. Direct validation lacks the consistency
+diagnostic; kind/owner drift already fails through its separate identity check.
+Valid native payload, coordinate-only relocation and wrong-path refusal pass.
+These are source failures, with no fixture or collection error standing in for RED.
+
+The same 13 cases pass after repair in 1.09s, native 2.021s:
+`.gate-logs/observed/resource-fingerprint-green/resource-fingerprint-green311-ccb8f79.json`.
+They use actual private scanner/writer output, the complete current Make recipe,
+explicit installed runtime and all four resource inputs, plus direct loader/API
+checks. Source and input-inventory bytes remain unchanged by validation. Copied
+child environments retain unrelated carriers, hide them from fixture repr and
+clear only Make recursion carriers. The test source is parsed, never executed
+as an application process. Serial pytest, fatal warnings, literal ID= and the
+original 90 total / 60 quiet watched boundary remain. Native trace has 29 events
+/ 13 pairs, zero issues, unfinished tests or failure reports.
+
+Two predecessor fixtures replace only fabricated hash inputs with hashes of
+their declared fields. Their duplicate-count and deterministic 300-record
+round-trip assertions remain. Ruff's initial UP012 and two strict errors in
+dynamic dataclass-replace test kwargs are corrected without suppression or
+predicate changes; separate source/test typing, environment and line checks pass.
+
+Complete receiving is still required through the unchanged registered
+`config/coverage_resource_ownership.ini`, including both the entire checker and
+`async_lifecycle.py`, the complete changed owner and affected consumers on both
+installed runtimes. Preserve 85% aggregate / 75% each-file line AND branch floors
+and every existing promotion pin. Focused acceptance does not establish the
+264-row canonical baseline, Main receiving, full gate, exact-SHA CI, deployment
+or task completion. This change edits no inventory/configuration or the separate
+frozen coverage-floor packet.
+
 ## Durable todo claim ownership
 
 For todo-driven compute, the claim commit and session close precede provisioning.

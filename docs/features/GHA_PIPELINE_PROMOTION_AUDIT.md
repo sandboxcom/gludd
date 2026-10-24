@@ -1,6 +1,10 @@
 # GHA pipeline and agentic promotion audit
 
-## Current published feature and parallel hosted proof
+## Latest implementation and proof inventory
+
+The [complete current-workstream status inventory](../releases/v0.1.2-implementation-status.md) is recorded at Main source ef3df16b1af11fa7afcd342ad59d3fc4db610b19. It separates all candidate/peer packets, actual874/BOTH local receiving, corrected3a hosted manifest/promotion passes followed by CSS failure, six-job Molecule success, incomplete history/summary validation and missing canonical release proofs. Branch integration is not complete. Read native current owners before acting; this manual snapshot is not generated current success. The earlier top section is retained below as history, not the latest hosted verdict.
+
+## Historical published feature and parallel hosted proof
 
 2026-10-24 UTC manual checkpoint. The normal feature publisher successfully
 published and remotely verified

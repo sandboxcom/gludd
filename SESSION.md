@@ -9,7 +9,11 @@ Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. The active operator-directed wave permits six isolated implementation lanes and four local test cohorts only while native load and the eight-worker ceiling permit. Diagnostic GHA runs alongside independent source work; canonical runtime and final-proof settings retain their original bounds.
 
-## Current observed diagnostic checkpoint (2026-10-24 UTC)
+## Current implementation and proof inventory
+
+The [complete status inventory](docs/releases/v0.1.2-implementation-status.md) is the fixed S98.4 snapshot at ef3df16b1af11fa7afcd342ad59d3fc4db610b19. It records committed candidate work, separate branch work,874-case BOTH-runtime receiving, partial/known-failing candidates, exact native receipts and next Make owners. Resource3/EE4 still require separate Main normal commits in that snapshot. No all-branches development merge or release sign-off is claimed; native current producers supersede dated activity pointers. The first original header remains available at ef3df16b1af11fa7afcd342ad59d3fc4db610b19:SESSION.md.
+
+## Historical diagnostic checkpoint (2026-10-24 UTC)
 
 The substantive source checkpoint d32c65b28c48cc563bb9615b890fa273a5429af0 has
 independent source-only approval. Actual Main advisory receiving passes80 cases
