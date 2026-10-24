@@ -23,9 +23,12 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from proof_observations import write_snapshot
+
+    from scripts.ci_check_cooldown import record_diagnostic_verdict
 else:
     if __package__ in {None, ""}:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from scripts.ci_check_cooldown import record_diagnostic_verdict
     from scripts.proof_observations import write_snapshot
 
 DEFAULT_REPO = "sandboxcom/gludd"
@@ -203,6 +206,45 @@ def _publish_observation(
     return True
 
 
+
+def _record_diagnostic_feedback(
+    path: Path | None, selector: RunSelector, run: dict[str, Any],
+    *, elapsed: float, progress: ProgressFn,
+) -> bool:
+    """Use only the just-published terminal producer observation for feedback."""
+    if path is None:
+        return True
+    try:
+        recorded = record_diagnostic_verdict(
+            repo=selector.repo, branch=selector.ref, sha=selector.sha,
+            workflow=selector.workflow, event=selector.event,
+            run=run, after_run_id=selector.after_run_id,
+        )
+    except (OSError, ValueError) as exc:
+        progress(f"CI-AWAIT: diagnostic-history-error={exc}")
+        _publish_observation(
+            path, selector, run, state="lookup_error", elapsed=elapsed,
+            exit_code=1, error=str(exc), progress=progress,
+        )
+        progress(
+            "AGENT_NEXT target=ci-await outcome=diagnostic-feedback-failed native_status=1 "
+            "history_may_be_applied=true canonical_push=false ci_green=false "
+            "gate_evidence=false release_ready=false: Retain the native writer error; "
+            "reconcile the existing history/state/counter before retrying."
+        )
+        return False
+    if recorded:
+        progress(
+            f"AGENT_NEXT target=ci-await outcome=diagnostic-feedback-recorded "
+            f"native_status={0 if run.get('conclusion') == 'success' else 1} "
+            "history_recorded=true canonical_push=false ci_green=false "
+            "gate_evidence=false release_ready=false: Terminal Build dispatch feedback "
+            "was recorded for the current pushed SHA; repair its failures before the "
+            "next normal guarded source publication. Canonical push and release proof remain required."
+        )
+    return True
+
+
 def ci_await(
     selector: RunSelector | str,
     timeout: int,
@@ -252,6 +294,10 @@ def ci_await(
             if status == "completed" and conclusion in TERMINAL_SUCCESS:
                 if not publish(state="success", exit_code=0):
                     return 1
+                if not _record_diagnostic_feedback(
+                    observation_path, selector, run, elapsed=elapsed, progress=progress,
+                ):
+                    return 1
                 progress(
                     f"[{elapsed:g}s] CI-AWAIT: TERMINAL SUCCESS run={run_id} "
                     f"sha={head_sha} conclusion={conclusion}"
@@ -259,6 +305,10 @@ def ci_await(
                 return 0
             if conclusion in TERMINAL_FAILURE or status == "completed":
                 if not publish(state="failure", exit_code=1):
+                    return 1
+                if not _record_diagnostic_feedback(
+                    observation_path, selector, run, elapsed=elapsed, progress=progress,
+                ):
                     return 1
                 progress(
                     f"[{elapsed:g}s] CI-AWAIT: TERMINAL FAILURE run={run_id} "

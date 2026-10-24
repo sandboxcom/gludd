@@ -42,12 +42,17 @@ Default cooldown: 600s (10 min). Override via ``CI_CHECK_COOLDOWN_SEC``.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
+import re
+import stat
 import subprocess
 import sys
+import tempfile
 import time
-from contextlib import suppress
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TypedDict, cast
 
@@ -61,6 +66,7 @@ class CIState(TypedDict, total=False):
     check_count: int
     last_verdict: str
     last_verdict_epoch: float
+    last_verdict_kind: str
 
 STATE_FILE = Path(os.environ.get("GLUDD_CI_STATE_FILE", "/tmp/gludd-ci-check-state.json"))
 HISTORY_FILE = Path(os.environ.get("GLUDD_CI_HISTORY_FILE", "/tmp/gludd-ci-verdict-history.json"))
@@ -87,7 +93,7 @@ def load_state() -> CIState:
 
 
 def save_state(state: CIState) -> None:
-    STATE_FILE.write_text(json.dumps(state))
+    _replace_atomic(STATE_FILE, json.dumps(state))
 
 
 def load_history() -> dict[str, object]:
@@ -101,12 +107,57 @@ def load_history() -> dict[str, object]:
     return {}
 
 
+def _temporary_owned(path: Path, original: os.stat_result) -> bool:
+    """Match the created regular file without following a replaced symbolic link."""
+    try:
+        current = path.lstat()
+    except FileNotFoundError:
+        return False
+    return stat.S_ISREG(current.st_mode) and (
+        current.st_dev, current.st_ino
+    ) == (original.st_dev, original.st_ino)
+
+
+def _replace_atomic(path: Path, contents: str) -> None:
+    """Write through an exclusively created descriptor and replace one owner file."""
+    temporary: Path | None = None
+    identity: os.stat_result | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", prefix=f".{path.name}.",
+            suffix=".tmp", dir=path.parent, delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            identity = os.fstat(handle.fileno())
+            handle.write(contents)
+            handle.flush()
+            os.fsync(handle.fileno())
+            if not _temporary_owned(temporary, identity):
+                raise OSError("CI state temporary ownership changed before replacement")
+            os.replace(temporary, path)
+    finally:
+        if temporary is not None and identity is not None and _temporary_owned(temporary, identity):
+            temporary.unlink()
+
+
 def save_history_atomic(history: dict[str, object]) -> None:
-    """Write the history file atomically (tmp + rename) so a partial write
-    can never leave the file corrupt (AB074 requires valid JSON at all times)."""
-    tmp_path = HISTORY_FILE.with_suffix(".json.tmp")
-    tmp_path.write_text(json.dumps(history))
-    os.replace(tmp_path, HISTORY_FILE)
+    """Atomically persist the existing verdict history."""
+    _replace_atomic(HISTORY_FILE, json.dumps(history))
+
+
+@contextmanager
+def _history_lock() -> Iterator[None]:
+    """Refuse concurrent history writers through the existing native OS pattern."""
+    path = HISTORY_FILE.with_name(f"{HISTORY_FILE.name}.lock")
+    with path.open("a+", encoding="utf-8") as handle:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise OSError(f"CI history writer busy: {path}; retain state and drain its owner") from exc
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def remaining_cooldown_sec(state: CIState, cooldown: int = DEFAULT_COOLDOWN_SEC) -> float:
@@ -143,9 +194,7 @@ def _load_restart_count() -> int:
 
 def _save_restart_count_atomic(value: int) -> None:
     """Atomically replace the restart-count state file."""
-    tmp_path = RESTART_COUNT_FILE.with_name(f"{RESTART_COUNT_FILE.name}.tmp")
-    tmp_path.write_text(str(value))
-    os.replace(tmp_path, RESTART_COUNT_FILE)
+    _replace_atomic(RESTART_COUNT_FILE, str(value))
 
 
 def cmd_record_restart_block(restart_count: int) -> int:
@@ -186,19 +235,19 @@ def cmd_record_push(expected_sha: str | None = None) -> int:
         print("RECORD-PUSH-FAILED: unable to resolve HEAD", file=sys.stderr)
         return 1
     try:
-        restart_count = _load_restart_count()
-    except (OSError, ValueError) as exc:
-        print(f"RECORD-PUSH-FAILED: invalid restart count: {exc}", file=sys.stderr)
-        return 1
-
-    try:
-        history = load_history()
-        history["last_push_sha"] = head_sha
-        history["last_checked_sha"] = ""
-        history["ts"] = int(time.time())
-        save_history_atomic(history)
-        new_count = restart_count + 1
-        _save_restart_count_atomic(new_count)
+        with _history_lock():
+            try:
+                restart_count = _load_restart_count()
+            except (OSError, ValueError) as exc:
+                print(f"RECORD-PUSH-FAILED: invalid restart count: {exc}", file=sys.stderr)
+                return 1
+            history = load_history()
+            history["last_push_sha"] = head_sha
+            history["last_checked_sha"] = ""
+            history["ts"] = int(time.time())
+            save_history_atomic(history)
+            new_count = restart_count + 1
+            _save_restart_count_atomic(new_count)
     except OSError as exc:
         print(f"RECORD-PUSH-FAILED: state write failed: {exc}", file=sys.stderr)
         return 1
@@ -259,34 +308,90 @@ def _age_str(epoch: float) -> str:
 
 
 def cmd_record_verdict(verdict: str, sha: str | None = None) -> int:
-    state = load_state()
-    state["last_verdict"] = verdict.strip().lower()
-    state["last_verdict_epoch"] = time.time()
-    save_state(state)
-    if sha:
-        history = load_history()
-        history["last_checked_sha"] = sha
-        history["last_verdict"] = verdict.strip().lower()
-        history["last_checked_ts"] = int(time.time())
-        save_history_atomic(history)
-    _reset_restart_cap_on_terminal_verdict(verdict)
+    """Record the existing verdict through the shared native history writer."""
+    with _history_lock():
+        state = load_state()
+        state["last_verdict"] = verdict.strip().lower()
+        state["last_verdict_epoch"] = time.time()
+        state.pop("last_verdict_kind", None)
+        save_state(state)
+        if sha:
+            history = load_history()
+            history["last_checked_sha"] = sha
+            history["last_verdict"] = verdict.strip().lower()
+            history["last_checked_ts"] = int(time.time())
+            history.pop("last_verdict_kind", None)
+            save_history_atomic(history)
+        _reset_restart_cap_on_terminal_verdict(verdict)
     return 0
 
 
-def _reset_restart_cap_on_terminal_verdict(verdict: str) -> None:
-    """Reset the AA023 CI-restart counter once CI has reported a terminal
-    verdict (GREEN or RED) for the pushed SHA.
-
-    The Makefile `_ci-restart-cap` limits CI restarts to 3 per session and
-    documents that pushes unblock "when CI reports GREEN or RED". Without
-    this reset the counter never decreases — a blocked push loop permanently
-    wedges. PENDING/unknown verdicts keep the cap in force (CI has not
-    reported yet, so thrash protection is still needed)."""
-    normalized = verdict.strip().lower()
-    if normalized not in ("success", "failure"):
+def _reset_restart_cap_on_terminal_verdict(verdict: str, *, strict: bool = False) -> None:
+    """Reset after terminal CI; diagnostic feedback retains actual write errors."""
+    if verdict.strip().lower() not in {"success", "failure"}:
         return
-    with suppress(OSError):
-        RESTART_COUNT_FILE.write_text("0")
+    try:
+        _save_restart_count_atomic(0)
+    except OSError:
+        if strict:
+            raise
+
+
+def record_diagnostic_verdict(
+    *, repo: str, branch: str, sha: str, workflow: str, event: str,
+    run: Mapping[str, object], after_run_id: int = 0,
+) -> bool:
+    """Record current-push diagnostic feedback without granting canonical CI proof."""
+    run_id = run.get("databaseId")
+    conclusion = run.get("conclusion")
+    if (
+        repo != "sandboxcom/gludd"
+        or re.fullmatch(r"(?:feature|diagnostic)/[A-Za-z0-9][A-Za-z0-9._/-]*", branch) is None
+        or ".." in branch or "//" in branch or branch.endswith(("/", "."))
+        or any(part.startswith(".") or part.endswith(".lock") for part in branch.split("/"))
+        or re.fullmatch(r"[0-9a-f]{40}", sha) is None
+        or workflow != "Build and Release" or event != "workflow_dispatch"
+        or type(run_id) is not int or run_id <= 0
+        or type(after_run_id) is not int or after_run_id < 0 or run_id <= after_run_id
+        or run.get("headSha") != sha or run.get("headBranch") != branch
+        or run.get("workflowName") != workflow or run.get("event") != event
+        or run.get("status") != "completed"
+        or not isinstance(conclusion, str)
+        or conclusion not in {
+            "success", "failure", "action_required", "cancelled", "neutral",
+            "skipped", "stale", "startup_failure", "timed_out",
+        }
+    ):
+        return False
+    terminal = "success" if conclusion == "success" else "failure"
+    verdict = "diagnostic_success" if terminal == "success" else "failure"
+    with _history_lock():
+        history = load_history()
+        if history.get("last_push_sha") != sha:
+            return False
+        previous = history.get("diagnostic_run")
+        if isinstance(previous, dict) and previous.get("sha") == sha:
+            previous_id = previous.get("id")
+            if type(previous_id) is int and previous_id >= run_id:
+                return False
+        state = load_state()
+        state["last_verdict"] = verdict
+        state["last_verdict_kind"] = "diagnostic-workflow-dispatch"
+        state["last_verdict_epoch"] = time.time()
+        save_state(state)
+        history.update({
+            "last_checked_sha": sha, "last_verdict": verdict,
+            "last_verdict_kind": "diagnostic-workflow-dispatch",
+            "last_checked_ts": int(time.time()),
+            "diagnostic_run": {
+                "id": run_id, "sha": sha, "repo": repo, "branch": branch,
+                "workflow": workflow, "event": event,
+                "status": "completed", "conclusion": conclusion,
+            },
+        })
+        save_history_atomic(history)
+        _reset_restart_cap_on_terminal_verdict(terminal, strict=True)
+    return True
 
 
 def cmd_deploy() -> int:

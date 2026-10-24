@@ -256,6 +256,29 @@ through native git-show-file-to at its explicit immutable SHA when needed;
 never concatenate every prior incident into the current paragraph. Preserve
 the actual ledger records, failed receipts and required completion proofs.
 
+### Diagnostic feature branches before promotion
+
+Keep feature to development to master promotion. After narrow acceptance and a
+normal source commit, use the existing normal publisher with explicit
+PUBLISH_PURPOSE=feature-ci, saved feature/** or diagnostic/** branch/full SHA and
+a verified published baseline. Run diagnostic GHA before waiting for final
+release readiness or unrelated local acceptance. Once its real exact-SHA run is
+accepted, continue independent local repairs/receiving while the hosted run
+executes. Preserve every normal hook, workflow-history and promotion guard.
+The [publication guide](.agents/policy/key-make-targets.md#normal-source-publication-and-diagnostic-feature-ci)
+owns the exact interface; manual dispatch is diagnostic evidence with its actual
+event, never canonical push or deployment proof.
+
+Use checkout-owned CI_FAILURE_LEDGER and observation paths. A Main path passed
+through Make CLI assignments can also enter MAKEFLAGS/MAKEOVERRIDES and trigger
+the worktree confinement guard. Repair that caller input; identify offending
+keys without dumping environment values and never weaken the guard. Shared
+installed tooling does not establish source identity: both native mypy owners
+must check this checkout's source while retaining installed typing dependencies,
+configured stubs, inherited unrelated carriers and native failures. Read the
+[pre-push record](docs/features/GITHUB_PUBLICATION_HTTPS.md#pre-push-source-identity-and-checkout-owned-inputs)
+before another publication attempt.
+
 ### Make results teach the next action
 
 After a watched pass, drain the exact session and verify observed-status for its
@@ -275,6 +298,13 @@ still apply, and source-only approval never clears their refusal.
 Candidate pushes trigger hosted validation; master Pages deployment and version-tag
 release publication have separate required conditions. Use the [trigger/proof map](docs/features/RELEASE_PROOF_THROUGHPUT.md#active-handoff-and-hosted-authority)
 before attributing a GHA result to deployment or release.
+For the measured SSH-remote/HTTPS-login mismatch, use the existing repo-local
+`make git-configure-sandboxcom-https SANDBOXCOM_HTTPS_VALIDATE_ONLY=1` plan,
+then mode0 only within authorized publication work. The [HTTPS owner](docs/features/GITHUB_PUBLICATION_HTTPS.md)
+retains native fail-closed authentication, local helper/remote scope, partial-write
+reconciliation and actual tests. Configuration is not push or CI evidence;
+retain normal batch-push, exact verify-remote and native pipeline-status proofs.
+
 For the measured SSH-remote/HTTPS-login mismatch, use the existing repo-local
 `make git-configure-sandboxcom-https SANDBOXCOM_HTTPS_VALIDATE_ONLY=1` plan,
 then mode0 only within authorized publication work. The [HTTPS owner](docs/features/GITHUB_PUBLICATION_HTTPS.md)

@@ -235,7 +235,28 @@ def test_non_mapping_json_state_and_history_fail_to_empty_defaults(
     assert ci_check_cooldown.load_history() == {}
 
 
-def test_make_restart_guard_is_check_only_with_isolated_state(tmp_path: Path) -> None:
+def _restart_guard_command(
+    path: Path, make_flags: tuple[str, ...], restart_file: Path, push_state_file: Path,
+) -> list[str]:
+    """Own only fixture state values while preserving the actual Make entrypoint."""
+    bindings = path / "restart-guard-fixture-bindings.mk"
+    bindings.write_text(
+        f"override GLUDD_CI_RESTART_COUNT_FILE := {restart_file}\n"
+        f"override GLUDD_PUSH_STATE_FILE := {push_state_file}\n"
+        "override FORCE :=\n"
+        "export GLUDD_CI_RESTART_COUNT_FILE GLUDD_PUSH_STATE_FILE FORCE\n"
+    )
+    return [
+        "make", *make_flags, "-f", "Makefile", "-f", str(bindings), "_ci-restart-cap",
+        f"GLUDD_CI_RESTART_COUNT_FILE={restart_file}",
+        f"GLUDD_PUSH_STATE_FILE={push_state_file}", "FORCE=",
+    ]
+
+
+@pytest.mark.parametrize("make_flags", [(), ("-e",)], ids=["ordinary", "early-environment"])
+def test_make_restart_guard_is_check_only_with_isolated_state(
+    tmp_path: Path, make_flags: tuple[str, ...],
+) -> None:
     restart_file = tmp_path / "restart-count"
     push_state_file = tmp_path / "push-state.json"
     restart_file.write_text("2")
@@ -248,7 +269,7 @@ def test_make_restart_guard_is_check_only_with_isolated_state(tmp_path: Path) ->
     )
 
     result = subprocess.run(
-        ["make", "_ci-restart-cap"],
+        _restart_guard_command(tmp_path, make_flags, restart_file, push_state_file),
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,
@@ -262,7 +283,10 @@ def test_make_restart_guard_is_check_only_with_isolated_state(tmp_path: Path) ->
     assert not push_state_file.exists()
 
 
-def test_make_restart_guard_blocks_at_limit_without_increment(tmp_path: Path) -> None:
+@pytest.mark.parametrize("make_flags", [(), ("-e",)], ids=["ordinary", "early-environment"])
+def test_make_restart_guard_blocks_at_limit_without_increment(
+    tmp_path: Path, make_flags: tuple[str, ...],
+) -> None:
     restart_file = tmp_path / "restart-count"
     push_state_file = tmp_path / "push-state.json"
     restart_file.write_text("3")
@@ -275,7 +299,7 @@ def test_make_restart_guard_blocks_at_limit_without_increment(tmp_path: Path) ->
     )
 
     result = subprocess.run(
-        ["make", "_ci-restart-cap"],
+        _restart_guard_command(tmp_path, make_flags, restart_file, push_state_file),
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,
@@ -562,3 +586,272 @@ def test_main_rejects_missing_and_unknown_commands(
     monkeypatch.setattr(ci_check_cooldown.sys, "argv", ["ci_check_cooldown.py", "surprise"])
     assert ci_check_cooldown.main() == 2
     assert "unknown command" in capsys.readouterr().err
+
+
+def _diagnostic_arguments() -> dict[str, object]:
+    sha = "b" * 40
+    branch = "feature/owned-feedback"
+    return {
+        "repo": "sandboxcom/gludd", "branch": branch, "sha": sha,
+        "workflow": "Build and Release", "event": "workflow_dispatch",
+        "run": {
+            "databaseId": 42, "headSha": sha, "headBranch": branch,
+            "workflowName": "Build and Release", "event": "workflow_dispatch",
+            "status": "completed", "conclusion": "success",
+        },
+    }
+
+
+@pytest.mark.parametrize("conclusion", [
+    "success", "failure", "action_required", "cancelled", "neutral",
+    "skipped", "stale", "startup_failure", "timed_out",
+])
+def test_diagnostic_recorder_requires_current_push_and_keeps_explicit_authority(
+    isolated_state: Path, conclusion: str,
+) -> None:
+    arguments = _diagnostic_arguments()
+    run = arguments["run"]
+    assert isinstance(run, dict)
+    run["conclusion"] = conclusion
+    ci_check_cooldown.HISTORY_FILE.write_text(json.dumps({
+        "last_push_sha": arguments["sha"], "last_checked_sha": "", "keep": "owned",
+    }))
+    ci_check_cooldown.RESTART_COUNT_FILE.write_text("3")
+    _write_state(isolated_state, check_count=7, last_verdict="pending")
+
+    assert ci_check_cooldown.record_diagnostic_verdict(**arguments) is True
+
+    history = json.loads(ci_check_cooldown.HISTORY_FILE.read_text())
+    state = json.loads(isolated_state.read_text())
+    expected = "diagnostic_success" if conclusion == "success" else "failure"
+    assert history["last_verdict"] == state["last_verdict"] == expected
+    assert history["last_verdict_kind"] == "diagnostic-workflow-dispatch"
+    assert state["last_verdict_kind"] == "diagnostic-workflow-dispatch"
+    assert history["last_checked_sha"] == arguments["sha"]
+    assert history["diagnostic_run"]["conclusion"] == conclusion
+    assert history["keep"] == "owned"
+    assert state["check_count"] == 7
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_text() == "0"
+
+
+@pytest.mark.parametrize("field, value", [
+    ("repo", "other/project"), ("branch", "development"), ("branch", "feature/"),
+    ("branch", "feature/unsafe..branch"), ("branch", "feature/a//b"),
+    ("branch", "feature/a/"), ("branch", "feature/a."),
+    ("branch", "feature/.hidden"), ("branch", "feature/owned.lock"),
+    ("sha", "b" * 39), ("workflow", "Molecule Tests"), ("event", "push"),
+    ("after_run_id", 42), ("after_run_id", -1),
+])
+def test_diagnostic_recorder_rejects_ineligible_selector_without_any_state_mutation(
+    isolated_state: Path, field: str, value: object,
+) -> None:
+    arguments = _diagnostic_arguments()
+    arguments[field] = value
+    before = '{"last_push_sha": "' + "b" * 40 + '", "keep": "owned"}'
+    ci_check_cooldown.HISTORY_FILE.write_text(before)
+    ci_check_cooldown.RESTART_COUNT_FILE.write_text("3")
+
+    assert ci_check_cooldown.record_diagnostic_verdict(**arguments) is False
+
+    assert ci_check_cooldown.HISTORY_FILE.read_text() == before
+    assert not isolated_state.exists()
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_text() == "3"
+    assert not ci_check_cooldown.HISTORY_FILE.with_name("history.json.lock").exists()
+
+
+@pytest.mark.parametrize("field, value", [
+    ("databaseId", 0), ("databaseId", -1), ("databaseId", True), ("databaseId", "42"),
+    ("headSha", "c" * 40), ("headBranch", "feature/other"),
+    ("workflowName", "Molecule Tests"), ("event", "push"),
+    ("status", "queued"), ("status", "in_progress"),
+    ("conclusion", ""), ("conclusion", "unknown"), ("conclusion", []),
+])
+def test_diagnostic_recorder_rejects_inexact_or_incomplete_run_without_history_write(
+    isolated_state: Path, field: str, value: object,
+) -> None:
+    arguments = _diagnostic_arguments()
+    run = arguments["run"]
+    assert isinstance(run, dict)
+    run[field] = value
+    ci_check_cooldown.HISTORY_FILE.write_text(json.dumps({
+        "last_push_sha": "b" * 40, "last_checked_sha": "", "keep": "owned",
+    }))
+    before = ci_check_cooldown.HISTORY_FILE.read_bytes()
+    ci_check_cooldown.RESTART_COUNT_FILE.write_text("3")
+
+    assert ci_check_cooldown.record_diagnostic_verdict(**arguments) is False
+
+    assert ci_check_cooldown.HISTORY_FILE.read_bytes() == before
+    assert not isolated_state.exists()
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_text() == "3"
+
+
+@pytest.mark.parametrize("history", [
+    {}, {"last_push_sha": "c" * 40}, {"last_checked_sha": "b" * 40},
+])
+def test_diagnostic_recorder_never_creates_ownership_from_caller_claims(
+    isolated_state: Path, history: dict[str, object],
+) -> None:
+    ci_check_cooldown.HISTORY_FILE.write_text(json.dumps(history))
+    before = ci_check_cooldown.HISTORY_FILE.read_bytes()
+    ci_check_cooldown.RESTART_COUNT_FILE.write_text("3")
+
+    assert ci_check_cooldown.record_diagnostic_verdict(**_diagnostic_arguments()) is False
+
+    assert ci_check_cooldown.HISTORY_FILE.read_bytes() == before
+    assert not isolated_state.exists()
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_text() == "3"
+
+
+@pytest.mark.parametrize("new_push", [False, True])
+@pytest.mark.parametrize("observed_id", [41, 42])
+def test_reobserving_same_diagnostic_run_cannot_clear_new_restart_debt(
+    isolated_state: Path, new_push: bool, observed_id: int,
+) -> None:
+    arguments = _diagnostic_arguments()
+    ci_check_cooldown.HISTORY_FILE.write_text(json.dumps({"last_push_sha": "b" * 40}))
+    assert ci_check_cooldown.record_diagnostic_verdict(**arguments) is True
+    if new_push:
+        assert ci_check_cooldown.cmd_record_push("b" * 40) == 0
+    ci_check_cooldown.RESTART_COUNT_FILE.write_text("3")
+    before = ci_check_cooldown.HISTORY_FILE.read_bytes()
+    state_before = isolated_state.read_bytes()
+    run = arguments["run"]
+    assert isinstance(run, dict)
+    run["databaseId"] = observed_id
+
+    assert ci_check_cooldown.record_diagnostic_verdict(**arguments) is False
+
+    assert ci_check_cooldown.HISTORY_FILE.read_bytes() == before
+    assert isolated_state.read_bytes() == state_before
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_text() == "3"
+
+
+@pytest.mark.parametrize("failed_owner", ["state", "history", "restart"])
+def test_diagnostic_atomic_write_failures_retain_counter_and_applied_state_scope(
+    isolated_state: Path, failed_owner: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    arguments = _diagnostic_arguments()
+    ci_check_cooldown.HISTORY_FILE.write_text(json.dumps({
+        "last_push_sha": "b" * 40, "last_checked_sha": "", "keep": "owned",
+    }))
+    ci_check_cooldown.RESTART_COUNT_FILE.write_text("3")
+    _write_state(isolated_state, last_verdict="pending")
+    state_before = isolated_state.read_bytes()
+    history_before = ci_check_cooldown.HISTORY_FILE.read_bytes()
+    target = {
+        "state": isolated_state,
+        "history": ci_check_cooldown.HISTORY_FILE,
+        "restart": ci_check_cooldown.RESTART_COUNT_FILE,
+    }[failed_owner]
+    original_replace = ci_check_cooldown.os.replace
+
+    def replace(source: Path, destination: Path) -> None:
+        if destination == target:
+            raise OSError(f"owned {failed_owner} replacement failure")
+        original_replace(source, destination)
+
+    monkeypatch.setattr(ci_check_cooldown.os, "replace", replace)
+    with pytest.raises(OSError, match=f"owned {failed_owner} replacement failure"):
+        ci_check_cooldown.record_diagnostic_verdict(**arguments)
+
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_text() == "3"
+    assert not list(isolated_state.parent.glob("*.tmp"))
+    if failed_owner == "state":
+        assert isolated_state.read_bytes() == state_before
+    if failed_owner in {"state", "history"}:
+        assert ci_check_cooldown.HISTORY_FILE.read_bytes() == history_before
+    else:
+        assert json.loads(ci_check_cooldown.HISTORY_FILE.read_text())["last_checked_sha"] == "b" * 40
+
+
+@pytest.mark.parametrize("contents", [None, "[]", "{invalid"])
+def test_diagnostic_recorder_does_not_forge_missing_or_corrupt_push_history(
+    isolated_state: Path, contents: str | None,
+) -> None:
+    if contents is not None:
+        ci_check_cooldown.HISTORY_FILE.write_text(contents)
+    ci_check_cooldown.RESTART_COUNT_FILE.write_text("3")
+
+    assert ci_check_cooldown.record_diagnostic_verdict(**_diagnostic_arguments()) is False
+
+    assert ci_check_cooldown.HISTORY_FILE.exists() is (contents is not None)
+    if contents is not None:
+        assert ci_check_cooldown.HISTORY_FILE.read_text() == contents
+    assert not isolated_state.exists()
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_text() == "3"
+
+
+def test_existing_verdict_writer_clears_diagnostic_label_and_preserves_run_history(
+    isolated_state: Path,
+) -> None:
+    ci_check_cooldown.HISTORY_FILE.write_text(json.dumps({"last_push_sha": "b" * 40}))
+    assert ci_check_cooldown.record_diagnostic_verdict(**_diagnostic_arguments()) is True
+    run = json.loads(ci_check_cooldown.HISTORY_FILE.read_text())["diagnostic_run"]
+
+    assert ci_check_cooldown.cmd_record_verdict("pending") == 0
+    assert "last_verdict_kind" not in json.loads(isolated_state.read_text())
+    assert ci_check_cooldown.cmd_record_verdict("success", "b" * 40) == 0
+    history = json.loads(ci_check_cooldown.HISTORY_FILE.read_text())
+    assert "last_verdict_kind" not in history
+    assert history["diagnostic_run"] == run
+
+
+@pytest.mark.parametrize("preseed", ["symlink", "regular"])
+def test_atomic_writer_never_clobbers_a_preexisting_predictable_temporary_path(
+    tmp_path: Path, preseed: str,
+) -> None:
+    target = tmp_path / "owned-state.json"
+    target.write_text("previous state")
+    foreign = tmp_path / "foreign-sentinel"
+    foreign.write_text("foreign bytes")
+    predictable = target.with_name(f"{target.name}.{os.getpid()}.tmp")
+    if preseed == "symlink":
+        predictable.symlink_to(foreign)
+    else:
+        predictable.write_text("preexisting temporary bytes")
+
+    ci_check_cooldown._replace_atomic(target, "owned replacement")
+
+    assert foreign.read_text() == "foreign bytes"
+    assert predictable.exists()
+    assert predictable.is_symlink() is (preseed == "symlink")
+    assert predictable.read_text() == (
+        "foreign bytes" if preseed == "symlink" else "preexisting temporary bytes"
+    )
+    assert not target.is_symlink()
+    assert target.read_text() == "owned replacement"
+
+
+@pytest.mark.parametrize("replacement", ["symlink", "regular"])
+def test_atomic_failure_cleanup_preserves_a_foreign_replacement_temporary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, replacement: str,
+) -> None:
+    target = tmp_path / "owned-state.json"
+    target.write_text("previous state")
+    foreign = tmp_path / "foreign-sentinel"
+    foreign.write_text("foreign bytes")
+    interrupted: list[Path] = []
+
+    def fail_after_foreign_replacement(source: Path, destination: Path) -> None:
+        assert destination == target
+        source.unlink()
+        if replacement == "symlink":
+            source.symlink_to(foreign)
+        else:
+            source.write_text("foreign temporary bytes")
+        interrupted.append(source)
+        raise OSError("owned interrupted replacement")
+
+    monkeypatch.setattr(ci_check_cooldown.os, "replace", fail_after_foreign_replacement)
+    with pytest.raises(OSError, match="owned interrupted replacement"):
+        ci_check_cooldown._replace_atomic(target, "owned replacement")
+
+    assert target.read_text() == "previous state"
+    assert foreign.read_text() == "foreign bytes"
+    assert len(interrupted) == 1
+    assert interrupted[0].exists()
+    assert interrupted[0].is_symlink() is (replacement == "symlink")
+    assert interrupted[0].read_text() == (
+        "foreign bytes" if replacement == "symlink" else "foreign temporary bytes"
+    )
