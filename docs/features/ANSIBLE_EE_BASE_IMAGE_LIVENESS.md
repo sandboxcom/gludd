@@ -740,3 +740,83 @@ that !cancelled() permits work regardless of earlier success/failure. The
 records continuing confusion around always(), cancellation and expression/YAML
 boundaries. This motivates an explicit prerequisite outcome in the original
 native workflow, without a replacement expression parser or diagnostic runner.
+
+## Served manifest refresh after ac4016f (2026-10-24 UTC)
+
+Build `40080210078`, source
+`ac4016fd7fc36566b5ce5354c7b051fd5f5a8f70`, fails the exact base-manifest
+check in Python3.12 job `120832040110` with HTTP404 before the eight-shard
+fan-out. The pinned `086f25bf...` identity is unavailable at that check;
+this establishes no garbage-collection, transient-outage or Python-version
+cause. Preserve the hosted failure and its unknown/censored downstream work.
+
+The existing offline refresh plan passes without network or source mutation.
+The unchanged native refresh then resolves the supported Stream9 source to
+`sha256:6f8045fc4f552544d8a401d61848bafc8d06ca7c11897c5b54a2c37fc419a20a`.
+A separate native exact-digest check passes for that new configured identity.
+Both runs retain90total/60quiet; their producer-owned receipts are:
+
+| Owner | Receipt below `.gate-logs/observed/` | Native seconds / status |
+| --- | --- | --- |
+| refresh-ansible-base-image | `v012-ee-base-refresh/20261024T090810Z-89298-4c842dcb.json` | 0.514 / 0 |
+| check-ansible-base-image | `v012-ee-base-exact-check/20261024T090816Z-89324-56008b64.json` | 0.629 / 0 |
+
+The refresh changes only the definition's exact base pin, the lock's matching
+base pin and its definition hash. All other lock inputs retain their values.
+The existing CENTOS_STREAM9_INDEX fixture adopts the independently
+checked identity while retaining every exact definition/lock assertion. No
+producer, workflow, method fallback, timeout, threshold or release setting
+changes; no mutable image is used for execution.
+
+This is fresh primary registry-input evidence. The OCI, Quay, QIIME and Docker
+forum references above retain their recorded scope; no new forum page was
+retrieved and none identifies the cause of this incident. No image pull/build,
+full offline warm, hosted-success or deployment result follows from a served
+manifest. Refreshing the source pin changes no active runtime: build beside
+active, new-job switch, in-flight drain and rollback remain required.
+
+Source context is the uncommitted four-path repair on the exact source above.
+Complete original artifact/fallback/runtime-boundary owners on both installed
+runtimes remain pending Root's four-path content guard and source review.
+Root owns the clean checkpoint and first exact-SHA ci-failure-repair receipts;
+availability alone closes no native failure family. Full canonical gate,
+coverage, new-SHA hosted/deployment and promotion proofs remain pending.
+
+### Hosted refresh receiving (2026-10-24 UTC)
+
+The feature repair is committed at
+3a693d3aee571ef96666c62ef719f8f05b5ace38. Earlier Build and Release
+[40080210078](https://github.com/sandboxcom/gludd/actions/runs/40080210078)
+on ac4016fd7fc36566b5ce5354c7b051fd5f5a8f70 failed both pinned-manifest
+steps with the retained old digest returning HTTP404.
+
+The repaired diagnostic Build
+[40082105174](https://github.com/sandboxcom/gludd/actions/runs/40082105174)
+is the actual new hosted attempt. Native job details confirm that both Python
+3.11 job120837619808 and Python3.12 job120837619886 passed the exact manifest
+check and canonical promotion prerequisite. Each subsequent runtime owner
+failed the original CSS no-overrides contract:2391PASS/1FAIL, respectively
+60.53s and86.35s pytest time. Retain those failures; all eight downstream
+shards remain unmeasured behind the gate barrier. The image repair is not a
+green Build, resolved runtime failure family or complete release proof.
+
+The independent exact-source Molecule diagnostic
+[40083289433](https://github.com/sandboxcom/gludd/actions/runs/40083289433)
+completed successfully with all six jobs passed. Both runs use workflow_dispatch;
+their results supply their actual operational scopes, without canonical push,
+Main receiving, deployment, integration or version-release authority.
+
+The earlier native105.894s feature publication used explicit
+PUBLISH_PURPOSE=feature-ci. It verified source, remote binding, published workflow
+provenance, hooks, saved-SHA transport and diagnostic signaling; it deliberately
+ran no local canonical EE/promotion/runtime replay. Its allocated pytest trace
+contains zero bytes/events. Do not report it as a local2392-case pass.
+The existing canonical route still owns the full unchanged admission.
+
+Root is receiving the four committed configuration/test/documentation paths
+into Main from49f2c5954c27b84355827bc2445223aad55a3a58 alongside independent
+coverage-floor and inventory-validation repairs. Their original focused receipts,
+independent exact-digest check and source review remain fixed historical evidence.
+Current Main acceptance and its exact-SHA/full-gate/deployment proofs remain
+pending until their native owners actually finish. No unchanged Build rerun,
+mutable image replacement, assertion waiver or manual current observation is used.
