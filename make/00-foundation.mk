@@ -1,3 +1,46 @@
+# Keep expected publication identity literal before startup/export expansion.
+PUBLISH_EXPECTED_BRANCH ?=
+PUBLISH_EXPECTED_SHA ?=
+override GLUDD_PUBLISH_EXPECTED_BRANCH := $(value PUBLISH_EXPECTED_BRANCH)
+export GLUDD_PUBLISH_EXPECTED_BRANCH := $(value PUBLISH_EXPECTED_BRANCH)
+override GLUDD_PUBLISH_EXPECTED_SHA := $(value PUBLISH_EXPECTED_SHA)
+export GLUDD_PUBLISH_EXPECTED_SHA := $(value PUBLISH_EXPECTED_SHA)
+unexport PUBLISH_EXPECTED_BRANCH PUBLISH_EXPECTED_SHA
+PUBLISH_PURPOSE ?= canonical
+PUBLISH_BASELINE_REF ?=
+PUBLISH_BASELINE_SHA ?=
+override GLUDD_PUBLISH_PURPOSE := $(value PUBLISH_PURPOSE)
+export GLUDD_PUBLISH_PURPOSE := $(value PUBLISH_PURPOSE)
+override GLUDD_PUBLISH_BASELINE_REF := $(value PUBLISH_BASELINE_REF)
+export GLUDD_PUBLISH_BASELINE_REF := $(value PUBLISH_BASELINE_REF)
+override GLUDD_PUBLISH_BASELINE_SHA := $(value PUBLISH_BASELINE_SHA)
+export GLUDD_PUBLISH_BASELINE_SHA := $(value PUBLISH_BASELINE_SHA)
+unexport PUBLISH_PURPOSE PUBLISH_BASELINE_REF PUBLISH_BASELINE_SHA
+PUSH_VERDICT_SHA ?=
+override GLUDD_PUSH_VERDICT_SHA := $(value PUSH_VERDICT_SHA)
+export GLUDD_PUSH_VERDICT_SHA := $(value PUSH_VERDICT_SHA)
+unexport PUSH_VERDICT_SHA
+# Capture existing signal data only in its complete owned direct/alias graph.
+ifneq ($(filter ci-trigger-committed-head ci-trigger ci-push-committed-head _require-gh,$(MAKECMDGOALS)),)
+override GLUDD_CI_TRIGGER_REF := $(value REF)
+export GLUDD_CI_TRIGGER_REF := $(value REF)
+override GLUDD_CI_TRIGGER_REMOTE := $(value REMOTE)
+export GLUDD_CI_TRIGGER_REMOTE := $(value REMOTE)
+override GLUDD_CI_TRIGGER_REPO := $(value REPO)
+export GLUDD_CI_TRIGGER_REPO := $(value REPO)
+override GLUDD_CI_TRIGGER_WORKFLOW := $(value WORKFLOW)
+export GLUDD_CI_TRIGGER_WORKFLOW := $(value WORKFLOW)
+override GLUDD_CI_TRIGGER_EXAMPLE := $(value EXAMPLE)
+export GLUDD_CI_TRIGGER_EXAMPLE := $(value EXAMPLE)
+override GLUDD_CI_TRIGGER_DISCOVERY_POLLS := $(value DISCOVERY_POLLS)
+export GLUDD_CI_TRIGGER_DISCOVERY_POLLS := $(value DISCOVERY_POLLS)
+override GLUDD_CI_TRIGGER_CONFIRM_POLLS := $(value CONFIRM_POLLS)
+export GLUDD_CI_TRIGGER_CONFIRM_POLLS := $(value CONFIRM_POLLS)
+override GLUDD_CI_TRIGGER_POLL_INTERVAL := $(value POLL_INTERVAL)
+export GLUDD_CI_TRIGGER_POLL_INTERVAL := $(value POLL_INTERVAL)
+unexport REF REMOTE REPO WORKFLOW EXAMPLE DISCOVERY_POLLS CONFIRM_POLLS POLL_INTERVAL
+endif
+
 # Capture literal commit comparisons before any startup/export child.
 ifneq ($(filter git-compare-commits,$(MAKECMDGOALS)),)
 GIT_COMPARE_BASE ?=
@@ -1041,13 +1084,13 @@ help:
 		"  ci-recover-runner-acquisition RUN=<id>  Retry attempt 1 only when every failure is hosted-runner acquisition" \
 		"  ci-active              List active/in-flight CI runs" \
 		"  ci-greenness           CI reliability ratio (green / total completed)" \
-		"  ci-trigger-committed-head [REF=<b>]  Idempotently signal + return exact-SHA GHA run URL" \
+		"  ci-trigger-committed-head [REF=<b>]  Exact-SHA signal; EXAMPLE=1 offline; feature-ci requires expected pair + published baseline" \
 		"  ci-record-verdict      Record a known CI verdict directly, bypassing cooldown (VERDICT=success|failure|pending, SHA=<sha>)" \
 		"  deploy-and-forget      Single guarded push + cooldown record (BRANCH, DEPLOY_AND_FORGET_VALIDATE_ONLY=0|1)" \
 		"" \
 		"  --- Git Remote ---" \
 		"  git-remote-sandboxcom Configure sandboxcom GitHub remote with SSH key" \
-		"  git-push-sandboxcom   Guarded mirror push (PUSH_REMOTE, SSH_KEY; dry-run is not remote evidence)" \
+		"  git-push-sandboxcom   Guarded canonical push; explicit PUBLISH_PURPOSE=feature-ci requires expected branch/fullSHA + published baseline" \
 		"  git-pull-sandboxcom   Pull and rebase from sandboxcom/gludd" \
 		"  git-fetch-sandboxcom  Fetch from sandboxcom/gludd" \
 		"  github-auth-status       Read native GitHub accounts/scopes; authentication is not workflow write authority" \

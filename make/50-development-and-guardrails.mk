@@ -33,12 +33,15 @@ worktree-commit-changes: _gate-fresh-check _commit-lint-guard
 	@git add -A && git commit -m "$(MSG)"
 
 # Push the development branch to the sandboxcom remote.
-development-push: check-clean-tree ci-busy-check _push-rate-guard
-	@$(MAKE) ci-busy-check BRANCH=development
-	@$(MAKE) require-sandboxcom-ssh-key
-	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom development
-	@$(MAKE) verify-remote BRANCH=development SHA=$$(git rev-parse development)
-	@echo "Development branch pushed and verified"
+.PHONY: development-push
+development-push: check-clean-tree ci-busy-check
+	@if [ "$(_publication-native-mode)" != execute ]; then echo "AGENT_NEXT target=development-push outcome=planned mode=$(_publication-native-mode) gate_evidence=false release_ready=false: Native inspection starts no authentication, publication, runtime admission or hosted observation." >&2; exit 0; fi; \
+	gludd_development_branch=$$(git branch --show-current) || { gludd_development_rc=$$?; printf 'AGENT_NEXT target=development-push outcome=failed phase=candidate native_status=%s gate_evidence=false release_ready=false: Repair the native branch lookup before selecting the development candidate.\n' "$$gludd_development_rc" >&2; exit "$$gludd_development_rc"; }; \
+	if [ "$$gludd_development_branch" != development ]; then echo "AGENT_NEXT target=development-push outcome=refused phase=candidate native_status=2 gate_evidence=false release_ready=false: Select the actual development checkout before normal guarded publication; detached or another current branch cannot authorize this shortcut." >&2; exit 2; fi; \
+	gludd_development_head=$$(git rev-parse --verify HEAD^{commit}) || { gludd_development_rc=$$?; printf 'AGENT_NEXT target=development-push outcome=failed phase=candidate native_status=%s gate_evidence=false release_ready=false: Repair the native fullSHA lookup before selecting the development candidate.\n' "$$gludd_development_rc" >&2; exit "$$gludd_development_rc"; }; \
+	$(MAKE) --no-print-directory ci-busy-check BRANCH=development || exit $$?; \
+	$(MAKE) --no-print-directory git-push-sandboxcom SSH_KEY="$(SSH_KEY)" PUSH_BRANCH=development PUBLISH_EXPECTED_BRANCH="$$gludd_development_branch" PUBLISH_EXPECTED_SHA="$$gludd_development_head" || { gludd_development_rc=$$?; printf 'AGENT_NEXT target=development-push outcome=failed phase=publication native_status=%s branch=development sha=%s gate_evidence=false release_ready=false: Preserve the canonical publication failure and reconcile that input; transport/history may already have applied. Do not retry unchanged or infer hosted/deployment success.\n' "$$gludd_development_rc" "$$gludd_development_head" >&2; exit "$$gludd_development_rc"; }; \
+	printf 'AGENT_NEXT target=development-push outcome=published native_status=0 branch=development sha=%s gate_evidence=false release_ready=false: The normal publisher verified this saved candidate; retain required exact-SHA hosted CI, full-gate and deployment proofs.\n' "$$gludd_development_head" >&2
 
 # Force-push the development branch (when rebase rewrites history).
 development-force-push:
@@ -936,7 +939,10 @@ _ci-verdict-history-guard:
 # every FAILED push attempt (pre-push hook rejections, rate-limit blocks),
 # forcing a fresh 10-minute cooldown verdict for a push that never happened.
 _record-push-verdict:
-	@$(PYTHON) scripts/ci_check_cooldown.py record-push
+	@gludd_record_sha="$$GLUDD_PUSH_VERDICT_SHA"; \
+	if [ -n "$$gludd_record_sha" ]; then \
+		$(PYTHON) scripts/ci_check_cooldown.py record-push "$$gludd_record_sha"; \
+	else $(PYTHON) scripts/ci_check_cooldown.py record-push; fi
 
 # AA034 — _pre-commit-stash-audit: detects pre-commit auto-fix stash conflicts.
 # Pre-commit hooks auto-fix files (trailing whitespace, eof) via stash/unstash.

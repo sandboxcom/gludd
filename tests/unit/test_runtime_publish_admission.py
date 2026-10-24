@@ -31,6 +31,18 @@ def _target(source: str, name: str) -> str:
     return source[start : source.index("\n\n", start)]
 
 
+def _publication_inspection_inputs(source: str) -> str:
+    marker = ".PHONY: batch-push git-push-sandboxcom\n"
+    start = source.index(marker)
+    foundation = (ROOT / "make/00-foundation.mk").read_text(encoding="utf-8")
+    provider_start = foundation.index("# Shared native Make inspection grammar.")
+    provider_end = foundation.index("# End shared native Make inspection grammar.", provider_start)
+    provider = foundation[provider_start:provider_end] + "# End shared native Make inspection grammar.\n"
+    inputs_start = foundation.index("# Keep expected publication identity literal before startup/export expansion.")
+    inputs = foundation[inputs_start:foundation.index("\n\n", inputs_start)] + "\n"
+    return inputs + provider + source[start:source.index("\ngit-push-sandboxcom:", start)] + "\n"
+
+
 def _publish(
     tmp_path: Path,
     *,
@@ -104,6 +116,9 @@ def _publish(
         "if args[:2] == ['log', '--oneline']:\n"
         f"    print('\\n'.join('a' + str(i) + ' commit' for i in range({count})))\n"
         "elif args[:2] == ['branch', '--show-current']: print('gludd-test-runtime-publish')\n"
+        "elif args[:2] == ['branch', '--set-upstream-to=sandboxcom/gludd-test-runtime-publish']:\n"
+        "    assert args == ['branch', '--set-upstream-to=sandboxcom/gludd-test-runtime-publish', "
+        "'gludd-test-runtime-publish']\n"
         "elif args[0] == 'rev-parse': print('a' * 40)\n"
         "elif args[0] == 'push':\n"
         "    with trace.open('a') as stream: stream.write(json.dumps(dict(kind='transport', args=args)) + '\\n')\n"
@@ -153,6 +168,7 @@ def _publish(
     prerequisites = sorted(
         {
             "require-sandboxcom-ssh-key",
+            "_require-sandboxcom-git-auth",
             "ci-busy-check",
             *(name for block in publication for name in block.splitlines()[0].partition(":")[2].split()),
         }
@@ -168,6 +184,7 @@ def _publish(
         f"RUNTIME_PUBLISH_ENVIRONMENT := {selected_environment}\n"
         f"RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY := {validate_only}\n"
         + policy_defaults + "\n"
+        + _publication_inspection_inputs(recovery)
         + f".PHONY: batch-push run-watched {OWNER} {PUBLISH_OWNER} test-files _record-push-verdict "
         f"{' '.join(prerequisites)}\n"
         + "".join(f"{name}:\n\t@true\n\n" for name in prerequisites)
@@ -317,6 +334,20 @@ def test_green_runtime_owner_runs_once_before_normal_transport(tmp_path: Path, f
     assert isinstance(transport_args, list)
     assert "--no-verify" not in transport_args
     assert list(observed.rglob("*.json")), "existing observer must retain success evidence"
+
+
+@pytest.mark.parametrize("forced", (False, True))
+def test_canonical_normal_publisher_keeps_manifest_failure_before_runtime_and_transport(
+    tmp_path: Path, forced: bool,
+) -> None:
+    result, rows, _ = _publish(
+        tmp_path, goal="git-push-sandboxcom", manifest_status=81, forced=forced,
+    )
+    assert result.returncode != 0
+    assert [row["kind"] for row in rows] == ["runtime-identity", "manifest"]
+    assert "Pinned Ansible base manifest admission failed" in result.stdout + result.stderr
+    assert "[check-ansible-base-image] Error 81" in result.stderr
+    assert not any(row["kind"] in {"observer", "runtime", "transport", "verdict"} for row in rows)
 
 
 @pytest.mark.parametrize(("count", "threshold", "successful"), ((1, 5, True), (5, 1, False)))

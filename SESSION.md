@@ -55,24 +55,55 @@ Repaired independent source review approved the postimages; normal checkpoint
  commit-transaction/20261024T052623Z-58322-769256de.json/native74.6.
 These fixed source/focus/collection scopes supply no final gate/exact-SHA proof.
 
-HTTPS/runtime Main intake on that fixed8cf input has complete13-owner
-acceptance563PASS EACH runtime: A367 plus complete reviewed-head B196.
-Native main-https-runtime-acceptance A311/A312 takes68.927/74.382seconds;
-B311/B312 takes137.413/129.670, with run suffix-8cf4686 and native json/log/trace.
-Independent five-path source-only review approves; the HTTPS feature records
-6FAIL4PASS,10GREEN and the complete owner roster. Normal guarded checkpoint/
-collection for this receiving change and every final proof remain separate.
-No current header or old collection paragraph certifies it.
+HTTPS/controller Main checkpoint ccb8f792c0a252dccef35302f37ac47e615917ec has
+complete13-owner563PASS EACH runtime and independent source-only approval.
+Its fixed normal collection is130033selected/130057collected,24deselected,
+0errors49.87s/native55.4 at test-count/20261024T055459Z-25068-54438ec7.json;
+mutation receipt commit-transaction/20261024T055443Z-24554-6f5fe48f.json/native72.6.
+These receipts do not recertify a later source or the old header's collection.
 
-Parallel peers own retained-leader output and native retirement-plan repairs.
-The latter has real index-write witnesses,2FAIL2PASS then13GREEN and five-path
-source-only approval; full26-owner/two-profile BOTH acceptance remains pending.
-Observer757-case311 proof first fails3original empty-stderr assertions/754PASS;
-minimalfix passes those3 and a full757-case311 profile, but independent review
-also finds an unmeasured transient post-reap EPERM-to-ESRCH output gap. Retain
-both reviews and all failed receipts; pre-sequence proof is not final acceptance.
-Every native session drains before edits and the next runtime. Root owns shared
-Git at the planned terminal checkpoint; branches retain their own proof scopes.
+Main saved-source publication has a frozen19-path semantic intake on fixedccb.
+Genuine6RED precedes6GREEN; the deduplicated complete21-owner union now passes
+1313cases EACH311/312. Signal/guard99 and cooldown49 complete profiles retain
+raw98.108LINE/95BRANCH and93.333LINE/92BRANCH,85aggregate/75each in both dimensions.
+The HTTPS feature records all whole owners,43complete development functions,
+native receipts and exact next owners. Source-only approval is
+ /tmp/gludd-v012-main-group2-publication-source-review.md. Its own normal source
+checkpoint/fresh collection, canonical full gate and exact-SHA proofs remain next.
+
+Retirement-plan/index-safety peer6ec0a46e9c4f826d8e77e34106115ad14be879cc has
+complete26-owner/two-profile receiving:806+37subtests and263PASS BOTH separately,
+raw strict85/75, source approval and normal129670/129694collection; Main intake
+remains pending. Strict-floor five-path source is ready324PASS BOTH; observer
+four-path source is final-ready759BOTH+817BOTH with native264 exact six-entry
+inventory correction; validator three-path source is ready276BOTH/native264.
+Their own commits and Main receiving remain pending. Earlier817timeout,
+84.988branch-floor gap and failed descriptive teardown review stay historical;
+a correct hash with an incomplete description was not sufficient proof.
+
+Selected90142 native plan/apply succeeded through the seven-path link helper.
+The actual old stash guard verifies ALL6/unowned0. Complete14-owner helper
+receiving passes512 EACH runtime at92.128LINE/85.714BRANCH with source approval;
+the helper's own normal commit and Main receiving remain pending. Keep the
+original missing.git/sandbox/carrier refusals; no checkpoint pop/drop or lock
+deletion is selected. Do not infer an uncaptured writer.
+
+The clean ci-await feature is normally committed at
+3c60627bf8e974146de65d7c33f3707693cdbc79 after its142BOTH acceptance. Its fixed
+collection is129539selected/129563collected,24deselected,0errors110.82s/native117.6
+at test-count/20261024T075253Z-16665-820ebe23.json. Normal3c publication then fails
+before transport at AA032 missing history for old5e Build40058674968; no3c remote
+or GHA exists. Diagnostic-feedback repair and its new native inventory row
+are under acceptance, not done. Main Group2 also has68docsBOTH/sourceapproval/
+guard0; its accepted1313BOTH owner roster above is unchanged and own checkpoint
+remains pending. Last fixed97percent capacity is historical, not current
+clearance. Node/TOML/account requests and all seven release tasks remain open;
+no deployment green is inferred.
+
+Root also corrected its mistaken config/active_workstreams.json registration
+through native default registration then exact wrong-registry unregister; the
+empty owned configuration/lock remain preserved untracked until reconciled.
+Root owns Main/shared Git; all native sessions drain before dependent edits/hooks.
 
 Direct native cleanup1393 ends nonzero/no-progress:99to97percent,6.7GiBfree,
 above final95. Six clean materializations retire through native completion proof,

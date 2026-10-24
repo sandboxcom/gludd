@@ -516,28 +516,30 @@ git-push-committed-head-nv: commit-ready
 # The helper reuses the remote-head guard, discovers a push-created exact-SHA
 # run before dispatching, serializes concurrent callers, records a successful
 # dispatch, and returns the confirmed run URL. EXAMPLE=1 is network-free.
+.PHONY: ci-trigger-committed-head
 ci-trigger-committed-head:
-	@REF="$(REF)"; if [ -z "$$REF" ]; then REF=$$(git branch --show-current); fi; \
-	REMOTE="$(REMOTE)"; if [ -z "$$REMOTE" ]; then REMOTE=sandboxcom; fi; \
-	if [ "$(EXAMPLE)" = "1" ]; then \
-		UV=echo $(SYSTEM_PYTHON) scripts/ci_signal_exact_sha.py \
-			--example --ref "$$REF" --remote "$$REMOTE" \
-			--repo "$(or $(REPO),sandboxcom/gludd)" \
-			--workflow "$(or $(WORKFLOW),Build and Release)" \
-			--discovery-polls "$(or $(DISCOVERY_POLLS),1)" \
-			--confirm-polls "$(or $(CONFIRM_POLLS),1)" \
-			--poll-interval "$(or $(POLL_INTERVAL),0)"; \
+	@if [ "$(_publication-native-mode)" != execute ]; then echo "AGENT_NEXT target=ci-trigger-committed-head outcome=planned mode=$(_publication-native-mode) gate_evidence=false release_ready=false: Native inspection starts no remote lookup, authorization or CI dispatch." >&2; exit 0; fi; \
+	REF="$$GLUDD_CI_TRIGGER_REF"; if [ -z "$$REF" ]; then REF=$$(git branch --show-current); fi; \
+	REMOTE="$$GLUDD_CI_TRIGGER_REMOTE"; if [ -z "$$REMOTE" ]; then REMOTE=sandboxcom; fi; \
+	gludd_ci_repo="$$GLUDD_CI_TRIGGER_REPO"; [ -n "$$gludd_ci_repo" ] || gludd_ci_repo=sandboxcom/gludd; \
+	gludd_ci_workflow="$$GLUDD_CI_TRIGGER_WORKFLOW"; [ -n "$$gludd_ci_workflow" ] || gludd_ci_workflow='Build and Release'; \
+	gludd_ci_discovery="$$GLUDD_CI_TRIGGER_DISCOVERY_POLLS"; gludd_ci_confirm="$$GLUDD_CI_TRIGGER_CONFIRM_POLLS"; \
+	gludd_ci_interval="$$GLUDD_CI_TRIGGER_POLL_INTERVAL"; set --; \
+	if [ "$$GLUDD_CI_TRIGGER_EXAMPLE" = 1 ]; then \
+		set -- --example; gludd_ci_default_discovery=1; gludd_ci_default_confirm=1; gludd_ci_default_interval=0; \
 	else \
 		$(MAKE) --no-print-directory _require-gh || exit 1; \
-		UV=echo GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new" \
-			$(SYSTEM_PYTHON) scripts/ci_signal_exact_sha.py \
-			--ref "$$REF" --remote "$$REMOTE" \
-			--repo "$(or $(REPO),sandboxcom/gludd)" \
-			--workflow "$(or $(WORKFLOW),Build and Release)" \
-			--discovery-polls "$(or $(DISCOVERY_POLLS),6)" \
-			--confirm-polls "$(or $(CONFIRM_POLLS),15)" \
-			--poll-interval "$(or $(POLL_INTERVAL),2)" || exit 1; \
-	fi
+		gludd_ci_default_discovery=6; gludd_ci_default_confirm=15; gludd_ci_default_interval=2; \
+	fi; \
+	[ -n "$$gludd_ci_discovery" ] || gludd_ci_discovery=$$gludd_ci_default_discovery; \
+	[ -n "$$gludd_ci_confirm" ] || gludd_ci_confirm=$$gludd_ci_default_confirm; \
+	[ -n "$$gludd_ci_interval" ] || gludd_ci_interval=$$gludd_ci_default_interval; \
+	UV=echo GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new" \
+		$(SYSTEM_PYTHON) scripts/ci_signal_exact_sha.py "$$@" \
+		--ref "$$REF" --remote "$$REMOTE" --repo "$$gludd_ci_repo" --workflow "$$gludd_ci_workflow" \
+		--purpose "$$GLUDD_PUBLISH_PURPOSE" --expected-branch "$$GLUDD_PUBLISH_EXPECTED_BRANCH" --expected-sha "$$GLUDD_PUBLISH_EXPECTED_SHA" \
+		--baseline-ref "$$GLUDD_PUBLISH_BASELINE_REF" --baseline-sha "$$GLUDD_PUBLISH_BASELINE_SHA" \
+		--discovery-polls "$$gludd_ci_discovery" --confirm-polls "$$gludd_ci_confirm" --poll-interval "$$gludd_ci_interval" || exit 1
 
 # Push and dispatch the exact clean HEAD without allowing local/remote code drift.
 ci-push-committed-head: git-push-committed-head-nv ci-trigger-committed-head

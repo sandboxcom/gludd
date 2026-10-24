@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import copy
 import re
 from pathlib import Path
 
+import pytest
+import yaml
 from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -103,6 +106,26 @@ def test_ci_trigger_delegates_to_idempotent_exact_sha_signal() -> None:
     assert "ci-trigger-failed" not in block
 
 
+def _assert_feature_dispatch_publication_guards(workflow: dict[str, object]) -> None:
+    jobs = workflow["jobs"]
+    assert isinstance(jobs, dict)
+    tag_guard = "startsWith(github.ref, 'refs/tags/v')"
+    for name in ("container", "ansible-ee"):
+        job = jobs[name]
+        assert "workflow_dispatch" in job["if"]
+        assert "gate" in job["needs"]
+    container_steps = {step.get("name"): step for step in jobs["container"]["steps"]}
+    assert container_steps["Build container image"]["with"]["push"] is False
+    assert container_steps["Publish verified container image"]["if"] == (
+        "github.event_name != 'pull_request' && "
+        "(startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master')"
+    )
+    ee_steps = {step.get("name"): step for step in jobs["ansible-ee"]["steps"]}
+    assert ee_steps["Log in to GHCR"]["if"] == tag_guard
+    assert ee_steps["Push tagged execution environment"]["if"] == tag_guard
+    assert jobs["release"]["if"].startswith(tag_guard + " &&")
+
+
 def test_push_workflow_runs_for_development_and_master_without_canceling_push_runs() -> None:
     workflow = BUILD_WORKFLOW.read_text()
     assert "branches:" in workflow
@@ -113,6 +136,27 @@ def test_push_workflow_runs_for_development_and_master_without_canceling_push_ru
     assert "cancel-in-progress:" in workflow
     assert "github.event_name ==" in workflow
     assert "pull_request" in workflow
+    parsed = yaml.safe_load(workflow)
+    _assert_feature_dispatch_publication_guards(parsed)
+    for job_name, step_name in (
+        ("container", "Publish verified container image"),
+        ("ansible-ee", "Log in to GHCR"),
+        ("ansible-ee", "Push tagged execution environment"),
+        ("release", ""),
+    ):
+        mutated = copy.deepcopy(parsed)
+        if step_name:
+            step = next(step for step in mutated["jobs"][job_name]["steps"] if step.get("name") == step_name)
+            step["if"] = "github.event_name == 'workflow_dispatch'"
+        else:
+            mutated["jobs"][job_name]["if"] = "github.event_name == 'workflow_dispatch'"
+        with pytest.raises(AssertionError):
+            _assert_feature_dispatch_publication_guards(mutated)
+    mutated = copy.deepcopy(parsed)
+    build = next(step for step in mutated["jobs"]["container"]["steps"] if step.get("name") == "Build container image")
+    build["with"]["push"] = True
+    with pytest.raises(AssertionError):
+        _assert_feature_dispatch_publication_guards(mutated)
 
 
 def test_release_paths_verify_complete_artifact_set_before_publish_or_done() -> None:
@@ -131,8 +175,14 @@ def test_release_deploy_cannot_bypass_the_promotion_owner() -> None:
 
 def test_development_push_verifies_remote_sha_after_push() -> None:
     block = _target_block("development-push")
-    assert "verify-remote BRANCH=development" in block
-    assert "git rev-parse development" in block
+    publisher = _target_block("git-push-sandboxcom")
+    assert "git-push-sandboxcom" in block
+    assert 'PUBLISH_EXPECTED_BRANCH="$$gludd_development_branch"' in block
+    assert 'PUBLISH_EXPECTED_SHA="$$gludd_development_head"' in block
+    assert "git rev-parse --verify HEAD^{commit}" in block
+    assert 'verify-remote BRANCH="$$gludd_publish_branch" SHA="$$gludd_publish_head"' in publisher
+    assert publisher.index("git push ") < publisher.index("_record-push-verdict")
+    assert publisher.index("_record-push-verdict") < publisher.index("verify-remote BRANCH=")
 
 
 def test_committed_head_ci_path_requires_clean_state_before_push_and_dispatch() -> None:

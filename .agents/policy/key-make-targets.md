@@ -281,6 +281,63 @@ runtime/safe-path boundary; live authorized publication retains every guard.
 The [HTTPS receiving record](../../docs/features/GITHUB_PUBLICATION_HTTPS.md#main-https-bootstrap-and-runtime-intake)
 retains source inputs, old failures and the pending Main receiving proofs.
 
+### Normal source publication and diagnostic feature CI
+
+Development publication requires the actual development checkout. The existing
+development-push saves branch/full HEAD, retains its development CI-busy check,
+and delegates through git-push-sandboxcom with PUBLISH_EXPECTED_BRANCH/SHA.
+The normal publisher accepts the pair only together as literal branch/full40hex
+SHA; both empty keeps ordinary behavior. A malformed or changed pair refuses
+before body authentication/runtime/transport. BRANCH/SHA remain unrelated.
+Existing FORCE policy and all eight normal prerequisites stay in force.
+
+Transport uses saved fullSHA:refs/heads/savedbranch, then sets native tracking
+for that named branch, records the saved SHA and verifies the exact remote.
+Failure after transport may already have applied: preserve native status and
+reconcile the actual remote/history before retry. Do not substitute an older
+remote or record a later local HEAD as the published candidate. Native SSH or
+configured repo-local GH HTTPS selects the existing authentication owner;
+configuration/read auth supplies no workflow-file write consent.
+
+After meaningful focused checks and a normal source commit, explicit
+PUBLISH_PURPOSE=feature-ci requests diagnostic GHA through that same publisher.
+Supply the actual feature/** or diagnostic/** pair plus PUBLISH_BASELINE_REF
+and full PUBLISH_BASELINE_SHA. The baseline must be independently published
+master/main/development or release-candidate/**, pass native full branch grammar,
+local-object/ancestry and both workflow-byte AND complete-history checks.
+Protected/tag/detached/force targets, arbitrary agent baselines, workflow
+edit/revert history or a renamed candidate remain refused. This permission
+neither changes a credential nor authorizes workflow-file edits.
+
+Canonical remains the default and keeps original EE/promotion/runtime90/60
+and release gates. Only explicit feature-ci separates source diagnostics from
+final release readiness: it retains guards/auth/hooks/saved-SHA record/verify,
+then sequentially calls the existing ci-trigger-committed-head. It starts no
+canonical all-required-push waiter. A returned URL is diagnostic run visibility,
+not terminal CI, canonical push, deployment or release proof. Continue useful
+independent receiving while the accepted exact-SHA run executes; promote
+feature to development to master only through unchanged promotion owners.
+
+Use one guarded target per invocation and append the full installed runtime
+tuple to both the outer watcher and actual Make CMD. Native query and offline
+signal examples execute no auth/transport/dispatch and supply no proof:
+
+~~~console
+make git-push-sandboxcom --question PUBLISH_PURPOSE=canonical PUBLISH_BASELINE_REF= PUBLISH_BASELINE_SHA= PUBLISH_EXPECTED_BRANCH= PUBLISH_EXPECTED_SHA= WORK_ITEM_ID= SSH_KEY=/tmp/gludd-contract-absent-key
+make development-push --question SSH_KEY=/tmp/gludd-contract-absent-key
+make ci-trigger-committed-head EXAMPLE=1 REF=feature/contract REMOTE=sandboxcom REPO=sandboxcom/gludd WORKFLOW='Build and Release' DISCOVERY_POLLS=1 CONFIRM_POLLS=1 POLL_INTERVAL=0 PUBLISH_PURPOSE=feature-ci PUBLISH_EXPECTED_BRANCH=feature/contract PUBLISH_EXPECTED_SHA=0123456789abcdef0123456789abcdef01234567 PUBLISH_BASELINE_REF=master PUBLISH_BASELINE_SHA=abcdef0123456789abcdef0123456789abcdef01
+~~~
+
+The queries return native1 and EXAMPLE1 returns native0 with a synthetic URL.
+After actual publication, use the saved pair/baseline with the same signal
+owner and native CI status/failure readers; reconcile accepted markers before
+retry rather than repushing solely to request CI. Keep branch-owned outputs,
+current owner/terminal receipts and missing proofs. No new poller/cache/runner
+or blanket credential scope is part of this route. Native inspection uses the
+existing three-function Foundation provider with each consumer's own captures.
+The [publication record](../../docs/features/GITHUB_PUBLICATION_HTTPS.md#feature-source-ci-before-promotion)
+retains exact source inputs, native controls and pending Main receiving.
+
 ### Choose the next action from evidence
 
 | Current input | Next action |

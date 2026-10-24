@@ -553,3 +553,144 @@ checkpoint/fresh collection, final canonical gate/coverage, exact-SHA push CI,
 development integration, master deployment and release publication remain
 separate. No task closes. Group2/3, Node/TOML, capacity and workflow consent
 remain their own actual prerequisites.
+
+## Development publication binds the saved candidate
+
+This Main intake uses only implementation hunks from published immutable
+`5e61dd51f414e781dffbd7a1c766c32fd2bdf723`, with route input
+`9c0f4dc081042c8948cd233373c89d6c01b05612`. These refs are source inputs,
+not new ancestry or acceptance of Main. Group1's quoted safe-P helper and
+CLI-only controller selector remain; Main's transaction/post-lock publication,
+ci-await/comparator/worktree repairs and shared native inspection provider
+are preserved. No batch body, runtime schedule, eight-pin roster or workflow
+YAML is copied from the diagnostic branch.
+
+Development now delegates its saved actual branch/fullSHA to the normal
+publisher, preserving native busy/force behavior and every normal guard.
+That publisher validates the optional pair, rechecks after canonical runtime,
+pushes the saved fullSHA, configures the named upstream, records that SHA and
+verifies it remotely. The existing recorder's absent-SHA behavior remains;
+malformed explicit SHA refuses before durable writes. Tracking/history/verify
+failures retain native status and possible applied-transport evidence.
+
+## Feature source CI before promotion
+
+Canonical purpose remains default with original EE/promotion/runtime90/60.
+Explicit feature-ci permits feature/** or diagnostic/** with mandatory saved
+branch/fullSHA and an independently published protected or canonical candidate
+baseline. Native branch grammar, local object/ancestry and unchanged workflow
+bytes AND full history remain required; force/tag/detached/protected targets
+and edit/revert provenance still refuse. No workflow consent is granted.
+
+The normal hooked publisher retains all eight prerequisites, transport-aware
+auth, saved record and exact verification, then calls the existing exact-SHA
+signal sequentially. Signal retains discovery/lock/accepted marker/confirmation
+and rechecks the saved identity immediately before dispatch. A run URL proves
+visibility only. Diagnostic source feedback needs focused acceptance and normal
+hooks, not final release readiness or an all-local-green receipt; development
+and master promotion retain every canonical gate and required exact-SHA proof.
+
+Three existing Python owners and their complete tests change; the registered
+signal profile adds the complete remote guard, while the cooldown whole-file
+profile remains unchanged. Both85aggregate/75each-file line AND branch floors
+stay. The complete development owner is the only new file. Main runtime tests
+receive only additive actual-prefix/auth/upstream/manifest controls, preserving
+their corrected envelope, all eight pins, overlap and workflow-auth assertions.
+
+Source receipts retain their actual scope: signal/guard99 and cooldown49 cases
+on both installed runtimes; aggregate signal98.11%line/95.00%branch, remote
+97.30/94.12, signal98.74/96.15 and cooldown93.33/92.00. The published feature's
+normal transport and exact-SHA dispatch succeeded; its later diagnostic Build
+failed the separate Node override policy while Molecule passed. No historical
+receipt approves this combined Main postimage. Root must retain genuine native
+RED/GREEN, staged guard, complete changed/affected receiving and whole profiles,
+independent review and normal fresh collection at the re-pinned Main source.
+All release tasks remain open; canonical full gate, exact-SHA eight shards,
+ZDD deployment and promotion/publication proof are separate. Node/TOML,
+workflow-account consent and Group3 mypy/ledger remain separate pending owners.
+
+## Main saved-source publication receiving on fixed ccb8f792c
+
+This manual receiving record binds the frozen19-path intake to base
+ccb8f792c0a252dccef35302f37ac47e615917ec; its own immutable receiving commit and
+normal fresh collection remain pending. Genuine6native failures precede6GREEN.
+Independent source-only approval is retained at
+ /tmp/gludd-v012-main-group2-publication-source-review.md. The source plan's full
+literal pre/postimages and exclusions remain /tmp/gludd-v012-main-group2-publication-intake-plan.json.
+No older whole Make fragment, Node/TOML input or workflow file is imported.
+
+The deduplicated21 complete owners pass1313cases on EACH installed runtime.
+The table gives pytest/native elapsed seconds as actually reported, diagnostic
+wall times only; it claims no CPU cause, savings, hosted speed or later-SHA proof.
+Ordinary receipts live under .gate-logs/observed/LABEL/LABEL311-ccb8f79.json and
+the312 sibling, with retained raw logs/traces. Profile rows name their native IDs.
+
+| Complete cohort | Cases each | 3.11 pytest/native seconds | 3.12 pytest/native seconds | Receipt label or native IDs |
+| --- | --- | --- | --- | --- |
+| signal/guard profile | 99 | 2.25 /3.9 | 3.07 /5.9 | coverage-files/20261024T061513Z-57242-c416f8fa.json;20261024T061640Z-59271-7f6013db.json |
+| cooldown profile | 49 | 1.87 /4.0 | 1.65 /3.9 | coverage-files/20261024T062033Z-79443-e3e5d386.json;20261024T062513Z-83518-6336a6d8.json |
+| remaining12owners | 367 | 78.94 /80.5 | 84.68 /86.6 | main-publication-consumers |
+| reviewed-head whole owner | 196 | 118.82 /121.353 | 119.89 /122.405 | main-publication-reviewed |
+| development A22functions | 122 | 167.16 /169.763 | 159.84 /162.495 | main-publication-development-a |
+| development B21functions | 108 | 79.34 /81.290 | 77.25 /78.902 | main-publication-development-b |
+| runtime-publication whole owner | 75 | 58.83 /59.911 | 57.98 /58.909 | main-publication-runtime |
+| transaction and locking whole owners | 297 | 165.26 /168.602 | 171.10 /174.183 | main-publication-transaction |
+
+Whole-source signal/guard raw coverage is415/423LINE and114/120BRANCH;
+remote180/185 and64/68, signal235/238 and50/52. Cooldown is210/225LINE and
+46/50BRANCH. Both profiles pass85aggregate/75EACHfile for LINE and BRANCH on
+both runtimes, retaining exact config/source scope. No rounded-floor or E2E
+execution authority is inferred. The complete deduplicated owner roster is:
+
+~~~text
+tests/unit/test_check_make_target_contract.py
+tests/unit/test_ci_check_cooldown.py
+tests/unit/test_ci_remote_head_guard.py
+tests/unit/test_ci_signal_exact_sha.py
+tests/unit/test_development_push_publication.py
+tests/unit/test_git_https_publication.py
+tests/unit/test_make_help_throughput.py
+tests/unit/test_make_target_contract.py
+tests/unit/test_make_variable_context.py
+tests/unit/test_makefile_layout.py
+tests/unit/test_pytest_param_fixture_collisions.py
+tests/unit/test_reviewed_head_inputs.py
+tests/unit/test_runtime_publish_admission.py
+tests/unit/test_sandboxcom_ssh_key_guard.py
+tests/unit/test_trace_summary_make_inputs.py
+tests/unit/test_verify_remote_recipe.py
+tests/unit/test_workflow_failure_class_guards.py
+tests/unit/test_workflow_state_guard.py
+tests/unit/test_make_commit_transaction.py
+tests/unit/test_git_automation_locking_handoff.py
+tests/unit/test_git_compare_commits.py
+~~~
+
+The new complete development owner has43functions/230cases. For bounded replay,
+retain these two disjoint COMPLETE function manifests, all parametrizations,
+original300total/60quiet, n0, fatal warnings, native trace and literal ID= scratch.
+Use existing test-files through run-watched with the installed tuple on both actual
+CMD and outer owner, as the mandatory Make guide specifies. Do not select only
+historically failing cases or pad a CMD to evade an active reservation. The two
+normal commands below retain the actual literal TESTFILES and installed311
+tuple. For required312 receiving, replace EVERY python-3.11 path with python-3.12
+in both actual CMD and outer watcher, set UV_PYTHON=3.12.15 and retain all other
+inputs. Use the documented watcher for long execution.
+
+~~~sh
+make test-files TESTFILES='tests/unit/test_development_push_publication.py::test_feature_ci_uses_native_hooks_saved_record_verify_and_existing_signal tests/unit/test_development_push_publication.py::test_feature_ci_refuses_malformed_or_unselected_candidate_baseline tests/unit/test_development_push_publication.py::test_feature_ci_refuses_protected_or_unselected_branch_before_transport tests/unit/test_development_push_publication.py::test_feature_ci_refuses_missing_or_unsafe_identity_and_baseline tests/unit/test_development_push_publication.py::test_feature_ci_refuses_changed_workflow_bytes_from_actual_published_baseline tests/unit/test_development_push_publication.py::test_feature_ci_canonical_default_still_stops_at_failed_runtime tests/unit/test_development_push_publication.py::test_recorder_input_is_literal_at_actual_native_owner tests/unit/test_development_push_publication.py::test_feature_inputs_remain_literal_with_same_origin_native_witness tests/unit/test_development_push_publication.py::test_feature_native_inspection_runs_no_auth_git_hook_dispatch_or_touch tests/unit/test_development_push_publication.py::test_feature_purpose_preserves_native_cli_and_environment_precedence tests/unit/test_development_push_publication.py::test_feature_preflight_retains_native_clean_and_attached_head_guards tests/unit/test_development_push_publication.py::test_feature_baseline_remote_object_must_exist_locally_before_transport tests/unit/test_development_push_publication.py::test_feature_baseline_must_be_actual_source_ancestor tests/unit/test_development_push_publication.py::test_feature_failure_never_claims_ci_or_retries_applied_transport tests/unit/test_development_push_publication.py::test_feature_transport_head_shift_records_saved_sha_but_refuses_different_dispatch tests/unit/test_development_push_publication.py::test_existing_signal_inputs_are_literal_at_the_native_diagnostic_caller tests/unit/test_development_push_publication.py::test_diagnostic_signal_refuses_foreign_remote_before_native_lookup tests/unit/test_development_push_publication.py::test_native_dispatch_boundary_keeps_saved_sha_when_both_git_heads_move tests/unit/test_development_push_publication.py::test_native_signal_alias_reuses_the_same_exact_sha_run_without_republishing tests/unit/test_development_push_publication.py::test_native_signal_rejects_nonmatching_confirmation_without_false_ci_success tests/unit/test_development_push_publication.py::test_feature_ci_refuses_reverted_workflow_history_with_equal_final_bytes tests/unit/test_development_push_publication.py::test_native_porcelain_keeps_staged_unstaged_and_untracked_counts' PYTEST_ARGS='-q -W error -n 0 -p scripts.xdist_trace_plugin' ID= UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never PYTHON=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11/bin/python3 SYSTEM_PYTHON=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11/bin/python3
+make test-files TESTFILES='tests/unit/test_development_push_publication.py::test_native_raw_sha_push_witness_retains_missing_upstream tests/unit/test_development_push_publication.py::test_transport_publishes_saved_candidate_when_native_boundary_moves_head tests/unit/test_development_push_publication.py::test_native_recorder_keeps_pushed_sha_when_transport_moves_head tests/unit/test_development_push_publication.py::test_normal_first_publication_preserves_native_branch_tracking tests/unit/test_development_push_publication.py::test_postpush_tracking_failure_retains_applied_transport_and_native_status tests/unit/test_development_push_publication.py::test_development_uses_normal_guarded_transport_and_saved_full_sha tests/unit/test_development_push_publication.py::test_development_refuses_an_unselected_candidate_before_publication tests/unit/test_development_push_publication.py::test_development_retains_native_candidate_read_failure tests/unit/test_development_push_publication.py::test_publisher_refuses_malformed_expected_pair_before_auth_or_runtime tests/unit/test_development_push_publication.py::test_normal_publisher_keeps_optional_pair_and_unrelated_branch_sha_semantics tests/unit/test_development_push_publication.py::test_development_pins_candidate_across_normal_publication_prerequisites tests/unit/test_development_push_publication.py::test_publication_rechecks_actual_candidate_after_runtime tests/unit/test_development_push_publication.py::test_development_retains_each_existing_normal_guard_refusal tests/unit/test_development_push_publication.py::test_publication_preserves_native_failure_order_and_partial_write_guidance tests/unit/test_development_push_publication.py::test_publisher_retains_postruntime_native_identity_read_failure tests/unit/test_development_push_publication.py::test_postpublication_verification_uses_saved_sha_after_local_head_moves tests/unit/test_development_push_publication.py::test_development_delegation_preserves_original_force_carriers_and_hooks tests/unit/test_development_push_publication.py::test_native_inspection_starts_no_auth_runtime_publication_or_target_touch tests/unit/test_development_push_publication.py::test_native_early_environment_modes_classify_actual_gnu_makeflags tests/unit/test_development_push_publication.py::test_actual_mode_classifier_keeps_literal_option_arguments_and_assignment_tail tests/unit/test_development_push_publication.py::test_expected_pair_remains_literal_at_native_startup_and_publication' PYTEST_ARGS='-q -W error -n 0 -p scripts.xdist_trace_plugin' ID= UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never PYTHON=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11/bin/python3 SYSTEM_PYTHON=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11/bin/python3
+~~~
+
+After these accepted unchanged inputs, next is normal source collection/commit,
+then the remaining coherent mypy/ledger intake. A new code-only diagnostic feature
+uses the independently publishedeb772a658a01db4485087813e4478eb6c59cc328 baseline
+and preserves published workflow bytes/history. Its142BOTH ci-await repair is
+not yet a hosted successor: the normal commit currently stops at preserved
+checkpoint90142's missing owner.git. Repair that exact native input through the
+reviewed selected-link owner, verify retained/unowned counts, and continue normal
+feature publication/verify/accepted exact-SHA dispatch and bounded ci-await while
+independent local work proceeds. Do not repush only to redispatch an accepted run.
+Known CSS policy failure/eight unproved shards, selected-account workflow consent,
+Node/TOML input, hard95capacity, canonical full gate, exact-SHA push/deployment,
+development/master promotion and version publication remain separate obligations.

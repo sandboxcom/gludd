@@ -130,11 +130,29 @@ actual index/current SHA; no inventory paragraph supplies a later observation.
 | ci-await outcome guidance | Main0ec6ed4;142BOTH,311AST143 | Final gate and exact-SHA proof |
 | Safe immutable commit comparator | Main1eec791;194BOTH | Final gate and exact-SHA proof |
 | Verified creation and retired unsafe cleanup | Main8cf4686;683/1contextSKIPBOTH,93.6LINE/86.2BRANCH plus legacy5/100percentBOTH; reviewed/normal130023collection | Final gate and exact-SHA proof |
-| Safe-P bootstrap and installed controller selection | Published5e; Main fixed8cf intake563PASS EACH runtime/source-only approved | Normal checkpoint/collection, final gate and exact-SHA proof |
-| Feature/dev saved-source publication and dispatch | Published feature5e61dd5; Main semantic intake pending | Current Main full consumers and exact event proof |
-| Checkout-specific mypy and ledger inputs | Published feature5e61dd5; Main intake pending | Current Main receiving; collection policy unchanged |
+| Safe-P bootstrap and installed controller selection | Mainccb8f792c;563BOTH/source approval/normal130033collection | Final gate and exact-SHA proof |
+| Feature/dev saved-source publication and dispatch | Published5e; Main19-path1313PASS EACH runtime+68docsBOTH/sourceapproved/guard0 | Own normal checkpoint, canonical full gate and exact event proof |
+| Checkout-specific mypy and ledger inputs | Published5e; exact six-path Main Group3 plan ready | Actual Main intake/receiving; collection policy unchanged |
+| Strict raw coverage-floor comparisons | Five-path source ready324PASS EACH runtime | Own normal checkpoint and Main receiving |
+| Retained-leader observer lifecycle | Four-path final source ready759BOTH+817BOTH; native264 exact six-entry correction | Own normal checkpoint and Main receiving |
+| Native inventory validator consistency | Three-path source ready276BOTH/native264 | Own normal checkpoint and Main receiving |
+| Retirement-plan output and native index safety | Peer6ec0a46; separate806+37subtest/263BOTH profiles, normal129670collection | Exact Main intake and receiving |
+| Preserved checkpoint90142 pointer repair | Native plan/apply succeeded; old stash guard ALL6verified/unowned0; seven-path helper14-owner512BOTH/92.128LINE85.714BRANCH/sourceapproved | Helper own normal checkpoint and Main receiving |
+| New ci-await feature | Clean normal commit3c60627bf8e974146de65d7c33f3707693cdbc79/142BOTH | AA032 missing old5e Build history stops publication before transport; no3c remote/GHA |
+| Diagnostic-feedback path | Repair plus new native inventory row under acceptance | Not complete; retain actual native refusal and unchanged promotion gates |
 | Node advisory proposal | Published2a63ce1 ancestry; HOLD | Exact policy input, TOML compatibility, complete hosted audit |
 | v0.1.2 approval | None; all seven tasks open | Every required final proof and promotion |
+
+Current manual receipt: clean feature3c60627bf8e974146de65d7c33f3707693cdbc79
+normally collected129539selected/129563collected,24deselected/0errors in110.82s,
+native117.6 at test-count/20261024T075253Z-16665-820ebe23.json. Its normal
+publication then refused before transport at AA032 missing history for old5e
+Build40058674968; there is no3c remote/GHA result. Selected90142 native
+plan/apply and the actual ALL6verified/unowned0 stash guard are complete;
+helper14-owner512BOTH/sourceapproval still supplies no committed helper/Main
+receiving or release proof. Diagnostic-feedback repair/new inventory row is
+under acceptance. Last fixed97percent capacity is historical, not current;
+Node/TOML/account requests, all7open tasks and deployment proof stay unchanged.
 
 The four non-Node feature packets cover24unique paths, including two new test
 owners. Receive three coherent groups: safe-P/runtime selection, saved-source
@@ -163,28 +181,39 @@ A manifest or archived success grants no new current observation. Rehydrate
 through verified native creation before the producer refreshes its own state.
 
 The automatic owner can retire a clean materialization after its own native
-completion proof, archive and ref checks. A selected agent-cleanup refusal is
-a different contract. A capped dry-run skip summary concealed this larger scope;
-the original four-path repair passes complete21-owner802cases+37subtests BOTH
-with canonical three-source87.6LINE/85.9BRANCH. Independent review then finds
-an ordinary-index-preservation gap: real native status writes prove2FAIL2PASS;
-the one-line --no-optional-locks repair yields13GREEN while mandatory native
-locking/add controls remain. Five frozen paths have source-only approval;
-complete26-owner/two-profile BOTH receiving remains pending. The old802results
-retain their earlier scope and do not certify that new adapter.
-No cleanup threshold, receipt grace, active-owner proof or retention rule changes.
+completion proof, archive and ref checks. A capped dry-run skip summary concealed
+this scope. Independent review then found ordinary-index writes: actual native
+witnesses produce2FAIL2PASS, followed by13GREEN with --no-optional-locks while
+mandatory native locking/add controls remain. The final five-path peer checkpoint
+is6ec0a46e9c4f826d8e77e34106115ad14be879cc. Its complete26-owner/two-profile
+receiving has806PASS+37subtests and263PASS on EACH runtime separately; overlapping
+owners are not summed as unique cases. Raw85/75 line AND branch floors pass.
+Normal peer collection129670/129694,24deselected,0errors43.67s/native49.1 is fixed
+at test-count/20261024T060952Z-54155-67400903.json. This older direct-exec wrapper
+has no commit-transaction/mutex receipt; preserve that actual limit. Exact Main
+five-path repin/intake/receiving remains pending, and the old802-case result keeps
+its old scope. No threshold, grace, active-owner, ref or retention rule changes.
 
-Lifecycle research and positive-identity/FD/passive-reader findings stay in the
-owning WATCHDOG_SECRETS_LIFECYCLE record. Native Darwin zombie-only killpg EPERM
-also covers denied live targets, so errno or a census cannot certify absence.
-The isolated repair retains raw failures and exact next controls; focused
-diagnostics/inner facts with a failed outer watcher grant no watched acceptance.
-The full13-owner311 profile first records3FAIL/754PASS: original empty-stderr
-assertions see benign resolved group-EPERM output. The minimal correction passes
-those3 and the full757-case311/four-source profile, retaining actual unresolved
-TERM/KILL/errno diagnostics. Independent review identifies a transient post-reap
-EPERM-to-ESRCH sequence not yet measured. Current profile proof has pre-sequence
-scope; the bounded failing-first control remains required before final approval.
+Retained pre-correction observer research and native failure history follow;
+current observer/validator source readiness is recorded above. The owning
+WATCHDOG_SECRETS_LIFECYCLE record retains those exact earlier scopes. The initial757 profile failed3 original
+empty-stderr assertions; the first repair then exposed an unmeasured transient
+post-reap EPERM-to-ESRCH sequence. Its actual2-case control gives1FAIL1PASS before
+2GREEN. Final complete13-owner/four-source profiles pass759cases BOTH, raw
+1960/2179LINE89.9495percent and721/848BRANCH85.0236percent. Every file passes75.
+An older native rounded display accepted719/846BRANCH84.988percent; retain that
+native passed output as insufficient strict-floor evidence. The separate auditor
+repair compares raw values and passes complete324-case profiles BOTH.
+
+The original817-consumer aggregate timed out124/300.549; all completed cases stay
+historical. Disjoint complete groups A196/B73/C548 now pass on BOTH runtimes under
+the original300/60 bounds, with exact native receipts and no sampling. The native
+resource checker exposed one changed process-lifecycle fingerprint. A manually
+copied correct hash plus incomplete teardown description still returned native0;
+the private native producer identifies the full six-entry description. Correct
+only that row, preserve263 others, retain failed semantic review and obtain fresh
+native admission; validator self-consistency is a separate bounded repair.
+None of these source/acceptance facts supplies a full gate or hosted proof.
 
 ### Current independent hosted routes and their actual inputs
 

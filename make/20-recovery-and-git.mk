@@ -1266,12 +1266,67 @@ master-force-push:
 	@$(MAKE) verify-remote BRANCH=master SHA=$$(git rev-parse master)
 	@echo "Master branch force-pushed and verified"
 
+.PHONY: batch-push git-push-sandboxcom
+# Native GNU Make inspection must not execute a recursive publication recipe.
+override _publication-native-flags := $(strip $(call _native-make-option-prefix,$(MAKEFLAGS)))
+override _publication-native-short := $(call _native-make-boolean-cluster,$(filter-out -%,$(firstword $(_publication-native-flags)))) $(foreach option,$(filter-out --%,$(filter -%,$(_publication-native-flags))),$(call _native-make-boolean-cluster,$(patsubst -%,%,$(option))))
+override _publication-native-mode := $(if $(findstring q,$(_publication-native-short))$(filter --question,$(_publication-native-flags)),query,$(if $(findstring n,$(_publication-native-short))$(filter --just-print --dry-run --recon,$(_publication-native-flags)),dry-run,$(if $(findstring t,$(_publication-native-short))$(filter --touch,$(_publication-native-flags)),touch,execute)))
+
 git-push-sandboxcom: check-clean-tree _test-disabled-guard _push-rate-guard _stash-before-push-guard _pull-before-push-guard _ci-verdict-history-guard _pre-commit-stash-audit _ci-restart-cap
-	@$(MAKE) --no-print-directory _runtime-publish-admission RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY=0
-	@BRANCH=$$(git branch --show-current); \
-	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom HEAD:$$BRANCH
-	@echo "Pushed $$(git branch --show-current) to sandboxcom/gludd"
-	@$(MAKE) --no-print-directory _record-push-verdict
+	@if [ "$(_publication-native-mode)" != execute ]; then echo "AGENT_NEXT target=git-push-sandboxcom outcome=planned mode=$(_publication-native-mode) gate_evidence=false release_ready=false: Native inspection starts no publication, runtime admission or hosted observation." >&2; exit 0; fi; \
+	gludd_publish_branch=; gludd_publish_head=; gludd_publish_writes=false; \
+	gludd_publish_fail() { gludd_publish_rc=$$1; gludd_publish_outcome=$$2; gludd_publish_phase=$$3; \
+		case "$$gludd_publish_phase" in \
+		expected-input) gludd_publish_next='Supply both optional PUBLISH_EXPECTED_BRANCH and full40hex PUBLISH_EXPECTED_SHA, or leave both empty; keep inputs literal.' ;; \
+		expected-identity|identity|candidate) gludd_publish_next='Reconcile the saved branch/fullSHA with actual native HEAD before normal guarded publication; do not publish a different candidate.' ;; \
+		authentication) gludd_publish_next='Repair the actual remote/helper/key/account prerequisite through its existing owner; consent remains operator-owned.' ;; \
+		runtime) gludd_publish_next='Retain the actual admission receipt and repair its failed native input before another normal publication.' ;; \
+		diagnostic-input|diagnostic-preflight) gludd_publish_next='Repair the explicit feature-ci purpose, saved expected identity or independently published workflow baseline; preserve native failures. No release admission is substituted and no transport has started in this result branch.' ;; \
+		*) gludd_publish_next='Transport or history may already have applied; preserve the native reason and reconcile the actual remote/history before retry. No older remote or unchanged repush supplies missing proof.' ;; \
+		esac; \
+		printf 'AGENT_NEXT target=git-push-sandboxcom outcome=%s phase=%s native_status=%s branch=%s sha=%s transport_may_have_applied=%s gate_evidence=false release_ready=false: %s\n' "$$gludd_publish_outcome" "$$gludd_publish_phase" "$$gludd_publish_rc" "$$gludd_publish_branch" "$$gludd_publish_head" "$$gludd_publish_writes" "$$gludd_publish_next" >&2; \
+		exit "$$gludd_publish_rc"; }; \
+	gludd_publish_purpose="$$GLUDD_PUBLISH_PURPOSE"; \
+	case "$$gludd_publish_purpose" in canonical|feature-ci) ;; *) gludd_publish_fail 2 refused diagnostic-input ;; esac; \
+	gludd_publish_branch=$$(git branch --show-current) || gludd_publish_fail "$$?" failed candidate; \
+	gludd_publish_head=$$(git rev-parse --verify HEAD^{commit}) || gludd_publish_fail "$$?" failed candidate; \
+	[ -n "$$gludd_publish_branch" ] || gludd_publish_fail 2 refused candidate; \
+	gludd_expected_branch="$$GLUDD_PUBLISH_EXPECTED_BRANCH"; gludd_expected_sha="$$GLUDD_PUBLISH_EXPECTED_SHA"; \
+	if [ -n "$$gludd_expected_branch" ] || [ -n "$$gludd_expected_sha" ]; then \
+		[ -n "$$gludd_expected_branch" ] && [ "$${#gludd_expected_sha}" -eq 40 ] || gludd_publish_fail 2 refused expected-input; \
+		case "$$gludd_expected_sha" in *[!0123456789abcdefABCDEF]*) gludd_publish_fail 2 refused expected-input ;; esac; \
+		git check-ref-format "refs/heads/$$gludd_expected_branch" || gludd_publish_fail "$$?" refused expected-input; \
+		gludd_expected_sha=$$(printf '%s' "$$gludd_expected_sha" | tr ABCDEF abcdef) || gludd_publish_fail "$$?" failed expected-input; \
+		if [ "$$gludd_expected_branch" != "$$gludd_publish_branch" ] || [ "$$gludd_expected_sha" != "$$gludd_publish_head" ]; then gludd_publish_fail 2 refused expected-identity; fi; \
+	fi; \
+	$(MAKE) --no-print-directory _require-sandboxcom-git-auth || gludd_publish_fail "$$?" failed authentication; \
+	if [ "$$gludd_publish_purpose" = feature-ci ]; then \
+		[ -n "$$gludd_expected_branch" ] && [ -n "$$gludd_expected_sha" ] || gludd_publish_fail 2 refused diagnostic-input; \
+		case "$$gludd_publish_branch" in feature/*|diagnostic/*) ;; *) gludd_publish_fail 2 refused diagnostic-input ;; esac; \
+		[ "$$FORCE" != 1 ] && [ "$$GLUDD_FORCE_PUSH" != 1 ] || gludd_publish_fail 2 refused diagnostic-input; \
+		GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' $(SYSTEM_PYTHON) scripts/ci_remote_head_guard.py \
+			--purpose feature-ci --publication --ref "$$gludd_publish_branch" --remote sandboxcom \
+			--expected-branch "$$gludd_expected_branch" --expected-sha "$$gludd_expected_sha" \
+			--baseline-ref "$$GLUDD_PUBLISH_BASELINE_REF" --baseline-sha "$$GLUDD_PUBLISH_BASELINE_SHA" \
+			--repo sandboxcom/gludd --workflow 'Build and Release' || gludd_publish_fail "$$?" refused diagnostic-preflight; \
+	else $(MAKE) --no-print-directory _runtime-publish-admission RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY=0 || gludd_publish_fail "$$?" failed runtime; fi; \
+	gludd_publish_current_branch=$$(git branch --show-current) || gludd_publish_fail "$$?" failed identity; \
+	gludd_publish_current_head=$$(git rev-parse --verify HEAD^{commit}) || gludd_publish_fail "$$?" failed identity; \
+	if [ "$$gludd_publish_current_branch" != "$$gludd_publish_branch" ] || [ "$$gludd_publish_current_head" != "$$gludd_publish_head" ]; then gludd_publish_fail 2 refused identity; fi; \
+	gludd_publish_writes=true; \
+	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom "$$gludd_publish_head:refs/heads/$$gludd_publish_branch" || gludd_publish_fail "$$?" failed transport; \
+	git branch --set-upstream-to="sandboxcom/$$gludd_publish_branch" "$$gludd_publish_branch" || gludd_publish_fail "$$?" failed tracking; \
+	$(MAKE) --no-print-directory _record-push-verdict PUSH_VERDICT_SHA="$$gludd_publish_head" || gludd_publish_fail "$$?" failed verdict; \
+	$(MAKE) --no-print-directory verify-remote BRANCH="$$gludd_publish_branch" SHA="$$gludd_publish_head" || gludd_publish_fail "$$?" failed remote-verification; \
+	if [ "$$gludd_publish_purpose" = feature-ci ]; then \
+		$(MAKE) --no-print-directory ci-trigger-committed-head PUBLISH_PURPOSE=feature-ci \
+			PUBLISH_EXPECTED_BRANCH="$$gludd_publish_branch" PUBLISH_EXPECTED_SHA="$$gludd_publish_head" \
+			PUBLISH_BASELINE_REF="$$GLUDD_PUBLISH_BASELINE_REF" PUBLISH_BASELINE_SHA="$$GLUDD_PUBLISH_BASELINE_SHA" \
+			REF="$$gludd_publish_branch" REMOTE=sandboxcom REPO=sandboxcom/gludd WORKFLOW='Build and Release' EXAMPLE=0 \
+			WORK_ITEM_ID='$(subst ','"'"',$(value WORK_ITEM_ID))' || gludd_publish_fail "$$?" failed diagnostic-signal; \
+		printf 'AGENT_NEXT target=git-push-sandboxcom outcome=diagnostic-signaled purpose=feature-ci native_status=0 branch=%s sha=%s gate_evidence=false release_ready=false: The saved source SHA is verified remotely and the existing exact-SHA signal returned a CI run. Inspect that run with the native CI failure/status owners; no terminal CI, canonical push, deployment or release proof is granted. Continue feature to development to master through unchanged promotion gates.\n' "$$gludd_publish_branch" "$$gludd_publish_head" >&2; exit 0; \
+	fi; \
+	printf 'AGENT_NEXT target=git-push-sandboxcom outcome=published native_status=0 branch=%s sha=%s gate_evidence=false release_ready=false: The saved fullSHA is verified remotely; use pipeline-status for every required exact-SHA workflow. Canonical full gate, deployment acceptance and release promotion remain required.\n' "$$gludd_publish_branch" "$$gludd_publish_head" >&2
 
 push-dev: check-clean-tree ci-busy-check _push-rate-guard _stash-before-push-guard _ci-restart-cap _pull-before-push-guard
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push sandboxcom development

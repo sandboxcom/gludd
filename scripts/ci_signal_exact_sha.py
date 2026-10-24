@@ -26,7 +26,15 @@ from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 
-from ci_remote_head_guard import GuardError, collect_state, guard_state
+from ci_remote_head_guard import (
+    GuardError,
+    RemoteHeadState,
+    collect_state,
+    guard_state,
+    validate_expected_head,
+    validate_feature_ci,
+    validate_feature_ci_inputs,
+)
 
 # Quoted because macOS /usr/bin/python3 can be 3.9: postponed annotations do
 # not defer evaluation of a module-level type alias.
@@ -366,12 +374,49 @@ def _print_result(result: SignalResult, progress: ProgressFn) -> None:
     progress(f"GHA_RUN_URL={run.url}")
 
 
+def _guard_signal_source(
+    *, ref: str, remote: str, repo: str, workflow: str, purpose: str,
+    expected_branch: str, expected_sha: str, baseline_ref: str, baseline_sha: str,
+    run: RunFn, cwd: str | None,
+) -> RemoteHeadState:
+    if purpose not in {"canonical", "feature-ci"}:
+        raise SignalError("publication purpose must be canonical or feature-ci")
+    try:
+        if purpose == "feature-ci":
+            validate_feature_ci_inputs(
+                expected_branch=expected_branch, expected_sha=expected_sha,
+                baseline_ref=baseline_ref, baseline_sha=baseline_sha,
+                remote=remote, repo=repo, workflow=workflow,
+            )
+            if ref != expected_branch:
+                raise GuardError("diagnostic dispatch ref differs from the saved expected branch", 2)
+        state = collect_state(ref=ref, remote=remote, run=run, cwd=cwd)
+        validate_expected_head(state, expected_branch, expected_sha)
+        errors = guard_state(state)
+        if purpose == "feature-ci":
+            validate_feature_ci(
+                state, expected_branch=expected_branch, expected_sha=expected_sha,
+                baseline_ref=baseline_ref, baseline_sha=baseline_sha,
+                repo=repo, workflow=workflow, run=run, cwd=cwd,
+            )
+    except (GuardError, OSError) as exc:
+        raise SignalError(f"remote-head guard failed: {exc}") from exc
+    if errors:
+        raise SignalError("remote-head guard failed: " + "; ".join(errors))
+    return state
+
+
 def signal_exact_sha(
     *,
     ref: str = "",
     remote: str = DEFAULT_REMOTE,
     repo: str = DEFAULT_REPO,
     workflow: str = DEFAULT_WORKFLOW,
+    purpose: str = "canonical",
+    expected_branch: str = "",
+    expected_sha: str = "",
+    baseline_ref: str = "",
+    baseline_sha: str = "",
     discovery_polls: int = 6,
     confirm_polls: int = 15,
     poll_interval: float = 2.0,
@@ -383,18 +428,11 @@ def signal_exact_sha(
 ) -> SignalResult:
     """Return an existing exact-SHA run or dispatch and confirm exactly one."""
 
-    try:
-        remote_state = collect_state(
-            ref=ref,
-            remote=remote,
-            run=run,
-            cwd=cwd,
-        )
-        guard_errors = guard_state(remote_state)
-    except (GuardError, OSError) as exc:
-        raise SignalError(f"remote-head guard failed: {exc}") from exc
-    if guard_errors:
-        raise SignalError("remote-head guard failed: " + "; ".join(guard_errors))
+    remote_state = _guard_signal_source(
+        ref=ref, remote=remote, repo=repo, workflow=workflow, purpose=purpose,
+        expected_branch=expected_branch, expected_sha=expected_sha,
+        baseline_ref=baseline_ref, baseline_sha=baseline_sha, run=run, cwd=cwd,
+    )
 
     signal_ref = ref or remote_state.branch
     sha = remote_state.local_head
@@ -455,6 +493,12 @@ def signal_exact_sha(
                 f"GHA-SIGNAL-DISPATCH sha={sha} ref={signal_ref} "
                 f"workflow={workflow!r}"
             )
+            if expected_branch or expected_sha or purpose == "feature-ci":
+                _guard_signal_source(
+                    ref=ref, remote=remote, repo=repo, workflow=workflow, purpose=purpose,
+                    expected_branch=expected_branch, expected_sha=expected_sha,
+                    baseline_ref=baseline_ref, baseline_sha=baseline_sha, run=run, cwd=cwd,
+                )
             dispatch_url = _dispatch(
                 repo=repo,
                 workflow=workflow,
@@ -525,6 +569,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--remote", default=DEFAULT_REMOTE, help="git remote name")
     parser.add_argument("--repo", default=DEFAULT_REPO, help="GitHub OWNER/REPO")
     parser.add_argument("--workflow", default=DEFAULT_WORKFLOW, help="workflow name or file")
+    parser.add_argument("--purpose", choices=("canonical", "feature-ci"), default="canonical")
+    parser.add_argument("--expected-branch", default="")
+    parser.add_argument("--expected-sha", default="")
+    parser.add_argument("--baseline-ref", default="")
+    parser.add_argument("--baseline-sha", default="")
     parser.add_argument("--discovery-polls", type=int, default=6)
     parser.add_argument("--confirm-polls", type=int, default=15)
     parser.add_argument("--poll-interval", type=float, default=2.0)
@@ -552,14 +601,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"workflow={args.workflow!r}"
         )
         _print_result(result, print)
+        print("AGENT_NEXT target=ci-trigger-committed-head outcome=planned native_status=0 "
+              "gate_evidence=false release_ready=false: The example performs no native source, "
+              "remote, authentication, lookup or dispatch checks; its example URL is no CI evidence.", file=sys.stderr)
         return 0
 
     try:
-        signal_exact_sha(
+        result = signal_exact_sha(
             ref=args.ref,
             remote=args.remote,
             repo=args.repo,
             workflow=args.workflow,
+            purpose=args.purpose, expected_branch=args.expected_branch,
+            expected_sha=args.expected_sha, baseline_ref=args.baseline_ref,
+            baseline_sha=args.baseline_sha,
             discovery_polls=args.discovery_polls,
             confirm_polls=args.confirm_polls,
             poll_interval=args.poll_interval,
@@ -567,7 +622,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     except SignalError as exc:
         print(f"GHA-SIGNAL-BLOCKED error={exc}", file=sys.stderr)
+        print("AGENT_NEXT target=ci-trigger-committed-head outcome=failed native_status=1 "
+              "gate_evidence=false release_ready=false: Retain the native source/ref/auth/lookup/dispatch "
+              "reason and reconcile any accepted marker/run before retry; repair that input through "
+              "its existing owner. Do not repush merely to request CI.", file=sys.stderr)
         return 1
+    print(f"AGENT_NEXT target=ci-trigger-committed-head outcome=run-visible native_status=0 "
+          f"purpose={args.purpose} branch={result.ref} sha={result.sha} run={result.run.database_id} "
+          "gate_evidence=false release_ready=false: An exact-SHA run is visible; inspect ci-run-summary "
+          "and the native CI failure/status owners for its terminal result. Manual diagnostic feedback "
+          "does not supply canonical push, full-gate, deployment or release evidence.", file=sys.stderr)
     return 0
 
 
