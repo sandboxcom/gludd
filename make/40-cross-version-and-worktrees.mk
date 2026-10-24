@@ -698,6 +698,14 @@ git-merge-abort:
 	@git merge --abort
 	@echo "Merge aborted."
 
+# Merge a branch while preferring the current branch's content on conflicts.
+# Use only when the branch's overlapping docs/tracking changes are known to be
+# older/superseded by the current branch. Non-conflicting branch changes are kept.
+# Usage: make git-merge-ours MSG='branch-name'
+git-merge-ours: _merge-strategy-guard
+	@if [ -z "$(MSG)" ]; then echo "Usage: make git-merge-ours MSG='branch-name'"; exit 1; fi
+	@git merge --no-ff -X ours "$(MSG)"
+
 git-rebase-abort:
 	@git rebase --abort
 	@echo "Rebase aborted."
