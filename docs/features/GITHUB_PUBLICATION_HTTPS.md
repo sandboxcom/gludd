@@ -794,3 +794,99 @@ feature-local ledger. No new-source GHA has started at this checkpoint.
 Remaining C/B312/D312 acceptance overlaps only after a real run is accepted.
 The Node proposal's ordinary compatibility failure, full coverage/gate, canonical
 push, deployment and all release proofs stay open.
+
+## ci-await lookup authority in feature diagnostics
+
+CI_AWAIT_VALIDATE_ONLY=1 validates configuration without a query, wait or write.
+CI_AWAIT_SNAPSHOT_ONLY=1 returns only the newest matching run ID or0 with native0;
+it preserves numeric stdout, every existing observation byte and baseline callers.
+Mode-specific stderr states lookup-only authority; regular snapshot0 retains the
+native terminal success/failure/timeout result and producer-owned observations.
+Observe the current diagnostic with its exact branch/fullSHA, actual
+workflow_dispatch event and CI_AWAIT_AFTER_RUN_ID=0. A returned snapshot ID is
+an after-ID baseline only when waiting for a future run. Pending remains unproved.
+
+This focused projection uses immutable0ec6ed410563619beb7a899e2d78d6fcd0b06395
+source and all seven additive controls. Its original53-case source/profile and
+Main142-case receiving receipts pass both runtimes, but do not certify this new
+feature source. Complete feature focus/profile/consumer acceptance, review,
+normal hooks/commit, guarded feature publication and actual new-SHA hosted
+observation remain distinct required evidence. The known CSS override family
+stays open; unchanged workflow bytes/history and held Node policy are preserved.
+No eight-shard, full-gate, canonical-push, deployment or release proof is claimed.
+
+### Scoped typing during this diagnostic projection
+
+The initial concurrent scoped test check returned a mypy2.4.0 internal error;
+the simultaneous source check passed. A serial --show-traceback test check
+passed, so no traceback or cache-race cause is established. Preserve that
+failed native result rather than relabeling it as a code error or green check.
+Both final strict checks run serially through the existing typecheck-scope
+owner with FILES='--cache-dir=/dev/null --show-traceback <owned-file>'. They
+retain explicit-package bases, no-incremental, strict project configuration,
+the installed runtime and the full source/test file. No test, dependency,
+threshold, warning filter or Make recipe is changed to obtain success.
+[Mypy's native cache contract](https://mypy.readthedocs.io/en/stable/command_line.html#incremental-mode)
+confirms that no-incremental still writes cache data; /dev/null disables those
+writes. This documents a supported isolated input, not a proven cause of the
+first error. Keep unknown failures and actual command scope separate from
+full gate, exact-SHA hosted and release evidence.
+
+### Actual diagnostic feature receiving (2026-10-24 UTC)
+
+The new feature source/test exactly matches approved0ec on base5e; it has seven
+native missing-guidance failures first, then seven passes. This receiving source
+passes the complete53-case profile and four complete89-case consumers on EACH
+installed runtime:142PASS per runtime, no assertion/owner/profile/floor change.
+Profile311: coverage-files/20261024T064118Z-14466-27ed8d31.json,
+1.65s pytest/3.219s native;312:20261024T064346Z-15322-d271e197.json,
+2.38s/4.653s. Raw coverage is186/194lines and61/68branches,
+95.87628866/89.70588235percent, so both85/75floors pass independently of display.
+Consumers use ci-await-feature-consumers/ci-await-feature-consumers311-5e61dd5
+and its312sibling:89PASS/7.75s/native8.950 and89PASS/6.26s/native7.3.
+The four full files are test_status_snapshot.py,test_markdown_docs_deep.py,
+test_make_target_contract.py and test_check_make_target_contract.py under tests/unit.
+All raw profile/observation/trace files stay producer-owned under .gate-logs.
+
+The three-path guard passes0/6.3s with three hooks and zero new clones.
+Independent source-only review is retained in
+ /tmp/gludd-v012-ci-await-feature-projection-source-review.md.
+Native HTTPS verify-remote confirms published release-candidate baseline
+eb772a658a01db4485087813e4478eb6c59cc328,0/0.8s. Main's different local
+candidate SHA is not that baseline. Workflows,Node/TOML,pyproject and the existing
+feature-ci/mypy/ledger interfaces remain unchanged from5e. Normal source hooks,
+fresh collection, publication and actual new-SHA hosted observation remain next;
+known CSS failure/eight unproved shards and all canonical release proofs remain.
+This receipt-only append does not recertify old source, a later SHA or deployment.
+
+### Preserve collection confinement across the watched commit caller
+
+The first sandboxed commit is refused before Git can create its owned worktree
+index lock. The approved host retry passes content checks, then native collection
+refuses a canonical-Main pathname in the child environment; retain
+ci-await-feature-commit/ci-await-feature-commit311-host-5e61dd5 and
+ test-count/20261024T065541Z-19084-ebc2f728.json as failed evidence.
+Root had embedded Main's absolute duplicate-engine path in the watched CMD.
+Foundation already unexports that tool variable and omits only its exact native
+override record on pytest targets; it deliberately preserves unrelated CMD and
+Make carriers. The corrected caller puts DUPLICATE_CODE_ENGINE on the OUTER
+Make invocation and keeps the actual CMD free of Main paths. Recursive owning
+Make targets still receive the engine; the existing pytest-specific sanitation
+then consumes its owned record. Preserve unrelated flags/carriers, the real
+clone engine, normal hooks and confinement. This caller correction grants no
+successful collection or commit until the new native owner actually finishes.
+
+The corrected-carrier attempt next stops at a different actual input: retained
+checkpoint90142's registered locked owner lacks its .git pointer. Preserve
+ci-await-feature-commit/ci-await-feature-commit311-carrier-fixed-5e61dd5 as failed.
+The independently reviewed selected-link repair in the separate checkpoint peer
+passes all14owners/512cases EACH runtime before its real plan1/apply0.
+That peer retains checkpoint-link-real-plan and checkpoint-link-real-apply
+receipts with run suffix311-90142-20261024; apply0 returns native0/1.4s and
+preserves checkpoint/admin/index/ref/lock identity. It grants no commit or CI proof.
+The intended ci-await feature's own checkpoint-link-ownership receipt,
+checkpoint-link-ownership311-90142-20261024, reports retained6/unowned0,
+all six exact checkpoint verifications and native0/3.4s. This is the changed
+ownership prerequisite for a normal commit retry, not an inferred success from
+elapsed time or a new observer name. Continue with the corrected OUTER engine
+carrier and normal hooks/collection; all exact-SHA hosted/final proofs remain.

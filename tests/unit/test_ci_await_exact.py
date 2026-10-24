@@ -524,6 +524,133 @@ def test_snapshot_cli_returns_latest_exact_run_id_before_tag_mutation(
 
 
 @pytest.mark.parametrize(
+    "run",
+    [
+        _payload(run_id=73),
+        _payload(run_id=73, status="completed", conclusion="failure"),
+        _payload(run_id=73, status="completed", conclusion="success"),
+        None,
+    ],
+    ids=["queued", "failure", "success", "no-run"],
+)
+def test_snapshot_mode_guidance_preserves_lookup_stdout_and_observation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str], run: dict[str, object] | None,
+) -> None:
+    path = tmp_path / "current.json"
+    sentinel = b'{"existing": "observation must remain unchanged"}\n'
+    path.write_bytes(sentinel)
+    queried: list[await_module.RunSelector] = []
+
+    def lookup(selector: await_module.RunSelector) -> dict[str, object] | None:
+        queried.append(selector)
+        return run
+
+    def forbidden(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("snapshot mode must not wait or write an observation")
+
+    monkeypatch.setattr(await_module, "get_latest_run", lookup)
+    monkeypatch.setattr(await_module, "ci_await", forbidden)
+    monkeypatch.setattr(await_module, "write_snapshot", forbidden)
+    assert await_module.main([
+        "--ref", TAG, "--sha", SHA, "--workflow", "Build and Release",
+        "--event", "push", "--after-run-id", "17", "--snapshot-only",
+        "--observation-output", str(path),
+    ]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == ("73\n" if run is not None else "0\n")
+    assert path.read_bytes() == sentinel
+    assert queried == [await_module.RunSelector(
+        ref=TAG, sha=SHA, workflow="Build and Release", event="push", after_run_id=17,
+    )]
+    assert captured.err.count("AGENT_NEXT") == 1
+    for token in (
+        "target=ci-await", "outcome=snapshot", "mode=snapshot-only",
+        "native_status=0", "lookup_only=true", "terminal_verdict=false",
+        "ci_green=false", "observation_written=false", "gate_evidence=false",
+        "release_ready=false", "CI_AWAIT_SNAPSHOT_ONLY=0",
+        "same selector and after-run ID",
+        "CI_AWAIT_AFTER_RUN_ID only when awaiting a future run",
+    ):
+        assert token in captured.err
+
+
+@pytest.mark.parametrize("snapshot_enabled", [False, True])
+def test_validate_mode_guidance_is_offline_and_preserves_observation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str], snapshot_enabled: bool,
+) -> None:
+    path = tmp_path / "current.json"
+    sentinel = b'{"existing": "observation must remain unchanged"}\n'
+    path.write_bytes(sentinel)
+
+    def forbidden(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("validate mode must not query, wait or write an observation")
+
+    for name in ("get_latest_run", "ci_await", "write_snapshot"):
+        monkeypatch.setattr(await_module, name, forbidden)
+    args = [
+        "--ref", TAG, "--sha", SHA, "--workflow", "Build and Release",
+        "--event", "push", "--after-run-id", "17", "--timeout", "90",
+        "--poll-interval", "10", "--validate-only",
+        "--observation-output", str(path),
+    ]
+    if snapshot_enabled:
+        args.append("--snapshot-only")
+    assert await_module.main(args) == 0
+    captured = capsys.readouterr()
+    assert captured.out == (
+        f"CI-AWAIT-VALIDATED ref={TAG} sha={SHA} workflow='Build and Release' "
+        "event=push after_run_id=17 timeout=90s interval=10s\n"
+    )
+    assert path.read_bytes() == sentinel
+    assert captured.err.count("AGENT_NEXT") == 1
+    for token in (
+        "target=ci-await", "outcome=validated", "mode=validate-only",
+        "native_status=0", "configuration_only=true", "network=false",
+        "terminal_verdict=false", "ci_green=false", "observation_written=false",
+        "gate_evidence=false", "release_ready=false",
+        "CI_AWAIT_VALIDATE_ONLY=0", "CI_AWAIT_SNAPSHOT_ONLY=0",
+    ):
+        assert token in captured.err
+
+
+def test_snapshot_lookup_failure_guidance_preserves_native_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    path = tmp_path / "current.json"
+    sentinel = b'{"existing": "observation must remain unchanged"}\n'
+    path.write_bytes(sentinel)
+
+    def lookup(_selector: await_module.RunSelector) -> None:
+        raise await_module.AwaitError("owned lookup refusal")
+
+    def forbidden(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("failed snapshot lookup must not wait or write an observation")
+
+    monkeypatch.setattr(await_module, "get_latest_run", lookup)
+    monkeypatch.setattr(await_module, "ci_await", forbidden)
+    monkeypatch.setattr(await_module, "write_snapshot", forbidden)
+    assert await_module.main([
+        "--ref", TAG, "--sha", SHA, "--snapshot-only",
+        "--observation-output", str(path),
+    ]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert path.read_bytes() == sentinel
+    assert captured.err.startswith("CI-AWAIT-SNAPSHOT-BLOCKED error=owned lookup refusal\n")
+    assert captured.err.count("AGENT_NEXT") == 1
+    for token in (
+        "target=ci-await", "outcome=lookup-failed", "mode=snapshot-only",
+        "native_status=1", "terminal_verdict=false", "ci_green=false",
+        "observation_written=false", "gate_evidence=false", "release_ready=false",
+        "Repair the reported lookup input before retry",
+    ):
+        assert token in captured.err
+
+
+@pytest.mark.parametrize(
     "args",
     [
         ["--sha", SHA[:-1], "--validate-only"],
