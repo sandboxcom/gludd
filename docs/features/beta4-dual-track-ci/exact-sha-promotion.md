@@ -652,3 +652,105 @@ isolated Make/CLI/test/documentation change; immutable observations and the
 existing atomic ledger remain intact. Current source review, exact-SHA hosted
 success and canonical gate/coverage remain required, and disk admission is not
 bypassed.
+
+## Diagnostic Node proposal on the implementation-only feature
+
+This separate five-path diagnostic intake starts from clean
+`9c0f4dc081042c8948cd233373c89d6c01b05612` on
+`feature/v012-diagnostic-build-20261024`. The literal configuration
+`/tmp/gludd-v012-node-candidate-diagnostic-intake-plan.json` supplies four
+proposal paths; its helper83 and publishedEB references are byte-comparison
+inputs, not new ancestors or acceptance. Fresh native canonical parent/leaf,
+regular-file/no-symlink, exact three-file83/EB/current-byte and true new-file
+absence checks passed before writes. Seven literal replacements and one complete
+new file retain all other baseline bytes and every original assertion. This
+append preserves the entire preceding feature body.
+
+The proposal retains plugin1.18.5, SDK1.18.5 and Effect4.0.0-beta.83. It adds only
+the parent-scoped Zod4.6.7/Effect-to-TOML5.0.1 overrides and the exact msgpackr2.1.2,
+multipasta0.2.9, TOML5.0.1 and Zod4.6.7 lock leaves/integrities. The complete
+security-floor and installed-consumer owners retain all15 cases, including the
+original wide-integer Number assertions. No version beyond those literal
+inputs, adapter, BigInt mode, expectation, skip, xfail or omitted case is selected.
+
+Prior uncommitted peer evidence was14PASS/1FAIL for all15 and independent
+actualLOW0. It is historical context, not acceptance of this root/SHA.
+TOML5.0.1 rejects `wide = 9007199254740993` through the real Effect parser where
+the original TOML4.3.0 consumer returned Number9007199254740992. No Gludd
+product-adapter frame or approved behavior preference has been established.
+Compatibility remains HOLD; this diagnostic intake supplies no product approval.
+
+Current receipt sequence: cheap static checks, exact pinned native npm-ci
+with no audit/fund, then the complete15 on installed311 with the original
+90/60 watched boundary, fatal warnings, literal ID= and an explicit native trace
+plugin. The known compatibility failure must be preserved. There is no new
+dirty-workspace LOW audit: after Root's normal five-path diagnostic commit and
+clean full SHA, Root runs the first new target LOW audit through the existing
+ci-failure-repair owner for the open Node family. Advisory evidence is independent
+of the pending behavior decision. No relock or copied node_modules is used.
+
+The existing143M prefix,149M public cache and98%/4.0GiB volume observations are
+planning inputs, not capacity or final95 clearance. Fresh native disk0 retained
+98%/4.0GiB, load0.34x and a complete process census with only the two existing
+watchdogs before install. This bounded diagnostic supplies no final95 clearance.
+
+Current installed311 receipts under `.gate-logs/observed/` are:
+
+- `feature-node-sync/feature-node-sync311-9c0f4dc.json`: nativePASS0/3.013 seconds,
+  146 packages installed through the existing pinned npm-ci owner with no
+  audit/fund. Package and lock postimages remained byte-identical afterward.
+- `feature-node-compatibility/feature-node-compatibility311-9c0f4dc.json`:
+  nativeFAIL2/3.735 seconds; complete15 selected,14PASS/1FAIL in2.67 seconds.
+  Only the original wide-integer case failed through the same real Effect/TOML
+  lossless-integer guard. Every predecessor assertion and all seven consumer
+  cases remain; no retry, skip, xfail, conversion or expectation change followed.
+  Its exact trace summary has34 events,15 starts/finishes,15 matching protocol
+  pairs, the one expected failure and no unfinished case or pairing issue.
+
+Ruff2, strict typing2, environment-write and tracked-worktree line checks passed
+(the native line owner measured10,853 paths; the new test has105 lines and awaits
+the staged guard). The install and full15 sessions are terminal and drained.
+These results preserve compatibility HOLD and confer no product/behavior,
+advisory-repair, all-green or release acceptance. No dirty-workspace LOW audit
+was started. The first new target LOW remains Root's clean-SHA repair-owned
+evidence after the normal diagnostic commit, independent of this retained
+compatibility failure.
+
+Root owns staging, normal collection, commit, actual diagnostic publication and
+exact-SHA signal. Remaining local
+acceptance runs on the frozen published SHA alongside GHA after signal
+acceptance; no development/master, canonical gate, deployment or release proof
+is supplied by this diagnostic proposal.
+
+### Public SRI fixture conformance after staged guard32865
+
+Root's staged content guard32865 failed2/native1.3 seconds at detect-secrets:
+Base64HighEntropy flagged the two public npm SHA512 integrity expectations at
+floor-test lines55/58. These identify the TOML5.0.1 and Zod4.6.7 registry leaves
+in `.opencode/package-lock.json`, `node_modules/toml` and `node_modules/zod`.
+No scanner, baseline, pragma, exception, package, lock or installed dependency
+changed in this repair; the failed guard supplies no later line/clone proof.
+
+Only the test-data representation changed. Before writing, both independently
+fixed expected digests were rendered as64 numeric octets and reconstructed
+exactly to their original public SRI strings in memory. They are not derived
+from the lock under test. The test splits actual SRI once, requires sha512,
+validates Base64 decoding, compares all64 decoded bytes with the independent
+numeric constant and requires canonical Base64 re-encoding to equal the actual
+suffix. This preserves original exact equality, including rejection of changed
+bytes, noncanonical encodings and padding. All five predecessor plus two added
+floor rows and every parent/override/version assertion remain.
+
+Ruff2, strict typing2, environment-write and tracked-line10854 checks passed.
+The complete8 floor owner passed8 in0.62 seconds, native0/1.574 at
+`.gate-logs/observed/feature-node-floor/feature-node-floor311-sri-9c0f4dc.json`.
+Its exact summary reports19 events,8 starts/finishes,8 matching protocol pairs,
+no failure, unfinished case or pairing issue. That session is terminal/drained.
+
+The unchanged seven installed-consumer cases retain their actual prior
+6PASS/1 ordinaryFAIL scope; no XFAIL or whole15 replay is claimed. The wide-integer
+failure and compatibility HOLD remain. Root must restage the two changed
+test/documentation files within the same Node5 packet, rerun its staged guard
+and normal diagnostic commit. First new LOW advisory evidence remains reserved
+for Root's clean-SHA native repair owner; no LOW audit or product-behavior
+approval is supplied by this data-representation conformance.
