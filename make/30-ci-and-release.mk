@@ -20,7 +20,8 @@ ci-wait:
 	echo "=== CI-WAIT: timed out after $$MAX_WAIT seconds ==="; exit 1
 
 # Poll CI for an exact identity until it reaches a TERMINAL state.
-# Exit codes: 0=SUCCESS, 1=FAILURE, 2=TIMEOUT (still pending).
+# Regular wait exits: 0=terminal success, 1=failure, 2=timeout (still pending).
+# Validate-only returns0 for a plan; snapshot-only returns0 for ID lookup, not observation/CI-green proof.
 # SHA/workflow/event are optional for backwards-compatible branch-only use.
 # Usage: make ci-await BRANCH=development TIMEOUT=3600 SHA=... CI_AWAIT_WORKFLOW='Build and Release' CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL=10 CI_AWAIT_AFTER_RUN_ID=0 CI_AWAIT_VALIDATE_ONLY=0 CI_AWAIT_SNAPSHOT_ONLY=0
 CI_AWAIT_OBSERVATION_OUTPUT ?= .gludd/ci-await.json

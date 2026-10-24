@@ -26,13 +26,18 @@ and recorded attempt2. The candidate lock passes a separate native low audit
 with0 vulnerabilities;14PASS/1FAIL compatibility remains unaccepted and the
 TOML behavior preference is pending. No source was changed by the audit.
 
-Root created and registered feature/v012-diagnostic-build-20261024 at the exact
-published eb baseline. No implementation source has been imported/pushed there.
-The diagnostic-only source route retains exact branch/SHA, native published
-baseline, workflow bytes/history and all integrity/auth/promotion checks; its
-complete acceptance and immutable source commit are in progress. The current
-phase record below owns pending repairs/receipts; native producers own actual
-state. Missing workflow-file consent is no blanket Actions API refusal.
+Root published and remotely verified feature/v012-diagnostic-build-20261024 at
+5e61dd51f414e781dffbd7a1c766c32fd2bdf723 through normal hooks and exact-SHA
+dispatch. Build40058674968 and Molecule40058744183 are real workflow_dispatch
+runs. B312140, C283each and D312194 pass while GHA runs; the feature stays frozen.
+The hosted3.11 runtime cohort now fails the CSS no-overrides assertion against
+the Node advisory proposal:2370PASS/1FAIL85.46s/native87.7. Actual job120767228286
+context owns that finding. Both hosted gates now fail the same assertion; Molecule
+has5PASS/1running. An exact scoped-security override policy decision is pending
+(one request); production dependency repair and all final proofs remain pending.
+No assertion or release gate is weakened. The phase audit
+retains precise native receipts. Workflow-file consent is no blanket Actions API
+refusal; manual diagnostics never supply canonical push/deployment proof.
 Last measured disk99percent remains above final95; no cleanup/clearance follows.
 All seven S98 tasks remain open;132 backlog items stay excluded.
 

@@ -39,6 +39,19 @@ merely because time elapsed. Source publication, diagnostic CI, development
 integration, master deployment and version-tag publication have separate
 outcomes; retain every canonical branch, coverage, ZDD and promotion gate.
 
+Use checkout-owned ledger and observation paths for feature publication.
+Main paths can propagate through explicit Make CLI assignments and MAKEFLAGS
+into a confined pre-push collection; repair that caller input and capture keys
+without dumping values. Preserve native Git-local sanitation and confinement.
+Put the selected installed runtime in both run-watched and its actual CMD.
+ci-await snapshot1 returns only a baseline run ID (or0); native0 supplies no
+terminal CI result and writes no observation. Validate-only returns native0 for a plan.
+Regular snapshot0 uses the actual event/workflow/branch/full SHA and owns its
+observation; pending/timeout remains unproved. Whole-run queued can coexist
+with running/completed jobs: read the exact native job summary. Root owns the
+bounded release observer while independent implementation/receiving continues;
+never dispatch a CI-poll subagent. The pipeline audit retains actual examples.
+
 Before attributing a hosted failure to an earlier phase, read that exact run,
 attempt and job's native step result through ci-job-failure-context. Workflow
 source order and a failed-step-only summary do not prove another step was skipped

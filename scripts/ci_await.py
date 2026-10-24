@@ -394,14 +394,44 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"CI-AWAIT-VALIDATED {_describe(selector)} "
             f"timeout={timeout}s interval={args.poll_interval:g}s"
         )
+        print(
+            "AGENT_NEXT target=ci-await outcome=validated mode=validate-only "
+            "native_status=0 configuration_only=true network=false "
+            "terminal_verdict=false ci_green=false observation_written=false "
+            "gate_evidence=false release_ready=false next_owner=ci-await; "
+            "configuration validated only; no GitHub query, wait or observation "
+            "write occurred. To observe CI, use CI_AWAIT_VALIDATE_ONLY=0 and "
+            "CI_AWAIT_SNAPSHOT_ONLY=0 with the same selector.",
+            file=sys.stderr,
+        )
         return 0
     if args.snapshot_only:
         try:
             run = get_latest_run(selector)
         except AwaitError as exc:
             print(f"CI-AWAIT-SNAPSHOT-BLOCKED error={exc}", file=sys.stderr)
+            print(
+                "AGENT_NEXT target=ci-await outcome=lookup-failed mode=snapshot-only "
+                "native_status=1 lookup_only=true terminal_verdict=false "
+                "ci_green=false observation_written=false gate_evidence=false "
+                "release_ready=false next_owner=ci-await; "
+                "snapshot lookup failed; observation output is unchanged. "
+                "Repair the reported lookup input before retry.",
+                file=sys.stderr,
+            )
             return 1
         print(int(run.get("databaseId") or 0) if run is not None else 0)
+        print(
+            "AGENT_NEXT target=ci-await outcome=snapshot mode=snapshot-only "
+            "native_status=0 lookup_only=true terminal_verdict=false ci_green=false "
+            "observation_written=false gate_evidence=false release_ready=false "
+            "next_owner=ci-await; stdout is only the newest matching run ID or 0; "
+            "zero status confirms lookup only. Observation output is unchanged. "
+            "To observe the current matching run, use CI_AWAIT_SNAPSHOT_ONLY=0 "
+            "with the same selector and after-run ID. Use stdout as "
+            "CI_AWAIT_AFTER_RUN_ID only when awaiting a future run.",
+            file=sys.stderr,
+        )
         return 0
     if args.observation_output is not None:
         return ci_await(

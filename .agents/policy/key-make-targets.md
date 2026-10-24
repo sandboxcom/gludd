@@ -298,6 +298,15 @@ cross-SHA gate/CI authority; native freshness guards remain mandatory.
 
 ### Read outcome guidance before choosing another target
 
+ci-await mode authority is explicit. CI_AWAIT_VALIDATE_ONLY=1 performs a plan.
+CI_AWAIT_SNAPSHOT_ONLY=1 returns the newest matching run ID or0 with native0;
+it does not wait for terminal status or write CI_AWAIT_OBSERVATION_OUTPUT.
+Preserve that numeric stdout because release recipes capture a future-run
+baseline. For an already accepted diagnostic run, use snapshot0/after-run-ID0,
+the actual workflow_dispatch event, exact branch/full SHA and a branch-owned
+output. A positive baseline ID would exclude that current run. Pending/timeout
+is unproved; preserve native output and all canonical push/deployment gates.
+
 The existing result owners emit short AGENT_NEXT prompts. They advise the next
 action; they do not execute it or create gate/release proof.
 

@@ -1,6 +1,121 @@
 # GHA pipeline and agentic promotion audit
 
-## Actual diagnostic execution and receiving checkpoint
+## Current published feature and parallel hosted proof
+
+2026-10-24 UTC manual checkpoint. The normal feature publisher successfully
+published and remotely verified
+5e61dd51f414e781dffbd7a1c766c32fd2bdf723 on
+feature/v012-diagnostic-build-20261024. Its actual existing dispatcher accepted
+[Build40058674968](https://github.com/sandboxcom/gludd/actions/runs/40058674968).
+A separate normal dispatcher accepted
+[Molecule40058744183](https://github.com/sandboxcom/gludd/actions/runs/40058744183)
+for the same full SHA. Both events are workflow_dispatch, with unchanged
+workflow bytes/history. Feature to development to master remains the promotion
+sequence; manual diagnostics supply no canonical push or deployment proof.
+
+Normal publication19972 completed native0/109.803s with all eight guards,
+authentication, source/provenance checks, actual pre-push mypy and collection,
+saved-SHA transport, upstream setup, verdict recording and exact remote
+verification. Its producer-owned receipt in the feature checkout is
+feature-diagnostic-publication/feature-diagnostic-publish-5e61dd5.json.
+Molecule signal90180 completed native0/19.711s at
+feature-molecule-dispatch/feature-molecule-dispatch-5e61dd5.json.
+No force, hook bypass, workflow-file change or shared-account consent was used.
+
+The path to that push retained three real failed publication attempts.
+The unconditional system interpreter selector ignored an explicit installed
+runtime;65003637b27a632c63a36f2a6e853f2485ecf44a fixes only CLI selection while
+preserving defaults/environment policy and required safe-path protection.
+Then actual pre-push typing selected Main's source, and collection refused a
+Main pathname from Root's CI_FAILURE_LEDGER. The six-path5e repair binds both
+mypy owners to the current checkout, preserves dependencies/stubs/carriers/native
+statuses, and adds result-specific advisory output. Same-variable/origin native
+ordinary/-e controls identified CI_FAILURE_LEDGER and MAKEFLAGS; the old process
+environment was not retroactively captured. The caller now uses the feature's
+.gludd/ci-failure-ledger.json. Production collection/confinement is unchanged.
+
+The six reviewed postimages have independent source-only approval.
+Focused mypy/affected consumers pass19 each runtime, complete collection owner24
+each, documentation68 each and staged content/native secret/line/clone guards
+pass. Normal commit8199 collected129532/129556 with24 deselected/0errors,
+44.19s/native49.5 at test-count/20261024T032853Z-12955-4e0ec07a.
+The feature's GITHUB_PUBLICATION_HTTPS record retains all failures and receipts;
+these source changes are published there, not silently received into Main.
+
+After actual Build acceptance, three remaining local cohorts ran alongside GHA
+on frozen5e. B312 passes140/93.84s/native95.738 with140 trace pairs. C9 complete
+owners pass283 each:31155.18s/native56.484 and31274.55s/native75.951, each283 pairs.
+D312 passes194/181.81s/native184.532 with194 pairs. Labels are
+feature-route-b-remaining, feature-route-c and feature-route-d; exact private
+handoffs retain the full-SHA run names, commands and native source identity
+692fd14b2c9a196c42a525b29101b159df9d20318ed42558520644ce09dfda5c.
+No failed/unfinished trace node or timing issue exists in those new cohorts.
+Earlier accepted no-plugin A311/D311/B311 keep their functional-only scope;
+their empty traces were not relabeled or repeated merely to create timing data.
+
+Actual hosted Build now exposes a new concrete failure. The exact3.11 gate job
+120767228286 failed its runtime cohort:2370PASS/1FAIL85.46s, original observer
+native2/87.7s. The CSS exact-pin test rejects any package overrides, while the
+Node advisory proposal added scoped overrides. Root's native context23104
+returns0 and raw940-948 retains the assertion, child failure and error marker.
+The existing CSS/no-override and security requirements remain; no assertion is
+weakened, package vulnerability accepted or parser behavior approved. The next
+repair must reconcile the production dependency graph and complete affected
+Node/CSS consumers. Build is now terminal failure on BOTH runtimes. Exact3.12
+job120767228274 retains the same single CSS assertion with2370PASS/1FAIL67.39s,
+native2/69.8s; context36919 returns0 at raw943-951. Native ci-view78499 records
+two open runtime-admission families in the feature-local ledger:
+875995f58debbdaf553aaf8c9c2bbf46b69e1aeafa13037bbd9bfc5a38212c61 and
+96dd1ddd9d3f05e0644eb4023075c47687fc814e7d7686a04cb8da39f6664e5e.
+The regular ci-await producer now records exact5e terminal failure rather than
+its earlier timeout. Molecule independently has5PASS/1running at the last
+summary. All eight downstream Build shard intervals stay unknown/censored.
+No clean hosted Node audit or whole gate is inferred from earlier local audit0.
+
+The observation interface also exposed a model-guidance gap. ci-await snapshot1
+returned the exact run ID and0 without writing observation JSON, as its release
+baseline API intentionally specifies. A subsequent missing-file read was Root's
+incorrect expectation, not producer failure or CI green. Regular snapshot0
+then produced an exact-SHA timeout45.713s/still-pending observation; that native
+file remains producer-owned. Mode-specific stderr guidance is being received
+with numeric stdout, all statuses, existing baseline calls and observation
+ownership preserved. The source's seven additive regressions failed first only
+for missing stderr guidance; all original stdout/status/sentinel checks already
+passed. Complete source/consumer53 passes each runtime in the isolated peer,
+with95.8763percent line/89.7059branch on the unchanged complete source profile.
+Root then matched both complete Main preimages exactly before applying the
+single source stanza and additive test block. Main receiving passes the complete
+six-owner142-case union on BOTH runtimes:311 additionally includes the unchanged
+logical-Makefile AST policy node,143PASS60.78s/native62.4 at
+coverage-files/20261024T034644Z-46507-53e760be.json;312142PASS15.48s/native18.3 at
+coverage-files/20261024T034829Z-47049-d16046b1.json. The AST node is measured only
+on311, not claimed on312. Both complete ci-await source profiles retain85/75
+line AND branch admission. Ruff, separate strict source/test scopes,
+environment-write/line guards,290 Make contracts and the exact offline behavior
+pass. The source's numeric snapshot stdout and release BASELINE callers remain.
+The retained sections below describe older source scopes.
+
+The no-override blocker has a concrete dependency constraint. Root read the
+native primary registry capture under the GHA-phase peer:
+v012-node-audit-primary-sources/20261023T235910Z-91898-b5944ba0.log raw508-518,
+HTTP200/native0/2.086s at2026-10-23T23:59:11Z. Plugin1.19.4 still pins Zod4.1.8
+and Effect4.0.0-beta.83; that Effect's supported TOML range excludes5.0.1.
+The current official npm listing also reports1.19.4. Upgrading that parent or
+removing overrides alone therefore supplies no supported clean graph.
+No vulnerable downgrade, dependency hiding, alternate unmeasured profile or
+assertion weakening is selected. An exact scoped-security-policy option is
+reviewable in the published feature package; Root has asked once whether to
+permit that exact map with strict mutation controls or retain the current ban.
+Keep that input pending. It supplies no TOML-behavior, workflow-consent or release
+approval, and no new policy is applied without the response.
+
+All seven release items remain open;132 backlog items remain excluded.
+Final95percent capacity, complete gate/coverage, canonical exact-SHA push,
+master deployment and version publication still require actual evidence.
+TOML wide-integer behavior remains an ordinary failure with unaccepted policy.
+Workflow-file consent remains separate from the demonstrated Actions ability.
+
+## Retained diagnostic execution and receiving checkpoint
 
 2026-10-24 UTC manual evidence, separate from generated current status. Root's
 substantive candidate source d32c65b28c48cc563bb9615b890fa273a5429af0 has source-only
