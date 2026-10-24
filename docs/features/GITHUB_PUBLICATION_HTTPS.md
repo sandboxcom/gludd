@@ -890,3 +890,166 @@ all six exact checkpoint verifications and native0/3.4s. This is the changed
 ownership prerequisite for a normal commit retry, not an inferred success from
 elapsed time or a new observer name. Continue with the corrected OUTER engine
 carrier and normal hooks/collection; all exact-SHA hosted/final proofs remain.
+
+## Terminal diagnostic feedback and the next guarded push
+
+The normal publication of immutable3c60627bf8e974146de65d7c33f3707693cdbc79
+stopped before transport at AA032: the previous published
+5e61dd51f414e781dffbd7a1c766c32fd2bdf723 had no checked history entry.
+Build40058674968 failed and Molecule40058744183 passed through
+workflow_dispatch, while canonical pipeline-status correctly requires the
+complete three-workflow push policy. A diagnostic observation cannot replace
+that canonical policy, and another branch name cannot repair missing feedback.
+
+The existing ci-await producer now offers a narrow feedback path after its
+terminal observation is successfully written. The existing ci_check_cooldown
+history owner independently requires sandboxcom/gludd, a literal feature/** or
+diagnostic/** branch, the full current last_push_sha, Build and Release,
+workflow_dispatch, completed status, a known conclusion and a positive integer
+run ID matching the complete selector. It re-reads push ownership under the
+same fail-fast native OS lock used by the existing push/verdict writers.
+The sidecar synchronizes those cooperating writers; it does not establish
+race immunity for older tools or authorize editing history by hand.
+
+History/state label this feedback diagnostic-workflow-dispatch. Success is
+diagnostic_success, never ordinary canonical success; non-success terminal
+conclusions retain failure and the original conclusion. Only a newly accepted
+current terminal feedback entry resets the existing restart cap. Reobserving
+the same or older run cannot clear another push's restart debt. Normal wait
+without an observation output preserves compatibility but records no feedback.
+Plan, snapshot-only, pending, timeout, lookup error, foreign identity, missing
+push ownership and failed observation writes cannot record a checked push.
+
+State, history and counter replacements are individually atomic. Their order
+retains the counter when state/history writes fail. A later counter error may
+leave genuine feedback already applied; the native result stays nonzero,
+current success is invalidated to lookup_error, and AGENT_NEXT requires
+reconciliation of the actual history/state/counter before retry. A lock refusal
+starts no write. There is no new manual record command, force path or proof cache.
+The unchanged _terminal_verdict, all eight publication guards, coverage floors
+and canonical gate/push/deployment requirements remain authoritative.
+
+After accepted source receiving and its normal commit, observe the old
+diagnostic through the existing owner with the installed runtime selected:
+
+~~~console
+make ci-await BRANCH=feature/v012-diagnostic-build-20261024 SHA=5e61dd51f414e781dffbd7a1c766c32fd2bdf723 TIMEOUT=3600 CI_AWAIT_WORKFLOW='Build and Release' CI_AWAIT_EVENT=workflow_dispatch CI_AWAIT_INTERVAL=60 CI_AWAIT_AFTER_RUN_ID=0 CI_AWAIT_VALIDATE_ONLY=0 CI_AWAIT_SNAPSHOT_ONLY=0 CI_AWAIT_OBSERVATION_OUTPUT=.gate-logs/diagnostic-5e-feedback.json
+~~~
+
+A real failed Build retains native1 while recording eligible feedback. That
+permits the normal history guard to assess the next meaningful repair; it
+does not report a green pipeline. Snapshot/plan output alone cannot do this.
+
+The native failing-first receipt under .gate-logs/observed/run-watched/,
+ci-await-diagnostic-red311-3c60627 contains2FAIL in1.95s/native3.0:
+actual CLI terminal failure/success left last_checked_sha empty and the
+unchanged confined AA032 rule blocked the next push. The first complete changed
+owners passed153 in6.27s/native7.3 under ci-await-diagnostic-focus311-3c60627.
+A separate native prompt assertion then
+caught failure1 mislabeled native_status=0: ci-await-diagnostic-guidance-red311-3c60627 has1FAIL/
+1PASS in1.77s/native2.6. The corrected final focus passes160 in6.43s/native7.3
+under ci-await-diagnostic-final-focus311-3c60627. All retain300/60, n0,
+fatal warnings, explicit installed311 and native trace. An initially supplied
+LABEL variable was not consumed by this peer; the actual native label is
+run-watched for every receipt above, not the requested advisory label. The
+observed-status read confirms the final native receipt. No accepted source
+replay was repeated just to repair that reporting input. No live history, Git
+publication or API was written. Controls include an actual intervening
+record-push during the controlled GitHub query, both legacy CLI writers'
+kernel-lock refusals, stale/duplicate runs, every eligible conclusion,
+inexact/missing/corrupt inputs, atomic IO failures and canonical refusal.
+
+Cheap checks retained an accidentally omitted unchanged cooldown helper,
+then restored its exact original definition. The combined source/test typing
+invocation exposed the older feature's duplicate module-name mapping. Complete
+source owners checked separately and the complete two-test owner pass strict
+typing with no filters or configuration changes; Ruff passes all four files.
+Whole canonical profiles on both runtimes, complete affected consumers,
+independent source review, staged hooks and normal collection/commit remain
+pending at this source freeze. No new-SHA hosted or release proof is claimed.
+
+### Exclusive temporary files and native fixture ownership
+
+The first broader recorder profile stopped with1FAIL169PASS out of170 cases,
+9.41s/native10.5, at coverage-files/20261024T082334Z-28759-130d7c8f.
+The nested restart control copied private environment values, but inherited
+Make assignments replayed the outer cohort counter path. Explicit fixture argv
+fixed ordinary Make; the added -e control retained a false pass. Bounded native
+origin and actual recipe-shell captures show GNU3.81 using the outer private
+counter/PUSH paths in both its command-line rows and shell environment under -e.
+Only these owned keys and FORCE were captured; no full environment was printed.
+Receipts diagnostic-feedback-env-origin311-3c60627 and
+diagnostic-feedback-env-shell311-3c60627 remain diagnostic failures under the
+native run-watched label. This is measured carrier precedence, not a proved
+upstream bug or a production restart-counter defect.
+
+Both existing restart controls now keep first-f Makefile, then a second owned
+restart-guard-fixture-bindings.mk containing only native override/export
+counter/PUSH/FORCE bindings. They retain literal argv assignments, ordinary/-e
+modes, the full real include graph, unrelated carriers and all original
+count/status/event assertions. No MAKEFLAGS parser, global carrier stripping
+or production Make guard changed. Four project-private CI state variables
+remain explicit on the outer watcher and actual child.
+
+Independent review also held the predictable temporary-file writer. Genuine
+confined tests show its preseeded per-PID symlink overwrote foreign sentinel
+bytes and its preexisting regular temporary was moved away. The native
+diagnostic-feedback-temp-red311-3c60627 receipt contains3FAIL1PASS in0.84s/
+native1.8, including the original fixture failure. The writer now reuses the
+existing native NamedTemporaryFile idiom: exclusive creation, writing and
+flushing through its owned descriptor, identity validation before replacement,
+and cleanup only when the created regular-file device/inode still matches.
+Preseeded paths and foreign replacements survive. These controls establish
+their specific ownership boundaries; they do not promise arbitrary filesystem
+race immunity.
+
+The first changed-input focus preserved1FAIL19PASS in3.15s/native4.1 before the
+native fixture override. The final diagnostic-feedback-temp-final311-3c60627
+passes all20 controls in2.88s/native3.7 with the same four private state bindings
+as the failed profile. It retains actual IO errors, partial-state scope,
+terminal failure1, shared history locking and canonical refusal. Temporary
+-p/shell diagnostic instrumentation was removed before refreeze. Ruff and
+separate complete strict source/test checks pass on these repaired bytes.
+
+The [GNU Make manual](https://www.gnu.org/s/make/manual/make.html) and
+[Autoconf macros/submakes reference](https://www.gnu.org/software/autoconf/manual/autoconf-2.70/html_node/Macros-and-Submakes.html)
+provide primary context for environment, override and recursive propagation.
+The [firsthand GNU help report](https://lists.gnu.org/archive/html/help-make/2021-09/msg00005.html)
+reproduces a different nested-e origin change; it does not establish this3.81
+case's cause or version coverage. Root's bounded primary search retrieval
+succeeded, while full manual/Autoconf opens and the reply page timed out.
+The firsthand report opened fully; no unchanged retrieval was repeated.
+
+The earlier67-case await profiles on both runtimes measured205/212lines and
+70/76branches,96.698113/92.105263percent. They remain old-writer-scope evidence.
+The failed170-case recorder profile supplies no coverage proof. The repaired
+source requires fresh allpaths resource-ownership READ0, staged guard/review,
+both complete await owners, the complete recorder profile and all approved
+consumers on both installed runtimes. Development's43 complete functions are
+partitioned22/21 under a separate execution owner to overlap those profiles
+without duplicating them. All original bounds and proof gates remain required.
+
+
+### Admit only the observed native resource row
+
+The allpaths resource READ0 failed before broader replay at
+run-watched/diagnostic-feedback-resource311-3c60627, native2/5.5s. Its sole
+finding was the new _replace_atomic temporary acquisition at source126:13.
+The authorized diagnostic WRITE1 wrote only a private inventory:
+diagnostic-feedback-resource-private311-3c60627, native0/5.7s under90/60.
+It contained265 rows. Removing the sole addition reproduces all264 existing
+full descriptors, owners, coordinates, ordering and header/policy exactly.
+
+The canonical inventory intake inserts only that native row at index26:
+temp-artifact, _replace_atomic, owned=true, with source hash
+bd684d6d3b44ce211b7216df6dab7918a78989b4deaf235d40c47a2a477aa23d.
+Root independently verified the NUL-joined kind/owner/acquisition/teardown
+SHA256. One literal hunk preserves every original inventory byte; no canonical
+regeneration or other row change occurred. Native context-manager-exit describes
+handle closure. The delete=False pathname's owned cleanup is separately
+established by the actual finally/unlink, adversarial tests and source review.
+
+At this metadata checkpoint the fresh canonical allpaths READ0, six-path
+staged guard and final receiving remain required. The complete resource
+ownership test owner joins the affected consumers on both runtimes; no
+resource checker source, coverage profile, bound or release gate changed.

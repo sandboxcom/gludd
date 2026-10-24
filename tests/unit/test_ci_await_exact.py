@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import fcntl
 import io
 import json
+import os
+import shlex
 import subprocess
 import sys
 from collections.abc import Iterator, Sequence
@@ -795,3 +798,251 @@ def test_feature_doc_records_measured_wait_improvement_and_practitioner_evidence
     assert "github.com/orgs/community/discussions/5673" in documentation
     assert "github.com/orgs/community/discussions/158805" in documentation
     assert "bare tag name" in documentation
+
+
+class _DiagnosticWorkspace:
+    """Run the real waiter and unchanged AA032 rule with confined adapters."""
+
+    def __init__(self, path: Path, run: dict[str, object]) -> None:
+        self.history = path / "history.json"
+        self.state = path / "state.json"
+        self.restart = path / "restart-count"
+        self.observation = path / "observation.json"
+        self.calls = path / "gh-calls.jsonl"
+        self.history.write_text(json.dumps({
+            "last_push_sha": SHA, "last_checked_sha": "", "operator_note": "retain",
+        }))
+        self.restart.write_text("3")
+        payload = path / "run.json"
+        payload.write_text(json.dumps([run]))
+        binary = path / "bin"
+        binary.mkdir()
+        for name, body in {
+            "gh": (
+                "import json, os, pathlib, subprocess, sys\n"
+                "with open(os.environ['GLUDD_TEST_GH_CALLS'], 'a') as stream:\n"
+                "    stream.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+                "if os.environ.get('GLUDD_TEST_GH_FAIL'):\n"
+                "    print('owned lookup unavailable', file=sys.stderr)\n"
+                "    sys.exit(7)\n"
+                "if pushed := os.environ.get('GLUDD_TEST_GH_NEW_PUSH'):\n"
+                "    subprocess.run([sys.executable, os.environ['GLUDD_TEST_HISTORY_OWNER'], "
+                "'record-push', pushed], check=True, capture_output=True)\n"
+                "print(pathlib.Path(os.environ['GLUDD_TEST_GH_RUNS']).read_text())\n"
+            ),
+            "git": f"print({OTHER_SHA!r})\n",
+        }.items():
+            script = binary / name
+            script.write_text(f"#!{sys.executable}\n{body}")
+            script.chmod(0o755)
+        self.environment = os.environ.copy()
+        for key in ("MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "MAKELEVEL", "FORCE"):
+            self.environment.pop(key, None)
+        self.environment.update({
+            "PATH": f"{binary}{os.pathsep}{Path(sys.executable).parent}"
+                    f"{os.pathsep}{os.environ.get('PATH', '')}",
+            "GLUDD_CI_STATE_FILE": str(self.state),
+            "GLUDD_CI_HISTORY_FILE": str(self.history),
+            "GLUDD_CI_RESTART_COUNT_FILE": str(self.restart),
+            "GLUDD_PUSH_STATE_FILE": str(path / "push-state.json"),
+            "GLUDD_TEST_GH_RUNS": str(payload),
+            "GLUDD_TEST_GH_CALLS": str(self.calls),
+            "GLUDD_TEST_HISTORY_OWNER": str(ROOT / "scripts" / "ci_check_cooldown.py"),
+        })
+        self.guard_file = path / "guard.mk"
+        rule = _recipe("_ci-verdict-history-guard")
+        old = "STATE_FILE=/tmp/gludd-ci-verdict-history.json;"
+        assert rule.count(old) == 1
+        self.guard_file.write_text(rule.replace(
+            old, f"STATE_FILE={shlex.quote(str(self.history))};",
+        ) + "\n")
+        self.command = [
+            sys.executable, str(ROOT / "scripts" / "ci_await.py"),
+            "--ref", str(run["headBranch"]), "--sha", SHA,
+            "--workflow", "Build and Release", "--event", "workflow_dispatch",
+            "--timeout", "1", "--poll-interval", "0.01",
+            "--observation-output", str(self.observation),
+        ]
+
+    def guard(self) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["make", "--no-print-directory", "-f", str(self.guard_file),
+             "_ci-verdict-history-guard"],
+            env=self.environment, capture_output=True, text=True, check=False, timeout=10,
+        )
+
+    def wait(self, *extra: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [*self.command, *extra], env=self.environment,
+            capture_output=True, text=True, check=False, timeout=10,
+        )
+
+
+@pytest.mark.parametrize("conclusion, status", [("failure", 1), ("success", 0)])
+def test_diagnostic_terminal_cli_records_exact_feedback_before_next_push_guard(
+    tmp_path: Path, conclusion: str, status: int,
+) -> None:
+    workspace = _DiagnosticWorkspace(tmp_path, _payload(
+        ref="feature/owned-feedback", event="workflow_dispatch",
+        status="completed", conclusion=conclusion,
+    ))
+    before = workspace.guard()
+    assert before.returncode != 0
+    assert "never CI-verified" in before.stdout
+
+    result = workspace.wait()
+
+    assert result.returncode == status, result.stdout + result.stderr
+    assert len(workspace.calls.read_text().splitlines()) == 1
+    history = json.loads(workspace.history.read_text())
+    assert history["last_push_sha"] == SHA
+    assert history["last_checked_sha"] == SHA
+    assert history["last_verdict_kind"] == "diagnostic-workflow-dispatch"
+    assert history["last_verdict"] == (
+        "failure" if conclusion == "failure" else "diagnostic_success"
+    )
+    assert history["diagnostic_run"]["id"] == 42
+    assert history["operator_note"] == "retain"
+    assert workspace.restart.read_text() == "0"
+    assert workspace.guard().returncode == 0
+    for token in (
+        f"native_status={status}",
+        "history_recorded=true", "canonical_push=false", "ci_green=false",
+        "gate_evidence=false", "release_ready=false",
+    ):
+        assert token in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize(
+    "mode", [
+        "validate", "snapshot", "pending", "lookup-error", "foreign-push",
+        "observation-error", "no-observation",
+    ],
+)
+def test_diagnostic_cli_without_complete_owned_terminal_proof_never_records_history(
+    tmp_path: Path, mode: str,
+) -> None:
+    run = _payload(
+        ref="diagnostic/owned-feedback", event="workflow_dispatch",
+        status="completed", conclusion="success",
+    )
+    if mode == "pending":
+        run.update(status="queued", conclusion="")
+    workspace = _DiagnosticWorkspace(tmp_path, run)
+    if mode == "foreign-push":
+        workspace.history.write_text(json.dumps({
+            "last_push_sha": OTHER_SHA, "last_checked_sha": "", "keep": "foreign",
+        }))
+    if mode == "observation-error":
+        workspace.observation.write_text('{"keep": "manual history"}')
+    if mode == "no-observation":
+        workspace.command = workspace.command[:-2]
+    if mode == "lookup-error":
+        workspace.environment["GLUDD_TEST_GH_FAIL"] = "1"
+    before = workspace.history.read_bytes()
+    extra = {"validate": "--validate-only", "snapshot": "--snapshot-only"}
+
+    result = workspace.wait(*([extra[mode]] if mode in extra else []))
+
+    assert result.returncode == (
+        2 if mode in {"pending", "lookup-error"}
+        else 1 if mode == "observation-error" else 0
+    ), result.stdout + result.stderr
+    assert workspace.history.read_bytes() == before
+    assert not workspace.state.exists()
+    assert workspace.restart.read_text() == "3"
+    assert "history_recorded=true" not in result.stdout + result.stderr
+    if mode == "validate":
+        assert not workspace.calls.exists()
+    else:
+        assert workspace.calls.exists()
+
+
+def test_diagnostic_cli_history_lock_failure_invalidates_terminal_success(
+    tmp_path: Path,
+) -> None:
+    workspace = _DiagnosticWorkspace(tmp_path, _payload(
+        ref="feature/owned-feedback", event="workflow_dispatch",
+        status="completed", conclusion="success",
+    ))
+    before = workspace.history.read_bytes()
+    lock = workspace.history.with_name(f"{workspace.history.name}.lock")
+    with lock.open("a+") as held:
+        fcntl.flock(held.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        result = workspace.wait()
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert "history writer busy" in result.stdout
+        assert "outcome=diagnostic-feedback-failed" in result.stdout
+        assert workspace.history.read_bytes() == before
+        assert workspace.restart.read_text() == "3"
+        assert not workspace.state.exists()
+        snapshot = json.loads(workspace.observation.read_text())
+        assert snapshot["state"] == "lookup_error"
+        assert "history writer busy" in snapshot["evidence"]["error"]
+    assert workspace.wait().returncode == 0
+    assert workspace.restart.read_text() == "0"
+
+
+@pytest.mark.parametrize("writer", ["record-push", "record-verdict"])
+def test_existing_native_history_cli_writers_share_diagnostic_lock(
+    tmp_path: Path, writer: str,
+) -> None:
+    workspace = _DiagnosticWorkspace(tmp_path, _payload(
+        ref="feature/owned-feedback", event="workflow_dispatch",
+        status="completed", conclusion="success",
+    ))
+    before = workspace.history.read_bytes()
+    args = [writer, SHA] if writer == "record-push" else [writer, "failure", SHA]
+    lock = workspace.history.with_name(f"{workspace.history.name}.lock")
+    with lock.open("a+") as held:
+        fcntl.flock(held.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "ci_check_cooldown.py"), *args],
+            env=workspace.environment, capture_output=True, text=True, check=False, timeout=10,
+        )
+    assert result.returncode != 0
+    assert "history writer busy" in result.stdout + result.stderr
+    assert workspace.history.read_bytes() == before
+    assert workspace.restart.read_text() == "3"
+    assert not workspace.state.exists()
+
+
+def test_diagnostic_feedback_cannot_certify_canonical_terminal_verdict(tmp_path: Path) -> None:
+    from argparse import Namespace
+
+    from scripts import pipeline_status
+
+    run = _payload(
+        ref="feature/owned-feedback", event="workflow_dispatch",
+        status="completed", conclusion="success",
+    )
+    workspace = _DiagnosticWorkspace(tmp_path, run)
+    assert workspace.wait().returncode == 0
+    history = json.loads(workspace.history.read_text())
+    assert history["last_verdict"] == "diagnostic_success"
+    summary = pipeline_status.evaluate_runs([run], SHA, branch="feature/owned-feedback")
+    args = Namespace(
+        repo="sandboxcom/gludd", branch="feature/owned-feedback",
+        ledger_observation_exit_code=0,
+    )
+    assert pipeline_status._terminal_verdict(args, summary, SHA) is None
+    assert summary.missing_workflows
+    assert json.loads(workspace.observation.read_text())["release_ready"] is False
+
+
+def test_diagnostic_cli_rechecks_push_ownership_after_actual_query_boundary(tmp_path: Path) -> None:
+    workspace = _DiagnosticWorkspace(tmp_path, _payload(
+        ref="feature/owned-feedback", event="workflow_dispatch",
+        status="completed", conclusion="success",
+    ))
+    workspace.environment["GLUDD_TEST_GH_NEW_PUSH"] = OTHER_SHA
+
+    result = workspace.wait()
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    history = json.loads(workspace.history.read_text())
+    assert history["last_push_sha"] == OTHER_SHA
+    assert history["last_checked_sha"] == ""
+    assert workspace.restart.read_text() == "4"
+    assert not workspace.state.exists()
+    assert "history_recorded=true" not in result.stdout + result.stderr
