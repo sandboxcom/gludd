@@ -875,11 +875,8 @@ help:
 		"  tf-versions-check     Enforce stacks match infra/terraform/versions.tf" \
 		"  tf-clean              Remove the shared plugin cache" \
 		"" \
-		"  --- Git ---" \
-		"  ci-cancel             Plan an emergency single-run request (RUN, CI_CANCEL_VALIDATE_ONLY=1; explicit apply=0)" \
-		"  ci-rerun              Guarded run request; CI_RERUN_DEBUG=0|1, CI_RERUN_FAILED_ONLY=0|1 (both default0), CI_FAILURE_VALIDATE_ONLY=1 plans" \
-		"  ci-rerun-help         Read installed gh rerun flag help without authentication or a remote write" \
-		"  (Single-source policy: features land on development first, then merge to master)" \
+	"  --- Git ---" \
+	"  (Single-source policy: features land on development first, then merge to master)" \
 		"  git-status            Show git status" \
 		"  batch-push            Publish a guarded candidate (default COMMIT_THRESHOLD=5; contract threshold=1 refuses; SSH_KEY)" \
 		"  git-merge-nc           Prepare a clean no-commit ort merge (BR; refuses unsafe state)" \
