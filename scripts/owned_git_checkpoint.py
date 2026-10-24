@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import os
 import re
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -150,6 +151,195 @@ def verify_registered_root(owner: Path, *, main: bool, common: Path) -> None:
         raise Refused("registered checkpoint owner has a stale or foreign native backlink")
 
 
+def verify_checkpoint_claim(owner: Path, files: list[str], label: str, message: str) -> None:
+    """Retain the existing literal owned scope and exact root-bound message."""
+    if (files != sorted(set(files))
+            or any(not re.fullmatch(r"[A-Za-z0-9_./+@-]+", name)
+                   or any(part in {"", ".", "..", ".git"} for part in name.split("/"))
+                   for name in files)
+            or metadata(owner, files, label) != message):
+        raise Refused("foreign or nonliteral owned checkpoint metadata")
+
+
+def verify_checkpoint_content(root: Path, sha: str, message: str, files: list[str]) -> None:
+    """Validate the existing native stash topology, scope and captured file modes."""
+    if git(root, "show", "-s", "--format=%s", sha).strip().split(": ", 1)[-1] != message:
+        raise Refused("native stash commit differs from its inventory ownership claim")
+    parents = git(root, "rev-list", "--parents", "-n", "1", sha).split()
+    if len(parents) not in {3, 4}:
+        raise Refused("owned checkpoint has no native stash parent topology")
+    index_parents = git(root, "rev-list", "--parents", "-n", "1", parents[2]).split()
+    if index_parents != [parents[2], parents[1]] or checkpoint_paths(root, sha) != set(files):
+        raise Refused("owned checkpoint native index or captured scope differs")
+    if (len(parents) == 4
+            and git(root, "rev-list", "--parents", "-n", "1", parents[3]).split() != [parents[3]]):
+        raise Refused("owned checkpoint untracked parent is not a native root commit")
+    for tree in (parents[1], sha, *parents[2:]):
+        entries = git(root, "ls-tree", "-r", "-z", tree)
+        for entry in entries.rstrip("\0").split("\0") if entries else []:
+            mode, name = entry.split(" ", 1)[0], entry.split("\t", 1)[-1]
+            if name in files and mode not in {"100644", "100755"}:
+                raise Refused("owned checkpoint captures a symlink or submodule")
+
+
+RepairFileState = tuple[int, int, int, int, bytes]
+RepairState = tuple[str, str, str, tuple[RepairFileState, ...]]
+
+
+def _repair_file_state(path: Path) -> RepairFileState:
+    """Read only one regular metadata file without following its final link."""
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(descriptor, "rb") as stream:
+        before = os.fstat(stream.fileno())
+        if not stat.S_ISREG(before.st_mode):
+            raise Refused("checkpoint repair metadata is not a regular file")
+        content = stream.read()
+        after = os.fstat(stream.fileno())
+    before_identity = before.st_dev, before.st_ino, before.st_mode, before.st_mtime_ns
+    after_identity = after.st_dev, after.st_ino, after.st_mode, after.st_mtime_ns
+    if before_identity != after_identity or before.st_size != len(content):
+        raise Refused("checkpoint repair metadata changed during inspection")
+    return *before_identity, content
+
+
+def _repair_link_state(
+    root: Path, worktree: Path, administration: Path, sha: str, head: str, branch: str,
+) -> RepairState:
+    """Bind the selected missing link to fresh native ownership and immutable state."""
+    common = Path(git(root, "rev-parse", "--path-format=absolute", "--git-common-dir").strip())
+    if (common.resolve(strict=True) != common
+            or administration.resolve(strict=True) != administration
+            or administration.parent != common / "worktrees"
+            or not administration.is_dir()):
+        raise Refused("checkpoint repair requires one canonical native worktree administration directory")
+    states = tuple(_repair_file_state(administration / name) for name in (
+        "gitdir", "commondir", "HEAD", "index", "locked",
+    ))
+    if (states[0][-1] != os.fsencode(worktree / ".git") + b"\n"
+            or states[1][-1] != b"../..\n"
+            or states[2][-1] != f"ref: refs/heads/{branch}\n".encode()
+            or states[4][-1] != f"checkpoint-{sha}\n".encode()):
+        raise Refused("checkpoint repair native backlink, common link, HEAD or lock differs")
+    inventory = git(root, "worktree", "list", "--porcelain", "-z")
+    identity = hashlib.sha256(os.fsencode(worktree)).hexdigest()
+    if registered_roots(inventory).get(identity) != (worktree, False):
+        raise Refused("checkpoint repair owner is not the exact live registered linked worktree")
+    record = next(
+        fields for entry in inventory[:-2].split("\0\0")
+        if (fields := entry.split("\0"))[0] == f"worktree {worktree}"
+    )
+    if (f"HEAD {head}" not in record or f"branch refs/heads/{branch}" not in record
+            or f"locked checkpoint-{sha}" not in record):
+        raise Refused("checkpoint repair HEAD, branch or retained checkpoint lock differs")
+    prefix = f"--git-dir={administration}"
+    if (git(root, prefix, "rev-parse", "--verify", "HEAD").strip() != head
+            or git(root, prefix, "symbolic-ref", "HEAD").strip() != f"refs/heads/{branch}"
+            or Path(git(root, prefix, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()) != common):
+        raise Refused("checkpoint repair native administration identity differs")
+    if any(os.path.lexists(path) for path in (
+        administration / "index.lock", common / "refs" / "stash.lock",
+        common / "refs" / "heads" / f"{branch}.lock", common / "packed-refs.lock",
+    )):
+        raise Refused("checkpoint repair refuses an active native index or ref lock")
+    records = git(root, "stash", "list", "--format=%H%x00%s%x00")
+    selected = [record for record in records.splitlines() if record.split("\0", 1)[0] == sha]
+    if len(selected) != 1:
+        raise Refused("checkpoint repair requires the exact unique retained stash SHA")
+    fields = selected[0].split("\0")
+    if len(fields) != 3 or fields[-1]:
+        raise Refused("checkpoint repair retained stash inventory is malformed")
+    message = fields[1].split(": ", 1)[-1]
+    match = re.fullmatch(r"gludd-owned-checkpoint label=(\S+) owner=([0-9a-f]{64}) files=(\S+)", message)
+    if match is None or match.group(2) != identity:
+        raise Refused("checkpoint repair stash belongs to a different owner")
+    label, _, scope = match.groups()
+    files = scope.split(",")
+    verify_checkpoint_claim(worktree, files, label, message)
+    verify_checkpoint_content(root, sha, message, files)
+    return inventory, records, git(root, "show-ref", "--head"), states
+
+
+def repair_link(
+    root: Path, worktree_raw: str, administration_raw: str,
+    sha: str, head: str, branch: str, *, validate: bool,
+) -> None:
+    """Recreate only a proven absent checkpoint-owner pointer without replacement."""
+    if (not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", sha)
+            or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", head)):
+        raise Refused("checkpoint repair requires full exact checkpoint and expected HEAD SHAs")
+    git(root, "check-ref-format", "--branch", branch)
+    worktree, administration = Path(worktree_raw), Path(administration_raw)
+    if any(
+        not raw or not path.is_absolute() or ".." in path.parts
+        or any(ord(character) < 32 for character in raw)
+        for raw, path in ((worktree_raw, worktree), (administration_raw, administration))
+    ):
+        raise Refused("checkpoint repair requires literal canonical absolute paths")
+    if worktree.resolve(strict=True) != worktree or not worktree.is_dir():
+        raise Refused("checkpoint repair requires the existing canonical owner directory")
+    if os.path.lexists(worktree / ".git"):
+        raise Refused("checkpoint repair refuses an existing file, directory or symlink at .git")
+    descriptor = os.open(worktree, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    created = False
+    try:
+        directory = os.fstat(descriptor)
+        state = _repair_link_state(root, worktree, administration, sha, head, branch)
+        if validate:
+            print(
+                f"OWNED-CHECKPOINT-LINK-PLAN checkpoint_sha={sha} "
+                "native_ownership_verified=1 writes=0 gate_evidence=false release_ready=false",
+                flush=True,
+            )
+            print(
+                "AGENT_NEXT target=git-owned-checkpoint-repair-link outcome=planned "
+                "writes=0 gate_evidence=false release_ready=false; only selected native metadata "
+                "was verified; Root may request literal GIT_CHECKPOINT_VALIDATE_ONLY=0 after "
+                "source acceptance; no repair, commit or release proof",
+                file=sys.stderr, flush=True,
+            )
+            return
+        if _repair_link_state(root, worktree, administration, sha, head, branch) != state:
+            raise Refused("checkpoint repair native identity changed before pointer creation")
+        current = worktree.stat()
+        if (current.st_dev, current.st_ino) != (directory.st_dev, directory.st_ino):
+            raise Refused("checkpoint repair owner directory changed before pointer creation")
+        # O_EXCL and the held canonical-directory descriptor prevent replacement.
+        pointer = os.open(
+            ".git", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            0o644, dir_fd=descriptor,
+        )
+        created = True
+        with os.fdopen(pointer, "wb") as stream:
+            stream.write(os.fsencode(f"gitdir: {administration}\n"))
+            stream.flush()
+            os.fsync(stream.fileno())
+        common = administration.parent.parent
+        verify_registered_root(worktree, main=False, common=common)
+        if (Path(git(worktree, "rev-parse", "--absolute-git-dir").strip()) != administration
+                or _repair_link_state(root, worktree, administration, sha, head, branch) != state):
+            raise Refused("checkpoint repair state changed; preserve the pointer and reconcile native evidence")
+        print(
+            f"OWNED-CHECKPOINT-LINK-REPAIRED checkpoint_sha={sha} "
+            "checkpoint_retained=1 scope=selected-missing-link gate_evidence=false release_ready=false",
+            flush=True,
+        )
+        print(
+            "AGENT_NEXT target=git-owned-checkpoint-repair-link outcome=passed "
+            "next_owner=owned-checkpoint-count-leaks; inspect fresh retained/unowned counts "
+            "before the normal guarded commit; gate and exact-SHA proofs remain pending",
+            file=sys.stderr, flush=True,
+        )
+    except (Refused, OSError, subprocess.TimeoutExpired) as exc:
+        if created:
+            raise Refused(
+                f"{exc}; selected pointer may have been created at {worktree / '.git'}; "
+                "preserve it and reconcile exact native identity before retry"
+            ) from exc
+        raise
+    finally:
+        os.close(descriptor)
+
+
 def _checkpoint_inventory(root: Path) -> tuple[int, frozenset[Path]]:
     """Validate one fresh native inventory and preserve its existing diagnostics."""
     retained = unowned = 0
@@ -175,30 +365,11 @@ def _checkpoint_inventory(root: Path) -> tuple[int, frozenset[Path]]:
             if identity not in owners:
                 raise Refused("checkpoint owner is not a live registered worktree")
             owner, is_main = owners[identity]
-            if (files != sorted(set(files)) or label in labels
-                    or any(not re.fullmatch(r"[A-Za-z0-9_./+@-]+", name)
-                           or any(part in {"", ".", "..", ".git"} for part in name.split("/"))
-                           for name in files)
-                    or metadata(owner, files, label) != message):
+            if label in labels:
                 raise Refused("foreign or nonliteral owned checkpoint metadata")
+            verify_checkpoint_claim(owner, files, label, message)
             verify_registered_root(owner, main=is_main, common=common)
-            if git(root, "show", "-s", "--format=%s", sha).strip().split(": ", 1)[-1] != message:
-                raise Refused("native stash commit differs from its inventory ownership claim")
-            parents = git(root, "rev-list", "--parents", "-n", "1", sha).split()
-            if len(parents) not in {3, 4}:
-                raise Refused("owned checkpoint has no native stash parent topology")
-            index_parents = git(root, "rev-list", "--parents", "-n", "1", parents[2]).split()
-            if index_parents != [parents[2], parents[1]] or checkpoint_paths(root, sha) != set(files):
-                raise Refused("owned checkpoint native index or captured scope differs")
-            if (len(parents) == 4
-                    and git(root, "rev-list", "--parents", "-n", "1", parents[3]).split() != [parents[3]]):
-                raise Refused("owned checkpoint untracked parent is not a native root commit")
-            for tree in (parents[1], sha, *parents[2:]):
-                entries = git(root, "ls-tree", "-r", "-z", tree)
-                for entry in entries.rstrip("\0").split("\0") if entries else []:
-                    mode, name = entry.split(" ", 1)[0], entry.split("\t", 1)[-1]
-                    if name in files and mode not in {"100644", "100755"}:
-                        raise Refused("owned checkpoint captures a symlink or submodule")
+            verify_checkpoint_content(root, sha, message, files)
         except Refused as exc:
             unowned += 1
             print(f"OWNED-CHECKPOINT-UNOWNED checkpoint_sha={sha} reason={exc}", file=sys.stderr, flush=True)
@@ -296,15 +467,31 @@ def restore(root: Path, files: list[str], label: str, sha: str, *, validate: boo
 def main() -> int:
     """Read Make-exported values without injecting untrusted values into a shell."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("push", "restore", "count-leaks"))
+    parser.add_argument("action", choices=("push", "restore", "count-leaks", "repair-link"))
     args = parser.parse_args()
     try:
         if args.action == "count-leaks":
             print(count_leaks(repository_root()), flush=True)
             return 0
-        validate = os.environ.get("GIT_CHECKPOINT_VALIDATE_ONLY", "1")
+        validate_key = (
+            "GLUDD_CHECKPOINT_REPAIR_VALIDATE_ONLY"
+            if args.action == "repair-link" else "GIT_CHECKPOINT_VALIDATE_ONLY"
+        )
+        validate = os.environ.get(validate_key, "1")
         if validate not in {"0", "1"}:
+            if args.action == "repair-link":
+                raise Refused(f"{validate_key} (public GIT_CHECKPOINT_VALIDATE_ONLY) must be 0 or 1")
             raise Refused("GIT_CHECKPOINT_VALIDATE_ONLY must be 0 or 1")
+        if args.action == "repair-link":
+            repair_link(
+                repository_root(), os.environ.get("GLUDD_CHECKPOINT_REPAIR_WORKTREE", ""),
+                os.environ.get("GLUDD_CHECKPOINT_REPAIR_ADMIN_DIR", ""),
+                os.environ.get("GLUDD_CHECKPOINT_REPAIR_SHA", ""),
+                os.environ.get("GLUDD_CHECKPOINT_REPAIR_EXPECTED_HEAD", ""),
+                os.environ.get("GLUDD_CHECKPOINT_REPAIR_EXPECTED_BRANCH", ""),
+                validate=validate == "1",
+            )
+            return 0
         root, files = root_and_files(os.environ.get("GIT_CHECKPOINT_FILES", ""), restore=args.action == "restore")
         label = os.environ.get("GIT_CHECKPOINT_LABEL", "")
         if args.action == "push":
@@ -313,6 +500,16 @@ def main() -> int:
             restore(root, files, label, os.environ.get("GIT_CHECKPOINT_SHA", ""), validate=validate == "1")
     except (Refused, OSError, subprocess.TimeoutExpired) as exc:
         print(f"OWNED-CHECKPOINT-REFUSED {exc}", file=sys.stderr, flush=True)
+        if args.action == "repair-link":
+            pointer = Path(os.environ.get("GLUDD_CHECKPOINT_REPAIR_WORKTREE", "")) / ".git"
+            print(
+                "AGENT_NEXT target=git-owned-checkpoint-repair-link outcome=refused "
+                "native_status=2 gate_evidence=false release_ready=false "
+                f"possible_pointer={str(pointer)!r}; retain the native reason and inspect "
+                "exact selected link/admin/index/ref/stash state before a changed-input retry; "
+                "never overwrite, remove, pop, drop or force unrelated state",
+                file=sys.stderr, flush=True,
+            )
         return 2
     return 0
 

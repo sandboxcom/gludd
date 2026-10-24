@@ -839,6 +839,7 @@ help:
 		"  git-merge-nc           Prepare a clean no-commit ort merge (BR; refuses unsafe state)" \
 		"  git-owned-checkpoint-push     Checkpoint explicit owned files (FILES, GIT_CHECKPOINT_LABEL, GIT_CHECKPOINT_VALIDATE_ONLY)" \
 		"  git-owned-checkpoint-restore  Restore exact top checkpoint, retaining evidence (FILES, GIT_CHECKPOINT_LABEL, GIT_CHECKPOINT_SHA, GIT_CHECKPOINT_VALIDATE_ONLY)" \
+		"  git-owned-checkpoint-repair-link  Plan/repair only a verified absent owner link (GIT_CHECKPOINT_WORKTREE, GIT_CHECKPOINT_ADMIN_DIR, GIT_CHECKPOINT_SHA, GIT_CHECKPOINT_EXPECTED_HEAD, GIT_CHECKPOINT_EXPECTED_BRANCH, GIT_CHECKPOINT_VALIDATE_ONLY)" \
 		"  git-diff              Show diff stats" \
 		"  git-staged            Show staged changes" \
 		"  git-log               Show recent commits" \

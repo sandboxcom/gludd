@@ -2493,6 +2493,7 @@
         "RUNTIME_DIAGNOSTIC_CONSOLE"
       ],
       "behavior": "make runtime-startup-archive RUNTIME_DIAGNOSTIC_VALIDATE_ONLY=1 OBSERVED_ROOT=.gate-logs/observed OBSERVED_LABEL=v012-312-startup-profile RUN_ID=imports-f634b76-20261018 RUNTIME_DIAGNOSTIC_SOURCE_SHA=f634b7662a4122c6c96262f1656dc5088da03b96 RUNTIME_DIAGNOSTIC_ARCHIVE=/tmp/gludd-runtime-startup-contract-plan RUNTIME_DIAGNOSTIC_CONSOLE='[]'"
-    }
+    },
+    {"name":"git-owned-checkpoint-repair-link","make_variables":["GIT_CHECKPOINT_WORKTREE","GIT_CHECKPOINT_ADMIN_DIR","GIT_CHECKPOINT_SHA","GIT_CHECKPOINT_EXPECTED_HEAD","GIT_CHECKPOINT_EXPECTED_BRANCH","GIT_CHECKPOINT_VALIDATE_ONLY"],"behavior":"make git-owned-checkpoint-repair-link GIT_CHECKPOINT_WORKTREE=/tmp/gludd-checkpoint-absent GIT_CHECKPOINT_ADMIN_DIR=/tmp/gludd-checkpoint-admin-absent GIT_CHECKPOINT_SHA=0000000000000000000000000000000000000000 GIT_CHECKPOINT_EXPECTED_HEAD=0000000000000000000000000000000000000000 GIT_CHECKPOINT_EXPECTED_BRANCH=agent-checkpoint-contract GIT_CHECKPOINT_VALIDATE_ONLY=1","expected_result":"Expected Make2 refusal for absent owned metadata; validation writes nothing and provides no repair, commit or release proof."}
   ]
 }

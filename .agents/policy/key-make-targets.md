@@ -1031,6 +1031,30 @@ filing succeeds; do not invent one if the daemon is unavailable. Keep credential
 out of request prose and shell arguments; use existing module authentication.
 This entrypoint grants no additional permission or release authority.
 
+### Repair only a proven missing checkpoint-owner link
+
+Use git-owned-checkpoint-repair-link only for an existing canonical linked owner
+whose .git pointer alone is absent and whose retained checkpoint/admin metadata
+are independently verified. Set GIT_CHECKPOINT_WORKTREE, GIT_CHECKPOINT_ADMIN_DIR,
+GIT_CHECKPOINT_SHA, GIT_CHECKPOINT_EXPECTED_HEAD and
+GIT_CHECKPOINT_EXPECTED_BRANCH explicitly; GIT_CHECKPOINT_VALIDATE_ONLY defaults
+to1. Both SHA inputs must be full immutable object IDs. Use one target per call.
+Plan1 verifies actual native identity without mutation; it supplies no repair,
+commit, gate or release proof. Root owns explicit mode0 after source acceptance.
+The safe absent-owner contract below must refuse with Make2 and change nothing:
+
+~~~console
+make git-owned-checkpoint-repair-link GIT_CHECKPOINT_WORKTREE=/tmp/gludd-checkpoint-absent GIT_CHECKPOINT_ADMIN_DIR=/tmp/gludd-checkpoint-admin-absent GIT_CHECKPOINT_SHA=0000000000000000000000000000000000000000 GIT_CHECKPOINT_EXPECTED_HEAD=0000000000000000000000000000000000000000 GIT_CHECKPOINT_EXPECTED_BRANCH=agent-checkpoint-contract GIT_CHECKPOINT_VALIDATE_ONLY=1
+~~~
+
+Never replace this refusal with a generic watched Git repair, overwrite/pop/drop,
+unlock or removal. Builtin Git repair may enumerate siblings. The selected owner
+requires the exact native checkpoint lock and preserves index/ref/stash bytes;
+partial failures name the possible pointer and require reconciliation. After an
+actual repair, inspect fresh count-leaks retained/unowned diagnostics before the
+normal commit; CLI0 alone is not zero leaks. The [owning record](../../docs/features/GATE_RESOURCE_LIFECYCLE.md#selected-missing-checkpoint-owner-link-2026-10-24)
+retains native failures, primary/firsthand research and proof limits.
+
 ### Compare two immutable commit trees for source review
 
 ~~~console
