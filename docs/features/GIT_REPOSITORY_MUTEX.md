@@ -699,6 +699,278 @@ source revert through the existing Git owner. The affected-owner receiving
 above is complete; normal collection, immutable review and all final release
 proofs remain separate and pending.
 
+## Immutable commit comparison for source review
+
+The S98.4 merge reviewer needed to compare immutable merge
+7e8669178a979c4f8584a9f0243ae58e1a03be1f with source
+713af3ac0869c17f7792e4f4348855efc6f7baed. The existing git-diff-full
+reads the working tree against HEAD and converts a native Git failure to
+"No diff"; it cannot answer that pinned comparison. Its historical behavior
+and every other Git target remain unchanged.
+
+The additive git-compare-commits target accepts only explicit GIT_COMPARE_BASE
+and GIT_COMPARE_HEAD, each a literal full40hex object ID. An early native Make
+block captures raw public values into overridden private exports and unexports
+the public inputs before startup. Pure Make hex stripping/counting rejects
+foreign bytes, missing/short inputs and multiple goals before subprocesses.
+The existing Python recipe verifies each direct object type with native
+cat-file; blobs, trees and annotated tag objects refuse instead of peeling to a
+commit. It then runs:
+
+~~~text
+git --no-pager --no-optional-locks diff --no-ext-diff --no-textconv --no-renames --no-color --exit-code BASE HEAD --
+~~~
+
+The terminal -- excludes caller file scope. No arbitrary options, output path,
+new helper, observer or cache is introduced. Stdout is patch only; stderr keeps
+Git diagnostics and outcome-specific AGENT_NEXT with the actual pinned pair.
+Native0 means identical trees, even at different commit IDs; native1 means
+differences and is Make2/Error1. Native errors remain errors, including their
+actual status. Invalid syntax or wrong object type is policy refusal2.
+
+The safe registered example compares
+4604eeccc90ce9e89e575a8641ba1213a15f9925 with itself. The
+[mandatory Make guide](../../.agents/policy/key-make-targets.md#compare-two-immutable-commit-trees-for-source-review)
+documents the explicit invocation and statuses. Tests use real private Git
+repositories, dirty staged and working bytes, equal-tree distinct commits,
+different commits, missing/noncommit objects, native failure, disabled external
+diff/textconv and active same-origin Make/backtick witnesses. CLI, environment
+and -e retain normal precedence. Index bytes/metadata, refs/HEAD and working
+bytes must remain unchanged; unguarded witnesses must actually execute the
+same payload before guarded no-evaluation assertions are accepted.
+
+This interface is diagnostic source-review tooling. It supplies no semantic
+approval, ancestry result, collection, canonical full gate, exact-SHA hosted
+CI, deployment, capacity clearance or release completion. Existing coverage,
+ZDD, promotion and final-proof guards remain. Local validation remains distinct from those authorities.
+
+### Native local validation (2026-10-24 UTC)
+
+The isolated source base is 31de23bbd8260528dcaba64cac7da1904829c29d on
+agent-v012-worktree-create; Main was not edited. Before adding the target, all
+nine real private-Git result cases failed against the missing interface:
+same SHA, different SHA/equal tree and differing trees, across CLI/env/-e.
+The retained RED is 9 FAIL in 5.62s, native6.674s/status2 at
+.gate-logs/observed/git-compare-red/git-compare-red311-31de23b.json
+(00:28:45.449038 through00:28:52.123499 UTC). The later additive implementation
+then passed the complete new owner: 48 PASS in23.56s/native24.901s/status0,
+.gate-logs/observed/git-compare-focus/git-compare-focus311-31de23b.json
+(00:29:18.761256 through00:29:43.662109 UTC), CPython3.11.14, fatal warnings,
+n0, explicit ID= and original300/60 watched bounds. Both exact sessions drained.
+
+The 12 active same-origin witnesses cover Make and backtick payloads, both
+inputs and CLI/env/-e. They first prove the same unguarded payload executes,
+remove only that owned marker, then prove guarded refusal before startup/Git.
+The complete native positives also preserve dirty index bytes/mtime/mode/inode,
+HEAD, refs and working bytes and retain native1/128/37 versus policy2.
+
+The changed target's actual documented equal-SHA example returned native0 with
+empty stdout and outcome=identical/pinned-pair/no-gate guidance.
+check-make-target-contract passed293 targets. Test-source strict typing and the
+native environment-write guard passed. An initial Ruff121-character decorator
+failure was corrected only by line wrapping; Ruff then passed.
+
+The first peer Markdown check refused because its existing owner requires the
+peer-local .venv/bin/rumdl, which is absent. No environment was installed.
+The same native lint-markdown owner was run from Main with the two absolute
+peer Markdown paths and the absolute unchanged peer config; the existing locked
+binary reported both files clean. This read changed no Main source/index.
+The first line-limit check reported the contract JSON at2504lines. Compacting
+only the adjacent pre-existing git-show-full record from seven lines to one
+preserved its exact data and restored the unchanged <2500 policy;
+check-file-line-limits passed10871tracked files, then the293-target contract
+check passed again. No threshold, assertion or Git target behavior was weakened.
+
+### Complete receiving and diagnostic use (2026-10-24 UTC)
+
+Root staged the exact six-path change based on
+31de23bbd8260528dcaba64cac7da1904829c29d and completed the native content
+preflight in 7.5s: all three hooks passed, staged line policy passed, zero new
+clones. Its retained native receipt is
+.gate-logs/observed/git-compare-staged-preflight/git-compare-staged-preflight311-31de23b.json;
+the exact staged observation was 1792802113. Source/tests/configuration stayed
+frozen through both complete receiving executions.
+
+The complete seven-owner union was:
+
+~~~text
+tests/unit/test_git_compare_commits.py
+tests/unit/test_make_target_contract.py
+tests/unit/test_makefile_layout.py
+tests/unit/test_make_readonly_version.py
+tests/unit/test_make_help_audit.py
+tests/unit/test_make_help_throughput.py
+tests/unit/test_status_snapshot.py
+~~~
+
+Native collection actually selected 190 cases on each runtime. Both executions
+passed all 190, with no skips or warnings, n0, explicit ID=, fatal warnings,
+native trace and the unchanged 300/60 watched bounds:
+
+- CPython 3.11.14: 190 PASS in 51.29s / native 52.619s, terminal 0,
+  .gate-logs/observed/git-compare-receiving/git-compare-receiving311-31de23b.json;
+  UTC 00:35:54.811481 through 00:36:47.430171.
+- CPython 3.12.15: 190 PASS in 55.72s / native 56.902s, terminal 0,
+  .gate-logs/observed/git-compare-receiving/git-compare-receiving312-31de23b.json;
+  UTC 00:37:02.430419 through 00:37:59.332977.
+
+The exact native sessions 72699 and 25113 drained before the final receipt-only
+prose. Final staged-source observation 1792802290 retained the same full 31de HEAD,
+six staged paths and zero unstaged/untracked entries. Root owns staging this
+final feature prose and normal guarded commit/collection. Receipt prose alone
+does not justify replaying the already accepted unchanged source union.
+
+The target also enabled actual independent diagnostics while other work
+continued. Root compared source 713af3ac0869c17f7792e4f4348855efc6f7baed
+with merge 7e8669178a979c4f8584a9f0243ae58e1a03be1f: the native diff
+contained only five metadata paths, and the separate Main source-only review
+completed. The Hosted owner's retained eb-to-fd8 diagnostic independently
+confirmed workflow-byte changes rather than inferring them from its history
+query. Those short diagnostic labels are not valid target inputs; the target
+still requires the actual full40hex pair. Both actual uses returned native
+DIFFERENT 1 / GNU Make 2, the expected patch-bearing result to review, not a failed
+proof to rerun unchanged.
+
+These diagnostics supply tree-content evidence only. Main's source-only review
+does not approve this comparator's future commit or establish a full gate,
+hosted CI, deployment or release result. This complete receiving covers the isolated
+six-path change based on 31de; receiving an overlapping merge still needs
+its own actual evidence. Independent source review, normal guarded collection
+and any final exact-SHA proofs retain their original owners and limits.
+
+### Independent review correction after 11d3628
+
+Independent source review marked immutable
+11d362870c177deabed363e76f7f2e4463dfa802 CHANGES REQUIRED for two
+blocking boundaries. The stdin bootstrap lacked native safe-path mode before
+importing re/subprocess, and the fixture dataclass included its copied ambient
+environment in default repr. The old commit and all prior evidence remain;
+clean-CWD native comparisons and earlier green receiving did not prove either
+boundary safe.
+
+The correction is deliberately limited to the comparator's existing Make20
+command, its existing test owner and this record. The command now ends with
+quoted PYTHON -P -, preserving its interpreter, stdin program, inputs, Git
+flags, stdout, native statuses and all environment carriers. Native -P removes
+the interpreter's implicit stdin CWD search entry; it is not environment
+isolation and does not erase or distrust an explicit PYTHONPATH. The fixture
+field is field(repr=False), retaining exactly the same environment values.
+No new production helper, wrapper, observer, cache or coverage profile is added.
+
+Privacy was proved and repaired first. A single new regression constructs only
+a synthetic dictionary containing test-only strings; it never calls the ambient
+fixture. That controlled repr RED is 1 FAIL in 0.68s / native 1.674s:
+.gate-logs/observed/git-compare-privacy-red/git-compare-privacy-red311-11d3628.json.
+Only after field(repr=False) passed the same synthetic node, 1 PASS in 0.45s /
+native 1.115s at
+.gate-logs/observed/git-compare-privacy-green/git-compare-privacy-green311-11d3628.json,
+were failing controls allowed to construct the mature ambient fixture. This
+ordering prevents regression evidence from exposing actual environment values.
+
+The new stdin controls copy the complete actual comparator recipe and remove
+only -P for their unguarded witness, retaining its actual foundation/raw-input
+entrypoint and the same explicit unrelated PYTHONPATH carrier. A confined
+subprocess.py must actually execute its owned marker and native status 73 before that
+marker alone is removed. The ordinary production entrypoint then must leave
+the marker absent and complete the same native comparison. A confined
+sitecustomize carrier records only the explicit fixture path and native
+safe_path=False/True for those stdin calls; all unrelated carriers survive.
+This proves the demonstrated implicit-CWD subprocess shadow boundary on
+CLI/env/-e. It does not claim a separate executable re.py witness or safety
+against deliberately supplied untrusted PYTHONPATH content.
+
+Before the one-option production repair, all three controls failed at the
+guarded no-execution assertion: 3 FAIL in 2.37s / native 3.329s,
+.gate-logs/observed/git-compare-shadow-red/git-compare-shadow-red311-11d3628.json.
+After it, the complete four new privacy/shadow controls passed in
+2.96s / native 3.760s:
+.gate-logs/observed/git-compare-safe-green/git-compare-safe-green311-11d3628.json.
+All exact sessions drained; original assertions and 0/1/error behavior remain.
+These are bounded CPython 3.11.14 source regressions with original 300/60,
+n0, explicit ID=, fatal warnings and native trace.
+
+Ruff, strict typecheck-scope and the native test environment-write guard passed.
+The unchanged 293-target contract and original <2500 line policy passed, the latter
+over 10872 tracked files. The actual documented 4604eeccc90ce9e89e575a8641ba1213a15f9925
+self-comparison returned native 0 with empty stdout and the same pinned-pair,
+scope and no-gate guidance. Native Main-installed Rumdl read this absolute peer
+feature with the unchanged peer config and passed. These cheap checks provide
+no source approval, broad acceptance, coverage or release authority.
+
+At that narrow handoff, staged content review and complete receiving were
+still pending. The rejected source receives no retroactive approval or final proof.
+
+### Repaired-source complete receiving (2026-10-24 UTC)
+
+Root staged only Make20, the existing comparator test owner and this feature
+from base 11d362870c177deabed363e76f7f2e4463dfa802. Its staged observation
+1792804019 had exactly three staged paths and zero unstaged/untracked entries.
+The native staged guard passed all three hooks, staged line policy and zero
+new clones in 6.383s at
+.gate-logs/observed/git-compare-safe-staged-preflight/git-compare-safe-staged-preflight311-11d3628.json
+(01:07:09.663406 through 01:07:16.047241 UTC).
+
+The same complete seven-owner roster above was executed on both installed
+runtimes with the entire now 52-case comparator owner and all six existing
+metadata/status consumers. Native collection selected 194 cases each; both
+passed every 194, zero warnings/skips. Explicit runtime tuples, original 300/60,
+n0, fatal warnings, ID= and native trace were unchanged. The identical native
+child command was serialized across runtimes and each exact session drained:
+
+- CPython 3.11.14: 194 PASS in 54.15s / native 55.505s, terminal 0,
+  .gate-logs/observed/git-compare-safe-receiving/git-compare-safe-receiving311-11d3628.json;
+  01:08:00.218572 through 01:08:55.724323 UTC.
+- CPython 3.12.15: 194 PASS in 58.29s / native 59.967s, terminal 0,
+  .gate-logs/observed/git-compare-safe-receiving/git-compare-safe-receiving312-11d3628.json;
+  01:09:19.670868 through 01:10:19.638935 UTC.
+
+Native observed-status reports passed/exit0/active=false/termination_reason=null
+for both exact receipts. Post-terminal observation 1792804235 retained full 11d
+HEAD and only those three staged paths, with zero unstaged/untracked. Only this
+receipt prose is appended after terminal; production and test bytes remain
+frozen. Root owns restaging the final feature and normal guarded collection/
+commit, followed by independent source review. The earlier 190 cases remain
+valid only for their earlier scope. Immutable 11d remains CHANGES REQUIRED;
+this modified three-path result does not approve that old commit or supply
+canonical full-gate, exact-SHA hosted, deployment or release proof.
+
+### Main receiving on0ec6ed4 (2026-10-24 UTC)
+
+Root received the six-path comparator packet from approved cumulative
+9647b0a96125b78126e009c56d9b4769127c5a3d onto
+0ec6ed410563619beb7a899e2d78d6fcd0b06395. Existing files retain their Main
+bytes outside the exact reviewed hunks; the new52-case test owner comes from
+that immutable source. The earlier11d rejection remains. Root corrected a
+truncated diagnostic read before any edit and used bounded native source slices.
+
+Actual complete seven-owner Main receiving passes194 on each installed runtime:
+31150.03s/native51.133 and31256.98s/native58.478. Native receipts are
+.gate-logs/observed/comparator-main-receiving/comparator-main-receiving311-0ec6ed4.json
+and the corresponding312 receipt. Both retain source identity
+0c179df734ed301dbdde4b3c122c178632d49ae58e9b42e8ed9f56eb1ec54639;
+this fixed identity precedes this receipt-only paragraph. Complete owners are
+test_git_compare_commits, test_make_target_contract, test_makefile_layout,
+test_make_readonly_version, test_make_help_audit, test_make_help_throughput and
+test_status_snapshot under tests/unit. The original300/60, n0, fatal warnings,
+literal ID=, explicit installed runtime and native trace plugin remain.
+Each exact-run trace has391events,194matching pairs,0issues,0unfinished and
+0failure reports. Those spans are diagnostic, not a performance forecast.
+
+Native Make lint, strict test typing, Ruff, environment-write and line guards,
+two-file Rumdl,291target contracts, documented equal-commit behavior and the
+full un-narrowed264-resource inventory pass. The exact-six-path staged guard
+comparator-main-staged/comparator-main-staged311-0ec6ed4.json passes all three
+hooks, staged lines and zero new clones in7.304s. Root verified every intended
+postimage after that guard; the later receipt prose receives normal commit
+checks. Independent reconciled Main source review and mandatory fresh normal
+collection are separate owners. No standalone production Python module was
+added;52 native tests are not whole-module coverage.
+
+This source checkpoint supplies no canonical full gate, exact-SHA push CI,
+development/master integration, deployment or v0.1.2 sign-off. The original
+85/75 line AND branch floors, cleanup/ZDD, eight promotion pins and90/60
+publication/runtime boundaries remain. All seven release tasks stay open.
+
 ## Verification
 
 - `tests/unit/test_git_automation_locking.py` proves PID/thread ownership, fork
