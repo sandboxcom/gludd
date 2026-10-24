@@ -9,7 +9,7 @@ import shutil
 import stat
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
@@ -50,7 +50,7 @@ def _git(root: Path, *arguments: str, stdin: str | None = None) -> str:
 @dataclass
 class ComparisonRepository:
     root: Path
-    environment: dict[str, str]
+    environment: dict[str, str] = field(repr=False)
     first: str
     second: str
     same_tree: str
@@ -99,6 +99,21 @@ class ComparisonRepository:
             metadata.st_ino, (self.root / ".git/HEAD").read_bytes(), refs,
             (self.root / "owned.txt").read_bytes(),
         )
+
+
+def test_fixture_repr_omits_controlled_environment() -> None:
+    controlled = {"SYNTHETIC_TOKEN": "test-only-repr-value", "UNRELATED_CARRIER": "retained"}
+    fixture = ComparisonRepository(
+        root=Path("synthetic fixture"), environment=controlled,
+        first="0" * 40, second="1" * 40, same_tree="2" * 40,
+        blob="3" * 40, tree="4" * 40, tag="5" * 40,
+    )
+    representation = repr(fixture)
+    assert "environment=" not in representation
+    assert "SYNTHETIC_TOKEN" not in representation
+    assert "test-only-repr-value" not in representation
+    assert fixture.environment is controlled
+    assert fixture.environment["UNRELATED_CARRIER"] == "retained"
 
 
 @pytest.fixture
@@ -328,3 +343,57 @@ def test_native_comparison_never_runs_external_diff_or_textconv(
     assert result.returncode == 2 and "outcome=different native_status=1" in result.stderr
     assert "-older committed bytes" in result.stdout and "+newer committed bytes" in result.stdout
     assert not marker.exists() and fixture.snapshot() == before
+
+
+@pytest.mark.parametrize("origin", ("cli", "env", "env-e"))
+def test_native_stdin_refuses_implicit_cwd_import_shadow_with_carrier(
+    comparison_repo: ComparisonRepository, origin: str,
+) -> None:
+    fixture = comparison_repo
+    carrier = fixture.root.parent / "unrelated-pythonpath-carrier"
+    carrier.mkdir()
+    receipt = fixture.root / "stdin-carrier-receipt"
+    marker = fixture.root / "owned-stdin-shadow-marker"
+    (carrier / "sitecustomize.py").write_text(
+        "import os, sys\n"
+        "if sys.argv == ['-']:\n"
+        "    with open(os.environ['COMPARE_STDIN_CARRIER_RECEIPT'], 'a', encoding='utf-8') as output:\n"
+        "        output.write(str(sys.flags.safe_path) + '\\t' + os.environ['PYTHONPATH'] + '\\n')\n",
+        encoding="utf-8",
+    )
+    fixture.environment["PYTHONPATH"] = str(carrier)
+    fixture.environment["COMPARE_STDIN_CARRIER_RECEIPT"] = str(receipt)
+    fixture.environment["COMPARE_STDIN_SHADOW_MARKER"] = str(marker)
+    (fixture.root / "subprocess.py").write_text(
+        "import os\n"
+        "with open(os.environ['COMPARE_STDIN_SHADOW_MARKER'], 'w', encoding='utf-8') as output:\n"
+        "    output.write('executed native subprocess shadow\\n')\n"
+        "raise SystemExit(73)\n",
+        encoding="utf-8",
+    )
+    owner = (ROOT / "make/20-recovery-and-git.mk").read_text(encoding="utf-8")
+    recipe = owner.split("\ngit-compare-commits:\n", 1)[1].split("\n\n", 1)[0]
+    assert recipe.endswith(' | "$(PYTHON)" -') or recipe.endswith(' | "$(PYTHON)" -P -')
+    unguarded_recipe = recipe.replace(' | "$(PYTHON)" -P -', ' | "$(PYTHON)" -')
+    witness = fixture.root / "unguarded-native-stdin.mk"
+    witness.write_text(
+        f"include {ROOT / 'make/00-foundation.mk'}\n{TARGET}:\n{unguarded_recipe}\n",
+        encoding="utf-8",
+    )
+    before = fixture.snapshot()
+
+    active = fixture.invoke(fixture.first, fixture.first, origin=origin, makefile=witness.name)
+    assert active.returncode == 2 and "Error 73" in active.stderr
+    assert marker.read_text() == "executed native subprocess shadow\n"
+    assert receipt.read_text().splitlines() == ["False\t" + str(carrier)]
+    assert fixture.calls() == []
+    marker.unlink()
+
+    guarded = fixture.invoke(fixture.first, fixture.first, origin=origin)
+    assert not marker.exists(), "The actual stdin bootstrap executed its implicit CWD shadow"
+    assert guarded.returncode == 0, guarded.stdout + guarded.stderr
+    assert guarded.stdout == "" and "outcome=identical native_status=0" in guarded.stderr
+    assert receipt.read_text().splitlines() == ["False\t" + str(carrier), "True\t" + str(carrier)]
+    assert fixture.environment["PYTHONPATH"] == str(carrier)
+    assert fixture.environment["COMPARE_CARRIER"] == "preserve unrelated environment"
+    assert fixture.snapshot() == before

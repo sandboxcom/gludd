@@ -647,7 +647,7 @@ git-compare-commits:
 		'status = result.returncode if result.returncode >= 0 else 128 - result.returncode' \
 		'outcome = "identical" if status == 0 else ("different" if status == 1 else "failed")' \
 		'next_action = "continue-independent-source-review" if status == 0 else ("review-the-pinned-patch" if status == 1 else "repair-the-native-diff-input")' \
-		'finish(outcome, status, "diff", "pinned-pair", next_action)' | "$(PYTHON)" -
+		'finish(outcome, status, "diff", "pinned-pair", next_action)' | "$(PYTHON)" -P -
 
 repo-diff:
 	@git diff --stat || echo "No diff"

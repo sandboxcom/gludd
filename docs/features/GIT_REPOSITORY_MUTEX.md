@@ -410,6 +410,102 @@ six-path change based on 31de; receiving an overlapping merge still needs
 its own actual evidence. Independent source review, normal guarded collection
 and any final exact-SHA proofs retain their original owners and limits.
 
+### Independent review correction after 11d3628
+
+Independent source review marked immutable
+11d362870c177deabed363e76f7f2e4463dfa802 CHANGES REQUIRED for two
+blocking boundaries. The stdin bootstrap lacked native safe-path mode before
+importing re/subprocess, and the fixture dataclass included its copied ambient
+environment in default repr. The old commit and all prior evidence remain;
+clean-CWD native comparisons and earlier green receiving did not prove either
+boundary safe.
+
+The correction is deliberately limited to the comparator's existing Make20
+command, its existing test owner and this record. The command now ends with
+quoted PYTHON -P -, preserving its interpreter, stdin program, inputs, Git
+flags, stdout, native statuses and all environment carriers. Native -P removes
+the interpreter's implicit stdin CWD search entry; it is not environment
+isolation and does not erase or distrust an explicit PYTHONPATH. The fixture
+field is field(repr=False), retaining exactly the same environment values.
+No new production helper, wrapper, observer, cache or coverage profile is added.
+
+Privacy was proved and repaired first. A single new regression constructs only
+a synthetic dictionary containing test-only strings; it never calls the ambient
+fixture. That controlled repr RED is 1 FAIL in 0.68s / native 1.674s:
+.gate-logs/observed/git-compare-privacy-red/git-compare-privacy-red311-11d3628.json.
+Only after field(repr=False) passed the same synthetic node, 1 PASS in 0.45s /
+native 1.115s at
+.gate-logs/observed/git-compare-privacy-green/git-compare-privacy-green311-11d3628.json,
+were failing controls allowed to construct the mature ambient fixture. This
+ordering prevents regression evidence from exposing actual environment values.
+
+The new stdin controls copy the complete actual comparator recipe and remove
+only -P for their unguarded witness, retaining its actual foundation/raw-input
+entrypoint and the same explicit unrelated PYTHONPATH carrier. A confined
+subprocess.py must actually execute its owned marker and native status 73 before that
+marker alone is removed. The ordinary production entrypoint then must leave
+the marker absent and complete the same native comparison. A confined
+sitecustomize carrier records only the explicit fixture path and native
+safe_path=False/True for those stdin calls; all unrelated carriers survive.
+This proves the demonstrated implicit-CWD subprocess shadow boundary on
+CLI/env/-e. It does not claim a separate executable re.py witness or safety
+against deliberately supplied untrusted PYTHONPATH content.
+
+Before the one-option production repair, all three controls failed at the
+guarded no-execution assertion: 3 FAIL in 2.37s / native 3.329s,
+.gate-logs/observed/git-compare-shadow-red/git-compare-shadow-red311-11d3628.json.
+After it, the complete four new privacy/shadow controls passed in
+2.96s / native 3.760s:
+.gate-logs/observed/git-compare-safe-green/git-compare-safe-green311-11d3628.json.
+All exact sessions drained; original assertions and 0/1/error behavior remain.
+These are bounded CPython 3.11.14 source regressions with original 300/60,
+n0, explicit ID=, fatal warnings and native trace.
+
+Ruff, strict typecheck-scope and the native test environment-write guard passed.
+The unchanged 293-target contract and original <2500 line policy passed, the latter
+over 10872 tracked files. The actual documented 4604eeccc90ce9e89e575a8641ba1213a15f9925
+self-comparison returned native 0 with empty stdout and the same pinned-pair,
+scope and no-gate guidance. Native Main-installed Rumdl read this absolute peer
+feature with the unchanged peer config and passed. These cheap checks provide
+no source approval, broad acceptance, coverage or release authority.
+
+At that narrow handoff, staged content review and complete receiving were
+still pending. The rejected source receives no retroactive approval or final proof.
+
+### Repaired-source complete receiving (2026-10-24 UTC)
+
+Root staged only Make20, the existing comparator test owner and this feature
+from base 11d362870c177deabed363e76f7f2e4463dfa802. Its staged observation
+1792804019 had exactly three staged paths and zero unstaged/untracked entries.
+The native staged guard passed all three hooks, staged line policy and zero
+new clones in 6.383s at
+.gate-logs/observed/git-compare-safe-staged-preflight/git-compare-safe-staged-preflight311-11d3628.json
+(01:07:09.663406 through 01:07:16.047241 UTC).
+
+The same complete seven-owner roster above was executed on both installed
+runtimes with the entire now 52-case comparator owner and all six existing
+metadata/status consumers. Native collection selected 194 cases each; both
+passed every 194, zero warnings/skips. Explicit runtime tuples, original 300/60,
+n0, fatal warnings, ID= and native trace were unchanged. The identical native
+child command was serialized across runtimes and each exact session drained:
+
+- CPython 3.11.14: 194 PASS in 54.15s / native 55.505s, terminal 0,
+  .gate-logs/observed/git-compare-safe-receiving/git-compare-safe-receiving311-11d3628.json;
+  01:08:00.218572 through 01:08:55.724323 UTC.
+- CPython 3.12.15: 194 PASS in 58.29s / native 59.967s, terminal 0,
+  .gate-logs/observed/git-compare-safe-receiving/git-compare-safe-receiving312-11d3628.json;
+  01:09:19.670868 through 01:10:19.638935 UTC.
+
+Native observed-status reports passed/exit0/active=false/termination_reason=null
+for both exact receipts. Post-terminal observation 1792804235 retained full 11d
+HEAD and only those three staged paths, with zero unstaged/untracked. Only this
+receipt prose is appended after terminal; production and test bytes remain
+frozen. Root owns restaging the final feature and normal guarded collection/
+commit, followed by independent source review. The earlier 190 cases remain
+valid only for their earlier scope. Immutable 11d remains CHANGES REQUIRED;
+this modified three-path result does not approve that old commit or supply
+canonical full-gate, exact-SHA hosted, deployment or release proof.
+
 ## Verification
 
 - `tests/unit/test_git_automation_locking.py` proves PID/thread ownership, fork
