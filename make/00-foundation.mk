@@ -1,3 +1,9 @@
+# Keep HTTPS configuration mode literal before native startup/export expansion.
+SANDBOXCOM_HTTPS_VALIDATE_ONLY ?= 1
+override GLUDD_SANDBOXCOM_HTTPS_VALIDATE_ONLY := $(value SANDBOXCOM_HTTPS_VALIDATE_ONLY)
+export GLUDD_SANDBOXCOM_HTTPS_VALIDATE_ONLY := $(value SANDBOXCOM_HTTPS_VALIDATE_ONLY)
+unexport SANDBOXCOM_HTTPS_VALIDATE_ONLY
+
 # Keep no-commit merge branch data literal before startup or export children.
 override GLUDD_GIT_MERGE_NC_BR := $(value BR)
 export GLUDD_GIT_MERGE_NC_BR
@@ -963,6 +969,8 @@ help:
 		"  git-push-sandboxcom   Guarded mirror push (PUSH_REMOTE, SSH_KEY; dry-run is not remote evidence)" \
 		"  git-pull-sandboxcom   Pull and rebase from sandboxcom/gludd" \
 		"  git-fetch-sandboxcom  Fetch from sandboxcom/gludd" \
+		"  git-configure-sandboxcom-https  Repo-local gh HTTPS setup (SANDBOXCOM_HTTPS_VALIDATE_ONLY=1 plan, 0 apply); no push/CI proof" \
+		"  verify-remote BRANCH=<b> SHA=<sha> SSH_KEY=<path>  Native heads-ref proof with SSH or configured gh HTTPS; no CI proof" \
 		"  ship-async REF=<hash> [TARGET=master]  Run gate in background job; ff-only merge on green" \
 		"" \
 		"  --- SearXNG Research Backend ---" \

@@ -73,6 +73,13 @@ SHA/state. Missing runs and pending stay nonzero. Normal policy-guarded repair
 publication is allowed while final proof is blocked; native publication guards
 still apply, and source-only approval never clears their refusal.
 
+For the measured SSH-remote/HTTPS-login mismatch, use the existing repo-local
+`make git-configure-sandboxcom-https SANDBOXCOM_HTTPS_VALIDATE_ONLY=1` plan,
+then mode0 only within authorized publication work. The [HTTPS owner](docs/features/GITHUB_PUBLICATION_HTTPS.md)
+retains native fail-closed authentication, local helper/remote scope, partial-write
+reconciliation and actual tests. Configuration is not push or CI evidence;
+retain normal batch-push, exact verify-remote and native pipeline-status proofs.
+
 Keep admission dependencies distinct from escalation dependencies. HumanTodo
 service/config/store/auth facts govern filing that request. Actual capacity
 clearance permits the existing nine-owner admission even while filing remains

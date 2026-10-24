@@ -141,6 +141,21 @@ retains both distinct incidents and exact negative/positive receipts. The
 applies the same boundary to both baseline and instrumented children, with
 actual child config assertions and every native outcome retained.
 
+### GitHub publication transport
+
+When native ci-auth reports HTTPS but sandboxcom still uses SSH and no permitted
+key is available, use the [repo-local HTTPS owner](../../docs/features/GITHUB_PUBLICATION_HTTPS.md).
+Run make git-configure-sandboxcom-https SANDBOXCOM_HTTPS_VALIDATE_ONLY=1 for the
+offline plan; authorized publication uses the same target with explicit0.
+Native authentication precedes repository-local helper/fetch/push configuration.
+A partial failure names its phase and preserves Git's lock/error; reconcile
+actual local state. Retain native statuses and all normal batch-push guards.
+This stores no credential, changes no global Git/GH settings and creates no
+push/CI/deployment evidence. After actual publication, provide the full SHA and
+real branch to verify-remote with explicit permitted SSH_KEY; use the existing
+pipeline-status for required exact-SHA hosted results. A missing-key or absent-ref
+behavioral example is an expected nonzero control, not successful remote proof.
+
 ### Choose the next action from evidence
 
 | Current input | Next action |

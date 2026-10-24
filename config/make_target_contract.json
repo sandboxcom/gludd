@@ -1,6 +1,8 @@
 {
   "version": 1,
   "targets": [
+    {"name": "git-configure-sandboxcom-https", "make_variables": ["SANDBOXCOM_HTTPS_VALIDATE_ONLY"], "behavior": "make git-configure-sandboxcom-https SANDBOXCOM_HTTPS_VALIDATE_ONLY=1"},
+    {"name": "verify-remote", "make_variables": ["BRANCH", "SHA", "SSH_KEY"], "behavior": "make verify-remote BRANCH=gludd-contract-absent SHA=0000000000000000000000000000000000000000 SSH_KEY=/tmp/gludd-contract-absent-key"},
     {"name": "ps-gludd", "make_variables": [], "behavior": "make ps-gludd"},
     {"name": "list-files", "make_variables": ["DIR"], "behavior": "make list-files DIR=.agents/policy"},
     {"name": "replace-lines", "make_variables": ["FILE", "START", "END", "NEW_FILE"], "behavior": "make replace-lines FILE=/tmp/gludd-text-contract.txt START=1 END=1 NEW_FILE=/tmp/gludd-text-contract-replacement.txt"},
