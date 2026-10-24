@@ -614,6 +614,41 @@ git-diff:
 git-diff-full:
 	@git diff HEAD $(if $(FILES),-- $(FILES),) || echo "No diff"
 
+# Read-only tree comparison of two explicit, verified commit objects.
+.PHONY: git-compare-commits
+git-compare-commits:
+	@printf '%s\n' \
+		'import os, re, subprocess, sys' \
+		'base = os.environ.get("GLUDD_GIT_COMPARE_BASE", "")' \
+		'head = os.environ.get("GLUDD_GIT_COMPARE_HEAD", "")' \
+		'if not all(re.fullmatch(r"[0-9a-fA-F]{40}", value) for value in (base, head)):' \
+		'    print("AGENT_NEXT target=git-compare-commits outcome=refused native_status=2 phase=input next_action=pass-two-literal-full40hex-SHAs gate_evidence=false release_ready=false", file=sys.stderr)' \
+		'    raise SystemExit(2)' \
+		'def finish(outcome, status, phase, field, next_action):' \
+		'    print(f"AGENT_NEXT target=git-compare-commits outcome={outcome} native_status={status} base={base} head={head} scope=commit-trees-only phase={phase} input={field} next_action={next_action} gate_evidence=false release_ready=false", file=sys.stderr)' \
+		'    raise SystemExit(status)' \
+		'git = ["git", "--no-pager", "--no-optional-locks"]' \
+		'for field, sha in (("GIT_COMPARE_BASE", base), ("GIT_COMPARE_HEAD", head)):' \
+		'    try:' \
+		'        result = subprocess.run([*git, "cat-file", "-t", sha], stdout=subprocess.PIPE, check=False)' \
+		'    except OSError as error:' \
+		'        print(error, file=sys.stderr)' \
+		'        finish("failed", 127, "git-exec", field, "repair-native-git-execution")' \
+		'    status = result.returncode if result.returncode >= 0 else 128 - result.returncode' \
+		'    if status:' \
+		'        finish("failed", status, "verify-commit", field, "repair-missing-or-unreadable-pinned-commit")' \
+		'    if result.stdout != b"commit\n":' \
+		'        finish("refused", 2, "object-type", field, "select-a-direct-commit-object")' \
+		'try:' \
+		'    result = subprocess.run([*git, "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color", "--exit-code", base, head, "--"], check=False)' \
+		'except OSError as error:' \
+		'    print(error, file=sys.stderr)' \
+		'    finish("failed", 127, "git-exec", "pinned-pair", "repair-native-git-execution")' \
+		'status = result.returncode if result.returncode >= 0 else 128 - result.returncode' \
+		'outcome = "identical" if status == 0 else ("different" if status == 1 else "failed")' \
+		'next_action = "continue-independent-source-review" if status == 0 else ("review-the-pinned-patch" if status == 1 else "repair-the-native-diff-input")' \
+		'finish(outcome, status, "diff", "pinned-pair", next_action)' | "$(PYTHON)" -
+
 repo-diff:
 	@git diff --stat || echo "No diff"
 

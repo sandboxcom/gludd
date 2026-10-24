@@ -1,3 +1,31 @@
+# Capture literal commit comparisons before any startup/export child.
+ifneq ($(filter git-compare-commits,$(MAKECMDGOALS)),)
+GIT_COMPARE_BASE ?=
+GIT_COMPARE_HEAD ?=
+override GLUDD_GIT_COMPARE_BASE := $(value GIT_COMPARE_BASE)
+override GLUDD_GIT_COMPARE_HEAD := $(value GIT_COMPARE_HEAD)
+export GLUDD_GIT_COMPARE_BASE GLUDD_GIT_COMPARE_HEAD
+unexport GIT_COMPARE_BASE GIT_COMPARE_HEAD
+# Strip hex to detect every foreign byte; tokenize hex to count exactly forty.
+override _GLUDD_GIT_COMPARE_NONHEX = $(subst F,,$(subst E,,$(subst D,,$(subst C,,$(subst B,,$(subst A,,$(subst f,,$(subst e,,$(subst d,,$(subst c,,$(subst b,,$(subst a,,$(subst 9,,$(subst 8,,$(subst 7,,$(subst 6,,$(subst 5,,$(subst 4,,$(subst 3,,$(subst 2,,$(subst 1,,$(subst 0,,$(1)))))))))))))))))))))))
+override _GLUDD_GIT_COMPARE_HEX_WORDS = $(subst F,F ,$(subst E,E ,$(subst D,D ,$(subst C,C ,$(subst B,B ,$(subst A,A ,$(subst f,f ,$(subst e,e ,$(subst d,d ,$(subst c,c ,$(subst b,b ,$(subst a,a ,$(subst 9,9 ,$(subst 8,8 ,$(subst 7,7 ,$(subst 6,6 ,$(subst 5,5 ,$(subst 4,4 ,$(subst 3,3 ,$(subst 2,2 ,$(subst 1,1 ,$(subst 0,0 ,$(1)))))))))))))))))))))))
+ifneq ($(MAKECMDGOALS),git-compare-commits)
+$(error AGENT_NEXT target=git-compare-commits outcome=refused native_status=2 phase=goals next_action=use-one-goal-and-two-full40hex-SHAs gate_evidence=false release_ready=false)
+endif
+ifneq (x$(call _GLUDD_GIT_COMPARE_NONHEX,$(GLUDD_GIT_COMPARE_BASE))x,xx)
+$(error AGENT_NEXT target=git-compare-commits outcome=refused native_status=2 input=GIT_COMPARE_BASE next_action=pass-literal-full40hex-SHA gate_evidence=false release_ready=false)
+endif
+ifneq ($(words $(call _GLUDD_GIT_COMPARE_HEX_WORDS,$(GLUDD_GIT_COMPARE_BASE))),40)
+$(error AGENT_NEXT target=git-compare-commits outcome=refused native_status=2 input=GIT_COMPARE_BASE next_action=pass-literal-full40hex-SHA gate_evidence=false release_ready=false)
+endif
+ifneq (x$(call _GLUDD_GIT_COMPARE_NONHEX,$(GLUDD_GIT_COMPARE_HEAD))x,xx)
+$(error AGENT_NEXT target=git-compare-commits outcome=refused native_status=2 input=GIT_COMPARE_HEAD next_action=pass-literal-full40hex-SHA gate_evidence=false release_ready=false)
+endif
+ifneq ($(words $(call _GLUDD_GIT_COMPARE_HEX_WORDS,$(GLUDD_GIT_COMPARE_HEAD))),40)
+$(error AGENT_NEXT target=git-compare-commits outcome=refused native_status=2 input=GIT_COMPARE_HEAD next_action=pass-literal-full40hex-SHA gate_evidence=false release_ready=false)
+endif
+endif
+
 # Reject evaluated creation data before any native startup/export child.
 # This is scoped to the public creation goals, preserving unrelated Make callers.
 ifneq ($(filter agent-worktree agent-worktree-base agent-worktree-dev,$(MAKECMDGOALS)),)
@@ -807,6 +835,7 @@ help:
 		"  git-show-commit C=<sha>  Show hash, parents, committer time, subject, and files" \
 		"  git-show-full SHA=<sha>  Show a host-independent canonical patch" \
 		"  git-is-ancestor A=<commit> B=<commit>  Print and retain native Git ancestry status" \
+		"  git-compare-commits     Read-only patch for explicit full40hex GIT_COMPARE_BASE/HEAD; native0 identical,1 different" \
 		"  git-patch-equivalence PATCH_UPSTREAM=<ref> PATCH_HEAD=<ref> PATCH_LIMIT=<n>  Compare patch identity" \
 		"  branches-unmerged-development  List every local branch tip not reachable from development" \
 		"  branch-reconciliation-inventory RECONCILE_TARGET=<ref> RECONCILE_LIMIT=<n> RECONCILE_AFTER=<ref|empty>  Page bounded local branch reconciliation state as JSON" \

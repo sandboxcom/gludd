@@ -1637,14 +1637,13 @@
       ],
       "behavior": "make git-show-commit C=e4c9b68aea0ff59cab77a06747471e248e9e0601"
     },
-    {
-      "name": "git-show-full",
-      "make_variables": [
-        "SHA"
-      ],
-      "behavior": "make git-show-full SHA=e4c9b68aea0ff59cab77a06747471e248e9e0601"
-    },
+    {"name": "git-show-full", "make_variables": ["SHA"], "behavior": "make git-show-full SHA=e4c9b68aea0ff59cab77a06747471e248e9e0601"},
     {"name": "git-is-ancestor", "make_variables": ["A", "B"], "behavior": "make git-is-ancestor A=HEAD B=HEAD"},
+    {
+      "name": "git-compare-commits",
+      "make_variables": ["GIT_COMPARE_BASE", "GIT_COMPARE_HEAD"],
+      "behavior": "make git-compare-commits GIT_COMPARE_BASE=4604eeccc90ce9e89e575a8641ba1213a15f9925 GIT_COMPARE_HEAD=4604eeccc90ce9e89e575a8641ba1213a15f9925"
+    },
     {
       "name": "git-patch-equivalence",
       "make_variables": [

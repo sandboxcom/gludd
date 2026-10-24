@@ -946,6 +946,30 @@ filing succeeds; do not invent one if the daemon is unavailable. Keep credential
 out of request prose and shell arguments; use existing module authentication.
 This entrypoint grants no additional permission or release authority.
 
+### Compare two immutable commit trees for source review
+
+~~~console
+make git-compare-commits GIT_COMPARE_BASE=4604eeccc90ce9e89e575a8641ba1213a15f9925 GIT_COMPARE_HEAD=4604eeccc90ce9e89e575a8641ba1213a15f9925
+~~~
+
+Set both inputs explicitly to literal full40hex commit object IDs. This example
+compares one retained commit to itself; it does not approve a later merge.
+Use one target per invocation. Raw CLI/environment/-e values are captured and
+unexported before startup; nonhex, short, missing and extra-goal inputs refuse
+with Make2 before native startup/Git calls. Make/backtick data is never evaluated.
+
+The owner verifies both direct objects are commits, then uses native Git with
+no pager, optional locks, external diff, textconv, renames or caller file scope.
+Stdout contains only the native patch. Native0 means identical trees, including
+different commit IDs with the same tree; native1 means a real patch and remains
+Make2/Error1. Missing objects/native failures retain their Git status and error;
+a wrong object type is policy refusal2. Stderr AGENT_NEXT names the pinned pair,
+actual outcome and next source-review action. It grants no gate/release proof.
+The [owning record](../../docs/features/GIT_REPOSITORY_MUTEX.md#immutable-commit-comparison-for-source-review)
+retains native controls and scope. Keep ancestry, tree equivalence, source
+approval and exact-SHA build/deployment evidence separate. Do not use the
+working-tree-only git-diff-full as an immutable-pair comparison.
+
 ### Read native Git diagnostic status correctly
 
 ~~~console
