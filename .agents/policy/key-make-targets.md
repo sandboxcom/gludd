@@ -226,6 +226,24 @@ real branch to verify-remote with explicit permitted SSH_KEY; use the existing
 pipeline-status for required exact-SHA hosted results. A missing-key or absent-ref
 behavioral example is an expected nonzero control, not successful remote proof.
 
+### Node audit advisory research
+
+Use make inspect-node-audit-source NODE_AUDIT_SOURCE_VALIDATE_ONLY=1 for the pure
+offline plan. Explicit literal 0 retrieves only the four pinned hosted-failure
+advisories, four fixed npm package metadata endpoints and the referenced Zod
+firsthand issue; no URL, token, output
+path or source selector is accepted. Invoke this target directly. Its raw mode
+guard runs before startup/export evaluation; unrelated targets keep their inputs.
+Native Make normalizes leading command-line assignment spaces before that capture.
+
+Run live retrieval through the existing run-watched owner with a project-private
+OBSERVED_ROOT, heartbeat 10 and an outer bound covering nine 20-second requests.
+Each request has connect 10s, maximum 2MiB, zero retries and zero redirects. A
+failure stops the sequence, retains earlier raw bodies and requires a changed
+proven source/transport input before retry. HTTP success establishes raw retrieval
+only: patched availability, relevance, compatible lock repair, native audit,
+coverage and exact-SHA hosted proof remain separate.
+
 ### Diagnostic Actions reruns
 
 Diagnostic GHA work can proceed independently of release-candidate readiness.

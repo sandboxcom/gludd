@@ -791,6 +791,152 @@ exact-SHA hosted success and immutable timing remain required as applicable.
 Neither diagnostic readiness nor this source packet closes S98.4 or relaxes the
 original 90/60 publication/runtime bounds, capacity, coverage or promotion rules.
 
+### Locked Node advisory research and compatibility boundary (2026-10-23)
+
+The authorized debug request produced a real new failure in Build run
+`39826135809`, attempt 2, original source
+`eb772a658a01db4485087813e4478eb6c59cc328`. The failed gate 3.12 step is
+`Audit locked Node build dependencies`. Native ledger status retains one OPEN
+family `4893be02c7dce927162ef033a51fd2674ae3d7d423492fb63e4f3c108d4ce062`.
+The older runtime family remains REPAIRED by its local receipts; this new family
+does not rewrite that history or supply hosted repair proof.
+
+The unchanged native `node-deps-audit` at low severity reproduces the failure.
+Its actual npm report contains three TOML advisories and one Zod advisory; registry
+transport succeeded. Native npm's proposed forced plugin downgrade is not used.
+
+| Advisory | Affected installed copy | Primary patched floor |
+| --- | --- | --- |
+| [GHSA-4qx8-w7c3-pj3p](https://github.com/advisories/GHSA-4qx8-w7c3-pj3p) | `toml` 4.3.0, affected <=5.0.0 | 5.0.1 |
+| [GHSA-9j65-hcg3-gc64](https://github.com/advisories/GHSA-9j65-hcg3-gc64) | `toml` 4.3.0, affected <=5.0.0 | 5.0.1 |
+| [GHSA-9qmh-m7c6-f92p](https://github.com/advisories/GHSA-9qmh-m7c6-f92p) | `toml` 4.3.0, affected <=5.0.0 | 5.0.1 |
+| [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) | `zod` 4.1.8, affected <4.6.6 | 4.6.6 |
+
+Structured advisory bodies and npm registry metadata independently establish
+published TOML 5.0.1 and Zod 4.6.7, retaining their tarball URLs and integrity.
+The latest observed plugin 1.19.4 still pins Effect 4.0.0-beta.83 and Zod 4.1.8;
+upgrading that plugin alone does not clear these findings. These are retrieval-time
+facts, retained in raw native logs, not an ongoing latest-version assertion.
+The [TOML maintainer repair](https://github.com/BinaryMuse/toml-node/commit/609c873fffea0a27ebe5b4dd098eed2b3daf3606)
+and release reference are present in the primary advisory bodies.
+
+The separately retrieved firsthand [Zod issue 1872](https://github.com/colinhacks/zod/issues/1872)
+was opened 2023-01-12 and closed 2026-10-09. Its reporter describes excessive
+error accumulation and memory exhaustion while validating large arrays with
+Zod 3.20.2. It is relevant long-lived context for the same availability mechanism;
+it is not a Gludd execution or performance measurement. The current advisory's
+reviewed range, actual lock and native audit establish this candidate's scope.
+No additional issue comments or broad source search were retrieved.
+
+The Make-only public companion is `inspect-node-audit-source`. Its literal
+`NODE_AUDIT_SOURCE_VALIDATE_ONLY=1` default is a pure offline plan; explicit 0
+retrieves a fixed list with four advisories, four npm metadata endpoints and
+the one referenced issue. There is no caller URL, token, output path or source
+selector. Direct-goal capture precedes startup/export evaluation; an indirect
+target refuses transport. Each public request uses connect 10s / total 20s / 2MiB,
+zero retries and zero redirects, and stops on native failure while preserving
+earlier raw bodies. Curl receives only its public tool path and locale, rather
+than ambient credentials or proxy configuration. The existing observer owns
+the project-private raw log, 10-second heartbeat and terminal receipt.
+
+The new native recorder owner retains ordinary and `-e` argv, offline mode,
+all fixed source/count pins, native 22/28/47 failures, ninth-request refusal,
+unrelated carriers and actual same-origin evaluation witnesses. GNU Make
+normalizes leading command-line assignment spaces before capture; independent
+native value witnesses retain that rule while environment-leading spaces refuse.
+A failed initial fixture replay remains historical evidence of that corrected
+new-test assumption. No predecessor test assertion was removed.
+
+All following receipts are relative to
+`/private/tmp/gludd-worktrees/agent-v012-gha-build-phase`, based on
+`d9cacf2f2cd9b1b7469027d0ef9ab18b52c9a2d0`:
+
+| Scope | Actual result | Native receipt |
+| --- | --- | --- |
+| Original locked audit | Four high-severity findings, exit2/2.768s | `.gate-logs/observed/v012-node-audit-native-red/20261023T235405Z-84132-d7302fa1.json` |
+| New helper RED | 39 FAIL / 2 PASS, 2.47s, native exit2/3.3s | `.gate-logs/observed/v012-node-audit-source-red/20261023T235630Z-87813-9f921e91.json` |
+| Direct-context RED | 2 FAIL, 0.74s, native exit2/1.7s | `.gate-logs/observed/v012-node-audit-source-context-red/20261023T235715Z-88270-9b027a9c.json` |
+| Eight-source helper GREEN | 43 PASS, 3.87s, native exit0/4.6s | `.gate-logs/observed/v012-node-audit-source-native-green311/20261023T235858Z-91605-82517dfa.json` |
+| Primary eight bodies | HTTP200 each, exit0/2.086s | `.gate-logs/observed/v012-node-audit-primary-sources/20261023T235910Z-91898-b5944ba0.json` |
+| Ninth-source catalog RED | 5 FAIL, 2.14s, native exit2/3.0s | `.gate-logs/observed/v012-node-source-issue-catalog-red/20261024T000613Z-95556-24e9ffc2.json` |
+| Nine-source helper GREEN | 44 PASS, 4.45s, native exit0/5.3s | `.gate-logs/observed/v012-node-source-nine-green311/20261024T000707Z-97383-11930857.json` |
+| Referenced issue followup | Nine HTTP200 bodies, exit0/2.4s | `.gate-logs/observed/v012-node-source-issue-followup/20261024T000737Z-97716-b3e501d1.json` |
+
+The ninth-source followup changes only the catalog's new issue input; the prior
+eight accepted primary bodies remain evidence for version claims. Raw HTTP 0
+grants no issue relevance, package compatibility, audit acceptance or release proof.
+Complete helper-only acceptance passes on both installed runtimes:
+
+| Runtime | Complete result | Native receipt |
+| --- | --- | --- |
+| 3.11 | 331 PASS, 36.74s, native exit0/37.835s | `.gate-logs/observed/v012-node-source-helper-union311/20261024T001304Z-6083-ba293c15.json` |
+| 3.12 | 331 PASS, 39.35s, native exit0/40.458s | `.gate-logs/observed/v012-node-source-helper-union312/20261024T001416Z-8240-fca5ece2.json` |
+
+Both exact sessions are terminal and drained; native observed-status confirms
+inactive/passed and the same source identity
+`d9fa41bee52061d1b98816aaf98418c1ff2fcb1b0db6bd8ac9443b66b951f91b`.
+The eight complete owners, under `tests/unit/`, are:
+
+- `test_node_audit_source_inspection.py`
+- `test_presentation_browser_source_inspection.py`
+- `test_node_deps_update_notifier.py`
+- `test_make_target_contract.py`
+- `test_make_help_audit.py`
+- `test_pytest_param_fixture_collisions.py`
+- `test_ci_rerun_diagnostics.py`
+- `test_ci_cancel_contract.py`
+
+These source/transport contracts use one pytest process, fatal warnings, literal
+`ID=`, explicit installed interpreters, project-private trace/observer paths,
+300/60 diagnostic acceptance bounds and 10-second heartbeats. The original
+90/60 publication/runtime owners are unchanged. The four separate Node repair
+paths, including the failed compatibility case, are outside this helper union.
+
+Root's exact five-path staged preflight also passed all three native hooks in
+7.7s with zero new clones. Its retained receipt is
+`node-source-staged-preflight/node-source-staged-preflight311-d9cacf2.json`.
+The native hooks stashed and restored separate tracked Node changes on each
+pass; those changes and the untracked compatibility owner remain separate and
+unaccepted. Final feature receipt notes were added after the frozen code proof;
+normal commit collection, final documentation lint and independent receiving
+remain Root-owned.
+The 291-target contract, pure offline behavior, Make lint, Ruff, strict helper
+typing, environment-write guard and tracked-file line bounds pass. Markdown
+lint still requires the existing locked Rumdl executable absent from this peer.
+
+The dependency candidate is separate. Parent-scoped leaves retain plugin 1.18.5,
+SDK 1.18.5 and Effect 4.0.0-beta.83. Native `node-deps-relock` also refreshed the
+resolver's two Effect patch dependencies, msgpackr 2.1.1 to 2.1.2 and multipasta 0.2.8
+to 0.2.9. No lock bytes were edited manually and no audit floor was raised.
+
+Before that change, the original locked tree passed seven real installed Node 26
+compatibility controls. These execute actual Effect `Primitive.fileParse` and
+`fileSchema` with an owned filesystem service, plus the plugin's tool/schema/
+execute API. Number, float, max-safe integer, wide integer, Date/local-time,
+arrays/tables, typed schema and invalid-input behavior retain literal assertions.
+The added all-copy floor controls failed on the two affected versions and missing
+scoped overrides: 3 FAIL / 12 PASS, 4.23s, native exit2/5.4s, receipt
+`.gate-logs/observed/v012-node-leaf-baseline-red/20261024T000355Z-94279-f4a14c27.json`.
+
+After native relock and sync, the same controls produced 14 PASS / 1 FAIL,
+2.61s, native exit2/3.6s:
+`.gate-logs/observed/v012-node-leaf-compatibility311/20261024T000505Z-95086-f4618eb7.json`.
+TOML 5.0.1 rejects `9007199254740993` instead of returning the old rounded
+Number 9007199254740992. Its supported `bigint` option would change all integer
+types; Effect's consumer calls `Toml.parse(content)` without options. The failed
+wide-integer assertion and successful baseline remain unchanged. No adapter,
+version substitution or expectation relaxation follows from passing audit floors.
+The explicit operator preference is pending, so dependent leaf behavior and
+the first post-fix audit are held.
+
+This work restarts no serving process and preserves ZDD, fatal warnings and
+85% aggregate / 75% per-file line AND branch floors. Helper acceptance is source
+evidence only. Root still owns normal commit collection, independent review and
+the exact clean Node candidate's first post-fix `ci-failure-repair` audit against
+the existing native ledger. No post-fix npm audit was run in this packet.
+The family stays OPEN; receiving, canonical full gate, exact-SHA feature/push CI,
+hosted timing and release/deployment proof remain separate and pending.
+
 Root then executed one actual diagnostic request at 2026-10-23T23:43:12Z,
 using this peer's direct ci-rerun target, explicit installed3.11 and the existing
 absolute Main CI ledger. Native ci-view and guard-rerun preceded

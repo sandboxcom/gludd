@@ -913,6 +913,7 @@
       ],
       "behavior": "make node-deps-relock NODE_DEPS_VALIDATE_ONLY=1 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_NPM_UPDATE_NOTIFIER=false"
     },
+    {"name": "inspect-node-audit-source", "make_variables": ["NODE_AUDIT_SOURCE_VALIDATE_ONLY"], "behavior": "make inspect-node-audit-source NODE_AUDIT_SOURCE_VALIDATE_ONLY=1"},
     {
       "name": "node-deps-audit",
       "make_variables": [
