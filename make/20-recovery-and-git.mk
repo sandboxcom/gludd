@@ -994,7 +994,7 @@ resolve-development-conflicts:
 repo-add-all:
 	@git add -A
 
-commit-bootstrap: _gate-fresh-check _commit-lock-acquire
+_commit-locked-commit-bootstrap: _commit-lock-acquire _gate-fresh-check
 	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-bootstrap MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
@@ -1003,7 +1003,7 @@ commit-bootstrap: _gate-fresh-check _commit-lock-acquire
 # messages with angle-bracket emails). Enforces the SAME fresh+green gate guard
 # as `git-commit` (a bare `git commit -F` would otherwise bypass it). Usage:
 #   make git-commit-file FILE=/tmp/msg.txt
-git-commit-file: _gate-fresh-check _commit-lock-acquire
+_commit-locked-git-commit-file: _commit-lock-acquire _gate-fresh-check
 	@[ -n "$(FILE)" ] || { echo "Usage: make git-commit-file FILE=path"; exit 1; }
 	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check

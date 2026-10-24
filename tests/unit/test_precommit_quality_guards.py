@@ -63,11 +63,14 @@ def test_commit_targets_and_fast_preflight_cannot_bypass_guards() -> None:
         "repo-commit",
         "ship-commit",
     ):
-        declaration = makefile.split(f"\n{target}:", 1)[1].splitlines()[0]
+        assert "$(call _commit-transaction)" in _target(makefile, target)
+        declaration = makefile.split(f"\n_commit-locked-{target}:", 1)[1].splitlines()[0]
         assert "_pre-commit-content-guard" in declaration
 
-    assert "pre-commit run --files" in _target(makefile, "git-commit")
-    assert "git commit -F" in _target(makefile, "git-commit-file")
+    assert "$(call _commit-transaction)" in _target(makefile, "git-commit")
+    assert "$(call _commit-transaction)" in _target(makefile, "git-commit-file")
+    assert "pre-commit run --files" in _target(makefile, "_commit-locked-git-commit")
+    assert "git commit -F" in _target(makefile, "_commit-locked-git-commit-file")
 
     pre_commit = _target(makefile, "pre-commit-check")
     assert pre_commit.index("check-file-line-limits") < pre_commit.index("lint")

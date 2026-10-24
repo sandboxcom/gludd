@@ -7,9 +7,23 @@ Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection 
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
-Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. At most two execution/testing owners; original runtime runs alone.
+Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. The active operator-directed wave permits six isolated implementation lanes and four local test cohorts only while native load and the eight-worker ceiling permit. Diagnostic GHA runs alongside independent source work; canonical runtime and final-proof settings retain their original bounds.
 
-## Current S98.4 pipeline and agentic audit
+## Current diagnostic CI correction (2026-10-23)
+
+Feature-branch diagnostic CI precedes development integration and master
+promotion. Root incorrectly treated candidate publication/readiness as the
+entry condition for hosted feedback; no new GHA execution followed the earlier
+local repairs. The active correction uses existing Make rerun/dispatch owners,
+actual branch/full-SHA/run/attempt identity, changed diagnostic input and one
+bounded observer while independent repairs proceed. Current native state and
+producer receipts, rather than these retained snapshots, own execution status.
+Missing workflow-file authorization does not itself prove an Actions API
+refusal; keep the pending account-consent request separate from diagnostic
+service capability. Every final gate, exact-SHA and deployment proof remains
+pending until its own actual acceptance. AGENTS.md owns this corrected loop.
+
+## Retained S98.4 pipeline and audit checkpoint at aa494265
 
 Root source checkpoint is aa494265cc427fe79a706461859c6532dec223f2; current source edits are not published.
 Normal collection129497/129521,24deselected/zeroerrors53.95s/native59.382s

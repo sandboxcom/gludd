@@ -901,6 +901,27 @@ stash unstaged files. Wait for its terminal result before inspecting the same
 checkout, or use an isolated checkout. The source owner already streams observed
 collection; an outer run-watched CMD must not carry another checkout's paths
 into its test environment.
+
+The staged content guard passes the actual cached NUL-delimited filenames
+explicitly to all three configured formatter/secret hooks, including cleanly
+merged files while MERGE_HEAD exists. Filenames alone are not index-content
+proof: keep the pinned pre-commit staged-files context and its existing
+configured cache/restoration around those hooks. Success follows restoration.
+Its Python bootstrap uses native `-P` to exclude implicit CWD modules while
+preserving explicit PYTHONPATH carriers. Native controls need an active
+unguarded witness using the same filename and the original installed entrypoint
+control; do
+not strip carriers or rewrite sys.path to manufacture isolation.
+Preserve native output/status: empty scope measures no files; each skipped hook
+measures no matching files. Neither supplies security, gate or release proof.
+Native Git failure, unmerged index or a root
+option-looking filename refuses before hooks; repair that actual owned input
+before retrying. A failed fixer can change working bytes while preserving the
+index, so reconcile native worktree-state and the existing staged-tree guards.
+Do not restage foreign work, change hook filters/baselines or replace the receipt
+with a new SHA. The [merge-scope record](../../docs/features/GIT_REPOSITORY_MUTEX.md#explicit-staged-hook-scope-during-merges-2026-10-23-utc)
+retains the actual native REDs, corrected dispatch and independent proof limits.
+
 `make git-commit MSG='one tested change'` additionally requires a fresh green
 gate. Keep each small tested change in its own commit.
 Before a push, `make verify-state` must identify the intended current branch.

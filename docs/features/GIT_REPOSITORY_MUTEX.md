@@ -271,6 +271,434 @@ Neither source change clears capacity97percent/7.8GiB,
 original60907, full canonical gate/global coverage, exact-SHA all-shard hosted/
 deployment/reviewed-head or guarded promotion proof. All seven tasks stay open.
 
+## Native Make transaction receiving (2026-10-23 UTC)
+
+S98.4 receives this source in the isolated agent-v012-commit-transaction
+worktree from4604eeccc90ce9e89e575a8641ba1213a15f9925. The former
+_commit-lock-acquire prerequisite closed its flock descriptor before later
+staging/check/commit recipes. Its global temporary path also did not share
+the established repository mutex. Two actual Make callers reproduce the
+unheld common-directory lock during collection in both one checkout and
+linked worktrees:2FAIL/1PASS4.91s/native5.9s at
+.gate-logs/observed/commit-transaction-red/commit-transaction-native-red311-4604.json.
+Only the old global lock path is confined to fixture scratch; the native
+recipes, real Git operations and assertion intent remain.
+
+The existing git_repo_lock now spans one native transaction. Twelve public
+commit entrypoints retain their names and original bodies in private rules,
+including both commit-and-ship composites' original lint/staging work.
+The existing stream_command.py is the real OS observer entrypoint with literal
+--label commit-transaction. A lazy fixed-source runpy dispatch loads this
+checkout's locking.py and supplies this actual observer/identity function.
+Source inspection rejected a locking.py process merely importing the observer:
+the existing process/protection inventory requires the native source role and
+literal label. This record preserves that decision; the
+[phase audit](GHA_PIPELINE_PROMOTION_AUDIT.md) separates source acceptance from
+remaining release proof. Status/tail remain independent of the lazy commit import. No new runner, mutex, daemon, scanner or proof cache
+is introduced.
+
+Private entry requires the actual inherited regular-file descriptor to match
+the common-directory inode and pass native nonblocking exclusive flock.
+An environment marker or fstat match alone grants no authority. Missing,
+closed, foreign, same-inode independent and native-integer-overflow descriptors
+refuse before staging. Validation uses the existing selected UV/runtime,
+including an actual UV/no-sync control that creates no environment; an ambient
+internal interpreter marker cannot select /usr/bin/true to skip validation.
+The existing observer passes only owned lock/native jobserver descriptors,
+retains ordinary caller kwargs, and drains the native process group before
+ordinary signal/timeout return. Installed GNU Make3.81 parent sibling and
+-j2 controls retain actual concurrency and warnings; private ordering is
+conditional on an actual private child goal.
+
+All public/private transaction rules and the lock/gate guard are explicitly
+phony. Same-named root files therefore cannot silently turn an action into
+an up-to-date result, and the fixture retains their original bytes.
+GNU Make inspection captures only this invocation's native options before
+command assignments. Public -q/-t/-n use native phony inspection, emit planned
+source_checkpoint=false guidance and execute no staging, collection, commit,
+target touch or observer update. Actual native statuses remain query1 and
+touch/dry-run0, including with a prior current receipt. An initial helper
+query1 produced Make2; a first-word-only predicate missed literal -q after
+--no-print-directory, and indirect recursive prefixes behave differently under
+touch. Those native failures and the bounded flag witness are retained.
+Do not infer a checkpoint or proof from any inspection result.
+
+The original complete five-owner focused cohort passes237/85.03s/native86.7s
+before the later phony/inspection repair. The final inspection cohort passes
+20/12.31s/native13.6s at
+.gate-logs/observed/commit-transaction-make-modes/commit-transaction-native-inspection311-4604.json.
+It retains Make's statuses, absent/unchanged current pointers, source/index
+bytes, all twelve dry-run routes and actual jobserver success. Existing guard,
+single fresh collection, exact scope/tree, drift/failure and mutation assertions
+remain; only native private-rule selectors and owned adapters conform.
+The native controls substitute harmless adapters only at the existing quality/
+collection boundaries. They certify the transaction boundary, not a full gate.
+
+Final ordinary receiving of the frozen production changes from4604 passes
+1658 tests on EACH installed Python3.11.14 and3.12.15, with fatal warnings:
+357 complete mutex tests,527 complete observer tests and774 remaining consumers.
+The deduplicated39-owner union is partitioned into8/12/19 complete owners;
+every partition retains its original300 total/60 quiet seconds. Exact receipts
+under .gate-logs/observed are
+commit-transaction-mutex-receiving/commit-transaction-mutex-receiving{311,312}-4604.json,
+commit-transaction-observer-receiving/commit-transaction-observer-receiving{311,312}-4604.json
+and commit-transaction-consumer-receiving/commit-transaction-consumer-receiving{311,312}-4604.json.
+Native elapsed seconds are87.129/85.751,65.199/79.551 and165.882/192.020,
+respectively. Identical commands ran sequentially across runtimes.
+
+Whole unchanged Python311 coverage profiles retain85aggregate/75each LINE
+AND BRANCH: mutex357 gives locking96.1% line/88.2% branch at
+.gate-logs/coverage-20261023T200304Z.json; observer673 gives aggregate91.8/86.0
+at .gate-logs/coverage-20261023T201706Z.json. Individual observer files are
+active_work_status85.0/82.1, stream_command91.5/84.7, summarize98.8/97.1 and
+trace_plugin96.7/87.5. These actual Python311 measurements grant no Python312
+coverage claim; Python312 has the complete ordinary receiving above.
+
+Preserve both original39-owner timeouts: instrumented coverage timed out124
+at300.561s and ordinary receiving timed out124 at300.542s. The latter retains
+the actual logical-Makefile AST failure in the new fixture. Its isolated RED
+failed1 in18.56s; the fixture-only compose_makefile correction then passed the
+complete native/layout owners165 in83.18s/native85.3s. Production coverage
+bytes, original assertions and canonical profile were unchanged. Before broad
+receiving for Make-reading tests, run the existing
+tests/unit/test_makefile_layout.py::test_tests_read_the_logical_makefile_instead_of_only_the_entrypoint
+through test-files with explicit inputs. Use compose_makefile even for an
+unsplit fixture. This cheap existing check localizes the observed defect;
+neither the partition nor trace spans prove hosted speed improvement.
+
+Normal per-commit collection, independent source review, Main receiving,
+canonical full gate and exact-SHA hosted/deployment proof remain separate.
+A required followup must release the common Git mutation mutex before any
+hosted wait: public push composites still hold it through their original
+publication calls in this packet. Obtain an actual blocked-wait/linked-writer
+RED, preserve PUSH audits, condition/order/native statuses and GNU Make
+n/q/t no-mutation controls, then receive that change with the hosted owner.
+Current receipts cannot certify that later source.
+
+Successful native signal/drain controls do not certify denied OS inspection.
+A terminal zero means the required children returned zero; inspect actual
+commit output/worktree-state before claiming a new commit. Bare independent
+git-add remains a single-coordinator mutation boundary and tree revalidation
+still refuses uncooperative index drift. No foreign rollback or force unlock
+is authorized.
+
+Stop dispatching Git writers and drain old commit processes before activating
+new harness source across worktrees. Keep application generations serving.
+Rollback also drains active transactions before a source revert, preserving
+stable mutex inodes, index/worktree bytes, refs, checkpoints and failed receipts.
+This is no service, schema, account, deployment or publication migration.
+The [GNU recipe shell contract](https://www.gnu.org/software/make/manual/html_node/Execution.html)
+and [.ONESHELL limitations](https://www.gnu.org/software/make/manual/html_node/One-Shell.html),
+retrieved through the bounded phase research owner, explain why a prerequisite
+or global one-shell setting cannot provide a whole transaction lifetime.
+The first-hand inode/fork reports below retain the long-lived operational
+context; native tests establish this project's actual boundary.
+All seven release items remain open until the canonical complete gate and
+required exact-SHA hosted/deployment/promotion proofs.
+
+## Public post-commit publication boundary (2026-10-23 UTC)
+
+The next packet starts from source checkpoint 0c4c3ac. Its native RED used the
+actual public/private Make recipes and common-directory mutex: while a bounded
+publication adapter waited, a real linked-worktree writer could not commit.
+Both ordinary Make and -e failed, the independent inode probe remained locked
+and the mutation receipt stayed running. The first commit already existed.
+This is a mutation-lifetime defect; a hosted CI wait must not reserve the Git
+writer for the duration of remote execution.
+
+The public wrapper now finishes its supervised mutation transaction before
+running its existing publication actions. Staging, every existing guard,
+expected-file comparison, collection, staged-tree recheck and commit remain
+inside the mutex. Local PUSH!=1 output is retained. Original post-action
+conditions and call order are explicit:
+
+| Public target | PUSH=0 after mutation | PUSH=1 after mutation |
+| --- | --- | --- |
+| ship-commit | No publication | batch-push |
+| ship-commit-files | No publication | batch-push |
+| commit-and-ship | No publication | batch-push |
+| commit-and-ship-push | development-push then ci-verdict | batch-push then development-push then ci-verdict |
+
+The first nonzero publication child stops later children and remains nonzero.
+The applied local commit and its native mutation receipt are preserved; repair
+the failed publication/CI input and use that native owner instead of repeating
+the commit. Private guidance now says phase=mutation and explicitly leaves
+public publication/CI status pending. Public-post-commit success guidance is
+emitted only after every requested post action returns zero. Neither message
+is a full-gate, deployment or release verdict.
+
+The hosted owner separately owns saved full-SHA verification and the real
+all-required CI heartbeat. These local controls substitute only a bounded
+publication adapter; they do not prove real hosted integration. After those
+sources are integrated, combined receiving must exercise the actual canonical
+publisher/wait macro while a linked writer progresses. No new waiter, runner,
+mutex, daemon, cache or observation schema belongs to this packet.
+
+One canonical provider lives in make/00-foundation.mk immediately after
+unexport SANDBOXCOM_HTTPS_VALIDATE_ONLY, between the Shared native Make
+inspection grammar markers. Its only definitions are the private override
+functions _native-make-option-prefix, _native-make-remove-letters and
+_native-make-boolean-cluster. It captures no flags eagerly and executes no
+subprocess. Each consumer retains its own three private capture/mode bindings
+and loads the actual provider graph in its native fixture. Environment -e and
+command-line replacement controls retain the same scalar input and include
+an active unguarded witness; private function data cannot replace the grammar.
+
+The inspection controls exposed a second concrete input defect. GNU Make3.81
+with -e/-q supplied MAKEFLAGS=' --no-print-directory -qe'. The old first-word
+and exact-short-option checks classified it as execute. The native guarded
+query started mutation observation and returned2; related dry-run/touch cases
+also failed their inspection contract. Additional native measurements retained
+-srqke, -srnke and -tsrke after the long option. Read actual serialized flags;
+do not infer them solely from argv.
+
+The existing Make and Python owners now stop at the standalone -- assignment
+barrier and recognize boolean-only short words before it: the first bare
+cluster and every single-dash cluster, plus exact long synonyms. The boolean
+letters are bBdeikLmnpqrRsStvw. Argument/path words such as -Iquerynqt, separate
+-I arguments, -j2, long directory options and definition tails cannot supply
+q/n/t. Paired cases execute the exact Make prefix/helper/declaration bytes with
+only a fixture input binding, and the existing Python owner. Unmatched quotes
+and literal flags after -- remain data. The host omitted -I from one native
+parse-time prefix; that argv case alone grants no I-exclusion proof.
+
+A native query can stop at an earlier ordinary recipe before a later plus
+recipe. An inert mutation witness proves no guard. The owned unguarded witness
+therefore makes the preceding mutation noop and the post envelope literally
+recursive and forces only the post condition. All six n/q/t ordinary/-e
+witnesses execute the same bounded publication payload while preserving source
+HEAD/index and creating no observer. Guarded controls retain native0/1/0,
+preserve current pointers and start no publication or target-touch artifact.
+This diagnostic witness is confined to its fixture; production keeps the
+guarded native envelope.
+
+Retain the actual failures and scoped GREEN results:
+
+- Blocked linked writer RED:2 failed/8 deselected20.46s, native21.6s,
+  commit-publication-red/commit-publication-linked-red311-0c4.json.
+- Extended controls:45 failed/67 passed116.15s, native118.0s. Separate16
+  mistaken stderr-only assertions,24 real -e inspection failures and5 inert
+  witnesses. Existing observer-merged Error73 assertions now inspect combined
+  stdout/stderr without weakening status/state checks.
+- Actual flag diagnostic:1 failed1.03s/native2.1s,
+  commit-publication-flags-diagnostic/commit-publication-flags-input311-0c4.json.
+- Shared scalar grammar and active witnesses:34 passed2.75s/native3.7s,
+  commit-publication-grammar/commit-publication-grammar311-0c4.json.
+- Complete new controls before the canonical provider move:140 passed99.61s/native101.4s,
+  commit-publication-controls/commit-publication-controls-fixed311-0c4.json.
+  These retain four-target PUSH conditions/order, ordinary/-e/-j2 jobserver,
+  native post failures, no post action after mutation failure and all inspection
+  source/index/current-pointer/touch assertions.
+- Canonical provider acceptance:36 passed1.99s/native2.8s at
+  commit-publication-provider/commit-publication-provider-input311-0c4.json:
+  actual provider graph/Python grammar28, native override/witness6, actual
+  public -e/-q inspection1 and conformed original guard-policy node1.
+- The previously omitted precommit-quality structural node failed1 in0.65s:
+  commit-publication-policy-red/commit-publication-policy-red311-0c4.json.
+  Its original contentguard/hook assertions now inspect the actual private
+  mutation bodies and also assert public-wrapper linkage; none was removed.
+
+Current-source Ruff, separate strict typing, environment-write guard, target
+contract289 and Make1176/0duplicate checks passed. The cheap logical-Makefile
+AST guard passed before the new control replay; its final receipt is
+commit-publication-layout/commit-publication-layout-final311-0c4.json.
+Final current-source receiving covers all42 deduplicated complete owners on
+both installed runtimes:1917 passed each, no skips. The unchanged eight-owner
+mutex coverage profile contributes503 each:311209.61s/native211.383s and
+312199.46s/native202.063s. Preserve native coverage-files receipts
+20261023T214145Z-76769-2bd4ed38.json and20261023T214548Z-5826-41385103.json,
+with immutable audits coverage-20261023T214516Z.json and
+coverage-20261023T214910Z.json. Locking line96.1 on both, branch88.2/87.5,
+passes original85aggregate/75each LINE AND BRANCH. This is coverage-envelope
+acceptance, not ordinary or full-gate proof. Exact unchanged scope reuse avoids
+a redundant503 replay while retaining canonical root configuration and fixtures.
+
+The complete ordinary observer12 owners contribute527 each in66.68s/native68.239s
+and93.14s/native95.191s; retain commit-publication-observer native receipts
+commit-publication-observer311-0c4.json andcommit-publication-observer312-0c4.json.
+The remaining22 complete ordinary owners contribute887 each in202.65s/
+native206.076s and204.88s/native207.960s; retain commit-publication-consumers
+receipts commit-publication-consumers311-0c4.json and
+commit-publication-consumers312-0c4.json. Every session drained terminal0 under
+original300total/60quiet, literal ID=, fatal warnings and serial-n0. Separate
+runtime commands serialized; at most two admitted cohort slots overlapped.
+
+Native staged-content preflight passed9.3s: retain
+owned six-path receipt post-commit-staged-preflight/
+post-commit-staged-preflight311-0c4.json, baseline3510/new0 clones, and actual
+Main-installed Markdown lint. These measurements provide no hosted timing claim.
+Normal commit collection, independent review, Main receiving, actual combined
+publisher/watcher and linked-writer acceptance, canonical complete gate and
+exact-SHA hosted/deployment/promotion proofs remain pending. Prior observer
+coverage is reusable only for its actual unchanged source/configuration/runtime/scope.
+
+## Explicit staged hook scope during merges (2026-10-23 UTC)
+
+A clean merge can leave every formatter and secret hook skipped while
+`_pre-commit-content-guard` returns zero. During Main receiving of immutable
+abdc86b, the three native pre-commit commands selected merge-conflict files,
+not all cleanly merged staged paths. That receipt measured the later line/clone
+checks; it did not establish three-hook acceptance for the merged files.
+
+The existing `_pre-commit-secrets-guard` now captures the actual cached Git
+filename inventory with NUL delimiters and passes each filename as a distinct
+`--files` argument to the same configured hooks. One selected installed UV
+Python invocation uses `-P` to exclude implicit CWD imports and passes the
+unchanged UV argv prefix to all three children. Explicit PYTHONPATH carriers
+retain their original meaning.
+The configured hooks run inside the pinned pre-commit owner's
+`staged_files_only(Store().directory)` context, using its existing configured
+cache and native restoration. Terminal success follows context exit. The
+forced public PIP index, hook order, hook filters,
+readonly baseline owner and stop-at-first-failure behavior remain intact.
+Spaces and newlines survive native Git and pre-commit transport without shell
+splitting. Git errors retain their native status; a signaled child retains the
+shell-equivalent 128-plus-signal status. Neither the dispatcher nor its Git reads
+stage files, move refs, change configuration or broaden selection to all files.
+
+Four native diagnostics constrain that design. Passing `./--name` does not make
+a root option-looking filename safe: installed pre-commit normalizes it and the
+real formatter receives an option. The guard refuses such scope before running
+a hook, preserving the filename and staged state for an owned native correction.
+Also, explicit `--files` bypasses pre-commit's ordinary unmerged-index refusal.
+The same guard therefore retains an explicit readonly native cached U-path
+query and refuses unmerged entries before any hook. No temporary hook config,
+path alias, UI-output parser, replacement runner or second mutex is introduced.
+
+Third, explicit filenames alone select working bytes. Native staged-bad /
+working-clean and staged-clean / working-bad formatter and secret witnesses
+first reproduce the original implicit hooks' correct index behavior, then expose
+the candidate's false success or false failure. The mature context restores that
+byte-view boundary and native fixer conflict handling; cached paths alone are
+never index-content proof. Hook failure and signal paths restore unstaged bytes
+through that same established owner, without custom rollback.
+
+Fourth, the new Python `-c` bootstrap initially imports untracked CWD modules
+that the original installed pre-commit entrypoint does not import in the same
+controlled context. Real `pre_commit.py` and `subprocess.py` witnesses execute
+in ordinary and `-e` modes before the repair. The existing native `-P` primitive
+removes only that implicit import input; no sys.path rewrite, `-I`, carrier
+stripping or replacement module loader is added. Active unguarded witnesses,
+original installed-entrypoint controls and exact bootstrap argv/startup records
+prove both non-execution and preservation of an explicit PYTHONPATH carrier.
+
+An empty inventory returns `outcome=empty`, zero hook commands and no measured
+staged scope. Deleted-only input retains the configured hooks' native skips.
+A completed command reports only its exact staged scope and native selection;
+a skipped hook measures no matching files. No result supplies security coverage,
+full-gate, exact-SHA CI, deployment or release proof. A failed fixer can change
+working bytes while leaving the index and refs unchanged: inspect that state,
+repair the actual input and preserve the existing transaction's later index
+identity checks. A new observer ID or handoff SHA is not an input repair.
+
+Native controls use small private Git repositories and conflict-free merges
+with the installed pinned formatter hooks and real readonly secret owner.
+The first source RED is four merge refusals missing in ordinary and `-e` modes;
+the same run retains a separate unsupported-filename diagnostic (5 FAIL/2 PASS,
+6.05s/native7.080s, `merge-staged-guard-red/merge-staged-guard-red311-abdc.json`).
+The narrowed filename diagnostic retains 1 FAIL/2 PASS at
+`merge-staged-grammar/merge-staged-grammar311-abdc.json`.
+The first explicit-files candidate passes 45 controls but fails both unresolved
+index controls (27.72s/native29.0s,
+`merge-staged-guard-focus/merge-staged-guard-focus311-abdc.json`).
+After the native U-path repair, all 51 controls pass in 22.91s/native24.1s at
+`merge-staged-guard-focus/merge-staged-guard-fixed311-abdc.json`, retaining Git
+73/signal, hook 73/signal, malformed NUL, empty/deleted scope, native fixer
+changes, exact argv, inherited carriers and source/index/ref assertions.
+That receipt does not cover differing staged and working bytes. Source review
+then produces all eight byte-view REDs (9.85s/native11.008s,
+`merge-staged-index-red/merge-staged-index-red311-abdc.json`). Bounded installed
+API signature/type/docstring introspection and four native context controls pass
+8.51s/native9.997s at
+`merge-staged-context-api/merge-staged-context-api311-abdc.json` before the
+production context is selected. Direct external-package file reads remain
+refused; no source-file dump or new inspection runner bypasses that boundary.
+
+The existing collection recorder initially swallowed the new Python dispatch:
+all three original hook-failure nodes then returned zero (3 FAIL,
+`merge-staged-capture-red/merge-staged-capture-red311-abdc.json`).
+Its adapter now executes that exact stdlib child, supplies the native NUL
+protocol and records the real hook argument position. Every original collection,
+guard, order and index assertion remains; exact forwarded filenames are added.
+The six focused consumer/layout controls pass at
+`merge-staged-capture-green/merge-staged-capture-green311-abdc.json`.
+The fixture's own minimal project fixes its observed UV outside-project warning
+without synchronization, installation or warning suppression.
+The mature context's own native index read then reveals a second recorder
+boundary: 66 PASS/1 FAIL at
+`merge-staged-context-focus/merge-staged-context-focus311-abdc.json`.
+The fixture now records that child phase separately with raw argv unchanged;
+its original two commit identity checks, failure injections and collection
+ordering remain exact. The complete two changed owners pass 101 cases in
+63.61s/native64.748s with no skips at
+`merge-staged-context-green/merge-staged-context-green311-abdc.json`.
+
+The later complete six-owner results retain 213 cases per runtime before the
+import repair (311: 101+112 under approved actual-scope reuse; 312: 135.12s/native
+137.366s). They do not certify implicit-CWD isolation. The next native four-case
+RED proves actual module execution in 2.49s/native3.416s at
+`merge-staged-shadow-red/merge-staged-shadow-red311-abdc.json`.
+The `-P` repair first passes all four in 5.97s/native6.950s at
+`merge-staged-shadow-green/merge-staged-shadow-green311-abdc.json`.
+After pinning the carrier observation to the exact owned bootstrap argv, both
+complete changed owners pass 105 cases (67 formatting/context + 38 collection), no
+skips, 67.74s/native69.050s at
+`merge-staged-safe-path-focus/merge-staged-safe-path-focus311-abdc.json`.
+All preceding failures and the earlier passed receipts keep their own source
+and scope; new staging preflight and final affected receiving remain required.
+
+Final frozen-source receiving is green on both installed runtimes, with no
+skips and the original canonical root configuration, fatal warnings, serial
+`-n 0`, literal `ID=` and 300/60 watched bounds. The complete guard/consumer
+union contains these six owners:
+
+~~~text
+tests/unit/test_precommit_formatting_admission.py
+tests/unit/test_single_native_commit_collection.py
+tests/unit/test_scoped_admission_targets.py
+tests/unit/test_precommit_quality_guards.py
+tests/unit/test_makefile_layout.py
+tests/unit/test_make_target_contract.py
+~~~
+
+The unchanged 105-case ordinary311 receipt above is reused only for its actual
+complete two-owner scope, as explicitly admitted after the current staged
+preflight made no source/test fix. The other four complete311 owners pass
+112 cases in 39.20s/native40.242s at
+`merge-safe-path-receiving/merge-safe-path-remaining311-abdc.json`.
+The complete six-owner312 union passes all 217 in 119.67s/native121.233s at
+`merge-safe-path-receiving/merge-safe-path-all312-abdc.json`.
+These are 217 accepted cases per runtime; the reuse is not a new run or gate.
+
+Keep the complete `tests/unit/test_make_commit_transaction.py` caller owner
+separate to retain its original bound. All 292 pass on311
+(185.06s/native188.268s) and312 (185.90s/native189.258s), at
+`merge-safe-path-caller/merge-safe-path-caller311-abdc.json` and
+`merge-safe-path-caller/merge-safe-path-caller312-abdc.json`.
+That native fixture deliberately substitutes the content guard. It verifies
+caller/locking/staging/collection/publication compatibility; the real installed
+hooks and index-byte behavior are measured by the dedicated guard owner and
+actual staging preflight. Do not attribute hook-content proof to that stub.
+The seven complete owners therefore account for 509 accepted cases per runtime.
+
+Every exact observer session is terminal, and all new receipts were read.
+The current five-path staging preflight passes all three actual hooks, line5
+and the unchanged clone baseline3510/new0 in native11.719s, at
+`merge-safe-path-staged-preflight/merge-safe-path-staged-preflight311-abdc86b.json`.
+No production Python, registered coverage profile or 85/75 line/branch floor is
+changed. Native Source acceptance remains separate from normal per-commit
+collection, immutable review, combined integration, the canonical full gate and
+required exact-SHA push CI/deployment/release proof.
+
+These are installed native behavior/API observations, not an attributed
+long-lived upstream
+defect or a new forum finding. The existing bounded research owner may add
+relevant primary/practitioner evidence separately. The change is a build-time
+boundary with no application restart or migration; ZDD and rollback remain a
+source revert through the existing Git owner. The affected-owner receiving
+above is complete; normal collection, immutable review and all final release
+proofs remain separate and pending.
+
 ## Verification
 
 - `tests/unit/test_git_automation_locking.py` proves PID/thread ownership, fork

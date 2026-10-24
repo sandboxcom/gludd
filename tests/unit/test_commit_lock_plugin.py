@@ -247,7 +247,7 @@ class TestMakefileLockTarget:
     @pytest.mark.parametrize("target", EXPECTED_COMMIT_TARGETS)
     def test_commit_target_has_lock_prereq(self, target: str) -> None:
         makefile = compose_makefile(MAKEFILE_PATH)
-        pattern = rf"^{target}:\s+.*_commit-lock-acquire"
+        pattern = rf"^_commit-locked-{target}:\s+.*_commit-lock-acquire"
         assert re.search(pattern, makefile, re.MULTILINE), (
             f"Target '{target}' missing _commit-lock-acquire prerequisite"
         )
@@ -260,7 +260,7 @@ class TestMakefileLockTarget:
 
     def test_ship_commit_files_has_lock_prereq(self) -> None:
         makefile = compose_makefile(MAKEFILE_PATH)
-        pattern = r"^ship-commit-files:\s+_commit-lock-acquire"
+        pattern = r"^_commit-locked-ship-commit-files:\s+_commit-lock-acquire"
         assert re.search(pattern, makefile, re.MULTILINE), (
             "ship-commit-files missing _commit-lock-acquire prereq"
         )
@@ -268,12 +268,12 @@ class TestMakefileLockTarget:
     def test_ship_commit_files_enforces_exact_staged_scope(self) -> None:
         makefile = compose_makefile(MAKEFILE_PATH)
         wrapper = re.search(
-            r"^ship-commit-files:[^\n]*\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
+            r"^_commit-locked-ship-commit-files:[^\n]*\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
             makefile,
             re.MULTILINE | re.DOTALL,
         )
         ship = re.search(
-            r"^ship-commit:[^\n]*\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
+            r"^_commit-locked-ship-commit:[^\n]*\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
             makefile,
             re.MULTILINE | re.DOTALL,
         )
@@ -299,15 +299,17 @@ class TestMakefileLockTarget:
             "_commit-lock-acquire must preserve the active-gate history guard"
         )
         recipe = target_block.group(1)
-        assert "flock" in recipe or "fcntl" in recipe, (
-            "_commit-lock-acquire must use flock or fcntl fallback"
+        assert "locking.py --assert-transaction" in recipe
+        native = (ROOT / "src/general_ludd/git_automation/locking.py").read_text()
+        assert "fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)" in native, (
+            "_commit-lock-acquire must validate the actual established native flock"
         )
 
     def test_ship_commit_rejects_index_drift_after_collection(self) -> None:
         """A concurrent stage during collection must never enter the commit."""
         makefile = compose_makefile(MAKEFILE_PATH)
         target = re.search(
-            r"^ship-commit:[^\n]*\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
+            r"^_commit-locked-ship-commit:[^\n]*\n(.*?)(?=\n[a-zA-Z_-]+:|\Z)",
             makefile,
             re.MULTILINE | re.DOTALL,
         )

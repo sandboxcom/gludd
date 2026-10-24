@@ -4,6 +4,13 @@ override GLUDD_SANDBOXCOM_HTTPS_VALIDATE_ONLY := $(value SANDBOXCOM_HTTPS_VALIDA
 export GLUDD_SANDBOXCOM_HTTPS_VALIDATE_ONLY := $(value SANDBOXCOM_HTTPS_VALIDATE_ONLY)
 unexport SANDBOXCOM_HTTPS_VALIDATE_ONLY
 
+# Shared native Make inspection grammar.
+# Pure private functions: no subprocesses or eager flag capture.
+override _native-make-option-prefix = $(if $(filter --,$(firstword $(1))),,$(firstword $(1)) $(if $(word 2,$(1)),$(call _native-make-option-prefix,$(wordlist 2,$(words $(1)),$(1)))))
+override _native-make-remove-letters = $(if $(strip $(2)),$(call _native-make-remove-letters,$(subst $(firstword $(2)),,$(1)),$(wordlist 2,$(words $(2)),$(2))),$(1))
+override _native-make-boolean-cluster = $(if $(call _native-make-remove-letters,$(1),b B d e i k L m n p q r R s S t v w),,$(1))
+# End shared native Make inspection grammar.
+
 # Capture operator-owned workflow consent inputs before startup/export expansion.
 GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY ?= 1
 GITHUB_WORKFLOW_AUTH_ACCOUNT ?=

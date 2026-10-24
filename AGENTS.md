@@ -16,6 +16,29 @@ research owner. Read-only Main audits do not authorize source edits. Set the
 installed runtime explicitly on status readers as well as tests. The [pipeline/agentic audit](docs/features/GHA_PIPELINE_PROMOTION_AUDIT.md)
 records actual failures, native repairs, phase ownership and missing proofs.
 
+Diagnostic GHA belongs in the implementation loop, before release sign-off.
+Use feature branches for changes, development for integration and master for
+promotion. A finished release candidate is not a prerequisite for diagnostic CI.
+GitHub must have the selected source when testing new code; existing published
+source can instead use the existing guarded rerun/dispatch owners. Keep each
+owner's actual prerequisites, original runtime bounds and native failure status.
+Do not apply final local release capacity or workflow-file authorization as a
+blanket prerequisite for an Actions operation on already published source.
+Read actual service responses: missing workflow-file scope alone is not an
+Actions API refusal. Do not change shared account consent without the existing
+explicit operator/account authorization.
+
+Before another local repair wave, name the diagnostic hosted owner, purpose,
+branch, full source SHA, run and attempt, and the useful changed input. Obtain an
+actual accepted request/queued or active run, or record its exact native refusal
+and missing input. A plan, message, source patch or local test is not hosted
+execution. Keep one bounded native observer for that run while independent
+source work continues. Preserve earlier failures; debug logging is diagnostic
+input, not a code fix or release proof. Never repeat a known unchanged failure
+merely because time elapsed. Source publication, diagnostic CI, development
+integration, master deployment and version-tag publication have separate
+outcomes; retain every canonical branch, coverage, ZDD and promotion gate.
+
 1. During release stabilization, prioritize the active milestone and its required repairs. Do not start unrelated backlog work or pad dispatch waves while release blockers remain.
 2. Keep one proof owner and one explicit missing-proof record per milestone task; use [Release Proof Throughput](docs/features/RELEASE_PROOF_THROUGHPUT.md). Distinguish implementation, focused acceptance, source review, full gate, exact-SHA CI, and completion.
 3. Before candidate sealing, final combined replay, or a full gate, run `make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0`. Plan mode and passing scheduling admission are NEVER gate or release evidence.

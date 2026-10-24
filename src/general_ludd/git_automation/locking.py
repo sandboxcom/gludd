@@ -42,17 +42,23 @@ so it never blocks the loop while waiting on a contended repo).
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import concurrent.futures
 import contextlib
 import errno
 import logging
 import os
+import re
+import shlex
+import stat
+import sys
 import threading
 import time
-from collections.abc import Iterator
-from types import TracebackType
-from typing import TypeVar
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from pathlib import Path
+from types import CodeType, TracebackType
+from typing import Protocol, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -635,3 +641,225 @@ async def async_git_repo_lock(
             _release_async_worker(worker)
         raise
     return _EnteredAsyncGitRepoLock(cm, worker)
+
+# Native Make owns these public names; this boundary is not a generic executor.
+_MAKE_COMMIT_TARGETS = frozenset({
+    "git-commit", "commit-no-verify", "git-commit-no-verify", "git-amend-msg",
+    "repo-commit", "ship-commit", "ship-commit-files", "git-commit-file",
+    "test-and-commit", "commit-bootstrap", "commit-and-ship", "commit-and-ship-push",
+})
+_MAKE_TRANSACTION_FD = "GLUDD_COMMIT_TRANSACTION_FD"
+
+
+def _assert_make_transaction(repo_path: str, descriptor: str) -> int:
+    """Bind the inherited open description to the actual common-directory mutex."""
+    common = git_common_directory(repo_path)
+    if common is None or not _HAVE_FCNTL:
+        raise ValueError("native Make transactions require a POSIX Git common directory")
+    if not descriptor.isascii() or not descriptor.isdecimal() or len(descriptor) > 10:
+        raise ValueError("missing or invalid inherited commit-lock descriptor")
+    fd = int(descriptor)
+    if fd < 3 or fd > 2_147_483_647:
+        raise ValueError("commit-lock descriptor must be a native nonstandard C integer")
+    held = os.fstat(fd)
+    expected = os.stat(os.path.join(common, _LOCK_FILENAME), follow_symlinks=False)
+    if not stat.S_ISREG(held.st_mode) or not stat.S_ISREG(expected.st_mode):
+        raise ValueError("commit-lock descriptor must name the native regular mutex")
+    if (held.st_dev, held.st_ino) != (expected.st_dev, expected.st_ino):
+        raise ValueError("commit-lock descriptor belongs to a different repository")
+    # fstat/path equality is not lock authority. An independent open description
+    # refuses here while another caller owns the inode; an inherited owner can
+    # reassert its existing native flock without releasing it.
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    return fd
+
+
+def _native_make_options() -> tuple[str, tuple[int, ...]]:
+    """Retain native inspection modes and GNU Make pipe/FIFO jobserver semantics."""
+    prefix = re.split(r"(?:^|\s)--(?=\s|$)", os.environ.get("MAKEFLAGS", ""), maxsplit=1)[0]
+    tokens = shlex.split(prefix)
+    boolean_letters = r"[bBdeikLmnpqrRsStvw]+"
+    short = tokens[0] if tokens and re.fullmatch(boolean_letters, tokens[0]) else ""
+    short += "".join(token[1:] for token in tokens if re.fullmatch("-" + boolean_letters, token))
+    for mode, letter, long_flags in (
+        ("query", "q", {"-q", "--question"}),
+        ("dry-run", "n", {"-n", "--just-print", "--dry-run", "--recon"}),
+        ("touch", "t", {"-t", "--touch"}),
+    ):
+        if letter in short or any(token in long_flags for token in tokens):
+            return mode, ()
+    pairs: set[tuple[int, int]] = set()
+    for token in tokens:
+        if token.startswith("--jobserver-auth=fifo:"):
+            continue
+        if not token.startswith(("--jobserver-auth=", "--jobserver-fds=")):
+            continue
+        match = re.fullmatch(r"--jobserver-(?:auth|fds)=([0-9]{1,10}),([0-9]{1,10})", token)
+        if match is None:
+            raise ValueError("unusable native GNU Make jobserver input")
+        pair = int(match[1]), int(match[2])
+        if pair[0] == pair[1] or any(fd < 3 or fd > 2_147_483_647 for fd in pair):
+            raise ValueError("unusable native GNU Make jobserver descriptors")
+        for fd in pair:
+            if not stat.S_ISFIFO(os.fstat(fd).st_mode):
+                raise ValueError("native GNU Make jobserver descriptor is not a pipe")
+        pairs.add(pair)
+    if len(pairs) > 1:
+        raise ValueError("mismatched native GNU Make jobserver descriptor pairs")
+    return "execute", next(iter(pairs), ())
+
+
+class _CommitObserver(Protocol):
+    """The existing stream owner surface needed by one native commit."""
+
+    def __call__(
+        self, command: Sequence[str], log_path: Path, *,
+        observed_root: Path, label: str, run_id: str,
+        heartbeat_seconds: float, quiet_seconds: float, max_seconds: float,
+        retain_runs: int, environment: Mapping[str, str], cwd: Path, pass_fds: tuple[int, ...],
+    ) -> int:
+        """Execute and drain the existing owned command."""
+
+
+def _run_make_transaction(
+    target: str,
+    make: str,
+    makefile: str,
+    *,
+    observed_root: str,
+    heartbeat_seconds: float,
+    quiet_seconds: float,
+    max_seconds: float,
+    retain_runs: int,
+    observer_fn: _CommitObserver | None = None,
+    identity_fn: Callable[[], str] | None = None,
+) -> int:
+    """Hold the established mutex through one supervised native Make transaction."""
+    if target not in _MAKE_COMMIT_TARGETS:
+        raise ValueError("unsupported native commit target")
+    if Path(make).name not in {"make", "gmake"} or any(char.isspace() for char in make):
+        raise ValueError("native commit execution requires one Make executable")
+    root = Path.cwd().resolve()
+    selected_makefile = Path(makefile).resolve()
+    observation = Path(observed_root).resolve()
+    if not selected_makefile.is_file() or not selected_makefile.is_relative_to(root):
+        raise ValueError("native commit Makefile must belong to the selected checkout")
+    if not observation.is_relative_to(root):
+        raise ValueError("native commit observations must stay private to the selected checkout")
+    mode, jobserver_fds = _native_make_options()
+    if mode != "execute":
+        native_status = 1 if mode == "query" else 0
+        print(
+            f"AGENT_NEXT target={target} outcome=planned native_status={native_status} mode={mode} "
+            "gate_evidence=false release_ready=false source_checkpoint=false "
+            "next_action=Native query/dry-run/touch inspection executes no staging, guards, "
+            "collection, commit or target touch; use the actual Make target only after "
+            "its source/ownership prerequisites. Query1 means execution would be required.",
+            file=sys.stderr,
+        )
+        return native_status
+    common = git_common_directory(str(root))
+    if common is None or not _HAVE_FCNTL:
+        raise ValueError("native Make transactions require a POSIX Git common directory")
+
+    # Native stream_command supplies its actual current function and identity
+    # owner. The direct Python API keeps source-owned defaults for focused callers.
+    if (observer_fn is None) != (identity_fn is None):
+        raise ValueError("native observer and identity owner must be bound together")
+    if observer_fn is None or identity_fn is None:
+        source_scripts = str(Path(__file__).resolve().parents[3] / "scripts")
+        if not sys.path or sys.path[0] != source_scripts:
+            sys.path.insert(0, source_scripts)
+        from stream_command import _new_run_id, stream_command
+        observer_fn = stream_command
+        identity_fn = _new_run_id
+    observer_code = getattr(observer_fn, "__code__", None)
+    if not isinstance(observer_code, CodeType):
+        raise ValueError("native observer must bind its actual source function")
+    print(
+        f"COMMIT-LOCK: source={Path(__file__).resolve()} "
+        f"observer={Path(observer_code.co_filename).resolve()}",
+        file=sys.stderr, flush=True,
+    )
+    print(f"COMMIT-LOCK: waiting target={target} repository={common}", file=sys.stderr, flush=True)
+    with git_repo_lock(str(root)):
+        fd = _file_lock_fds[_normalize(common)]
+        _assert_make_transaction(str(root), str(fd))
+        environment = dict(os.environ)
+        environment[_MAKE_TRANSACTION_FD] = str(fd)
+        run_id = identity_fn()
+        result = observer_fn(
+            [make, "--no-print-directory", "-f", str(selected_makefile), "_commit-locked-" + target],
+            observation / "commit-transaction" / (run_id + ".log"),
+            observed_root=observation, label="commit-transaction", run_id=run_id,
+            heartbeat_seconds=heartbeat_seconds, quiet_seconds=quiet_seconds,
+            max_seconds=max_seconds, retain_runs=retain_runs,
+            environment=environment, cwd=root, pass_fds=(fd, *jobserver_fds),
+        )
+    outcome = "passed" if result == 0 else "failed"
+    next_action = (
+        "Only the mutation child finished; public publication and CI children retain their own status. "
+        "A local source checkpoint is not full-gate or exact-SHA hosted/deployment proof; "
+        "retain its collection and obtain independent source review."
+        if result == 0 else
+        "Preserve this native receipt and any staged or applied state; inspect the exact "
+        "failed child/input before reconciliation or another commit."
+    )
+    print(
+        f"AGENT_NEXT target={target} phase=mutation outcome={outcome} native_status={result} "
+        f"gate_evidence=false release_ready=false next_owner=observed-status "
+        f"label=commit-transaction run_id={run_id}; {next_action}",
+        file=sys.stderr,
+    )
+    return result
+
+
+def main(
+    argv: Sequence[str] | None = None, *,
+    observer_fn: _CommitObserver | None = None,
+    identity_fn: Callable[[], str] | None = None,
+    require_make_target: bool = False,
+) -> int:
+    """Expose only native Make commit execution and inherited-lock validation."""
+    parser = argparse.ArgumentParser(description="Native repository-locked Make commit transaction")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--make-target", choices=sorted(_MAKE_COMMIT_TARGETS))
+    mode.add_argument("--assert-transaction", action="store_true")
+    parser.add_argument("--label", choices=["commit-transaction"], required=require_make_target)
+    parser.add_argument("--make", default="make")
+    parser.add_argument("--makefile", default="Makefile")
+    parser.add_argument("--observed-root", default=".gate-logs/observed")
+    parser.add_argument("--heartbeat-secs", type=float, default=30.0)
+    parser.add_argument("--quiet-secs", type=float, default=0.0)
+    parser.add_argument("--max-secs", type=float, default=3600.0)
+    parser.add_argument("--retain-runs", type=int, default=20)
+    args = parser.parse_args(argv)
+    if require_make_target and args.assert_transaction:
+        parser.error("native commit dispatch requires --make-target, not --assert-transaction")
+    if not require_make_target and args.make_target:
+        parser.error("native commits must enter through the existing stream_command Make owner")
+    try:
+        if args.assert_transaction:
+            _assert_make_transaction(os.getcwd(), os.environ.get(_MAKE_TRANSACTION_FD, ""))
+            return 0
+        return _run_make_transaction(
+            str(args.make_target), str(args.make), str(args.makefile),
+            observed_root=str(args.observed_root),
+            heartbeat_seconds=float(args.heartbeat_secs), quiet_seconds=float(args.quiet_secs),
+            max_seconds=float(args.max_secs), retain_runs=int(args.retain_runs),
+            observer_fn=observer_fn, identity_fn=identity_fn,
+        )
+    except (OSError, TimeoutError, ValueError) as error:
+        print(f"COMMIT-LOCK: refused: {error}", file=sys.stderr)
+        print(
+            "AGENT_NEXT target=commit-transaction outcome=refused native_status=2 "
+            "gate_evidence=false release_ready=false next_action=Preserve owned state and "
+            "repair the reported common-directory, descriptor, ownership or input prerequisite; "
+            "do not delete locks or retry an unchanged refusal.",
+            file=sys.stderr,
+        )
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
