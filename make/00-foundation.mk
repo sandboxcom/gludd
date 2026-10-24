@@ -77,6 +77,19 @@ $(error worktree creation inputs must be literal data; AGENT_NEXT outcome=refuse
 endif
 endif
 
+# Capture Node source inspection mode before eager startup/export expansion.
+ifneq ($(filter inspect-node-audit-source,$(MAKECMDGOALS)),)
+NODE_AUDIT_SOURCE_VALIDATE_ONLY ?= 1
+override GLUDD_NODE_AUDIT_SOURCE_VALIDATE_ONLY := $(value NODE_AUDIT_SOURCE_VALIDATE_ONLY)
+export GLUDD_NODE_AUDIT_SOURCE_VALIDATE_ONLY := $(value NODE_AUDIT_SOURCE_VALIDATE_ONLY)
+unexport NODE_AUDIT_SOURCE_VALIDATE_ONLY
+ifneq (x$(value GLUDD_NODE_AUDIT_SOURCE_VALIDATE_ONLY)x,x0x)
+ifneq (x$(value GLUDD_NODE_AUDIT_SOURCE_VALIDATE_ONLY)x,x1x)
+$(error NODE_AUDIT_SOURCE_VALIDATE_ONLY must be literal 0 or 1)
+endif
+endif
+endif
+
 # Keep HTTPS configuration mode literal before native startup/export expansion.
 SANDBOXCOM_HTTPS_VALIDATE_ONLY ?= 1
 override GLUDD_SANDBOXCOM_HTTPS_VALIDATE_ONLY := $(value SANDBOXCOM_HTTPS_VALIDATE_ONLY)
@@ -116,6 +129,27 @@ endif
 override GLUDD_GIT_MERGE_NC_BR := $(value BR)
 export GLUDD_GIT_MERGE_NC_BR
 unexport BR
+
+# Validate opt-in rerun flags before startup/export or ci-view prerequisites.
+ifneq ($(filter ci-rerun,$(MAKECMDGOALS)),)
+CI_RERUN_DEBUG ?= 0
+CI_RERUN_FAILED_ONLY ?= 0
+override GLUDD_CI_RERUN_DEBUG := $(value CI_RERUN_DEBUG)
+override GLUDD_CI_RERUN_FAILED_ONLY := $(value CI_RERUN_FAILED_ONLY)
+export GLUDD_CI_RERUN_DEBUG := $(value CI_RERUN_DEBUG)
+export GLUDD_CI_RERUN_FAILED_ONLY := $(value CI_RERUN_FAILED_ONLY)
+unexport CI_RERUN_DEBUG CI_RERUN_FAILED_ONLY
+ifneq (x$(value GLUDD_CI_RERUN_DEBUG)x,x0x)
+ifneq (x$(value GLUDD_CI_RERUN_DEBUG)x,x1x)
+$(error CI_RERUN_DEBUG must be literal 0 or 1)
+endif
+endif
+ifneq (x$(value GLUDD_CI_RERUN_FAILED_ONLY)x,x0x)
+ifneq (x$(value GLUDD_CI_RERUN_FAILED_ONLY)x,x1x)
+$(error CI_RERUN_FAILED_ONLY must be literal 0 or 1)
+endif
+endif
+endif
 
 # Capture raw CI cancellation inputs before native startup shell expansion.
 # Capture emergency cancellation inputs only for its explicit Make goal.
