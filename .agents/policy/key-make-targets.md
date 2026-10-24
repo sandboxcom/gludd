@@ -338,6 +338,33 @@ existing three-function Foundation provider with each consumer's own captures.
 The [publication record](../../docs/features/GITHUB_PUBLICATION_HTTPS.md#feature-source-ci-before-promotion)
 retains exact source inputs, native controls and pending Main receiving.
 
+### Checkout-owned typing and pre-push inputs
+
+The existing typecheck and _precommit-mypy owners capture shell pwd -P in each
+actual recipe and prepend that physical directory's src and scripts to MYPYPATH.
+CURDIR is overrideable; preserve its caller value but do not use it to select
+source. Retain unrelated inherited paths, configured typings and installed
+dependencies. Keep complete package analysis,
+the configured test child and pre-commit's null-cache policy. Native failures
+retain their status and phase; terminal success follows every required child.
+
+~~~console
+make typecheck
+make _precommit-mypy
+~~~
+
+These are real typing commands, not offline plans. Append the selected installed
+runtime tuple to each invocation and keep the calling owner's original bounds.
+The complete native regression uses real mypy and owned outside-root decoys;
+its focused success does not certify all Main typing or the full release gate.
+
+Use CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json in the active checkout,
+including the actual publisher CMD inside run-watched. A Main absolute path can
+also enter MAKEFLAGS/MAKEOVERRIDES. Repair that caller input, retain native
+confinement and enabled plugins, and report offending key names without values.
+The [pre-push record](../../docs/features/GITHUB_PUBLICATION_HTTPS.md#pre-push-source-identity-and-checkout-owned-inputs)
+retains the real-hook boundary and separate source/receiving proof limits.
+
 ### Choose the next action from evidence
 
 | Current input | Next action |

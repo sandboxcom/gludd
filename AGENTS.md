@@ -51,11 +51,19 @@ merely because time elapsed. Source publication, diagnostic CI, development
 integration, master deployment and version-tag publication have separate
 outcomes; retain every canonical branch, coverage, ZDD and promotion gate.
 
-Use checkout-owned ledger and observation paths for feature publication.
-Main paths can propagate through explicit Make CLI assignments and MAKEFLAGS
-into a confined pre-push collection; repair that caller input and capture keys
-without dumping values. Preserve native Git-local sanitation and confinement.
-Put the selected installed runtime in both run-watched and its actual CMD.
+Use checkout-owned CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json and
+observation paths for feature publication. Main paths can propagate through
+explicit Make CLI assignments and MAKEFLAGS/MAKEOVERRIDES into a confined
+pre-push collection; repair that caller input and capture offending key names
+without dumping values. Preserve native Git-local sanitation, enabled plugins
+and confinement. Put the selected installed runtime in both run-watched and its
+actual CMD. Both native mypy owners capture shell pwd -P inside their actual
+recipe and select that physical directory's src/scripts before installed
+editables. CURDIR can be overridden by CLI or -e; keep its caller value and
+unrelated carriers but never use it as the physical source identity. Preserve
+configured stubs, installed typing dependencies and native failure status.
+Read the [pre-push source record](docs/features/GITHUB_PUBLICATION_HTTPS.md#pre-push-source-identity-and-checkout-owned-inputs)
+before another publication attempt.
 ci-await snapshot1 returns only a baseline run ID (or0); native0 supplies no
 terminal CI result and writes no observation. Validate-only returns native0 for a plan.
 Regular snapshot0 uses the actual event/workflow/branch/full SHA and owns its

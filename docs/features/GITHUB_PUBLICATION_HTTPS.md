@@ -694,3 +694,117 @@ independent local work proceeds. Do not repush only to redispatch an accepted ru
 Known CSS policy failure/eight unproved shards, selected-account workflow consent,
 Node/TOML input, hard95capacity, canonical full gate, exact-SHA push/deployment,
 development/master promotion and version publication remain separate obligations.
+
+## Pre-push source identity and checkout-owned inputs
+
+This separate Main intake uses only the checkout-mypy/caller-input repair at
+5e61dd51f414e781dffbd7a1c766c32fd2bdf723. The source reference is an immutable
+implementation input, not a merged ancestor or acceptance of this Main tree.
+Keep all earlier Main HTTPS, consent, transaction, status and publication records.
+
+Both existing native mypy owners capture shell pwd -P in each actual recipe
+and bind package discovery to that physical directory's src and scripts before
+shared installed editables. They preserve caller CURDIR without trusting it as
+a source selector. They retain
+inherited unrelated MYPYPATH entries, configured typings, installed dependency
+analysis, full-package checking, the second configured test child and the
+pre-commit cross-platform null cache. Native errors retain their status/phase;
+typecheck emits success only after both required typing commands pass.
+
+The original184-line owner remains an exact prefix of the receiving regression
+owner, using real mypy, actual Main Make sources and an owned outside-root
+decoy. Its ordinary/-e controls cover current source/scripts,
+configured stubs, retained carriers, an otherwise-unimported package error,
+configured-child failure and null-cache behavior. Its unbound native witness
+must really select the decoy. This is not an installed-environment replacement
+or a claim that all current Main source types already pass.
+
+The collection repair belongs to the caller: use checkout-owned
+CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json, including inside the real
+publisher CMD under run-watched. An explicit Main absolute path can propagate
+through Make CLI and MAKEFLAGS/MAKEOVERRIDES into a confined feature hook.
+Keep the native canonical-Main refusal, Git-local environment sanitation and
+every plugin enabled. Report offending key names without dumping values.
+No production collection or worktree-confinement implementation is changed.
+
+The additive four-case regression uses actual Git pre-push, native collection
+and pytest_ansible.plugin in owned linked repositories. Canonical/active ledger
+inputs and ordinary/-e retain the original20-case owner, authority bytes,
+tracked source, unrelated carriers, exact collection count and native statuses.
+The active input may pass; a leaked canonical path must still refuse before
+transport. Do not suppress plugins or globally erase the environment to pass.
+
+The source record retains genuine mypy4FAIL/1PASS before the recipe repair,
+then complete new owner11 on311 and its19-case changed/consumer union on312.
+It also retains earlier collection fixture mistakes separately from actual
+four-case GREEN and complete collection owner24 on both runtimes. Those are
+historical source-scope results at65003637b27a632c63a36f2a6e853f2485ecf44a,
+not this new Main postimage's tests or an exact-SHA gate/hosted result.
+
+The [official mypy import order](https://mypy.readthedocs.io/en/stable/running_mypy.html#how-imports-are-found)
+and [installed-package guidance](https://mypy.readthedocs.io/en/stable/installed_packages.html)
+support explicit source precedence without disabling installed dependency
+analysis. The related [firsthand2022 report13214](https://github.com/python/mypy/issues/13214)
+documents an editable/stub interaction closed through13223; its older overlap
+error is different from this native wrong-checkout failure. No current upstream
+regression or new HTTP research result is inferred from that retained source.
+
+Root must receive the exact current Main preimages, stage only the six owned
+paths, drain the native content guard, complete the changed/affected whole
+owners on both installed runtimes and obtain independent source review and
+normal fresh collection. A real full Main typing error remains an actual
+failure to repair; do not trim package scope, add ignores or relax assertions.
+No production Python profile is changed; canonical85aggregate/75each-file
+line AND branch, original runtime/cleanup/ZDD/promotion guards and all required
+full-gate, canonical exact-SHA CI and deployment/release proofs remain.
+No acceptance, publication or release completion is supplied by this plan.
+
+The fixed manual handoff at this repin records published source ac401,
+Build40080210078 failed with the reported new EE404, and Molecule40080315006
+active. These are retained source-bound feedback facts; no hosted lookup was
+performed here, no later run state is inferred, and no gate, deployment or
+release proof is supplied.
+
+## Physical source identity in Main receiving
+
+Main receiving on6c36e93 first reproduced10FAIL/1PASS in the complete new
+11-case owner (main-mypy-source-red311-6c36e93, native5.9s). Receiving the
+implemented5e source binding then passed11 (main-mypy-source-green311-6c36e93,
+native6.4s). These are separate measured inputs, not final gate evidence.
+
+Independent review then identified overrideable CURDIR in the claimed physical
+prefix. Six additive real-Make/mypy controls preserve the entire184-line owner,
+place an error only in active source and a healthy package under an owned
+outside src directory. The actual extra PHONY prerequisite prints origin CURDIR;
+it changes no binding or original recipe. Command-line and environment/-e each
+made both goals return native0/PASS while omitting the active error. Ordinary
+environment controls still checked active source. The genuine result was
+4FAIL/2PASS,3.41pytest seconds/native4.4, at
+main-mypy-curdir-red/main-mypy-curdir-red311-6c36e93.
+
+Both recipes now capture physical pwd -P in the executing shell and quote that
+shell variable for package source/scripts discovery. A capture failure retains
+nonzero status and source-root guidance. CURDIR and unrelated carriers retain
+their values; complete package/configured-child checks, stubs, installed typing,
+null-cache policy and native error handling remain. Whole17 passed7.51s/native8.4
+at main-mypy-physical-root-green/main-mypy-physical-root-green311-6c36e93.
+No old assertion was removed or weakened.
+
+The [GNU recursive-Make contract](https://www.gnu.org/software/make/manual/html_node/Recursion.html)
+and [environment precedence](https://www.gnu.org/software/make/manual/html_node/Environment.html)
+search results describe CURDIR as file-priority metadata and -e precedence;
+setting it does not change the actual working directory. Both direct full-page
+opens timed out; no repeated retrieval or fetched-body claim follows. The
+[firsthand2018 directory question](https://stackoverflow.com/questions/52437728/what-is-the-difference-between-pwd-and-curdir)
+was read: its Docker/PWD concern is related context, not this false-green
+reproduction or an upstream Make defect. Native controls establish this actual
+installed-runtime result. An environment PWD string is not the chosen repair.
+
+Before the physical-root repair, actual full Main typecheck passed1516 package
+files plus its configured1 file (native25.6s), and _precommit-mypy passed1516
+(native13.7s). The configured child emitted an unused pytest-override NOTE with
+native0; no configuration, scope or diagnostic suppression changed. These
+receipts retain the older recipe input. Fresh full behavior, complete receiving
+on both runtimes, staged guard, source approval and normal collection remain
+required for the repaired input. No full-gate, canonical push, deployment or
+release proof is supplied by these focused passes.
