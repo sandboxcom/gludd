@@ -673,6 +673,7 @@ help:
 		"  node-deps-sync        Install locked Node deps (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY, NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false)" \
 		"  node-deps-relock      Regenerate Node lock (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY, NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false)" \
 		"  node-deps-audit       Audit locked Node deps (NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false plus NODE_DEPS_AUDIT_LEVEL=low|moderate|high|critical)" \
+		"  inspect-node-audit-source Plan nine fixed public Node advisory/metadata sources (NODE_AUDIT_SOURCE_VALIDATE_ONLY=1; explicit live=0)" \
 		"  freellmapi-upstream-admission  Validate/refresh the non-runnable upstream candidate (FREELLMAPI_ADMISSION_TAG, FREELLMAPI_ADMISSION_COMMIT, FREELLMAPI_ADMISSION_LIVE=0|1, FREELLMAPI_ADMISSION_OUTPUT)" \
 		"  freellmapi-upstream-build  Validate/run the exact-source upstream suite (FREELLMAPI_BUILD_LIVE=0|1, FREELLMAPI_BUILD_CANDIDATE, FREELLMAPI_BUILD_PLAN, FREELLMAPI_BUILD_REPORT)" \
 		"  freellmapi-three-arm-replay  Build/validate/replay exact v0.11.1 without promotion (FREELLMAPI_THREE_ARM_MODE, FREELLMAPI_THREE_ARM_CANDIDATE, FREELLMAPI_THREE_ARM_PLAN, FREELLMAPI_THREE_ARM_CORPUS, FREELLMAPI_THREE_ARM_REPORT)" \
@@ -876,6 +877,8 @@ help:
 		"" \
 		"  --- Git ---" \
 		"  ci-cancel             Plan an emergency single-run request (RUN, CI_CANCEL_VALIDATE_ONLY=1; explicit apply=0)" \
+		"  ci-rerun              Guarded run request; CI_RERUN_DEBUG=0|1, CI_RERUN_FAILED_ONLY=0|1 (both default0), CI_FAILURE_VALIDATE_ONLY=1 plans" \
+		"  ci-rerun-help         Read installed gh rerun flag help without authentication or a remote write" \
 		"  (Single-source policy: features land on development first, then merge to master)" \
 		"  git-status            Show git status" \
 		"  batch-push            Publish a guarded candidate (default COMMIT_THRESHOLD=5; contract threshold=1 refuses; SSH_KEY)" \
@@ -1602,6 +1605,56 @@ relock:
 		set -- --profile "$$GLUDD_DEPENDENCY_PROFILE_RELOCK_PROFILE"; \
 	fi; \
 	UV_NO_SYNC=0 $(UV) run --no-project --python 3.11 python scripts/dependency_profiles.py $(if $(filter 1,$(DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY)),check,lock) --root "$(CURDIR)" --manifest config/dependency_profiles.toml --uv "$(UV)" "$$@"
+
+# Fixed public inputs only; no caller URL, token, output path or source selector.
+.PHONY: inspect-node-audit-source
+inspect-node-audit-source:
+	@if [ "$(MAKECMDGOALS)" != inspect-node-audit-source ]; then echo 'inspect-node-audit-source must be invoked directly' >&2; exit 2; fi
+	@set -eu; \
+		case "$$GLUDD_NODE_AUDIT_SOURCE_VALIDATE_ONLY" in 0|1) ;; *) echo 'NODE_AUDIT_SOURCE_VALIDATE_ONLY must be literal 0 or 1' >&2; exit 2;; esac; \
+		if [ "$$GLUDD_NODE_AUDIT_SOURCE_VALIDATE_ONLY" = 1 ]; then \
+			printf '%s\n' \
+				'NODE_AUDIT_SOURCE_INSPECTION plan_only=true network=false requests=9 gate_evidence=false release_ready=false' \
+				'toml-arrays https://api.github.com/advisories/GHSA-4qx8-w7c3-pj3p' \
+				'toml-dotted-keys https://api.github.com/advisories/GHSA-9j65-hcg3-gc64' \
+				'toml-integers https://api.github.com/advisories/GHSA-9qmh-m7c6-f92p' \
+				'zod-collections https://api.github.com/advisories/GHSA-mrhx-c7xc-m3w5' \
+				'toml-published https://registry.npmjs.org/toml/latest' \
+				'zod-published https://registry.npmjs.org/zod/latest' \
+				'plugin-published https://registry.npmjs.org/@opencode-ai%2fplugin/latest' \
+				'effect-published-tags https://registry.npmjs.org/-/package/effect/dist-tags' \
+				'zod-firsthand-issue https://api.github.com/repos/colinhacks/zod/issues/1872' \
+				'Public request bounds: connect=10s total=20s bytes<=2097152 retries=0 redirects=0; no authentication' \
+				'AGENT_NEXT target=inspect-node-audit-source outcome=planned research_only=true gate_evidence=false release_ready=false next_action=explicit-mode0-public-retrieval fix_availability=unverified'; \
+		else \
+			inspect_node_source() { \
+				gludd_node_source_name="$$1"; gludd_node_source_url="$$2"; \
+				printf '\nNODE_AUDIT_SOURCE_BEGIN name=%s url=%s\n' "$$gludd_node_source_name" "$$gludd_node_source_url"; \
+				gludd_node_source_status=0; \
+				env -i PATH="$$PATH" LC_ALL=C curl --disable \
+					--connect-timeout 10 --max-time 20 --max-filesize 2097152 --retry 0 \
+					--location --max-redirs 0 --proto '=https' --proto-redir '=https' --tlsv1.2 \
+					--proxy '' --noproxy '*' --fail-with-body --silent --show-error \
+					--write-out '\nNODE_AUDIT_SOURCE_HTTP http_code=%{http_code} url=%{url_effective}\n' \
+					"$$gludd_node_source_url" || gludd_node_source_status=$$?; \
+				printf '\nNODE_AUDIT_SOURCE_END name=%s native_status=%s\n' "$$gludd_node_source_name" "$$gludd_node_source_status"; \
+				if [ "$$gludd_node_source_status" -ne 0 ]; then \
+					printf 'AGENT_NEXT target=inspect-node-audit-source outcome=failed failed_source=%s native_status=%s research_only=true gate_evidence=false release_ready=false next_owner=show-lines next_action=retain-raw-failure-and-repair-proven-source-or-transport-input no_unchanged_retry=true\n' "$$gludd_node_source_name" "$$gludd_node_source_status"; \
+					exit "$$gludd_node_source_status"; \
+				fi; \
+			}; \
+			inspect_node_source toml-arrays 'https://api.github.com/advisories/GHSA-4qx8-w7c3-pj3p'; \
+			inspect_node_source toml-dotted-keys 'https://api.github.com/advisories/GHSA-9j65-hcg3-gc64'; \
+			inspect_node_source toml-integers 'https://api.github.com/advisories/GHSA-9qmh-m7c6-f92p'; \
+			inspect_node_source zod-collections 'https://api.github.com/advisories/GHSA-mrhx-c7xc-m3w5'; \
+			inspect_node_source toml-published 'https://registry.npmjs.org/toml/latest'; \
+			inspect_node_source zod-published 'https://registry.npmjs.org/zod/latest'; \
+			inspect_node_source plugin-published 'https://registry.npmjs.org/@opencode-ai%2fplugin/latest'; \
+			inspect_node_source effect-published-tags 'https://registry.npmjs.org/-/package/effect/dist-tags'; \
+			inspect_node_source zod-firsthand-issue 'https://api.github.com/repos/colinhacks/zod/issues/1872'; \
+			printf '%s\n' 'NODE_AUDIT_SOURCE_INSPECTION completed=true requests=9 raw_http_only=true' \
+				'AGENT_NEXT target=inspect-node-audit-source outcome=raw-completed research_only=true gate_evidence=false release_ready=false fix_availability=unverified next_action=review-primary-patched-ranges-and-published-metadata-before-any-lock-change'; \
+		fi
 
 node-deps-sync:
 	@if [ "$(NODE_DEPS_VALIDATE_ONLY)" = "1" ]; then \

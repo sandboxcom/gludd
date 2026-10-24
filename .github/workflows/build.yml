@@ -9,7 +9,7 @@ on:
       - 'release-candidate/**'
     tags: ["v*"]
   pull_request:
-    branches: [master, main]
+    branches: [master, main, development]
   workflow_dispatch:
     inputs:
       vllm_base_url:
@@ -2246,14 +2246,15 @@ jobs:
       - name: Clean stale release (already_exists guard)
         # A previous run's draft/partial release for this tag makes
         # action-gh-release fail with 'release already_exists'. Delete only
-        # the DRAFT (never a published release) and let the next step recreate.
+        # the DRAFT (never a published release), preserving the triggering Git
+        # tag object, and let the next step recreate only the release.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           echo "=== CI PHASE: release-clean-stale ==="
           if gh release view ${{ github.ref_name }} --json isDraft -q .isDraft 2>/dev/null | grep -q true; then
             echo "Stale draft release for ${{ github.ref_name }} — deleting so action-gh-release can recreate it."
-            gh release delete ${{ github.ref_name }} --yes --cleanup-tag
+            gh release delete ${{ github.ref_name }} --yes
           else
             echo "No stale draft to clean for ${{ github.ref_name }}."
           fi
