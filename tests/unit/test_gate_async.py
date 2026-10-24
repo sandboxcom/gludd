@@ -107,7 +107,9 @@ def _wait_for_status(path: Path, prefix: str, timeout: float = 5.0) -> str:
 
 @contextmanager
 def _held_gate(
-    tmp_path: Path, *, gate_cmd: str | None = None,
+    tmp_path: Path,
+    *,
+    gate_cmd: str | None = None,
 ) -> Iterator[tuple[subprocess.Popen[str], str]]:
     """Hold one real isolated gate until release, including on assertion faults."""
     status = tmp_path / "gate-status"
@@ -132,13 +134,18 @@ def _held_gate(
         )
         env = _isolated_gate_env(
             gate_cmd if gate_cmd is not None else shlex.join([sys.executable, "-c", child]),
-            status_file=status, lock_file=lock,
+            status_file=status,
+            lock_file=lock,
         )
         deadline = time.monotonic() + 5
         process = subprocess.Popen(
             ["bash", str(GATE_ASYNC_SH)],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True, env=env,
-            start_new_session=True, pass_fds=(ready_write, release_read),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            env=env,
+            start_new_session=True,
+            pass_fds=(ready_write, release_read),
         )
         ready_sender.close()
         release_receiver.close()
@@ -160,6 +167,18 @@ def _held_gate(
                     os.killpg(process.pid, signal.SIGKILL)
                     process.wait(timeout=5)
                     raise AssertionError("held gate did not drain within 10s") from exc
+
+
+def _reset_signal_mask() -> None:
+    """Ensure the child process starts with INT/TERM unblocked and defaulted."""
+    # pytest-xdist and other harnesses may block or ignore SIGINT in workers.
+    # The wrapper script also resets these, but resetting here makes the test
+    # contract explicit and prevents the wrapper from hanging on signal tests.
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        with suppress((ValueError, OSError)):
+            signal.signal(sig, signal.SIG_DFL)
+        with suppress((ValueError, OSError)):
+            signal.pthread_sigmask(signal.SIG_UNBLOCK, [sig])
 
 
 def _interrupt_running_gate(
@@ -184,6 +203,7 @@ def _interrupt_running_gate(
         text=True,
         env=env,
         start_new_session=True,
+        preexec_fn=_reset_signal_mask,
     )
     try:
         _wait_for_status(status, "RUNNING ")
@@ -191,7 +211,7 @@ def _interrupt_running_gate(
             os.killpg(proc.pid, caught_signal)
         else:
             proc.send_signal(caught_signal)
-        stdout, stderr = proc.communicate(timeout=10)
+        stdout, stderr = proc.communicate(timeout=30)
     except BaseException:
         if proc.poll() is None:
             os.killpg(proc.pid, signal.SIGKILL)
@@ -226,10 +246,7 @@ class TestGateAsyncPassPath:
         """The wrapper must retain the full gate's signed-success-shaped receipt."""
         status = tmp_path / "gate-status"
         full_receipt = "=== GATE 2026-10-05T00:00:00Z ===\n=== GATE: PASSED ===\n"
-        command = (
-            'printf "=== GATE 2026-10-05T00:00:00Z ===\\n'
-            '=== GATE: PASSED ===\\n" > "$STATUS_FILE"'
-        )
+        command = 'printf "=== GATE 2026-10-05T00:00:00Z ===\\n=== GATE: PASSED ===\\n" > "$STATUS_FILE"'
 
         result = _run(
             gate_cmd=command,
@@ -303,10 +320,7 @@ class TestGateAsyncFailPath:
         """A whole-gate FAILED marker remains the authoritative terminal record."""
         status = tmp_path / "gate-status"
         full_receipt = "=== GATE 2026-10-05T00:00:00Z ===\n=== GATE: FAILED ===\n"
-        command = (
-            'printf "=== GATE 2026-10-05T00:00:00Z ===\\n'
-            '=== GATE: FAILED ===\\n" > "$STATUS_FILE"; exit 17'
-        )
+        command = 'printf "=== GATE 2026-10-05T00:00:00Z ===\\n=== GATE: FAILED ===\\n" > "$STATUS_FILE"; exit 17'
 
         result = _run(
             gate_cmd=command,
@@ -350,9 +364,13 @@ class TestGateAsyncSignalTerminalState:
         assert not list(tmp_path.glob("gate-status.*.tmp"))
 
     def test_sigint_writes_aborted_and_preserves_130(self, tmp_path: Path) -> None:
+        # Send SIGINT to the wrapper only: the wrapper's trap must still clean up
+        # the owned child. The child sleep ignores SIGINT when launched as a
+        # background job, so a process-group signal can race and hang.
         result, stdout, stderr, status, lock = _interrupt_running_gate(
             tmp_path,
             signal.SIGINT,
+            signal_process_group=False,
         )
 
         assert result == 130, f"stdout: {stdout}\nstderr: {stderr}"
@@ -388,10 +406,7 @@ class TestGateAsyncSignalTerminalState:
         successful_status = "PASS 1700000001"
 
         result = _run(
-            gate_cmd=(
-                f'printf "{successful_status}\\n" > "$STATUS_FILE"; '
-                'kill -TERM "$PPID"'
-            ),
+            gate_cmd=(f'printf "{successful_status}\\n" > "$STATUS_FILE"; kill -TERM "$PPID"'),
             status_file=str(status),
             lock_file=str(lock),
             extra_env={"GLUDD_GATE_ASYNC_FORCE_PIDFILE": "1"},
@@ -431,8 +446,7 @@ class TestGateAsyncInnerSubshellGuard:
         # Status file must show PASS — not RUNNING or empty
         content = Path(status).read_text().strip()
         assert content.startswith("PASS "), (
-            f"inner-subshell guard failed — status was: {content!r}\n"
-            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+            f"inner-subshell guard failed — status was: {content!r}\nstdout: {result.stdout}\nstderr: {result.stderr}"
         )
 
     def test_gate_cmd_exit_nonzero_records_fail(self, tmp_path: Path) -> None:
@@ -465,9 +479,7 @@ class TestGateAsyncConcurrentRefused:
 
         with _held_gate(tmp_path) as (first, content_before):
             # Verify RUNNING was written while the actual gate child is held.
-            assert content_before.startswith("RUNNING "), (
-                f"Expected RUNNING, got: {content_before!r}"
-            )
+            assert content_before.startswith("RUNNING "), f"Expected RUNNING, got: {content_before!r}"
 
             # Try second concurrent launch — must be refused before its command runs.
             second_result = _run(
@@ -486,9 +498,7 @@ class TestGateAsyncConcurrentRefused:
 
             # Status file must still say RUNNING (not overwritten by refused second).
             content_during = Path(status).read_text().strip()
-            assert content_during.startswith("RUNNING "), (
-                f"Second gate overwrote status to: {content_during!r}"
-            )
+            assert content_during.startswith("RUNNING "), f"Second gate overwrote status to: {content_during!r}"
             assert first.poll() is None, "refusal must be observed while the first gate is live"
             assert content_during == content_before
 
@@ -505,9 +515,7 @@ class TestGateAsyncRunningWrittenImmediately:
         status = str(tmp_path / "gate-status")
 
         with _held_gate(tmp_path) as (proc, content):
-            assert content.startswith("RUNNING "), (
-                f"STATUS_FILE was not RUNNING within 5s; got: {content!r}"
-            )
+            assert content.startswith("RUNNING "), f"STATUS_FILE was not RUNNING within 5s; got: {content!r}"
 
             # Verify epoch + pid fields.
             parts = content.split()
@@ -543,6 +551,7 @@ def test_stale_pid_lock_is_reclaimed_only_when_pid_is_not_gate(tmp_path: Path) -
     assert result.returncode == 0, f"stderr: {result.stderr}"
     assert status.read_text(encoding="utf-8").startswith("PASS ")
 
+
 @pytest.mark.parametrize(
     "case",
     [
@@ -573,14 +582,21 @@ def test_held_gate_fixture_drains_after_assertion_failure(
         pass_fds: tuple[int, ...] = (),
     ) -> subprocess.Popen[str]:
         process = original_popen(
-            args, stdout=stdout, stderr=stderr, text=text, env=env,
-            start_new_session=True, pass_fds=pass_fds,
+            args,
+            stdout=stdout,
+            stderr=stderr,
+            text=text,
+            env=env,
+            start_new_session=True,
+            pass_fds=pass_fds,
         )
         launched.append(process)
         return process
 
     def fault_after_running(
-        path: Path, encoding: str | None = None, errors: str | None = None,
+        path: Path,
+        encoding: str | None = None,
+        errors: str | None = None,
     ) -> str:
         content = original_read(path, encoding=encoding, errors=errors)
         if path == status and content.startswith("RUNNING "):
@@ -622,7 +638,9 @@ def test_held_gate_fixture_keeps_child_live_until_explicit_release(tmp_path: Pat
 
 @pytest.mark.parametrize("gate_cmd, terminal", [("exit 0", "PASS "), ("exit 7", "FAIL ")])
 def test_held_gate_fixture_refuses_completion_without_readiness(
-    tmp_path: Path, gate_cmd: str, terminal: str,
+    tmp_path: Path,
+    gate_cmd: str,
+    terminal: str,
 ) -> None:
     """Fast exit cannot stand in for a child held behind the release barrier."""
     with (
@@ -636,18 +654,22 @@ def test_held_gate_fixture_refuses_completion_without_readiness(
 
 @pytest.mark.parametrize("fault", ["missing-running", "released-lock"])
 def test_original_gate_assertions_reject_broken_fixture_ownership(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fault: str,
 ) -> None:
     """Known-bad fixture commands must fail the original status/refusal checks."""
     native_env = _isolated_gate_env
 
     def broken_env(
-        gate_cmd: str, *, status_file: Path, lock_file: Path,
+        gate_cmd: str,
+        *,
+        status_file: Path,
+        lock_file: Path,
         extra_env: dict[str, str] | None = None,
     ) -> dict[str, str]:
         prefix = (
-            'printf "PASS 1700000001\\n" > "$STATUS_FILE"; '
-            if fault == "missing-running" else 'rm -f "$LOCK_FILE"; '
+            'printf "PASS 1700000001\\n" > "$STATUS_FILE"; ' if fault == "missing-running" else 'rm -f "$LOCK_FILE"; '
         )
         env = native_env(prefix + gate_cmd, status_file=status_file, lock_file=lock_file, extra_env=extra_env)
         env["GLUDD_GATE_ASYNC_FORCE_PIDFILE"] = "1"
@@ -659,6 +681,7 @@ def test_original_gate_assertions_reject_broken_fixture_ownership(
         # control immediate while exercising the original RUNNING assertion.
         def published_status(path: Path, prefix: str, timeout: float = 5.0) -> str:
             return path.read_text(encoding="utf-8")
+
         monkeypatch.setattr(f"{__name__}._wait_for_status", published_status)
         case = TestGateAsyncRunningWrittenImmediately().test_running_written_before_gate_runs
         message = "STATUS_FILE was not RUNNING within 5s"

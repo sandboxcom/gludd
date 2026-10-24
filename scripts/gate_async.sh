@@ -28,6 +28,22 @@
 
 set -euo pipefail
 
+# Reset inherited signal disposition/mask before setting traps.  Some callers
+# (e.g. pytest-xdist workers) may leave SIGINT blocked or ignored; without this
+# reset the INT/TERM traps below would not fire and the wrapper would hang.
+python3 - <<'PY'
+import signal
+for sig in (signal.SIGINT, signal.SIGTERM):
+    try:
+        signal.signal(sig, signal.SIG_DFL)
+    except (ValueError, OSError):
+        pass
+    try:
+        signal.pthread_sigmask(signal.SIG_UNBLOCK, [sig])
+    except (ValueError, OSError):
+        pass
+PY
+
 REF="${1:-}"
 
 GATE_CMD="${GATE_CMD:-make gate gludd_watchdog_owned_gate=1}"

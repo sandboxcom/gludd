@@ -7,11 +7,32 @@
   vars:
     ansible_python_interpreter: "{{ ansible_playbook_python }}"
     presentation_apt_root: /etc/apt
+    # Deb822 URIs fields may span continuation lines and may list multiple URIs
+    # per field. Collapse continuations before extracting so every URI token is
+    # reachable without rewriting the actual file.
     presentation_apt_source_uris: >-
-      {{ presentation_apt_source.content | b64decode
-         | regex_findall('(?im)^URIs:[ \t]*([^\n]*)$') }}
+      {{
+        (presentation_apt_source.content | b64decode)
+        | regex_replace('(?m)\n[ \t]+', ' ')
+        | regex_findall('(?im)^URIs:[ \t]*([^\n]*)$')
+        | map('split')
+        | flatten
+        | list
+      }}
+    presentation_apt_allowed_uris:
+      - mirror+file:/etc/apt/apt-mirrors.txt
+      - http://azure.archive.ubuntu.com/ubuntu/
+      - https://azure.archive.ubuntu.com/ubuntu/
+      - http://archive.ubuntu.com/ubuntu/
+      - https://archive.ubuntu.com/ubuntu/
+      - http://security.ubuntu.com/ubuntu/
+      - https://security.ubuntu.com/ubuntu/
     presentation_apt_original_mirrors: |
       http://azure.archive.ubuntu.com/ubuntu/	priority:1
+      https://archive.ubuntu.com/ubuntu/	priority:2
+      https://security.ubuntu.com/ubuntu/	priority:3
+    presentation_apt_original_mirrors_https_azure: |
+      https://azure.archive.ubuntu.com/ubuntu/	priority:1
       https://archive.ubuntu.com/ubuntu/	priority:2
       https://security.ubuntu.com/ubuntu/	priority:3
     presentation_apt_preferred_mirrors: |
@@ -59,37 +80,36 @@
         src: "{{ presentation_apt_root }}/sources.list.d/ubuntu.sources"
       register: presentation_apt_source
 
-    - name: Refuse unknown or duplicate mirror bindings
+    - name: Refuse unknown mirror bindings
       ansible.builtin.assert:
         that:
+          - presentation_apt_source_uris | length > 0
           - >-
             presentation_apt_source.content | b64decode
-            | regex_findall('(?m)^[ \t]+\\S') | length == 0
-          - presentation_apt_source_uris | length in [1, 2]
+            | regex_findall('(?im)^URIs:\s*$') | length == 0
           - >-
             presentation_apt_source_uris
             | intersect([
                 'mirror+file:/etc/apt/apt-mirrors.txt',
-                'http://azure.archive.ubuntu.com/ubuntu/']) | list
-            | length == 1
+                'http://azure.archive.ubuntu.com/ubuntu/',
+                'https://azure.archive.ubuntu.com/ubuntu/']) | list
+            | length >= 1
           - >-
-            presentation_apt_source_uris | difference([
-              'mirror+file:/etc/apt/apt-mirrors.txt',
-              'http://azure.archive.ubuntu.com/ubuntu/',
-              'http://security.ubuntu.com/ubuntu/',
-              'https://security.ubuntu.com/ubuntu/']) | length == 0
-          - presentation_apt_source_uris | unique | length == presentation_apt_source_uris | length
+            presentation_apt_source_uris | difference(presentation_apt_allowed_uris) | length == 0
         fail_msg: Unknown native Ubuntu mirror binding; retain it and repair the explicit input.
         quiet: true
 
     - name: Rewrite a direct Azure archive binding to the reviewed mirror list
       ansible.builtin.replace:
         path: "{{ presentation_apt_root }}/sources.list.d/ubuntu.sources"
-        regexp: 'URIs: http://azure\.archive\.ubuntu\.com/ubuntu/\n'
-        replace: 'URIs: mirror+file:/etc/apt/apt-mirrors.txt\n'
+        regexp: 'https?://azure\.archive\.ubuntu\.com/ubuntu/'
+        replace: 'mirror+file:/etc/apt/apt-mirrors.txt'
         mode: "{{ presentation_apt_files.results[1].stat.mode }}"
         unsafe_writes: false
-      when: "'http://azure.archive.ubuntu.com/ubuntu/' in presentation_apt_source_uris"
+      when: >-
+        presentation_apt_source_uris
+        | intersect(['http://azure.archive.ubuntu.com/ubuntu/',
+                     'https://azure.archive.ubuntu.com/ubuntu/']) | length > 0
       register: presentation_apt_source_rewrite
 
     - name: Read the exact reviewed native mirror list
@@ -101,15 +121,18 @@
       ansible.builtin.assert:
         that:
           - >-
-            presentation_apt_mirrors.content | b64decode
-            in [presentation_apt_original_mirrors, presentation_apt_preferred_mirrors]
+            presentation_apt_mirrors.content | b64decode in [
+              presentation_apt_original_mirrors,
+              presentation_apt_original_mirrors_https_azure,
+              presentation_apt_preferred_mirrors,
+            ]
         fail_msg: Unknown native mirror list; no endpoint was changed.
         quiet: true
 
     - name: Atomically remove only the reviewed Azure archive entry
       ansible.builtin.replace:
         path: "{{ presentation_apt_root }}/apt-mirrors.txt"
-        regexp: '^http://azure[.]archive[.]ubuntu[.]com/ubuntu/\tpriority:1\n'
+        regexp: '^https?://azure[.]archive[.]ubuntu[.]com/ubuntu/\tpriority:1\n'
         replace: ''
         mode: "{{ presentation_apt_files.results[0].stat.mode }}"
         unsafe_writes: false

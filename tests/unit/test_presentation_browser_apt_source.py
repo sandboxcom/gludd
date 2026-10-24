@@ -217,6 +217,11 @@ ORIGINAL_MIRRORS = (
     "https://archive.ubuntu.com/ubuntu/\tpriority:2\n"
     "https://security.ubuntu.com/ubuntu/\tpriority:3\n"
 )
+ORIGINAL_MIRRORS_HTTPS_AZURE = (
+    "https://azure.archive.ubuntu.com/ubuntu/\tpriority:1\n"
+    "https://archive.ubuntu.com/ubuntu/\tpriority:2\n"
+    "https://security.ubuntu.com/ubuntu/\tpriority:3\n"
+)
 PREFERRED_MIRRORS = ORIGINAL_MIRRORS.split("\n", 1)[1]
 NATIVE_SOURCE = (
     "# Retain the native source byte for byte.\n"
@@ -409,6 +414,67 @@ def test_native_ansible_rewrites_direct_azure_binding_to_mirror_list(tmp_path: P
     assert "installer_run=false gate_evidence=false release_ready=false" in result.stdout
 
 
+def test_native_ansible_rewrites_https_azure_binding_to_mirror_list(tmp_path: Path) -> None:
+    azure_source = (
+        "# Direct HTTPS Azure archive binding observed on some hosted runners.\n"
+        "Types: deb deb-src\n"
+        "URIs: https://azure.archive.ubuntu.com/ubuntu/\n"
+        "Suites: noble noble-updates noble-backports noble-security\n"
+        "Components: main restricted universe multiverse\n"
+        "Architectures: amd64\n"
+        "Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n"
+        "Check-Valid-Until: yes\n"
+    )
+    apt_root, mirror, source = _native_fixture(tmp_path, source=azure_source, mirrors=ORIGINAL_MIRRORS_HTTPS_AZURE)
+    result = _native_ansible(tmp_path, apt_root)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert mirror.read_text(encoding="utf-8") == PREFERRED_MIRRORS
+    assert "URIs: mirror+file:/etc/apt/apt-mirrors.txt" in source.read_text(encoding="utf-8")
+    assert "azure.archive.ubuntu.com" not in source.read_text(encoding="utf-8")
+    assert "source_rewritten=true" in result.stdout
+
+
+def test_native_ansible_accepts_duplicate_azure_bindings_and_rewrites_all(
+    tmp_path: Path,
+) -> None:
+    # Some hosted images split the same Azure URI across multiple Deb822 stanzas.
+    azure_source = (
+        "# Duplicate Azure archive bindings.\n"
+        "Types: deb\n"
+        "URIs: http://azure.archive.ubuntu.com/ubuntu/\n"
+        "Suites: noble\n"
+        "Components: main\n"
+        "Architectures: amd64\n"
+        "Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n"
+        "\n"
+        "Types: deb-src\n"
+        "URIs: http://azure.archive.ubuntu.com/ubuntu/\n"
+        "Suites: noble-updates\n"
+        "Components: main\n"
+        "Architectures: amd64\n"
+        "Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n"
+    )
+    apt_root, mirror, source = _native_fixture(tmp_path, source=azure_source)
+    result = _native_ansible(tmp_path, apt_root)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert mirror.read_text(encoding="utf-8") == PREFERRED_MIRRORS
+    source_text = source.read_text(encoding="utf-8")
+    assert source_text.count("mirror+file:/etc/apt/apt-mirrors.txt") == 2
+    assert "azure.archive.ubuntu.com" not in source_text
+    assert "source_rewritten=true" in result.stdout
+
+
+def test_native_ansible_accepts_mirror_plus_file_duplicates_idempotently(
+    tmp_path: Path,
+) -> None:
+    duplicate_source = NATIVE_SOURCE + "URIs: mirror+file:/etc/apt/apt-mirrors.txt\n"
+    apt_root, mirror, _source = _native_fixture(tmp_path, source=duplicate_source)
+    result = _native_ansible(tmp_path, apt_root)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert mirror.read_text(encoding="utf-8") == PREFERRED_MIRRORS
+    assert "source_rewritten=false" in result.stdout
+
+
 def test_native_ansible_check_mode_predicts_without_writing(tmp_path: Path) -> None:
     apt_root, mirror, source = _native_fixture(tmp_path)
     original = (mirror.read_bytes(), source.read_bytes(), mirror.stat().st_mtime_ns)
@@ -425,7 +491,6 @@ def test_native_ansible_check_mode_predicts_without_writing(tmp_path: Path) -> N
         "unknown-mirror",
         "duplicate-mirror",
         "unknown-source",
-        "duplicate-source",
         "missing-mirror",
         "linked-mirror",
         "linked-source",
@@ -433,7 +498,6 @@ def test_native_ansible_check_mode_predicts_without_writing(tmp_path: Path) -> N
         "case-variant-unknown-uri",
         "folded-uri",
         "unspaced-unknown-uri",
-        "unspaced-duplicate-uri",
         "empty-uri",
     ],
 )
@@ -460,12 +524,8 @@ def test_native_ansible_refuses_unknown_inputs_without_mutation(
         )
     elif refusal == "unspaced-unknown-uri":
         source.write_text(NATIVE_SOURCE + "URIs:https://unknown.invalid/\n", encoding="utf-8")
-    elif refusal == "unspaced-duplicate-uri":
-        source.write_text(NATIVE_SOURCE + "URIs:mirror+file:/etc/apt/apt-mirrors.txt\n", encoding="utf-8")
     elif refusal == "empty-uri":
         source.write_text(NATIVE_SOURCE + "URIs:\n", encoding="utf-8")
-    elif refusal == "duplicate-source":
-        source.write_text(NATIVE_SOURCE + "URIs: mirror+file:/etc/apt/apt-mirrors.txt\n", encoding="utf-8")
     elif refusal == "missing-mirror":
         mirror.unlink()
     elif refusal in {"linked-mirror", "linked-source"}:
