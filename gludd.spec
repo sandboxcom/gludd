@@ -84,6 +84,10 @@ a = Analysis(
         'general_ludd.models.router',
         'general_ludd.db.models',
         'general_ludd.db.repository',
+        # stream_command.py performs a delayed/conditional import of the Git
+        # repository mutex for observed commit transactions; static analysis of
+        # cli.py does not reach it, so declare it explicitly.
+        'general_ludd.git_automation.locking',
         # SQLAlchemy resolves the sqlite+aiosqlite dialect from the configured
         # database URL at runtime. PyInstaller cannot follow that entry-point
         # lookup, so keep the core async driver explicit in the frozen graph.

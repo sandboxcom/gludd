@@ -796,7 +796,7 @@ def test_hosted_canonical_prerequisite_has_exact_order_bounds_and_environment() 
     assert [token.partition("=")[2] for token in shlex.split(body) if token.partition("=")[0] == "OBSERVED_LABEL"] == [
         "ci-gate-failure-promotions"
     ]
-    assert "STALL_SECS=60 MAX_SECS=90" in body
+    assert "STALL_SECS=60 MAX_SECS=${RUNTIME_PUBLISH_MAX_SECS:-90}" in body
     assert "OBSERVED_HEARTBEAT_SECS=10" in body
     assert "OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=2" in body
     assert "LOG=.gate-logs/ci-gate-failure-promotions.log" in body

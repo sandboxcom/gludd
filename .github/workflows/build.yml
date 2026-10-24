@@ -64,6 +64,9 @@ env:
   # Profile environments are composed from several independently locked
   # projects; later uv invocations must never exact-sync them back to root-only.
   UV_NO_SYNC: "1"
+  # The runtime regression admission watcher needs a longer bound on hosted
+  # runners than the default 90s; local/ad-hoc callers can still override this.
+  RUNTIME_PUBLISH_MAX_SECS: "180"
 
 jobs:
   version:
@@ -271,7 +274,7 @@ jobs:
             CMD='make check-gate-failure-promotions GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json' \
             RUN_ID="prerequisite-admission-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}" \
             OBSERVED_LABEL=ci-gate-failure-promotions \
-            STALL_SECS=60 MAX_SECS=90 \
+            STALL_SECS=60 MAX_SECS=${RUNTIME_PUBLISH_MAX_SECS:-90} \
             LOG=.gate-logs/ci-gate-failure-promotions.log \
             OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=2 \
             OBSERVED_HEARTBEAT_SECS=10
@@ -282,7 +285,7 @@ jobs:
             CMD='make _pytest-runtime-compatibility-admission' \
             RUN_ID="runtime-admission-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}" \
             OBSERVED_LABEL=ci-runtime-regression-admission \
-            STALL_SECS=60 MAX_SECS=90 \
+            STALL_SECS=60 MAX_SECS=${RUNTIME_PUBLISH_MAX_SECS:-90} \
             LOG=.gate-logs/ci-runtime-regression-admission.log \
             OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=2 \
             OBSERVED_HEARTBEAT_SECS=10

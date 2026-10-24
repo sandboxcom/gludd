@@ -45,6 +45,7 @@ known_first_party = ["ansible_collections"]
 "yt-dlp" = "yt_dlp"
 
 [tool.deptry.per_rule_ignores]
+DEP001 = ["stream_command"]
 DEP002 = [
     "aiosqlite",
     "ansible-builder",

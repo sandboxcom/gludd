@@ -20,20 +20,31 @@ MODE = "PRESENTATION_BROWSER_APT_VALIDATE_ONLY"
 def _environment(tmp_path: Path) -> dict[str, str]:
     env = os.environ.copy()
     for name in (
-        "MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", MODE,
+        "MAKEFLAGS",
+        "MFLAGS",
+        "MAKEOVERRIDES",
+        MODE,
         "GLUDD_PRESENTATION_BROWSER_APT_VALIDATE_ONLY",
-        "GITHUB_ACTIONS", "RUNNER_ENVIRONMENT", "RUNNER_OS", "ImageOS",
-        "ANSIBLE_CONFIG", "ANSIBLE_COLLECTIONS_PATH", "ANSIBLE_COLLECTIONS_PATHS",
+        "GITHUB_ACTIONS",
+        "RUNNER_ENVIRONMENT",
+        "RUNNER_OS",
+        "ImageOS",
+        "ANSIBLE_CONFIG",
+        "ANSIBLE_COLLECTIONS_PATH",
+        "ANSIBLE_COLLECTIONS_PATHS",
     ):
         env.pop(name, None)
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
     env.update(
-        HOME=str(home), ANSIBLE_HOME=str(home / "ansible"),
+        HOME=str(home),
+        ANSIBLE_HOME=str(home / "ansible"),
         ANSIBLE_LOCAL_TEMP=str(home / "ansible" / "local"),
         ANSIBLE_REMOTE_TEMP=str(home / "ansible" / "remote"),
-        ANSIBLE_NOCOLOR="1", ANSIBLE_FORCE_COLOR="0",
-        UV_NO_SYNC="1", UV_PYTHON_DOWNLOADS="never",
+        ANSIBLE_NOCOLOR="1",
+        ANSIBLE_FORCE_COLOR="0",
+        UV_NO_SYNC="1",
+        UV_PYTHON_DOWNLOADS="never",
     )
     return env
 
@@ -56,19 +67,26 @@ def _spy(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def _make(
-    tmp_path: Path, *, mode: str | None = None, origin: str = "command",
-    hosted: bool = False, child_status: int = 0,
+    tmp_path: Path,
+    *,
+    mode: str | None = None,
+    origin: str = "command",
+    hosted: bool = False,
+    child_status: int = 0,
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
     env = _environment(tmp_path)
     spy, recorder = _spy(tmp_path)
     env.update(
-        APT_TEST_ARGV=str(recorder), APT_TEST_STATUS=str(child_status),
+        APT_TEST_ARGV=str(recorder),
+        APT_TEST_STATUS=str(child_status),
         APT_TEST_HOME=str(tmp_path / "owned-ansible-home"),
     )
     if hosted:
         env.update(
-            GITHUB_ACTIONS="true", RUNNER_ENVIRONMENT="github-hosted",
-            RUNNER_OS="Linux", ImageOS="ubuntu24",
+            GITHUB_ACTIONS="true",
+            RUNNER_ENVIRONMENT="github-hosted",
+            RUNNER_OS="Linux",
+            ImageOS="ubuntu24",
         )
     command = ["make", "--no-print-directory", TARGET, "UV=" + str(spy)]
     if mode is not None:
@@ -79,8 +97,13 @@ def _make(
             if origin == "environment-override":
                 command.insert(1, "-e")
     return subprocess.run(
-        command, cwd=ROOT, env=env, text=True, capture_output=True,
-        check=False, timeout=15,
+        command,
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=15,
     ), recorder
 
 
@@ -127,10 +150,14 @@ def test_apt_apply_refuses_nonhosted_before_child(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("child_status", [0, 17])
 def test_apt_apply_preserves_native_child_and_exact_argv(
-    tmp_path: Path, child_status: int,
+    tmp_path: Path,
+    child_status: int,
 ) -> None:
     result, recorder = _make(
-        tmp_path, mode="0", hosted=True, child_status=child_status,
+        tmp_path,
+        mode="0",
+        hosted=True,
+        child_status=child_status,
     )
     assert result.returncode == (0 if child_status == 0 else 2), result.stdout + result.stderr
     calls = _calls(recorder)
@@ -141,8 +168,14 @@ def test_apt_apply_preserves_native_child_and_exact_argv(
     assert not owned_home.exists()
     assert calls[0][:2] == ["run", "ansible-playbook"]
     assert calls[0][2:] == [
-        "--inventory", "localhost,", "--connection", "local", "--forks", "1",
-        "--become", "playbooks/presentation_browser_apt_source.yml",
+        "--inventory",
+        "localhost,",
+        "--connection",
+        "local",
+        "--forks",
+        "1",
+        "--become",
+        "playbooks/presentation_browser_apt_source.yml",
     ]
     assert ("outcome=returned" if child_status == 0 else "outcome=failed") in result.stderr
     if child_status:
@@ -165,21 +198,18 @@ def test_pages_prepares_apt_before_unchanged_installer() -> None:
 
 
 def test_apt_owner_has_safe_documented_plan() -> None:
-    value: object = json.loads(
-        (ROOT / "config/make_target_contract.json").read_text(encoding="utf-8")
-    )
+    value: object = json.loads((ROOT / "config/make_target_contract.json").read_text(encoding="utf-8"))
     assert isinstance(value, dict)
     targets = value.get("targets")
     assert isinstance(targets, list)
-    selected = [
-        entry for entry in targets
-        if isinstance(entry, dict) and entry.get("name") == TARGET
+    selected = [entry for entry in targets if isinstance(entry, dict) and entry.get("name") == TARGET]
+    assert selected == [
+        {
+            "name": TARGET,
+            "make_variables": [MODE],
+            "behavior": "make " + TARGET + " " + MODE + "=1",
+        }
     ]
-    assert selected == [{
-        "name": TARGET,
-        "make_variables": [MODE],
-        "behavior": "make " + TARGET + " " + MODE + "=1",
-    }]
 
 
 ORIGINAL_MIRRORS = (
@@ -210,7 +240,9 @@ def _mapping(value: object) -> dict[str, object]:
 
 
 def _native_fixture(
-    tmp_path: Path, *, mirrors: str = ORIGINAL_MIRRORS,
+    tmp_path: Path,
+    *,
+    mirrors: str = ORIGINAL_MIRRORS,
     source: str = NATIVE_SOURCE,
 ) -> tuple[Path, Path, Path]:
     apt_root = tmp_path / "apt"
@@ -228,8 +260,12 @@ def _native_fixture(
 
 
 def _native_ansible(
-    tmp_path: Path, apt_root: Path, *, check: bool = False,
-    architecture: str = "x86_64", override_interpreter: bool = True,
+    tmp_path: Path,
+    apt_root: Path,
+    *,
+    check: bool = False,
+    architecture: str = "x86_64",
+    override_interpreter: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     # Retain every production task, with fixture-only resource/platform inputs.
     # Additional fixture post-tasks prove the actual managed-module interpreter.
@@ -246,8 +282,10 @@ def _native_ansible(
     assert variables["presentation_apt_root"] == "/etc/apt"
     variables["presentation_apt_root"] = str(apt_root)
     variables["ansible_facts"] = {
-        "distribution": "Ubuntu", "distribution_version": "24.04",
-        "distribution_release": "noble", "architecture": architecture,
+        "distribution": "Ubuntu",
+        "distribution_version": "24.04",
+        "distribution_release": "noble",
+        "architecture": architecture,
     }
     play["vars"] = variables
     play["gather_facts"] = False
@@ -265,8 +303,7 @@ def _native_ansible(
             "name": "Assert the actual module interpreter matches the controller",
             "ansible.builtin.assert": {
                 "that": [
-                    "presentation_fixture_python.ansible_facts.ansible_python.executable"
-                    " == ansible_playbook_python",
+                    "presentation_fixture_python.ansible_facts.ansible_python.executable == ansible_playbook_python",
                 ],
                 "quiet": True,
             },
@@ -283,16 +320,26 @@ def _native_ansible(
         ANSIBLE_HOME=str(ansible_home),
         ANSIBLE_LOCAL_TEMP=str(ansible_home / "local"),
         ANSIBLE_REMOTE_TEMP=str(ansible_home / "remote"),
-        ANSIBLE_NOCOLOR="1", ANSIBLE_FORCE_COLOR="0",
-        GITHUB_ACTIONS="true", RUNNER_ENVIRONMENT="github-hosted",
-        RUNNER_OS="Linux", ImageOS="ubuntu24",
+        ANSIBLE_NOCOLOR="1",
+        ANSIBLE_FORCE_COLOR="0",
+        GITHUB_ACTIONS="true",
+        RUNNER_ENVIRONMENT="github-hosted",
+        RUNNER_OS="Linux",
+        ImageOS="ubuntu24",
     )
     configuration = tmp_path / "ansible.cfg"
     configuration.write_text("[defaults]\nhost_key_checking = True\n", encoding="utf-8")
     env["ANSIBLE_CONFIG"] = str(configuration)
     command = [
-        sys.executable, "-m", "ansible.cli.playbook",
-        "--inventory", "localhost,", "--connection", "local", "--forks", "1",
+        sys.executable,
+        "-m",
+        "ansible.cli.playbook",
+        "--inventory",
+        "localhost,",
+        "--connection",
+        "local",
+        "--forks",
+        "1",
     ]
     if override_interpreter:
         command.extend(["--extra-vars", json.dumps({"ansible_python_interpreter": sys.executable})])
@@ -300,8 +347,13 @@ def _native_ansible(
         command.append("--check")
     command.append(str(fixture_play))
     result = subprocess.run(
-        command, cwd=tmp_path, env=env, text=True, capture_output=True,
-        check=False, timeout=20,
+        command,
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=20,
     )
     assert not list(ansible_home.rglob("AnsiballZ_*"))
     assert not list(ansible_home.rglob("ansible-tmp-*"))
@@ -333,6 +385,30 @@ def test_native_ansible_repairs_only_mirror_input_and_is_idempotent(tmp_path: Pa
     assert source.read_bytes() == original_source
 
 
+def test_native_ansible_rewrites_direct_azure_binding_to_mirror_list(tmp_path: Path) -> None:
+    azure_source = (
+        "# Direct Azure archive binding observed on some hosted runners.\n"
+        "Types: deb deb-src\n"
+        "URIs: http://azure.archive.ubuntu.com/ubuntu/\n"
+        "Suites: noble noble-updates noble-backports noble-security\n"
+        "Components: main restricted universe multiverse\n"
+        "Architectures: amd64\n"
+        "Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n"
+        "Check-Valid-Until: yes\n"
+    )
+    apt_root, mirror, source = _native_fixture(tmp_path, source=azure_source)
+    original_unrelated = (source.parent / "unrelated.list").read_bytes()
+    result = _native_ansible(tmp_path, apt_root)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert mirror.read_text(encoding="utf-8") == PREFERRED_MIRRORS
+    assert "URIs: mirror+file:/etc/apt/apt-mirrors.txt" in source.read_text(encoding="utf-8")
+    assert "azure.archive.ubuntu.com" not in source.read_text(encoding="utf-8")
+    assert (source.parent / "unrelated.list").read_bytes() == original_unrelated
+    assert "outcome=prepared" in result.stdout
+    assert "source_rewritten=true" in result.stdout
+    assert "installer_run=false gate_evidence=false release_ready=false" in result.stdout
+
+
 def test_native_ansible_check_mode_predicts_without_writing(tmp_path: Path) -> None:
     apt_root, mirror, source = _native_fixture(tmp_path)
     original = (mirror.read_bytes(), source.read_bytes(), mirror.stat().st_mtime_ns)
@@ -345,13 +421,25 @@ def test_native_ansible_check_mode_predicts_without_writing(tmp_path: Path) -> N
 
 @pytest.mark.parametrize(
     "refusal",
-    ["unknown-mirror", "duplicate-mirror", "unknown-source", "duplicate-source",
-     "missing-mirror", "linked-mirror", "linked-source", "wrong-architecture",
-     "case-variant-unknown-uri", "folded-uri", "unspaced-unknown-uri",
-     "unspaced-duplicate-uri", "empty-uri"],
+    [
+        "unknown-mirror",
+        "duplicate-mirror",
+        "unknown-source",
+        "duplicate-source",
+        "missing-mirror",
+        "linked-mirror",
+        "linked-source",
+        "wrong-architecture",
+        "case-variant-unknown-uri",
+        "folded-uri",
+        "unspaced-unknown-uri",
+        "unspaced-duplicate-uri",
+        "empty-uri",
+    ],
 )
 def test_native_ansible_refuses_unknown_inputs_without_mutation(
-    tmp_path: Path, refusal: str,
+    tmp_path: Path,
+    refusal: str,
 ) -> None:
     apt_root, mirror, source = _native_fixture(tmp_path)
     if refusal == "unknown-mirror":
@@ -360,14 +448,15 @@ def test_native_ansible_refuses_unknown_inputs_without_mutation(
         mirror.write_text(ORIGINAL_MIRRORS + ORIGINAL_MIRRORS.splitlines(keepends=True)[0], encoding="utf-8")
     elif refusal == "unknown-source":
         source.write_text(
-            NATIVE_SOURCE.replace("mirror+file:/etc/apt/apt-mirrors.txt", "http://azure.archive.ubuntu.com/ubuntu/"),
+            NATIVE_SOURCE.replace("mirror+file:/etc/apt/apt-mirrors.txt", "http://unknown.invalid/ubuntu/"),
             encoding="utf-8",
         )
     elif refusal == "case-variant-unknown-uri":
         source.write_text(NATIVE_SOURCE + "uris: https://unknown.invalid/\n", encoding="utf-8")
     elif refusal == "folded-uri":
         source.write_text(
-            NATIVE_SOURCE.replace("Suites:", " https://unknown.invalid/\nSuites:"), encoding="utf-8",
+            NATIVE_SOURCE.replace("Suites:", " https://unknown.invalid/\nSuites:"),
+            encoding="utf-8",
         )
     elif refusal == "unspaced-unknown-uri":
         source.write_text(NATIVE_SOURCE + "URIs:https://unknown.invalid/\n", encoding="utf-8")
@@ -386,11 +475,11 @@ def test_native_ansible_refuses_unknown_inputs_without_mutation(
         selected.unlink()
         selected.symlink_to(target)
     before = {
-        path: (path.read_bytes(), stat.S_IMODE(path.stat().st_mode))
-        for path in (mirror, source) if path.exists()
+        path: (path.read_bytes(), stat.S_IMODE(path.stat().st_mode)) for path in (mirror, source) if path.exists()
     }
     result = _native_ansible(
-        tmp_path, apt_root,
+        tmp_path,
+        apt_root,
         architecture="aarch64" if refusal == "wrong-architecture" else "x86_64",
     )
     assert result.returncode != 0, result.stdout + result.stderr

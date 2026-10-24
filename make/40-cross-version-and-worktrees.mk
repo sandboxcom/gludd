@@ -261,10 +261,10 @@ _gate-refresh-body:
 	$(MAKE) --no-print-directory test-hook-runtime > .gate-logs/hook-runtime.log 2>&1 && echo "PASS" >> "$$STATUS_WORK" || (echo "FAIL" >> "$$STATUS_WORK" && touch .gate-failed && tail -30 .gate-logs/hook-runtime.log); \
 	echo "=== GATE PHASE: typecheck ==="; \
 	printf "typecheck " >> "$$STATUS_WORK"; \
-	TC_ERRS=$$($(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); \
+	TC_ERRS=$$(MYPYPATH="$$(pwd -P)/src:$$(pwd -P)/scripts" $(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); \
 	TC_ERRS=$${TC_ERRS:-0}; \
 	if [ "$$TC_ERRS" -le "$(MYPY_MAX)" ]; then echo "PASS $$TC_ERRS" >> "$$STATUS_WORK"; else echo "FAIL $$TC_ERRS" >> "$$STATUS_WORK" && touch .gate-failed; fi; \
-	echo "=== GATE PHASE: collect ==="; \
+	echo "=== GATE PHASE: collect ==="; \\
 	printf "collect " >> "$$STATUS_WORK"; \
 	$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> "$$STATUS_WORK" || (echo "FAIL collection-errors" >> "$$STATUS_WORK" && touch .gate-failed); \
 	if [ -n "$$OLD_TEST" ] && echo "$$OLD_TEST" | grep -q "PASS"; then echo "$$OLD_TEST" >> "$$STATUS_WORK"; else \
@@ -356,44 +356,45 @@ endef
 _commit-lock-acquire: _gate-mutation-guard
 	@$(UV) run python -P src/general_ludd/git_automation/locking.py --assert-transaction
 
-git-commit:
+git-commit: _gate-fresh-check _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
 	@[ -n "$(MSG)" ] || { echo "Usage: make git-commit MSG='message'" >&2; exit 1; }
 	$(call _commit-transaction)
 
-commit-no-verify:
+commit-no-verify: _gate-fresh-check _pre-commit-stage-guard _edit-commit-atomicity-guard
 	$(call _commit-transaction)
 
-git-commit-no-verify:
+git-commit-no-verify: _gate-fresh-check
 	$(call _commit-transaction)
 
-git-amend-msg:
+git-amend-msg: _gate-fresh-check _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
 	$(call _commit-transaction)
 
 repo-commit:
 	$(call _commit-transaction)
 
-ship-commit:
+ship-commit: _pre-commit-stage-guard _stash-leak-guard _push-parameter-audit _pre-commit-stash-audit _edit-commit-atomicity-guard
+	@: # PUSH ?= 0 default: commit locally; set PUSH=1 to also run _commit-publication
 	$(call _commit-transaction)
 	$(call _commit-publication)
 
-ship-commit-files:
+ship-commit-files: _pre-commit-stage-guard _stash-leak-guard _push-parameter-audit _pre-commit-stash-audit _edit-commit-atomicity-guard
 	$(call _commit-transaction)
 	$(call _commit-publication)
 
-git-commit-file:
+git-commit-file: _gate-fresh-check _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
 	$(call _commit-transaction)
 
-test-and-commit:
+test-and-commit: _gate-fresh-check _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
 	$(call _commit-transaction)
 
-commit-bootstrap:
+commit-bootstrap: _gate-fresh-check
 	$(call _commit-transaction)
 
-commit-and-ship:
+commit-and-ship: _gate-fresh-check _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
 	$(call _commit-transaction)
 	$(call _commit-publication)
 
-commit-and-ship-push:
+commit-and-ship-push: _gate-fresh-check _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
 	$(call _commit-transaction)
 	$(call _commit-publication)
 

@@ -867,7 +867,7 @@ A yielded session remains active until its exact terminal receipt is consumed. P
 
 gate-background returns<1s with native log/PID; continue useful work. gate-progress is preferred one-line state/%/elapsed/ETA/counts at natural breaks≤1/~2min (GATE_PROGRESS_COOLDOWN_SECS=120; GATE_PROGRESS_FORCE=1 only immediate genuine verdict). COOLDOWN still prints status/next poll; no stale-number polling.
 gate-status-check is for raw phase/terminal/.gate-status/last20-line failure diagnosis; gate-tail must not block main. gate-logs lists historical results; gate-kill TERM thenKILL after5s. On terminal ingest/act next: PASS→commit/push/verify; FAIL→named repair/gate-resume.
-No main make gate; gate-background only if nonblocking. Background markers “=== GATE PHASE: <name> ===”, terminal PASSED/FAILED and logs/PID remain.
+No main make gate; gate-background only if nonblocking. Background markers “=== GATE PHASE: <name> ===”, terminal PASSED/FAILED and logs/PID remain. NEVER run on the main thread; in particular, never run `make gate` on the main thread; use `make gate-background` for non-blocking execution.
 
 ### Steady-state dispatch (up to three useful agents)
 

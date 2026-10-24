@@ -68,16 +68,29 @@
           - presentation_apt_source_uris | length in [1, 2]
           - >-
             presentation_apt_source_uris
-            | select('equalto', 'mirror+file:/etc/apt/apt-mirrors.txt') | list
+            | intersect([
+                'mirror+file:/etc/apt/apt-mirrors.txt',
+                'http://azure.archive.ubuntu.com/ubuntu/']) | list
             | length == 1
           - >-
             presentation_apt_source_uris | difference([
               'mirror+file:/etc/apt/apt-mirrors.txt',
+              'http://azure.archive.ubuntu.com/ubuntu/',
               'http://security.ubuntu.com/ubuntu/',
               'https://security.ubuntu.com/ubuntu/']) | length == 0
           - presentation_apt_source_uris | unique | length == presentation_apt_source_uris | length
         fail_msg: Unknown native Ubuntu mirror binding; retain it and repair the explicit input.
         quiet: true
+
+    - name: Rewrite a direct Azure archive binding to the reviewed mirror list
+      ansible.builtin.replace:
+        path: "{{ presentation_apt_root }}/sources.list.d/ubuntu.sources"
+        regexp: 'URIs: http://azure\.archive\.ubuntu\.com/ubuntu/\n'
+        replace: 'URIs: mirror+file:/etc/apt/apt-mirrors.txt\n'
+        mode: "{{ presentation_apt_files.results[1].stat.mode }}"
+        unsafe_writes: false
+      when: "'http://azure.archive.ubuntu.com/ubuntu/' in presentation_apt_source_uris"
+      register: presentation_apt_source_rewrite
 
     - name: Read the exact reviewed native mirror list
       ansible.builtin.slurp:
@@ -107,7 +120,8 @@
         msg: >-
           AGENT_NEXT target=presentation-browser-apt-source
           outcome={{ 'planned' if ansible_check_mode else 'prepared' }}
-          changed={{ presentation_apt_preparation.changed | bool }}
+          source_rewritten={{ presentation_apt_source_rewrite.changed | default(false) | bool | ternary('true', 'false') }}
+          mirrors_changed={{ presentation_apt_preparation.changed | bool | ternary('true', 'false') }}
           installer_run=false gate_evidence=false release_ready=false
           next_owner=presentation-browser-install-deps;
           {{ 'check mode changed no files; authorized hosted apply remains required'
