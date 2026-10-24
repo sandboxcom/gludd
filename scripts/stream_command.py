@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
 import selectors
@@ -20,6 +21,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import FrameType, MappingProxyType
 from typing import TYPE_CHECKING, Any, BinaryIO, NamedTuple, Protocol, TypedDict
+
+if TYPE_CHECKING:
+    import psutil
 
 DEFAULT_OBSERVED_ROOT = Path(".gate-logs/observed")
 DEFAULT_HEARTBEAT_SECS = 30.0
@@ -244,8 +248,214 @@ def _prune_terminal_runs_locked(
         status_path.unlink(missing_ok=True)
 
 
-def _terminate_process_group(process: subprocess.Popen[bytes], grace_seconds: float) -> None:
+def _posix_child_state(
+    process: subprocess.Popen[bytes], expected_birth: float | None,
+) -> tuple[float, bool]:
+    """Observe a private, unreaped child; only a positive zombie is completion."""
+    import psutil
+
+    if process.returncode is not None:
+        raise _ChildIdentityContradiction("private child status was consumed before process-group cleanup")
+    child = psutil.Process(process.pid)
+    birth = child.create_time()
+    if birth <= 0:
+        raise OSError("private child native birth is unknown")
+    if child.ppid() != os.getpid() or (
+        expected_birth is not None and birth != expected_birth
+    ):
+        raise _ChildIdentityContradiction("private child native identity no longer matches its owner")
+    state = child.status()
+    if not isinstance(state, str) or not state:
+        raise OSError("private child native state is unknown")
+    return birth, state == psutil.STATUS_ZOMBIE
+
+
+class _ChildIdentityContradiction(OSError):
+    """A positive observation has invalidated numeric child ownership."""
+
+
+class _PosixGroupCleanup(NamedTuple):
+    """One execution's original members and retained native cleanup outcomes."""
+
+    members: tuple[tuple[int, float], ...]
+    group_eperm: tuple[OSError, ...]
+    failure: Exception | None
+    deferred_diagnostics: tuple[str, ...] = ()
+
+
+def _terminate_posix_process_group(
+    process: subprocess.Popen[bytes], grace_seconds: float,
+) -> _PosixGroupCleanup:
+    """Retain the sole-reaper PID pin through the last physical group signal."""
+    import psutil
+
+    failure: Exception | None = None
+    group_eperm: list[OSError] = []
+    deferred_diagnostics: list[str] = []
+    owned: dict[int, float] = {}
+
+    def remember(
+        error: OSError | psutil.Error, operation: str, pid: int | None,
+        signum: signal.Signals | None = None,
+    ) -> None:
+        nonlocal failure
+        context = (
+            f"observed-command: cleanup native failure operation={operation} "
+            f"pid={pid} signal={signum} errno={getattr(error, 'errno', None)}"
+        )
+        if operation == "os.killpg" and isinstance(error, OSError) and error.errno == errno.EPERM:
+            group_eperm.append(error)
+            deferred_diagnostics.append(context + " deferred_from=before-reap")
+        else:
+            failure = failure or error
+            print(context, file=sys.stderr, flush=True)
+
+    try:
+        for candidate in psutil.process_iter():
+            pid = candidate.pid
+            operation = "member-scan.os.getpgid"
+            try:
+                if pid == process.pid or os.getpgid(pid) != process.pid:
+                    continue
+                operation = "member-scan.os.getsid"
+                if os.getsid(pid) != process.pid:
+                    continue
+                operation = "member-scan.psutil.Process"
+                member = psutil.Process(pid)
+                operation = "member-scan.create_time"
+                birth = member.create_time()
+                operation = "member-recheck.os.getpgid"
+                if os.getpgid(pid) != process.pid:
+                    continue
+                operation = "member-recheck.os.getsid"
+                if os.getsid(pid) == process.pid:
+                    owned[pid] = birth
+            except psutil.ZombieProcess as exc:
+                remember(exc, operation, pid)
+            except (ProcessLookupError, psutil.NoSuchProcess):
+                continue
+            except (OSError, psutil.Error) as exc:
+                remember(exc, operation, pid)
+    except (OSError, psutil.Error) as exc:
+        remember(exc, "psutil.process_iter", None)
+
+    def signal_group(signum: signal.Signals) -> bool:
+        if process.returncode is not None:
+            raise _ChildIdentityContradiction("private child was reaped before the last process-group operation")
+        try:
+            os.killpg(process.pid, signum)
+        except ProcessLookupError:
+            return False
+        except OSError as exc:
+            remember(exc, "os.killpg", process.pid, signum)
+            # Popen signal helpers poll/reap. This original PID is still pinned.
+            try:
+                os.kill(process.pid, signum)
+            except ProcessLookupError:
+                pass
+            except OSError as fallback_error:
+                remember(fallback_error, "os.kill", process.pid, signum)
+        return True
+
+    deadline = time.monotonic() + grace_seconds
+    if signal_group(signal.SIGTERM):
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            time.sleep(remaining)
+        signal_group(signal.SIGKILL)
+    return _PosixGroupCleanup(tuple(owned.items()), tuple(group_eperm), failure, tuple(deferred_diagnostics))
+
+
+def _finish_posix_group_cleanup(
+    pid: int, cleanup: _PosixGroupCleanup, grace_seconds: float, *, reaped: bool,
+) -> None:
+    """Observe original members and absence after reap; never send a signal."""
+    import psutil
+
+    failure = cleanup.failure
+    deadline = time.monotonic() + max(grace_seconds, 1.0)
+    pending = dict(cleanup.members)
+    while pending:
+        for member_pid, birth in tuple(pending.items()):
+            operation = "member-drain.psutil.Process"
+            try:
+                member = psutil.Process(member_pid)
+                operation = "member-drain.create_time"
+                current_birth = member.create_time()
+                if current_birth != birth:
+                    failure = failure or OSError("owned process-group member identity changed during drain")
+                    pending.pop(member_pid)
+                else:
+                    operation = "member-drain.status"
+                    if member.status() == psutil.STATUS_ZOMBIE:
+                        pending.pop(member_pid)
+            except psutil.ZombieProcess as exc:
+                failure = failure or exc
+                pending.pop(member_pid)
+            except psutil.NoSuchProcess:
+                pending.pop(member_pid)
+            except (OSError, psutil.Error) as exc:
+                failure = failure or exc
+                pending.pop(member_pid)
+                print(
+                    f"observed-command: cleanup native failure operation={operation} "
+                    f"pid={member_pid} errno={getattr(exc, 'errno', None)}",
+                    file=sys.stderr, flush=True,
+                )
+        if not pending:
+            break
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            failure = failure or TimeoutError("owned process-group members exceeded the existing drain bound")
+            break
+        time.sleep(min(0.01, remaining))
+
+    deferred = bool(cleanup.group_eperm)
+    observation_diagnostics: list[str] = []
+    if deferred and reaped and failure is None:
+        last_outcome: int | None = None
+        while True:
+            try:
+                os.killpg(pid, 0)
+            except ProcessLookupError:
+                deferred = False
+                break
+            except OSError as exc:
+                outcome = exc.errno
+                if outcome != last_outcome:
+                    context = (
+                        f"observed-command: cleanup observation operation=os.killpg pid={pid} signal=0 errno={outcome}"
+                    )
+                    if outcome == errno.EPERM:
+                        observation_diagnostics.append(context + " deferred_from=after-reap")
+                    else:
+                        print(context, file=sys.stderr, flush=True)
+                if outcome != errno.EPERM:
+                    failure = failure or exc
+                    break
+                last_outcome = outcome
+            else:
+                last_outcome = 0
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(0.01, remaining))
+    if failure is not None or deferred:
+        for context in cleanup.deferred_diagnostics + tuple(observation_diagnostics):
+            print(context, file=sys.stderr, flush=True)
+    if failure is not None:
+        raise failure
+    if deferred:
+        raise cleanup.group_eperm[0]
+
+
+def _terminate_process_group(
+    process: subprocess.Popen[bytes], grace_seconds: float,
+) -> _PosixGroupCleanup | None:
     """Terminate only the observed child's session, escalating after a grace."""
+    if os.name == "posix":
+        return _terminate_posix_process_group(process, grace_seconds)
+
     import psutil
 
     owned: list[psutil.Process] = []
@@ -261,7 +471,7 @@ def _terminate_process_group(process: subprocess.Popen[bytes], grace_seconds: fl
     try:
         os.killpg(process.pid, signal.SIGTERM)
     except ProcessLookupError:
-        return
+        return None
     except OSError:
         process.terminate()
     with suppress(subprocess.TimeoutExpired):
@@ -273,11 +483,12 @@ def _terminate_process_group(process: subprocess.Popen[bytes], grace_seconds: fl
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
-        return
+        return None
     except OSError:
         process.kill()
     process.wait(timeout=max(grace_seconds, 1.0))
     psutil.wait_procs(owned, timeout=max(grace_seconds, 1.0))
+    return None
 
 
 def _write_chunk(chunk: bytes, log_file: BinaryIO, *, quiet: bool) -> None:
@@ -372,6 +583,8 @@ def stream_command(
         raise ValueError("retain_runs must be at least 1")
     if progress_admission is not None and label is None:
         raise ValueError("item admission requires native observed mode")
+    import psutil
+
     child_environment = dict(os.environ if environment is None else environment)
     if progress_admission is not None:
         progress_admission.validate_execution(
@@ -442,6 +655,22 @@ def stream_command(
             flush=True,
         )
 
+    # This private Popen is the sole eventual reaper. A known automatic or
+    # competing SIGCHLD policy cannot provide the retained-PID contract.
+    if os.name == "posix" and signal.getsignal(signal.SIGCHLD) != signal.SIG_DFL:
+        if status is not None:
+            status.update(
+                state="failed", updated_at=_utc_now(), exit_code=OBSERVER_FAILURE,
+                elapsed_seconds=round(time.monotonic() - started_mono, 3),
+                termination_reason="observer-child-ownership-refused",
+            )
+            _publish_or_fail(publisher, status)
+        print(
+            "observed-command: private child ownership refused: require default SIGCHLD and no competing reaper",
+            file=sys.stderr, flush=True,
+        )
+        return OBSERVER_FAILURE
+
     try:
         resolved_log.parent.mkdir(parents=True, exist_ok=True)
         log_file = resolved_log.open("xb" if publisher is not None else "wb")
@@ -507,8 +736,16 @@ def stream_command(
         return OBSERVER_FAILURE
 
     if process.stdout is None:  # pragma: no cover - guaranteed by PIPE
-        _terminate_process_group(process, termination_grace_seconds)
-        log_file.close()
+        cleanup = None
+        try:
+            cleanup = _terminate_process_group(process, termination_grace_seconds)
+        finally:
+            try:
+                process.wait(timeout=max(termination_grace_seconds, 1.0))
+                if cleanup is not None:
+                    _finish_posix_group_cleanup(process.pid, cleanup, termination_grace_seconds, reaped=True)
+            finally:
+                log_file.close()
         raise RuntimeError("streamed command did not expose stdout")
 
     pending_signal: list[int] = []
@@ -518,12 +755,7 @@ def stream_command(
             pending_signal.append(signum)
 
     previous_handlers: dict[signal.Signals, Any] = {}
-    for watched_signal in (signal.SIGINT, signal.SIGTERM):
-        previous_handlers[watched_signal] = signal.getsignal(watched_signal)
-        signal.signal(watched_signal, handle_signal)
-
-    selector = selectors.DefaultSelector()
-    selector.register(process.stdout, selectors.EVENT_READ)
+    selector: selectors.BaseSelector | None = None
     last_output_mono = started_mono
     last_output_wall = started_wall
     bytes_written = 0
@@ -535,26 +767,60 @@ def stream_command(
     requested_code: int | None = None
     termination_reason: str | None = None
     state: str | None = None
+    child_birth: float | None = None
+    child_exited = False
+    child_returncode: int | None = None
+    child_identity_valid = True
+    child_reaped = False
+    group_cleanup: _PosixGroupCleanup | None = None
+
+    def record_failure(reason: str, error: Exception) -> None:
+        nonlocal requested_code, termination_reason, state
+        print(f"observed-command: {reason}: {type(error).__name__}: {error}", file=sys.stderr, flush=True)
+        if requested_code is None:
+            requested_code = OBSERVER_FAILURE
+            termination_reason = reason
+            state = "failed"
+
+    def refresh_child_state() -> None:
+        nonlocal child_birth, child_exited, child_identity_valid
+        try:
+            child_birth, child_exited = _posix_child_state(process, child_birth)
+        except (OSError, psutil.Error) as exc:
+            if isinstance(exc, _ChildIdentityContradiction):
+                child_identity_valid = False
+            record_failure("observer-child-inspection-failed", exc)
 
     try:
+        for watched_signal in (signal.SIGINT, signal.SIGTERM):
+            previous_handlers[watched_signal] = signal.getsignal(watched_signal)
+            signal.signal(watched_signal, handle_signal)
+        selector = selectors.DefaultSelector()
+        selector.register(process.stdout, selectors.EVENT_READ)
+
         # A published running owner must already be able to handle interruption.
         if status is not None:
             status.update(
                 {"state": "running", "child_pid": process.pid, "updated_at": _utc_now()}
             )
             if not _publish_or_fail(publisher, status):
-                _terminate_process_group(process, termination_grace_seconds)
-                process.stdout.close()
-                log_file.close()
-                return OBSERVER_FAILURE
+                requested_code = OBSERVER_FAILURE
+                termination_reason = "observer-status-write-failed"
+                state = "failed"
 
-        while selector.get_map() or process.poll() is None:
+        if os.name == "posix" and requested_code is None:
+            refresh_child_state()
+
+        while requested_code is None and (selector.get_map() or not child_exited):
             now = time.monotonic()
             if selector.get_map():
                 ready = selector.select(timeout=0.05)
             else:
-                with suppress(subprocess.TimeoutExpired):
-                    process.wait(timeout=0.05)
+                if os.name == "posix":
+                    time.sleep(0.05)
+                else:
+                    with suppress(subprocess.TimeoutExpired):
+                        process.wait(timeout=0.05)
                 ready = []
             for key, _mask in ready:
                 try:
@@ -612,7 +878,6 @@ def stream_command(
                 state = "timed_out"
 
             if requested_code is not None:
-                _terminate_process_group(process, termination_grace_seconds)
                 break
 
             if now >= next_heartbeat:
@@ -633,7 +898,6 @@ def stream_command(
                         requested_code = OBSERVER_FAILURE
                         termination_reason = "observer-status-write-failed"
                         state = "failed"
-                        _terminate_process_group(process, termination_grace_seconds)
                         break
                 if effective_label is not None:
                     print(
@@ -644,29 +908,86 @@ def stream_command(
                     )
                 next_heartbeat = now + heartbeat_seconds
 
-            if process.poll() is not None and not selector.get_map():
+            if os.name == "posix":
+                refresh_child_state()
+            else:
+                child_exited = process.poll() is not None
+            if child_exited and not selector.get_map():
                 break
     finally:
-        selector.close()
-        for watched_signal, previous_handler in previous_handlers.items():
-            signal.signal(watched_signal, previous_handler)
-
-    if process.poll() is None:
-        _terminate_process_group(process, termination_grace_seconds)
-    child_returncode = process.wait()
-    process.stdout.close()
-    try:
-        log_file.flush()
-        os.fsync(log_file.fileno())
-    except OSError as exc:
-        print(f"observed-command: log sync failed: {exc}", file=sys.stderr, flush=True)
-        requested_code = OBSERVER_FAILURE
-        termination_reason = "observer-log-sync-failed"
-        state = "failed"
-    finally:
-        log_file.close()
+        try:
+            if selector is not None:
+                try:
+                    selector.close()
+                except Exception as exc:
+                    record_failure("observer-selector-close-failed", exc)
+        finally:
+            try:
+                # Unavailable inspection retains the private-Popen pin; a
+                # positive contradiction explicitly invalidates numeric authority.
+                if child_identity_valid and (os.name == "posix" or process.poll() is None):
+                    group_cleanup = _terminate_process_group(process, termination_grace_seconds)
+            except (OSError, psutil.Error, subprocess.TimeoutExpired) as exc:
+                if isinstance(exc, _ChildIdentityContradiction):
+                    child_identity_valid = False
+                record_failure("observer-process-group-cleanup-failed", exc)
+            finally:
+                try:
+                    if child_identity_valid:
+                        try:
+                            if os.name == "posix":
+                                child_returncode = process.wait(timeout=max(termination_grace_seconds, 1.0))
+                            else:
+                                child_returncode = process.wait()
+                            child_reaped = True
+                        except (OSError, subprocess.TimeoutExpired) as exc:
+                            record_failure("observer-child-wait-failed", exc)
+                    if group_cleanup is not None:
+                        try:
+                            _finish_posix_group_cleanup(
+                                process.pid, group_cleanup, termination_grace_seconds, reaped=child_reaped,
+                            )
+                        except (OSError, psutil.Error) as exc:
+                            record_failure("observer-process-group-cleanup-failed", exc)
+                finally:
+                    try:
+                        try:
+                            process.stdout.close()
+                        except Exception as exc:
+                            record_failure("observer-stdout-close-failed", exc)
+                    finally:
+                        try:
+                            for watched_signal, previous_handler in previous_handlers.items():
+                                try:
+                                    signal.signal(watched_signal, previous_handler)
+                                except Exception as exc:
+                                    record_failure("observer-signal-restore-failed", exc)
+                        finally:
+                            try:
+                                log_file.flush()
+                                os.fsync(log_file.fileno())
+                            except OSError as exc:
+                                print(f"observed-command: log sync failed: {exc}", file=sys.stderr, flush=True)
+                                requested_code = OBSERVER_FAILURE
+                                termination_reason = "observer-log-sync-failed"
+                                state = "failed"
+                            finally:
+                                try:
+                                    log_file.close()
+                                except Exception as exc:
+                                    record_failure("observer-log-close-failed", exc)
+    if requested_code is None and pending_signal:
+        signum = pending_signal[0]
+        requested_code = 128 + signum
+        try:
+            signal_name = signal.Signals(signum).name
+        except ValueError:  # pragma: no cover - OS supplied value
+            signal_name = str(signum)
+        termination_reason = f"observer-signal:{signal_name}"
+        state = "interrupted"
 
     if requested_code is None:
+        assert child_returncode is not None
         if child_returncode < 0:
             signum = -child_returncode
             requested_code = 128 + signum
