@@ -1116,6 +1116,8 @@ help:
 		"  ci-cooldown-status     Show remaining cooldown seconds" \
 		"  ci-view RUN=<id>       Show CI run details (jobs, steps, failures)" \
 		"  ci-rerun RUN=<id>      Guard and rerun one observed immutable CI run" \
+		"  ci-rerun-help          Show gh run rerun --help" \
+		"  ci-cancel              Cancel one CI run (GLUDD_CI_CANCEL_RUN, GLUDD_CI_CANCEL_VALIDATE_ONLY=0|1)" \
 		"  ci-recover-runner-acquisition RUN=<id>  Retry attempt 1 only when every failure is hosted-runner acquisition" \
 		"  ci-active              List active/in-flight CI runs" \
 		"  ci-greenness           CI reliability ratio (green / total completed)" \
