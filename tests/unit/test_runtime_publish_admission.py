@@ -39,8 +39,8 @@ def _publication_inspection_inputs(source: str) -> str:
     provider_end = foundation.index("# End shared native Make inspection grammar.", provider_start)
     provider = foundation[provider_start:provider_end] + "# End shared native Make inspection grammar.\n"
     inputs_start = foundation.index("# Keep expected publication identity literal before startup/export expansion.")
-    inputs = foundation[inputs_start:foundation.index("\n\n", inputs_start)] + "\n"
-    return inputs + provider + source[start:source.index("\ngit-push-sandboxcom:", start)] + "\n"
+    inputs = foundation[inputs_start : foundation.index("\n\n", inputs_start)] + "\n"
+    return inputs + provider + source[start : source.index("\ngit-push-sandboxcom:", start)] + "\n"
 
 
 def _publish(
@@ -183,7 +183,8 @@ def _publish(
         f"OBSERVED_ROOT := {tmp_path / 'observed'}\nWORK_ITEM_ID :=\nSSH_KEY := {tmp_path / 'absent-key'}\n"
         f"RUNTIME_PUBLISH_ENVIRONMENT := {selected_environment}\n"
         f"RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY := {validate_only}\n"
-        + policy_defaults + "\n"
+        + policy_defaults
+        + "\n"
         + _publication_inspection_inputs(recovery)
         + f".PHONY: batch-push run-watched {OWNER} {PUBLISH_OWNER} test-files _record-push-verdict "
         f"{' '.join(prerequisites)}\n"
@@ -219,15 +220,26 @@ def _publish(
         "THRESHOLD": str(threshold),
     }
     names = (
-        "GATE_TEST_PROFILE", "GATE_EXACT_SHA_RESUME", "GATE_MAX_FILES_PER_BATCH", "GATE_BATCH_WORKERS",
+        "GATE_TEST_PROFILE",
+        "GATE_EXACT_SHA_RESUME",
+        "GATE_MAX_FILES_PER_BATCH",
+        "GATE_BATCH_WORKERS",
     )
     for name in names:
         environment.pop(name, None)
     command = [
-        "make", "--no-print-directory", "-f", str(recipe), goal,
-        "UV_PROJECT_ENVIRONMENT=.venv", "VIRTUAL_ENV=.venv", "UV_NO_SYNC=0",
-        "UV_PYTHON=3.14", "UV_PYTHON_DOWNLOADS=automatic",
-        "ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=1", "probe=kept",
+        "make",
+        "--no-print-directory",
+        "-f",
+        str(recipe),
+        goal,
+        "UV_PROJECT_ENVIRONMENT=.venv",
+        "VIRTUAL_ENV=.venv",
+        "UV_NO_SYNC=0",
+        "UV_PYTHON=3.14",
+        "UV_PYTHON_DOWNLOADS=automatic",
+        "ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=1",
+        "probe=kept",
         "GATE_FAILURE_PROMOTION_MANIFEST=/tmp/gludd-untrusted-override.json",
     ]
     if watched_trace_caller_mode is not None:
@@ -253,6 +265,10 @@ def _publish(
     return result, rows, tmp_path / "observed"
 
 
+def _expected_max_secs() -> str:
+    return os.environ.get("RUNTIME_PUBLISH_MAX_SECS", "90")
+
+
 def _assert_owned_once(rows: list[dict[str, object]], phases: list[tuple[str, str]]) -> None:
     observers = [row for row in rows if row["kind"] == "observer"]
     assert len(observers) == 2
@@ -262,7 +278,7 @@ def _assert_owned_once(rows: list[dict[str, object]], phases: list[tuple[str, st
     for name, value in (
         ("--label", "batch-push-runtime-admission"),
         ("--quiet-secs", "60"),
-        ("--max-secs", "90"),
+        ("--max-secs", _expected_max_secs()),
         ("--heartbeat-secs", "10"),
     ):
         assert arguments[arguments.index(name) + 1] == value
@@ -277,7 +293,9 @@ def _assert_owned_once(rows: list[dict[str, object]], phases: list[tuple[str, st
     assert str(manifests[0]["environment"]).endswith("fake-canonical-runtime")
     assert manifests[0]["venv"] == manifests[0]["environment"]
     assert (manifests[0]["no_sync"], manifests[0]["python"], manifests[0]["downloads"]) == (
-        "1", "3.11", "never",
+        "1",
+        "3.11",
+        "never",
     )
     runtime = [row for row in rows if row["kind"] == "runtime"]
     # Inventory order is canonical; native overlap barriers check physical order.
@@ -303,8 +321,7 @@ def test_red_runtime_owner_blocks_transport_even_when_forced(
     assert result.returncode != 0, result.stdout + result.stderr
     _assert_owned_once(
         rows,
-        [("full", "2"), ("help", "1"), ("full", "1")] if failure == "full"
-        else [("full", "2"), ("help", "1")],
+        [("full", "2"), ("help", "1"), ("full", "1")] if failure == "full" else [("full", "2"), ("help", "1")],
     )
     assert not any(row["kind"] in {"transport", "verdict"} for row in rows)
     assert "Runtime publication admission failed" in result.stdout + result.stderr
@@ -338,10 +355,14 @@ def test_green_runtime_owner_runs_once_before_normal_transport(tmp_path: Path, f
 
 @pytest.mark.parametrize("forced", (False, True))
 def test_canonical_normal_publisher_keeps_manifest_failure_before_runtime_and_transport(
-    tmp_path: Path, forced: bool,
+    tmp_path: Path,
+    forced: bool,
 ) -> None:
     result, rows, _ = _publish(
-        tmp_path, goal="git-push-sandboxcom", manifest_status=81, forced=forced,
+        tmp_path,
+        goal="git-push-sandboxcom",
+        manifest_status=81,
+        forced=forced,
     )
     assert result.returncode != 0
     assert [row["kind"] for row in rows] == ["runtime-identity", "manifest"]
@@ -368,7 +389,9 @@ def test_nonpublication_does_not_run_runtime_or_transport(
     ids=["native-failure", "workflow-authorization"],
 )
 def test_transport_failure_after_green_admission_never_records_success(
-    tmp_path: Path, push_status: int, push_message: str,
+    tmp_path: Path,
+    push_status: int,
+    push_message: str,
 ) -> None:
     result, rows, _ = _publish(tmp_path, push_status=push_status, push_message=push_message)
     assert result.returncode != 0
@@ -446,10 +469,10 @@ def test_runtime_owner_plan_is_mutation_free_and_has_no_transport(tmp_path: Path
     result, rows, observed = _publish(tmp_path, goal=PUBLISH_OWNER, validate_only=1, runtime_state="missing")
     assert result.returncode == 0, result.stdout + result.stderr
     assert rows == [] and not observed.exists()
-    assert "max_seconds=90 quiet_seconds=60" in result.stdout
+    assert f"max_seconds={_expected_max_secs()} quiet_seconds=60" in result.stdout
     assert "manifest_check=exact-pinned" in result.stdout
     assert "prerequisite_check=check-gate-failure-promotions" in result.stdout
-    assert "prerequisite_max_seconds=90 prerequisite_quiet_seconds=60" in result.stdout
+    assert f"prerequisite_max_seconds={_expected_max_secs()} prerequisite_quiet_seconds=60" in result.stdout
     assert "profile=release exact_sha_resume=0 max_files_per_batch=16 gate_workers=1" in result.stdout
     assert "release_ready=false gate_evidence=false" in result.stdout
 
@@ -464,10 +487,12 @@ def _assert_release_runtime_policy(rows: list[dict[str, object]]) -> None:
 
 
 @pytest.mark.parametrize(
-    "policy_context", ("default", "environment", "command-line", "opaque-overrides"),
+    "policy_context",
+    ("default", "environment", "command-line", "opaque-overrides"),
 )
 def test_publication_runtime_owns_release_policy_without_changing_caller(
-    tmp_path: Path, policy_context: str,
+    tmp_path: Path,
+    policy_context: str,
 ) -> None:
     result, rows, _ = _publish(tmp_path, gate_policy_context=policy_context)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -496,18 +521,20 @@ def test_runtime_publish_owner_has_documented_mutation_free_contract(tmp_path: P
     assert validate_contract(standalone, {"targets": [entry]}) == []
     publication = next(row for row in contract["targets"] if row["name"] == "batch-push")
     assert publication["make_variables"] == ["COMMIT_THRESHOLD", "SSH_KEY"]
-    assert publication["behavior"] == (
-        "make batch-push COMMIT_THRESHOLD=1 SSH_KEY=/tmp/gludd-contract-absent-key"
-    )
+    assert publication["behavior"] == ("make batch-push COMMIT_THRESHOLD=1 SSH_KEY=/tmp/gludd-contract-absent-key")
 
 
 @pytest.mark.parametrize("manifest_status", (1, 2, 124))
 @pytest.mark.parametrize("forced", (False, True))
 def test_unavailable_exact_manifest_stops_before_runtime_and_transport(
-    tmp_path: Path, manifest_status: int, forced: bool,
+    tmp_path: Path,
+    manifest_status: int,
+    forced: bool,
 ) -> None:
     result, rows, observed = _publish(
-        tmp_path, manifest_status=manifest_status, forced=forced,
+        tmp_path,
+        manifest_status=manifest_status,
+        forced=forced,
     )
     assert result.returncode != 0, result.stdout + result.stderr
     assert [row["kind"] for row in rows] == ["runtime-identity", "manifest"]
@@ -531,7 +558,8 @@ EIGHT_PREREQUISITE_PINS = [
 
 def _observer_arguments(rows: list[dict[str, object]], label: str) -> list[str]:
     matches = [
-        row["args"] for row in rows
+        row["args"]
+        for row in rows
         if row["kind"] == "observer" and isinstance(row["args"], list) and label in row["args"]
     ]
     assert len(matches) == 1, rows
@@ -542,7 +570,7 @@ def _observer_arguments(rows: list[dict[str, object]], label: str) -> list[str]:
 
 def _observed_make_arguments(arguments: list[str]) -> list[str]:
     """Retain exact argv checks inside the existing shell command envelope."""
-    command = arguments[arguments.index("--") + 1:]
+    command = arguments[arguments.index("--") + 1 :]
     assert len(command) == 3 and command[:2] == ["/bin/sh", "-c"]
     native = shlex.split(command[2])
     assert native[:3] == ["make", "--no-print-directory", "-f"]
@@ -556,11 +584,15 @@ def _observed_make_arguments(arguments: list[str]) -> list[str]:
 
 
 def _assert_prerequisite_once(
-    rows: list[dict[str, object]], *, label: str = "batch-push-prerequisite-admission",
+    rows: list[dict[str, object]],
+    *,
+    label: str = "batch-push-prerequisite-admission",
 ) -> None:
     arguments = _observer_arguments(rows, label)
     for name, value in (
-        ("--label", label), ("--quiet-secs", "60"), ("--max-secs", "90"),
+        ("--label", label),
+        ("--quiet-secs", "60"),
+        ("--max-secs", _expected_max_secs()),
         ("--heartbeat-secs", "10"),
     ):
         assert arguments[arguments.index(name) + 1] == value
@@ -578,7 +610,14 @@ def _assert_prerequisite_once(
     assert pins[0]["files"] == EIGHT_PREREQUISITE_PINS
     assert (pins[0]["nproc"], pins[0]["workers"]) == ("1", "1")
     assert shlex.split(str(pins[0]["flags"])) == [
-        "-W", "error", "-q", "-n", "0", "--maxprocesses", "1", "--timeout=30",
+        "-W",
+        "error",
+        "-q",
+        "-n",
+        "0",
+        "--maxprocesses",
+        "1",
+        "--timeout=30",
     ]
     for row in rows:
         if row["kind"] in {"observer", "promotions", "prerequisite-pins", "runtime"}:
@@ -601,17 +640,27 @@ def _hosted_steps() -> list[dict[str, object]]:
 
 
 def _hosted(
-    tmp_path: Path, *, manifest_status: int = 0, promotion_status: int = 0,
-    pins_status: int = 0, failure: str = "",
+    tmp_path: Path,
+    *,
+    manifest_status: int = 0,
+    promotion_status: int = 0,
+    pins_status: int = 0,
+    failure: str = "",
 ) -> tuple[subprocess.CompletedProcess[str], list[dict[str, object]], Path]:
     plan, rows, _ = _publish(
-        tmp_path, goal=PUBLISH_OWNER, validate_only=1, manifest_status=manifest_status,
-        promotion_status=promotion_status, pins_status=pins_status, failure=failure,
+        tmp_path,
+        goal=PUBLISH_OWNER,
+        validate_only=1,
+        manifest_status=manifest_status,
+        promotion_status=promotion_status,
+        pins_status=pins_status,
+        failure=failure,
     )
     assert plan.returncode == 0 and rows == [], plan.stdout + plan.stderr
     steps = _hosted_steps()
     names = [
-        "Verify pinned Ansible base manifest", "Canonical promotion prerequisite admission",
+        "Verify pinned Ansible base manifest",
+        "Canonical promotion prerequisite admission",
         "Known runtime and handoff regression admission",
     ]
     stages = [next(step for step in steps if step.get("name") == name) for name in names]
@@ -629,7 +678,8 @@ def _hosted(
     for index, stage in enumerate(stages):
         body = str(stage["run"]).rstrip()
         for expression, value in (
-            ("${{ github.run_id }}", "4242"), ("${{ github.run_attempt }}", "3"),
+            ("${{ github.run_id }}", "4242"),
+            ("${{ github.run_attempt }}", "3"),
             ("${{ matrix.python-version }}", "3.11"),
         ):
             body = body.replace(expression, value)
@@ -637,13 +687,23 @@ def _hosted(
         chunks.append(f"\n_hosted_{index}:\n\t@" + body.replace("\n", "\n\t") + "\n")
     recipe.write_text(recipe.read_text(encoding="utf-8") + "".join(chunks), encoding="utf-8")
     environment = dict(
-        os.environ, UV_PROJECT_ENVIRONMENT=str(tmp_path / ".venv"),
-        VIRTUAL_ENV=str(tmp_path / ".venv"), UV_NO_SYNC="1", UV_PYTHON="3.11",
-        UV_PYTHON_DOWNLOADS="never", MAKEFLAGS="", MFLAGS="", MAKELEVEL="0",
+        os.environ,
+        UV_PROJECT_ENVIRONMENT=str(tmp_path / ".venv"),
+        VIRTUAL_ENV=str(tmp_path / ".venv"),
+        UV_NO_SYNC="1",
+        UV_PYTHON="3.11",
+        UV_PYTHON_DOWNLOADS="never",
+        MAKEFLAGS="",
+        MFLAGS="",
+        MAKELEVEL="0",
     )
     result = subprocess.run(
         ["make", "--no-print-directory", "-f", str(recipe), "hosted-probe"],
-        cwd=tmp_path, env=environment, capture_output=True, text=True, timeout=20,
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=20,
     )
     trace = tmp_path / "trace.jsonl"
     rows = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines()] if trace.exists() else []
@@ -654,16 +714,23 @@ def _hosted(
 @pytest.mark.parametrize("stage", ("manifest-parser", "six-pins"))
 @pytest.mark.parametrize("native_status", (1, 2, 124))
 def test_canonical_prerequisite_failure_blocks_runtime_and_transport(
-    tmp_path: Path, forced: bool, stage: str, native_status: int,
+    tmp_path: Path,
+    forced: bool,
+    stage: str,
+    native_status: int,
 ) -> None:
     result, rows, observed = _publish(
-        tmp_path, forced=forced,
+        tmp_path,
+        forced=forced,
         promotion_status=native_status if stage == "manifest-parser" else 0,
         pins_status=native_status if stage == "six-pins" else 0,
     )
     assert result.returncode != 0, result.stdout + result.stderr
     assert [row["kind"] for row in rows] == [
-        "runtime-identity", "manifest", "observer", "promotions",
+        "runtime-identity",
+        "manifest",
+        "observer",
+        "promotions",
         *(["prerequisite-pins"] if stage == "six-pins" else []),
     ]
     _observer_arguments(rows, "batch-push-prerequisite-admission")
@@ -677,7 +744,8 @@ def test_canonical_prerequisite_failure_blocks_runtime_and_transport(
 
 @pytest.mark.parametrize("policy_context", ("default", "environment", "command-line", "opaque-overrides"))
 def test_canonical_prerequisite_owns_environment_policy_and_stage_identity(
-    tmp_path: Path, policy_context: str,
+    tmp_path: Path,
+    policy_context: str,
 ) -> None:
     result, rows, observed = _publish(tmp_path, gate_policy_context=policy_context)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -689,8 +757,17 @@ def test_canonical_prerequisite_owns_environment_policy_and_stage_identity(
     for label in ("batch-push-prerequisite-admission", "batch-push-runtime-admission"):
         assert list((observed / label).rglob("*.json"))
     assert [row["kind"] for row in rows] == [
-        "runtime-identity", "manifest", "observer", "promotions", "prerequisite-pins",
-        "observer", "runtime", "runtime", "runtime", "transport", "verdict",
+        "runtime-identity",
+        "manifest",
+        "observer",
+        "promotions",
+        "prerequisite-pins",
+        "observer",
+        "runtime",
+        "runtime",
+        "runtime",
+        "transport",
+        "verdict",
     ]
 
 
@@ -706,17 +783,19 @@ def test_hosted_canonical_prerequisite_has_exact_order_bounds_and_environment() 
     assert stage["env"] == {
         "UV_PROJECT_ENVIRONMENT": "${{ github.workspace }}/.venv",
         "VIRTUAL_ENV": "${{ github.workspace }}/.venv",
-        "UV_NO_SYNC": "1", "UV_PYTHON": "${{ matrix.python-version }}",
-        "UV_PYTHON_DOWNLOADS": "never", "GATE_TEST_PROFILE": "release",
-        "GATE_EXACT_SHA_RESUME": "0", "GATE_MAX_FILES_PER_BATCH": "16",
+        "UV_NO_SYNC": "1",
+        "UV_PYTHON": "${{ matrix.python-version }}",
+        "UV_PYTHON_DOWNLOADS": "never",
+        "GATE_TEST_PROFILE": "release",
+        "GATE_EXACT_SHA_RESUME": "0",
+        "GATE_MAX_FILES_PER_BATCH": "16",
         "GATE_BATCH_WORKERS": "1",
     }
     body = str(stage["run"])
     assert "check-gate-failure-promotions GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json" in body
-    assert [
-        token.partition("=")[2] for token in shlex.split(body)
-        if token.partition("=")[0] == "OBSERVED_LABEL"
-    ] == ["ci-gate-failure-promotions"]
+    assert [token.partition("=")[2] for token in shlex.split(body) if token.partition("=")[0] == "OBSERVED_LABEL"] == [
+        "ci-gate-failure-promotions"
+    ]
     assert "STALL_SECS=60 MAX_SECS=90" in body
     assert "OBSERVED_HEARTBEAT_SECS=10" in body
     assert "OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=2" in body
@@ -727,10 +806,12 @@ def test_hosted_canonical_prerequisite_has_exact_order_bounds_and_environment() 
 
 @pytest.mark.parametrize("stage", ("manifest", "manifest-parser", "six-pins", "runtime", ""))
 def test_hosted_native_stages_stop_at_first_failure(
-    tmp_path: Path, stage: str,
+    tmp_path: Path,
+    stage: str,
 ) -> None:
     result, rows, observed = _hosted(
-        tmp_path, manifest_status=17 if stage == "manifest" else 0,
+        tmp_path,
+        manifest_status=17 if stage == "manifest" else 0,
         promotion_status=17 if stage == "manifest-parser" else 0,
         pins_status=17 if stage == "six-pins" else 0,
         failure="full" if stage == "runtime" else "",
@@ -754,7 +835,9 @@ def test_hosted_native_stages_stop_at_first_failure(
         assert arguments[arguments.index("--quiet-secs") + 1] == "60"
         runtime = [row for row in rows if row["kind"] == "runtime"]
         assert sorted((str(row["nproc"]), str(row["workers"])) for row in runtime) == [
-            ("1", "1"), ("1", "1"), ("2", "2"),
+            ("1", "1"),
+            ("1", "1"),
+            ("2", "2"),
         ]
         assert list((observed / "ci-gate-failure-promotions").rglob("*.json"))
         for row in rows:
@@ -766,13 +849,16 @@ def test_hosted_native_stages_stop_at_first_failure(
 
 @pytest.mark.parametrize("watched_trace_origin", ["default", "environment", "command-line"])
 def test_publication_observers_own_fresh_native_trace_identity(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, watched_trace_origin: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    watched_trace_origin: str,
 ) -> None:
     monkeypatch.delenv("RUN_WATCHED_PYTEST_TRACE", raising=False)
     if watched_trace_origin == "environment":
         monkeypatch.setenv("RUN_WATCHED_PYTEST_TRACE", "0")
     result, rows, observed = _publish(
-        tmp_path, watched_trace_caller_mode="0" if watched_trace_origin == "command-line" else None,
+        tmp_path,
+        watched_trace_caller_mode="0" if watched_trace_origin == "command-line" else None,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     _assert_owned_once(rows, [("full", "2"), ("help", "1"), ("full", "1")])
@@ -799,16 +885,17 @@ def test_publication_observers_own_fresh_native_trace_identity(
 
 @pytest.mark.parametrize("watched_trace_failure", ["full", "help"])
 def test_failed_publication_observer_retains_its_owned_native_trace(
-    tmp_path: Path, watched_trace_failure: str,
+    tmp_path: Path,
+    watched_trace_failure: str,
 ) -> None:
     result, rows, observed = _publish(
-        tmp_path, failure=watched_trace_failure, watched_trace_caller_mode="0",
+        tmp_path,
+        failure=watched_trace_failure,
+        watched_trace_caller_mode="0",
     )
     assert result.returncode != 0
     assert not any(row["kind"] in {"transport", "verdict", "verify-remote"} for row in rows)
-    status = json.loads(
-        (observed / "batch-push-runtime-admission" / "current.json").read_text(encoding="utf-8")
-    )
+    status = json.loads((observed / "batch-push-runtime-admission" / "current.json").read_text(encoding="utf-8"))
     assert status["state"] == "failed"
     assert status["exit_code"] != 0
     trace_path = status["trace_path"]
