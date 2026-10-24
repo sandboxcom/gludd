@@ -471,3 +471,85 @@ seven active S98 release items.
 - [Firsthand GH issue 2995](https://github.com/cli/cli/issues/2995), opened in February 2021, reports a Homebrew/PATH failure for a bare gh helper and discusses helper interactions. It motivates the explicit absolute executable and local reset; it is historical context, not attribution for this workspace's current failure.
 
 Installed native help was retained in evidence/https-native-cli-help.{json,log}; expected native Git help status 129 is explicitly retained rather than treated as transport failure.
+
+## Main HTTPS bootstrap and runtime intake
+
+This bounded receiving change uses only reviewed implementation inputs from
+`8b78776b2bb297f61028bf1b8af3352648ac6968` and
+`65003637b27a632c63a36f2a6e853f2485ecf44a`; unchanged final
+controls also exist at `5e61dd51f414e781dffbd7a1c766c32fd2bdf723`.
+These are input references, not new ancestors, current Main acceptance or a
+reason to replace shared Make, contract, guide or feature snapshots.
+
+The native GH helper retains quoted controller selection and adds Python `-P`
+to exclude implicit CWD modules while preserving explicit search carriers.
+The existing Foundation selector honors command-line SYSTEM_PYTHON; absent,
+environment and `-e` environment inputs keep the original fixed default.
+All helper/auth/URL/native-error/partial-write and exact-ref guards remain.
+
+The complete existing HTTPS owner retains all predecessor cases and adds the
+approved repr privacy, active same-origin mode witness, unsafe-bootstrap
+witness and actual Root include-graph runtime controls. It preserves unrelated
+child environment carriers, original no-mutation assertions and failure status.
+Historical source receiving passed454 cases per runtime at the seven-path8b
+input; the later selector source has7 focused cases with ordinary/-e,
+direct/prerequisite and default/environment controls. Those receipts retain
+their source scopes and do not certify this Main postimage.
+
+Root must re-pin the committed Main input, verify each literal preimage, run
+the existing staged-content guard and complete affected-owner receiving on
+both installed runtimes, retain source review and normal fresh collection,
+then record their actual receipts. No standalone production Python module or
+coverage profile changes. Keep original85/75 line AND branch floors,90/60,
+2/1/1,ZDD,full gate,canonical exact-SHA hosted/deployment and promotion proof.
+Node/TOML, feature-publication, mypy-source and unrelated cleanup changes are
+separate owners. No live authentication, publication or test ran to form the
+literal intake configuration.
+
+### Actual Main receiving on fixed8cf input
+
+The preceding paragraph is the pre-execution intake plan. Root re-pinned all
+five preimages to8cf4686ecee208a7cc46d9af2e9cc7b33c7b1f65 and verified all
+eight literal operations against full raw postimages. The genuine ten-case
+baseline is6FAIL/4PASS3.54s/native4.526; receipt
+main-https-runtime-red/main-https-runtime-red311-8cf4686.json. The two native
+repairs yield10PASS3.36s/native4.3 without changing those assertions.
+
+The complete13-owner union is split only at complete owner boundaries. A owns
+these twelve complete files under tests/unit/ (one space-separated TESTFILES):
+
+~~~text
+test_git_https_publication.py test_verify_remote_recipe.py test_sandboxcom_ssh_key_guard.py
+test_make_target_contract.py test_check_make_target_contract.py test_make_help_throughput.py
+test_make_variable_context.py test_trace_summary_make_inputs.py test_pytest_param_fixture_collisions.py
+test_makefile_layout.py test_workflow_failure_class_guards.py test_git_compare_commits.py
+~~~
+
+A has367cases; B is the complete existing test_reviewed_head_inputs.py owner,
+196cases. All four native commands passed:
+
+| Native run under main-https-runtime-acceptance | PASS | pytest seconds | native seconds |
+| --- | --- | --- | --- |
+| main-https-runtime-A311-8cf4686 |367|67.37|68.927|
+| main-https-runtime-A312-8cf4686 |367|72.54|74.382|
+| main-https-runtime-B311-8cf4686 |196|135.16|137.413|
+| main-https-runtime-B312-8cf4686 |196|126.69|129.670|
+
+Each row has its own .gate-logs/observed/main-https-runtime-acceptance/RUN.json,
+.log and .pytest.jsonl. Native summaries retain A737events/367completepairs
+and B395events/196completepairs per runtime, no failed or unfinished nodes.
+This is563PASS per runtime, not a full gate or a hosted result. Every child
+uses explicit installed runtime inputs, n0, Werror, ID=, native trace and the
+unchanged300total/60quiet receiving boundary. The small regression uses90/60.
+The5-path staged guard passed native0/6.7 with no new clones;294contracts,
+Ruff, strict typing, environment-write/line/Make/Markdown checks and the exact
+offline HTTPS plan pass. That plan still supplies no authentication or transport.
+
+Independent source review binds the frozen five postimages and preserves all
+fourteen predecessor test definitions/assertions:
+ /tmp/gludd-v012-main-group1-https-runtime-source-review.md.
+Only receipt/tracking prose follows the measured source. Normal guarded
+checkpoint/fresh collection, final canonical gate/coverage, exact-SHA push CI,
+development integration, master deployment and release publication remain
+separate. No task closes. Group2/3, Node/TOML, capacity and workflow consent
+remain their own actual prerequisites.

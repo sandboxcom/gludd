@@ -129,8 +129,8 @@ actual index/current SHA; no inventory paragraph supplies a later observation.
 | Existing transaction, provider and HTTPS base | In local Main candidate | Frozen full gate, exact-SHA push and deployment |
 | ci-await outcome guidance | Main0ec6ed4;142BOTH,311AST143 | Final gate and exact-SHA proof |
 | Safe immutable commit comparator | Main1eec791;194BOTH | Final gate and exact-SHA proof |
-| Verified creation and retired unsafe cleanup | Corrected Main683/1contextSKIPBOTH;93.6LINE/86.2BRANCH plus legacy5/100percentBOTH | Repaired intake review/normal collection, final gate and exact-SHA proof |
-| Safe-P bootstrap and installed controller selection | Published feature5e61dd5; narrow Main intake pending | Current Main consumers; preserve newer Main code |
+| Verified creation and retired unsafe cleanup | Main8cf4686;683/1contextSKIPBOTH,93.6LINE/86.2BRANCH plus legacy5/100percentBOTH; reviewed/normal130023collection | Final gate and exact-SHA proof |
+| Safe-P bootstrap and installed controller selection | Published5e; Main fixed8cf intake563PASS EACH runtime/source-only approved | Normal checkpoint/collection, final gate and exact-SHA proof |
 | Feature/dev saved-source publication and dispatch | Published feature5e61dd5; Main semantic intake pending | Current Main full consumers and exact event proof |
 | Checkout-specific mypy and ledger inputs | Published feature5e61dd5; Main intake pending | Current Main receiving; collection policy unchanged |
 | Node advisory proposal | Published2a63ce1 ancestry; HOLD | Exact policy input, TOML compatibility, complete hosted audit |
@@ -165,8 +165,13 @@ through verified native creation before the producer refreshes its own state.
 The automatic owner can retire a clean materialization after its own native
 completion proof, archive and ref checks. A selected agent-cleanup refusal is
 a different contract. A capped dry-run skip summary concealed this larger scope;
-the isolated existing-producer output repair has genuine2RED then6GREEN but
-still needs its complete20-owner/three-source receiving and final source review.
+the original four-path repair passes complete21-owner802cases+37subtests BOTH
+with canonical three-source87.6LINE/85.9BRANCH. Independent review then finds
+an ordinary-index-preservation gap: real native status writes prove2FAIL2PASS;
+the one-line --no-optional-locks repair yields13GREEN while mandatory native
+locking/add controls remain. Five frozen paths have source-only approval;
+complete26-owner/two-profile BOTH receiving remains pending. The old802results
+retain their earlier scope and do not certify that new adapter.
 No cleanup threshold, receipt grace, active-owner proof or retention rule changes.
 
 Lifecycle research and positive-identity/FD/passive-reader findings stay in the
@@ -174,6 +179,36 @@ owning WATCHDOG_SECRETS_LIFECYCLE record. Native Darwin zombie-only killpg EPERM
 also covers denied live targets, so errno or a census cannot certify absence.
 The isolated repair retains raw failures and exact next controls; focused
 diagnostics/inner facts with a failed outer watcher grant no watched acceptance.
+The full13-owner311 profile first records3FAIL/754PASS: original empty-stderr
+assertions see benign resolved group-EPERM output. The minimal correction passes
+those3 and the full757-case311/four-source profile, retaining actual unresolved
+TERM/KILL/errno diagnostics. Independent review identifies a transient post-reap
+EPERM-to-ESRCH sequence not yet measured. Current profile proof has pre-sequence
+scope; the bounded failing-first control remains required before final approval.
+
+### Current independent hosted routes and their actual inputs
+
+Immutable5e Build has provider inputs only, no phase/shard selector. Its eight
+shards and packaging need the failed CSS gate. Whole unchanged Build replay
+would add no repair evidence. Standalone Molecule already passes all6.
+Existing Pages workflow_dispatch is independent of Build: both JS0 engine jobs
+must pass before JS1; its artifact/deployment still requires push on master.
+The generic ci-trigger-committed-head route accepts exact branch/SHA/workflow,
+as actual Molecule dispatch19.711seconds demonstrates. PUBLISH_PURPOSE=canonical
+is its interface label, not canonical push/deployment proof. Build-only
+feature-ci is a separate mode, not a prohibition on that operational route.
+
+Published5e Pages omits both reviewed archive-preparation callsites, and its
+Make installer has no implicit preparation dependency. Merely copying the Make
+owner would not exercise the repair. Meaningful new-source Pages proof needs
+the two reviewed workflow literal0 steps before the existing600s installs.
+Do not replay the known unchanged Azure input or introduce implicit mode0.
+The bounded immutable source/receipt audit is retained in
+ /tmp/gludd-v012-hosted-phase-options-5e.md. Fresh native github-auth-status
+observes active sandboxcom with repo/read:org/gist and no workflow scope;
+the sandboxcom-bound mode1 consent preview changes no credentials. Existing
+selected-account/operator consent remains pending. This is specific to workflow
+publication, not an Actions API refusal on already published source.
 
 ## Retained diagnostic execution and receiving checkpoint
 

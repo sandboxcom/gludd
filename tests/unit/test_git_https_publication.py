@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
@@ -46,7 +46,7 @@ class HttpsFixture:
     calls: Path
     global_config: Path
     tripwire: Path
-    environment: dict[str, str]
+    environment: dict[str, str] = field(repr=False)
     sha: str
     old_sha: str
 
@@ -463,19 +463,35 @@ def test_https_mode_is_literal_before_native_startup_and_recipe(
     https_publication_literal_e: bool, https_publication_literal_main: bool,
 ) -> None:
     fixture = https_publication_repo
-    marker = tmp_path / "input-executed"
+    marker = tmp_path / "owned input-executed marker"
+    quoted_marker = shlex.quote(str(marker))
     if https_publication_literal_kind == "make-shell":
-        value = f"$(shell touch {marker})"
+        value = f"$(shell touch {quoted_marker})"
     elif https_publication_literal_kind == "shell":
-        value = f"$$(touch {marker})"
+        value = f"$$(touch {quoted_marker})"
     else:
-        value = chr(96) + f"touch {marker}" + chr(96)
+        value = chr(96) + f"touch {quoted_marker}" + chr(96)
     environment = dict(fixture.environment)
     arguments: tuple[str, ...] = ()
     if https_publication_literal_origin == "environment":
         environment["SANDBOXCOM_HTTPS_VALIDATE_ONLY"] = value
     else:
         arguments = (f"SANDBOXCOM_HTTPS_VALIDATE_ONLY={value}",)
+    unguarded = tmp_path / "unguarded-mode.mk"
+    unguarded.write_text(
+        TARGET + ':\n\t@printf \'%s\\n\' "$(SANDBOXCOM_HTTPS_VALIDATE_ONLY)" >/dev/null\n',
+        encoding="utf-8",
+    )
+    witness = fixture.invoke(
+        TARGET, *arguments, makefile=unguarded, environment=environment,
+        cwd=ROOT if https_publication_literal_main else fixture.root,
+        early_environment=https_publication_literal_e,
+    )
+    assert witness.returncode == 0, witness.stdout + witness.stderr
+    assert marker.is_file(), witness.stdout + witness.stderr
+    assert fixture.rows() == []
+    marker.unlink()
+
     result = fixture.invoke(
         TARGET, *arguments,
         makefile=_startup_makefile(tmp_path) if https_publication_literal_main else fixture.makefile,
@@ -487,3 +503,217 @@ def test_https_mode_is_literal_before_native_startup_and_recipe(
     assert "outcome=refused native_status=2" in result.stderr
     assert "must be 0 or 1" in result.stderr
     assert fixture.rows() == []
+
+
+def test_https_fixture_environment_repr_is_private_with_synthetic_input(tmp_path: Path) -> None:
+    """Establish failure privacy before any fixture copies the real environment."""
+    synthetic = {"HTTPS_FIXTURE_CONTROLLED_CARRIER": "owned-synthetic-repr-canary"}
+    fixture = HttpsFixture(
+        tmp_path, tmp_path / "Makefile", tmp_path / "gh", tmp_path / "calls",
+        tmp_path / "global", tmp_path / "tripwire", synthetic, "a" * 40, "b" * 40,
+    )
+    assert fixture.environment is synthetic
+    assert fixture.environment == {"HTTPS_FIXTURE_CONTROLLED_CARRIER": "owned-synthetic-repr-canary"}
+    rendered = repr(fixture)
+    assert "owned-synthetic-repr-canary" not in rendered
+    assert "HTTPS_FIXTURE_CONTROLLED_CARRIER" not in rendered
+    assert "environment=" not in rendered
+
+
+@pytest.mark.parametrize("https_publication_bootstrap_e", [False, True])
+def test_https_auth_bootstrap_ignores_implicit_cwd_and_preserves_carriers(
+    https_publication_repo: HttpsFixture, tmp_path: Path, https_publication_bootstrap_e: bool,
+) -> None:
+    """An active same-entrypoint witness distinguishes -P from erased carriers."""
+    fixture = https_publication_repo
+    fixture.git("remote", "set-url", "sandboxcom", HTTPS_URL)
+    fixture.bind_helper()
+    before_config = (fixture.root / ".git/config").read_bytes()
+    marker = tmp_path / "owned-shlex-executed.json"
+    startup_trace = tmp_path / "explicit-startup-carriers.jsonl"
+    carrier = tmp_path / "explicit unrelated python carrier"
+    carrier.mkdir()
+    (carrier / "sitecustomize.py").write_text(
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        f"with Path({str(startup_trace)!r}).open('a', encoding='utf-8') as stream:\n"
+        "    stream.write(json.dumps({'inline': '-c' in sys.orig_argv, "
+        "'argv': sys.orig_argv, 'safe_path': sys.flags.safe_path, "
+        "'cwd': os.getcwd(), 'pythonpath': os.environ.get('PYTHONPATH'), "
+        "'carrier': os.environ.get('HTTPS_BOOTSTRAP_CARRIER')}) + '\\n')\n",
+        encoding="utf-8",
+    )
+    (fixture.root / "shlex.py").write_text(
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text(json.dumps({{"
+        "'argv': sys.orig_argv, 'cwd': os.getcwd(), "
+        "'pythonpath': os.environ.get('PYTHONPATH'), "
+        "'carrier': os.environ.get('HTTPS_BOOTSTRAP_CARRIER')"
+        "}), encoding='utf-8')\n"
+        "raise RuntimeError('owned active CWD shlex payload')\n",
+        encoding="utf-8",
+    )
+    environment = dict(fixture.environment)
+    environment["PYTHONPATH"] = str(carrier)
+    environment["HTTPS_BOOTSTRAP_CARRIER"] = "explicit unrelated carrier  n q t"
+    # Own the safe-path input for both carriers; production must preserve it.
+    environment["PYTHONSAFEPATH"] = ""
+    source = fixture.makefile.read_text(encoding="utf-8")
+    unsafe = '"$(SYSTEM_PYTHON)" -c \'import shlex, sys;'
+    guarded = '"$(SYSTEM_PYTHON)" -P -c \'import shlex, sys;'
+    assert source.count(unsafe) + source.count(guarded) == 1
+    unguarded = tmp_path / "unguarded-native-auth.mk"
+    unguarded.write_text(source.replace(guarded, unsafe), encoding="utf-8")
+    witness = fixture.invoke(
+        "_require-sandboxcom-git-auth", makefile=unguarded, environment=environment,
+        early_environment=https_publication_bootstrap_e,
+    )
+    assert witness.returncode != 0
+    assert "owned active CWD shlex payload" in witness.stderr
+    assert marker.is_file(), witness.stdout + witness.stderr
+    payload: dict[str, object] = json.loads(marker.read_text(encoding="utf-8"))
+    assert payload["argv"] == [
+        sys.executable, "-c",
+        'import shlex, sys; print("!" + shlex.quote(sys.argv[1]) + " auth git-credential")',
+        str(fixture.gh),
+    ]
+    assert payload["cwd"] == str(fixture.root)
+    assert payload["pythonpath"] == str(carrier)
+    assert payload["carrier"] == "explicit unrelated carrier  n q t"
+    assert fixture.rows() == []
+    marker.unlink()
+
+    result = fixture.invoke(
+        "_require-sandboxcom-git-auth", environment=environment,
+        early_environment=https_publication_bootstrap_e,
+    )
+    assert not marker.exists(), result.stdout + result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert [row["argv"] for row in fixture.rows()] == [
+        ["auth", "status", "--active", "--hostname", "github.com"],
+    ]
+    assert (fixture.root / ".git/config").read_bytes() == before_config
+    startup: list[dict[str, object]] = [
+        json.loads(line) for line in startup_trace.read_text(encoding="utf-8").splitlines()
+    ]
+    inline = [row for row in startup if row["inline"]]
+    assert len(inline) == 2
+    assert [row["safe_path"] for row in inline] == [False, True]
+    assert all(row["cwd"] == str(fixture.root) for row in inline)
+    assert all(row["pythonpath"] == str(carrier) for row in inline)
+    assert all(row["carrier"] == "explicit unrelated carrier  n q t" for row in inline)
+
+
+def _copy_confined_root_entrypoint(fixture: HttpsFixture) -> None:
+    """Copy the actual bounded include graph into the owned command workspace."""
+    entrypoint = (ROOT / "Makefile").read_bytes()
+    fixture.makefile.write_bytes(entrypoint)
+    for declaration in entrypoint.decode("utf-8").splitlines():
+        if not declaration.startswith("include "):
+            continue
+        fragment = Path(declaration.removeprefix("include "))
+        assert fragment.parent == Path("make") and fragment.suffix == ".mk"
+        destination = fixture.root / fragment
+        destination.parent.mkdir(exist_ok=True)
+        destination.write_bytes((ROOT / fragment).read_bytes())
+
+
+@pytest.mark.parametrize("https_runtime_selector_e", [False, True])
+@pytest.mark.parametrize("https_runtime_selector_prerequisite", [False, True], ids=["direct", "prerequisite"])
+def test_actual_main_https_auth_honors_explicit_system_python(
+    https_publication_repo: HttpsFixture, tmp_path: Path,
+    https_runtime_selector_e: bool, https_runtime_selector_prerequisite: bool,
+) -> None:
+    """The real Foundation selector must reach the installed safe-path runtime."""
+    fixture = https_publication_repo
+    _copy_confined_root_entrypoint(fixture)
+    fixture.git("remote", "set-url", "sandboxcom", HTTPS_URL)
+    fixture.bind_helper()
+    before_config = (fixture.root / ".git/config").read_bytes()
+    startup_trace = tmp_path / "actual-root-runtime.jsonl"
+    carrier = tmp_path / "explicit runtime carrier"
+    carrier.mkdir()
+    (carrier / "sitecustomize.py").write_text(
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        "argv = getattr(sys, 'orig_argv', sys.argv)\n"
+        f"if argv[-1:] == [{str(fixture.gh)!r}]:\n"
+        f"    with Path({str(startup_trace)!r}).open('a', encoding='utf-8') as stream:\n"
+        "        stream.write(json.dumps({'executable': sys.executable, "
+        "'safe_path': getattr(sys.flags, 'safe_path', False), 'cwd': os.getcwd(), "
+        "'pythonpath': os.environ.get('PYTHONPATH'), "
+        "'carrier': os.environ.get('HTTPS_RUNTIME_SELECTOR_CARRIER')}) + '\\n')\n",
+        encoding="utf-8",
+    )
+    environment = {
+        **fixture.environment, "GIT_DIR": str(fixture.root / ".git"),
+        "GIT_WORK_TREE": str(fixture.root), "PYTHONPATH": str(carrier),
+        "HTTPS_RUNTIME_SELECTOR_CARRIER": "owned unrelated runtime carrier",
+    }
+    arguments = [f"SYSTEM_PYTHON={sys.executable}"]
+    goal = "_require-sandboxcom-git-auth"
+    if https_runtime_selector_prerequisite:
+        prerequisite = tmp_path / "actual-root-auth-prerequisite.mk"
+        goal = "owned-runtime-auth-prerequisite"
+        prerequisite.write_text(
+            ".PHONY: " + goal + "\n" + goal + ": _require-sandboxcom-git-auth\n"
+            "\t@printf '%s\\n' native-auth-prerequisite-complete\n",
+            encoding="utf-8",
+        )
+        arguments.extend(("-f", str(prerequisite)))
+    result = fixture.invoke(
+        goal, *arguments, makefile=fixture.makefile, environment=environment,
+        cwd=fixture.root, early_environment=https_runtime_selector_e,
+    )
+    assert (fixture.root / ".git/config").read_bytes() == before_config
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert [row["argv"] for row in fixture.rows()] == [
+        ["auth", "status", "--active", "--hostname", "github.com"],
+    ]
+    startup = [
+        json.loads(line) for line in startup_trace.read_text(encoding="utf-8").splitlines()
+    ]
+    assert startup == [{
+        "executable": sys.executable, "safe_path": True, "cwd": str(fixture.root),
+        "pythonpath": str(carrier), "carrier": "owned unrelated runtime carrier",
+    }]
+    if https_runtime_selector_prerequisite:
+        assert "native-auth-prerequisite-complete" in result.stdout
+
+
+@pytest.mark.parametrize("https_runtime_policy_origin", ["default", "environment", "environment-e"])
+def test_actual_main_keeps_fixed_system_python_without_cli(
+    https_publication_repo: HttpsFixture, tmp_path: Path, https_runtime_policy_origin: str,
+) -> None:
+    """Default and ambient/e inputs retain the existing fixed system runtime."""
+    fixture = https_publication_repo
+    _copy_confined_root_entrypoint(fixture)
+    environment = {
+        **fixture.environment, "GIT_DIR": str(fixture.root / ".git"),
+        "GIT_WORK_TREE": str(fixture.root),
+        "HTTPS_RUNTIME_SELECTOR_CARRIER": "owned unrelated runtime carrier",
+    }
+    environment.pop("SYSTEM_PYTHON", None)
+    if https_runtime_policy_origin != "default":
+        environment["SYSTEM_PYTHON"] = sys.executable
+    policy = tmp_path / "actual-root-runtime-policy.mk"
+    policy.write_text(
+        ".PHONY: owned-system-runtime-policy\nowned-system-runtime-policy:\n"
+        "\t@printf 'origin=%s\\nvalue=%s\\ncarrier=%s\\n' "
+        "'$(origin SYSTEM_PYTHON)' '$(SYSTEM_PYTHON)' \"$$HTTPS_RUNTIME_SELECTOR_CARRIER\"\n",
+        encoding="utf-8",
+    )
+    before_config = (fixture.root / ".git/config").read_bytes()
+    result = fixture.invoke(
+        "owned-system-runtime-policy", "-f", str(policy), makefile=fixture.makefile,
+        environment=environment, cwd=fixture.root,
+        early_environment=https_runtime_policy_origin == "environment-e",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.splitlines() == [
+        "origin=override", "value=/usr/bin/python3",
+        "carrier=owned unrelated runtime carrier",
+    ]
+    assert fixture.rows() == []
+    assert (fixture.root / ".git/config").read_bytes() == before_config

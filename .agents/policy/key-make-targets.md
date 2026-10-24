@@ -262,6 +262,25 @@ real branch to verify-remote with explicit permitted SSH_KEY; use the existing
 pipeline-status for required exact-SHA hosted results. A missing-key or absent-ref
 behavioral example is an expected nonzero control, not successful remote proof.
 
+### HTTPS helper runtime and implicit-CWD protection
+
+The existing GH credential bootstrap keeps native Python `-P`; do not remove
+it to accommodate a system interpreter. Pass the installed controller with
+explicit command-line SYSTEM_PYTHON. Foundation honors only that CLI origin;
+default, environment and `-e` environment inputs retain `/usr/bin/python3`.
+Keep PYTHON, SYSTEM_PYTHON, UV_PROJECT_ENVIRONMENT and VIRTUAL_ENV on the same
+installed runtime for publication and its read/test owners.
+
+~~~console
+make git-configure-sandboxcom-https SANDBOXCOM_HTTPS_VALIDATE_ONLY=1 PYTHON=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11/bin/python3 SYSTEM_PYTHON=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11/bin/python3 UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never
+~~~
+
+This offline plan performs no auth/configuration/transport and proves no helper
+bootstrap, CI or release result. Complete native owned fixtures prove the
+runtime/safe-path boundary; live authorized publication retains every guard.
+The [HTTPS receiving record](../../docs/features/GITHUB_PUBLICATION_HTTPS.md#main-https-bootstrap-and-runtime-intake)
+retains source inputs, old failures and the pending Main receiving proofs.
+
 ### Choose the next action from evidence
 
 | Current input | Next action |

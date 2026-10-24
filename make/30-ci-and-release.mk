@@ -124,7 +124,7 @@ endef
 define _sandboxcom_publication_gh_helper
 GLUDD_GH_BIN=$$(command -v gh) || { echo "ERROR: gh is unavailable in the selected PATH." >&2; gludd_fail 127 failed; }; \
 case "$$GLUDD_GH_BIN" in /*) ;; *) echo "ERROR: gh must resolve to an absolute executable." >&2; gludd_fail 127 refused ;; esac; \
-GLUDD_GH_HELPER=$$("$(SYSTEM_PYTHON)" -c 'import shlex, sys; print("!" + shlex.quote(sys.argv[1]) + " auth git-credential")' "$$GLUDD_GH_BIN") || gludd_fail "$$?" failed;
+GLUDD_GH_HELPER=$$("$(SYSTEM_PYTHON)" -P -c 'import shlex, sys; print("!" + shlex.quote(sys.argv[1]) + " auth git-credential")' "$$GLUDD_GH_BIN") || gludd_fail "$$?" failed;
 endef
 
 .PHONY: git-configure-sandboxcom-https _require-sandboxcom-git-auth verify-remote

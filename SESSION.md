@@ -1,6 +1,6 @@
 # Current release handoff
 
-Last Updated: 2026-10-23 (local; receipts retain their actual UTC dates).
+Last Updated: 2026-10-24 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: release-candidate/v012-git-mutex-20261022 eb772a658a01db4485087813e4478eb6c59cc328.
 Previously recorded development publication: 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
 Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection errors in47.54s/native54.341s during the native guarded714ce2d65e3dbeec9d3dbbadced9f983c13c2a3d source commit preflight. Native receipt: .gate-logs/observed/test-count/20261022T234100Z-13723-e7e319e7.json. This is fixed714 evidence, not a later handoff-commit measurement; lock duration54.257s is distinct. Earlier23b/638/ef41/64 collections keep their actual refs/receipts. Collection is separate from runtime, full gate, hosted and deployment proof. Keep normal fresh collection per commit without repeating accepted source tests for a handoff alone.
@@ -47,11 +47,32 @@ Main union683PASS/1existingcontextSKIP each311/312,198.51s/native200.197 and
 194.45s/native197.1. Receipts:coverage-files/20261024T051221Z-15508-5e241646.json
 and20261024T051650Z-36616-c3f094e5.json. Whole prune/registry audits93.6LINE/86.2BRANCH
 and whole legacy5-case profiles100/100BOTH retain85/75. Original11FAIL/672PASS/1SKIP,
-missing register-forwarding hunk and negative source review remain; current
-source review, normal collection and final gate/exact-SHA proofs are separate.
-Parallel peers own retained-leader lifecycle and visible retirement-plan repairs.
-The original source failures, scope-incorrect controls and corrected fixture inputs
-remain historical evidence, never relabeled as production acceptance.
+missing register-forwarding hunk and negative source review remain.
+Repaired independent source review approved the postimages; normal checkpoint
+8cf4686ecee208a7cc46d9af2e9cc7b33c7b1f65 collected130023selected/130047total,
+24deselected/0errors48.71s/native54.3 at
+ test-count/20261024T052643Z-58843-1915cbbe.json; mutation receipt
+ commit-transaction/20261024T052623Z-58322-769256de.json/native74.6.
+These fixed source/focus/collection scopes supply no final gate/exact-SHA proof.
+
+HTTPS/runtime Main intake on that fixed8cf input has complete13-owner
+acceptance563PASS EACH runtime: A367 plus complete reviewed-head B196.
+Native main-https-runtime-acceptance A311/A312 takes68.927/74.382seconds;
+B311/B312 takes137.413/129.670, with run suffix-8cf4686 and native json/log/trace.
+Independent five-path source-only review approves; the HTTPS feature records
+6FAIL4PASS,10GREEN and the complete owner roster. Normal guarded checkpoint/
+collection for this receiving change and every final proof remain separate.
+No current header or old collection paragraph certifies it.
+
+Parallel peers own retained-leader output and native retirement-plan repairs.
+The latter has real index-write witnesses,2FAIL2PASS then13GREEN and five-path
+source-only approval; full26-owner/two-profile BOTH acceptance remains pending.
+Observer757-case311 proof first fails3original empty-stderr assertions/754PASS;
+minimalfix passes those3 and a full757-case311 profile, but independent review
+also finds an unmeasured transient post-reap EPERM-to-ESRCH output gap. Retain
+both reviews and all failed receipts; pre-sequence proof is not final acceptance.
+Every native session drains before edits and the next runtime. Root owns shared
+Git at the planned terminal checkpoint; branches retain their own proof scopes.
 
 Direct native cleanup1393 ends nonzero/no-progress:99to97percent,6.7GiBfree,
 above final95. Six clean materializations retire through native completion proof,
