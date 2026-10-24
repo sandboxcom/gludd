@@ -151,6 +151,7 @@ def _evaluate_coverage_data(
     missing_arcs: dict[str, list[list[int]]] = {}
     missing_lines: dict[str, list[int]] = {}
     contexts_by_file: dict[str, list[str]] = {}
+    threshold_failures: list[dict[str, object]] = []
     total_statements = covered_statements = 0
     total_branches = covered_branches = 0
 
@@ -179,11 +180,12 @@ def _evaluate_coverage_data(
         if num_stmts == 0 and num_branches == 0:
             continue
 
-        pct = round(100.0 * covered / num_stmts, 1) if num_stmts else 100.0
+        line_pct = 100.0 * covered / num_stmts if num_stmts else 100.0
+        pct = round(line_pct, 1)
 
         rel = _relative_path(fpath, source_path)
         per_file[rel] = pct
-        per_file_branch[rel] = round(branch_pct, 1)
+        per_file_branch[rel] = branch_pct
         total_branches += num_branches
         covered_branches += covered_branch_count
         missing = cast(list[list[int]], finfo.get("missing_branches", []))
@@ -202,21 +204,35 @@ def _evaluate_coverage_data(
                 ),
             )
 
-        if pct < per_file_threshold or branch_pct < per_file_threshold:
+        if line_pct < per_file_threshold or branch_pct < per_file_threshold:
             files_under.append(rel)
+            for metric, value in (("line", line_pct), ("branch", branch_pct)):
+                if value < per_file_threshold:
+                    threshold_failures.append({
+                        "scope": "file", "file": rel, "metric": metric,
+                        "coverage": value, "threshold": float(per_file_threshold),
+                    })
         else:
             files_ok.append(rel)
 
-    aggregate_branch_pct = (
-        round(100.0 * covered_branches / total_branches, 1)
+    aggregate_branch_raw = (
+        100.0 * covered_branches / total_branches
         if total_branches
-        else (round(100.0 * sum(per_file.values()) / len(per_file), 1) if per_file else 100.0)
+        else (sum(per_file_branch.values()) / len(per_file_branch) if per_file_branch else 100.0)
     )
-    aggregate_line_pct = round(100.0 * covered_statements / total_statements, 1) if total_statements else 100.0
+    aggregate_line_raw = 100.0 * covered_statements / total_statements if total_statements else 100.0
+    aggregate_branch_pct = round(aggregate_branch_raw, 1)
+    aggregate_line_pct = round(aggregate_line_raw, 1)
+    for metric, value in (("line", aggregate_line_raw), ("branch", aggregate_branch_raw)):
+        if value < threshold:
+            threshold_failures.append({
+                "scope": "aggregate", "metric": metric,
+                "coverage": value, "threshold": float(threshold),
+            })
     per_file_results = {
         rel: {
             "line_coverage": per_file[rel],
-            "branch_coverage": per_file_branch[rel],
+            "branch_coverage": round(per_file_branch[rel], 1),
             "line_threshold": per_file_threshold,
             "branch_threshold": per_file_threshold,
             "passed": rel not in files_under,
@@ -225,8 +241,8 @@ def _evaluate_coverage_data(
     }
     all_ok = (
         len(files_under) == 0
-        and aggregate_line_pct >= threshold
-        and aggregate_branch_pct >= threshold
+        and aggregate_line_raw >= threshold
+        and aggregate_branch_raw >= threshold
     )
 
     report = {
@@ -241,8 +257,9 @@ def _evaluate_coverage_data(
         "files_under_threshold": files_under,
         "files_above_threshold": len(files_ok),
         "per_file": dict(sorted(per_file.items())),
-        "per_file_branch": dict(sorted(per_file_branch.items())),
+        "per_file_branch": {rel: round(value, 1) for rel, value in sorted(per_file_branch.items())},
         "per_file_results": per_file_results,
+        "threshold_failures": threshold_failures,
         "per_file_thresholds": {
             "line": per_file_threshold,
             "branch": per_file_threshold,
@@ -813,6 +830,14 @@ def main() -> None:
     print(f"  Files below {per_file_threshold}%: {report['files_below_threshold']}")
 
     if files_under or not all_ok:
+        failures = cast(list[dict[str, object]], report.get("threshold_failures", []))
+
+        def failure_reason(failure: dict[str, object]) -> str:
+            metric = cast(str, failure["metric"])
+            value = cast(float, failure["coverage"])
+            required = float(cast(float, failure["threshold"]))
+            return f"{metric}<{required}% (raw={value:.12g}%)"
+
         if files_under:
             print("\nFiles below per-file threshold:")
         for file_path in sorted(files_under):
@@ -820,23 +845,30 @@ def main() -> None:
             per_file_branch = cast(dict[str, float], report["per_file_branch"])
             line_pct = per_file[file_path]
             branch_pct = per_file_branch[file_path]
-            reasons = []
-            if line_pct < per_file_threshold:
-                reasons.append(f"line<{per_file_threshold:.1f}%")
-            if branch_pct < per_file_threshold:
-                reasons.append(f"branch<{per_file_threshold:.1f}%")
+            reasons = [
+                failure_reason(failure) for failure in failures
+                if failure.get("scope") == "file" and failure.get("file") == file_path
+            ]
+            if not reasons:
+                if line_pct < per_file_threshold:
+                    reasons.append(f"line<{per_file_threshold:.1f}%")
+                if branch_pct < per_file_threshold:
+                    reasons.append(f"branch<{per_file_threshold:.1f}%")
             print(
                 f"  line={line_pct:.1f}% branch={branch_pct:.1f}% "
                 f"({', '.join(reasons)})  {file_path}"
             )
         aggregate_line = cast(float, report["line_coverage"])
         aggregate_branch = cast(float, report["branch_coverage"])
-        if aggregate_line < threshold or aggregate_branch < threshold:
+        aggregate_failures = [failure for failure in failures if failure.get("scope") == "aggregate"]
+        if aggregate_failures or aggregate_line < threshold or aggregate_branch < threshold:
             print("\nAggregate coverage below threshold:")
             print(
                 f"  line={aggregate_line:.1f}% branch={aggregate_branch:.1f}% "
                 f"required={threshold:.1f}%"
             )
+            for failure in aggregate_failures:
+                print(f"  {failure_reason(failure)}")
         sys.exit(1)
 
     print(

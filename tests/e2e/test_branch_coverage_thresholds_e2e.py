@@ -9,13 +9,22 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
+from typing import Literal
+
+import pytest
+
+from tests.unit.test_audit_coverage_source_scope import _RAW_FLOOR_CASES, _write_raw_floor_input
 
 ROOT = Path(__file__).resolve().parents[2]
 AUDIT_SCRIPT = ROOT / "scripts" / "audit_coverage.py"
 
 
-def _load_module(name: str):
+def _load_module(name: str) -> ModuleType:
     spec = importlib.util.spec_from_file_location(name, AUDIT_SCRIPT)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -31,7 +40,7 @@ def _load_module(name: str):
 class TestAggregateBelowThreshold:
     """Behavior when aggregate branch coverage is below the 85% requirement."""
 
-    def test_aggregate_below_85_returns_all_ok_false(self, tmp_path):
+    def test_aggregate_below_85_returns_all_ok_false(self, tmp_path: Path) -> None:
         module = _load_module("branch_thr_agg_false")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -57,7 +66,7 @@ class TestAggregateBelowThreshold:
         )
         assert not all_ok
 
-    def test_aggregate_above_85_returns_all_ok_true(self, tmp_path):
+    def test_aggregate_above_85_returns_all_ok_true(self, tmp_path: Path) -> None:
         module = _load_module("branch_thr_agg_true")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -83,7 +92,7 @@ class TestAggregateBelowThreshold:
         )
         assert all_ok
 
-    def test_aggregate_below_but_per_file_above_still_fails(self, tmp_path):
+    def test_aggregate_below_but_per_file_above_still_fails(self, tmp_path: Path) -> None:
         module = _load_module("branch_thr_agg_below_pf_ok")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -120,7 +129,7 @@ class TestAggregateBelowThreshold:
         agg_branch = report["branch_coverage"]
         assert agg_branch < 85
 
-    def test_empty_files_dont_affect_aggregate(self, tmp_path):
+    def test_empty_files_dont_affect_aggregate(self, tmp_path: Path) -> None:
         module = _load_module("branch_thr_agg_empty")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -163,7 +172,7 @@ class TestAggregateBelowThreshold:
 class TestPerFileBelowThreshold:
     """Behavior when per-file branch coverage is below the 75% requirement."""
 
-    def test_per_file_below_75_makes_all_ok_false(self, tmp_path):
+    def test_per_file_below_75_makes_all_ok_false(self, tmp_path: Path) -> None:
         module = _load_module("branch_thr_pf_false")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -190,7 +199,7 @@ class TestPerFileBelowThreshold:
         )
         assert not all_ok
 
-    def test_per_file_at_75_makes_all_ok_true(self, tmp_path):
+    def test_per_file_at_75_makes_all_ok_true(self, tmp_path: Path) -> None:
         module = _load_module("branch_thr_pf_at75_true")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -225,7 +234,7 @@ class TestPerFileBelowThreshold:
         )
         assert all_ok
 
-    def test_per_file_above_75_passes(self, tmp_path):
+    def test_per_file_above_75_passes(self, tmp_path: Path) -> None:
         module = _load_module("branch_thr_pf_above")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -252,7 +261,7 @@ class TestPerFileBelowThreshold:
         )
         assert all_ok
 
-    def test_one_file_below_fails_even_if_rest_pass(self, tmp_path):
+    def test_one_file_below_fails_even_if_rest_pass(self, tmp_path: Path) -> None:
         module = _load_module("branch_thr_pf_mixed")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -297,7 +306,7 @@ class TestPerFileBelowThreshold:
         assert "general_ludd/c.py" in under
         assert len(under) == 1
 
-    def test_custom_per_file_threshold(self, tmp_path):
+    def test_custom_per_file_threshold(self, tmp_path: Path) -> None:
         module = _load_module("branch_thr_pf_custom")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -341,7 +350,7 @@ class TestPerFileBelowThreshold:
 class TestThresholdErrorMessages:
     """Threshold violations produce clear, actionable error output."""
 
-    def test_exit_one_with_files_below_threshold(self, tmp_path):
+    def test_exit_one_with_files_below_threshold(self, tmp_path: Path) -> None:
         json_path = tmp_path / "coverage.json"
         json_out = tmp_path / "report.json"
         json_path.write_text(
@@ -378,7 +387,7 @@ class TestThresholdErrorMessages:
         assert "Files below per-file threshold" in result.stdout
         assert "bad.py" in result.stdout
 
-    def test_exit_zero_when_all_above_threshold(self, tmp_path):
+    def test_exit_zero_when_all_above_threshold(self, tmp_path: Path) -> None:
         json_path = tmp_path / "coverage.json"
         json_out = tmp_path / "report.json"
         json_path.write_text(
@@ -415,7 +424,7 @@ class TestThresholdErrorMessages:
         assert "All" in result.stdout
         assert "meet the" in result.stdout
 
-    def test_exit_two_missing_coverage_json(self, tmp_path):
+    def test_exit_two_missing_coverage_json(self, tmp_path: Path) -> None:
         import subprocess
 
         missing = tmp_path / "does_not_exist.json"
@@ -427,7 +436,7 @@ class TestThresholdErrorMessages:
         )
         assert result.returncode == 2
 
-    def test_files_under_list_printed_sorted(self, tmp_path):
+    def test_files_under_list_printed_sorted(self, tmp_path: Path) -> None:
         json_path = tmp_path / "coverage.json"
         json_out = tmp_path / "report.json"
         json_path.write_text(
@@ -482,28 +491,27 @@ class TestThresholdErrorMessages:
 class TestFailUnderMechanism:
     """Validate the fail_under configuration and its integration."""
 
-    def test_pyproject_has_fail_under_in_coverage_report(self):
+    def test_pyproject_has_fail_under_in_coverage_report(self) -> None:
         pyproject_path = ROOT / "pyproject.toml"
         content = pyproject_path.read_text()
         assert "fail_under = 85" in content, "pyproject.toml [tool.coverage.report] must set fail_under = 85"
 
-    def test_pyproject_has_show_missing(self):
+    def test_pyproject_has_show_missing(self) -> None:
         pyproject_path = ROOT / "pyproject.toml"
         content = pyproject_path.read_text()
         assert "show_missing = true" in content, "pyproject.toml must enable show_missing for actionable reports"
 
-    def test_run_pytest_coverage_uses_fail_under_zero(self, tmp_path, monkeypatch):
+    def test_run_pytest_coverage_uses_fail_under_zero(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         module = _load_module("branch_thr_fail_under")
-        calls = []
+        calls: list[list[str]] = []
 
-        def fake_run(args, **kwargs):
+        def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
             calls.append(args)
-            result = type("Result", (), {})()
-            result.returncode = 0
+            result = SimpleNamespace(returncode=0)
             return result
 
         monkeypatch.setattr(module.subprocess, "run", fake_run)
-        shards = []
+        shards: list[dict[str, object]] = []
         assert (
             module.run_pytest_coverage(
                 "src/general_ludd",
@@ -517,18 +525,19 @@ class TestFailUnderMechanism:
             "When collecting coverage per-shard, fail_under must be 0 so no single file blocks the aggregate audit."
         )
 
-    def test_per_shard_fail_under_zero_allows_collection_with_low_coverage(self, tmp_path, monkeypatch):
+    def test_per_shard_fail_under_zero_allows_collection_with_low_coverage(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         module = _load_module("branch_thr_fail_under_collect")
-        calls = []
+        calls: list[list[str]] = []
 
-        def fake_run(args, **kwargs):
+        def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
             calls.append(args)
-            result = type("Result", (), {})()
-            result.returncode = 0
+            result = SimpleNamespace(returncode=0)
             return result
 
         monkeypatch.setattr(module.subprocess, "run", fake_run)
-        shards = []
+        shards: list[dict[str, object]] = []
         module.run_pytest_coverage(
             "src/general_ludd",
             str(tmp_path / "coverage.json"),
@@ -541,7 +550,9 @@ class TestFailUnderMechanism:
             "Every shard must use --cov-fail-under=0 to allow collection even when per-shard coverage is low"
         )
 
-    def test_main_exits_one_when_files_below_threshold_and_pytest_ok(self, tmp_path, monkeypatch):
+    def test_main_exits_one_when_files_below_threshold_and_pytest_ok(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         module = _load_module("branch_thr_main_below")
         json_out = tmp_path / "report.json"
         coverage_json = tmp_path / "sub" / "data.json"
@@ -578,3 +589,40 @@ class TestFailUnderMechanism:
             assert exc.code == 1
         else:
             raise AssertionError("below-threshold files must exit 1")
+
+
+@pytest.mark.parametrize("raw_floor_cli_format", ["json", "xml"])
+@pytest.mark.parametrize("raw_floor_cli_case", list(_RAW_FLOOR_CASES))
+def test_native_import_cli_preserves_raw_floor_verdict_and_actual_metric(
+    tmp_path: Path, raw_floor_cli_format: Literal["json", "xml"], raw_floor_cli_case: str,
+) -> None:
+    source, path, aggregate_min, per_file_min, should_pass = _write_raw_floor_input(
+        tmp_path, raw_floor_cli_format, raw_floor_cli_case,
+    )
+    before = path.read_bytes()
+    output = tmp_path / "owned-audit.json"
+    result = subprocess.run(
+        [
+            sys.executable, str(AUDIT_SCRIPT),
+            f"--{raw_floor_cli_format}-file={path}", f"--source={source}",
+            f"--threshold={aggregate_min}", f"--per-file-threshold={per_file_min}",
+            f"--json-out={output}",
+        ],
+        cwd=tmp_path, env=dict(os.environ), capture_output=True, text=True,
+        check=False, timeout=15,
+    )
+    assert result.returncode == (0 if should_pass else 1), result.stdout + result.stderr
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert report["passed"] is should_pass and report["pytest_exit_code"] == 0
+    assert path.read_bytes() == before
+    assert "e2e_branch_coverage" not in report and "e2e_branch_totals" not in report
+    assert report["shards"] == [] and report["failed_shards"] == []
+    if should_pass:
+        assert "All " in result.stdout and "meet" in result.stdout
+    else:
+        metric = "branch" if raw_floor_cli_case == "aggregate-branch" else "line"
+        limit = per_file_min if raw_floor_cli_case == "file-line" else aggregate_min
+        assert f"{metric}<{limit:.1f}%" in result.stdout
+        assert "raw=" in result.stdout
+        other = "line" if metric == "branch" else "branch"
+        assert f"{other}<{limit:.1f}%" not in result.stdout

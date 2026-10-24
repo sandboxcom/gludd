@@ -10,12 +10,16 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
+from typing import cast
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 AUDIT_SCRIPT = ROOT / "scripts" / "audit_coverage.py"
 
 
-def _load_module(name: str):
+def _load_module(name: str) -> ModuleType:
     """Load audit_coverage.py as an importable module."""
     spec = importlib.util.spec_from_file_location(name, AUDIT_SCRIPT)
     assert spec and spec.loader
@@ -32,7 +36,7 @@ def _load_module(name: str):
 class TestParseBranchCoverageBasic:
     """Parse coverage JSON and extract branch-specific metrics."""
 
-    def test_branch_totals_counted_correctly(self, tmp_path):
+    def test_branch_totals_counted_correctly(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_basic_totals")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -60,13 +64,16 @@ class TestParseBranchCoverageBasic:
         assert report["total_branches"] == 10
         assert report["covered_branches"] == 8
         assert report["branch_coverage"] == 80.0
-        assert report["e2e_branch_coverage"] == 80.0
-        assert report["e2e_branch_totals"]["total"] == 10
-        assert report["e2e_branch_totals"]["covered"] == 8
-        assert report["e2e_branch_totals"]["missing"] == 2
-        assert report["e2e_branch_totals"]["coverage_percent"] == 80.0
+        assert "e2e_branch_coverage" not in report
+        assert "e2e_branch_totals" not in report
+        assert {
+            "total": report["total_branches"],
+            "covered": report["covered_branches"],
+            "missing": report["total_branches"] - report["covered_branches"],
+            "coverage_percent": report["branch_coverage"],
+        } == {"total": 10, "covered": 8, "missing": 2, "coverage_percent": 80.0}
 
-    def test_branch_coverage_full(self, tmp_path):
+    def test_branch_coverage_full(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_full")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -93,7 +100,7 @@ class TestParseBranchCoverageBasic:
         )
         assert passed
 
-    def test_branch_zero_coverage(self, tmp_path):
+    def test_branch_zero_coverage(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_zero")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -122,7 +129,7 @@ class TestParseBranchCoverageBasic:
         assert report["branch_coverage"] == 0.0
         assert "general_ludd/mod.py" in under
 
-    def test_missing_branches_key_used_when_available(self, tmp_path):
+    def test_missing_branches_key_used_when_available(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_fallback")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -149,7 +156,7 @@ class TestParseBranchCoverageBasic:
         )
         assert report["missing_arcs"]["general_ludd/mod.py"] == [[5, 7]]
 
-    def test_legacy_json_without_branch_fields_falls_back_to_line_pct(self, tmp_path):
+    def test_legacy_json_without_branch_fields_falls_back_to_line_pct(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_legacy")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -176,7 +183,7 @@ class TestParseBranchCoverageBasic:
         assert report["covered_branches"] == 0
         assert report["per_file_results"]["general_ludd/mod.py"]["branch_coverage"] == 80.0
 
-    def test_per_file_branch_percentage_in_results(self, tmp_path):
+    def test_per_file_branch_percentage_in_results(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_per_file_pct")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -212,7 +219,7 @@ class TestParseBranchCoverageBasic:
         assert report["per_file_results"]["general_ludd/a.py"]["branch_coverage"] == 100.0
         assert report["per_file_results"]["general_ludd/b.py"]["branch_coverage"] == 50.0
 
-    def test_per_file_branch_passed_field(self, tmp_path):
+    def test_per_file_branch_passed_field(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_per_file_passed")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -258,7 +265,7 @@ class TestParseBranchCoverageBasic:
 class TestBranchAggregateThresholds:
     """Enforce the E2E_COVERAGE_AUDIT_CONTRACT aggregate ≥85% rule."""
 
-    def test_aggregate_branch_above_85_passes(self, tmp_path):
+    def test_aggregate_branch_above_85_passes(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_agg_above")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -285,7 +292,7 @@ class TestBranchAggregateThresholds:
         )
         assert passed
 
-    def test_aggregate_branch_below_85_fails(self, tmp_path):
+    def test_aggregate_branch_below_85_fails(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_agg_below")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -312,7 +319,7 @@ class TestBranchAggregateThresholds:
         )
         assert not passed
 
-    def test_aggregate_branch_exactly_85_passes(self, tmp_path):
+    def test_aggregate_branch_exactly_85_passes(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_agg_exact")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -339,7 +346,7 @@ class TestBranchAggregateThresholds:
         )
         assert passed
 
-    def test_per_file_branch_at_75_passes(self, tmp_path):
+    def test_per_file_branch_at_75_passes(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_pf_at75")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -375,7 +382,7 @@ class TestBranchAggregateThresholds:
         assert passed
         assert report["per_file_results"]["general_ludd/x.py"]["passed"] is True
 
-    def test_per_file_branch_below_75_fails(self, tmp_path):
+    def test_per_file_branch_below_75_fails(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_pf_below75")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -413,7 +420,7 @@ class TestBranchAggregateThresholds:
 class TestPerFileBranchEdges:
     """Edge cases for per-file threshold enforcement."""
 
-    def test_zero_statements_with_branches_uses_branch_pct(self, tmp_path):
+    def test_zero_statements_with_branches_uses_branch_pct(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_zero_stmts")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -441,7 +448,7 @@ class TestPerFileBranchEdges:
         assert passed
         assert report["per_file_results"]["general_ludd/x.py"]["branch_coverage"] == 100.0
 
-    def test_zero_statements_zero_branches_skipped(self, tmp_path):
+    def test_zero_statements_zero_branches_skipped(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_zero_zero")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -478,7 +485,7 @@ class TestPerFileBranchEdges:
 class TestMissingBranchesIdentification:
     """Missing branches are correctly extracted and associated with files."""
 
-    def test_single_missing_branch(self, tmp_path):
+    def test_single_missing_branch(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_miss_single")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -506,7 +513,7 @@ class TestMissingBranchesIdentification:
         assert "general_ludd/foo.py" in report["missing_arcs"]
         assert report["missing_arcs"]["general_ludd/foo.py"] == [[15, 17]]
 
-    def test_multiple_missing_branches(self, tmp_path):
+    def test_multiple_missing_branches(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_miss_multi")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -537,7 +544,7 @@ class TestMissingBranchesIdentification:
         assert [20, 22] in missing
         assert [30, 34] in missing
 
-    def test_no_missing_branches_means_empty_dict(self, tmp_path):
+    def test_no_missing_branches_means_empty_dict(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_miss_none")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -563,7 +570,7 @@ class TestMissingBranchesIdentification:
         )
         assert report["missing_arcs"] == {}
 
-    def test_missing_branches_with_multiple_sources(self, tmp_path):
+    def test_missing_branches_with_multiple_sources(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_miss_multi_src")
         json_path = tmp_path / "coverage.json"
         json_path.write_text(
@@ -610,7 +617,7 @@ class TestMissingBranchesIdentification:
 class TestBranchCoverageProgressSidecar:
     """Durable progress sidecar includes branch-tracking metadata."""
 
-    def test_progress_snapshot_includes_counts(self, tmp_path):
+    def test_progress_snapshot_includes_counts(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_progress_snap")
         snapshot = module._progress_snapshot(
             run_id="test-run-1",
@@ -633,7 +640,7 @@ class TestBranchCoverageProgressSidecar:
         assert snapshot["counts"]["passed"] == 1
         assert snapshot["counts"]["attempted"] == 2
 
-    def test_progress_complete_true(self, tmp_path):
+    def test_progress_complete_true(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_progress_done")
         snapshot = module._progress_snapshot(
             run_id="done-run",
@@ -648,7 +655,7 @@ class TestBranchCoverageProgressSidecar:
         assert snapshot["complete"] is True
         assert snapshot["status"] == "completed"
 
-    def test_progress_includes_error_when_provided(self, tmp_path):
+    def test_progress_includes_error_when_provided(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_progress_error")
         snapshot = module._progress_snapshot(
             run_id="err-run",
@@ -663,7 +670,7 @@ class TestBranchCoverageProgressSidecar:
         )
         assert snapshot["error"] == "OOM killed shard"
 
-    def test_progress_atomic_writes_to_sidecar(self, tmp_path):
+    def test_progress_atomic_writes_to_sidecar(self, tmp_path: Path) -> None:
         module = _load_module("branch_e2e_progress_atomic")
         progress_path = tmp_path / "report.progress.json"
         module._publish_progress(
@@ -691,13 +698,13 @@ class TestBranchCoverageProgressSidecar:
 class TestCoverageEnvironment:
     """Concurrent coverage uses isolated .coverage files per process."""
 
-    def test_coverage_environment_sets_audit_flag(self, monkeypatch):
+    def test_coverage_environment_sets_audit_flag(self, monkeypatch: pytest.MonkeyPatch) -> None:
         module = _load_module("branch_e2e_env")
         env = module._coverage_environment()
         assert env["GLUDD_COVERAGE_AUDIT"] == "1"
         assert env["GLUDD_E2E_ACTIVE"] == "1"
 
-    def test_coverage_environment_overrides_caller(self, monkeypatch):
+    def test_coverage_environment_overrides_caller(self, monkeypatch: pytest.MonkeyPatch) -> None:
         module = _load_module("branch_e2e_env_override")
 
         monkeypatch.setenv("GLUDD_E2E_ACTIVE", "0")
@@ -708,21 +715,20 @@ class TestCoverageEnvironment:
 class TestCoverageRunPytestCoverage:
     """run_pytest_coverage uses --cov-branch and configures merging."""
 
-    def test_run_pytest_coverage_uses_cov_branch_flag(self, tmp_path, monkeypatch):
+    def test_run_pytest_coverage_uses_cov_branch_flag(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         module = _load_module("branch_e2e_run_flag")
-        calls = []
+        calls: list[tuple[list[str], dict[str, object]]] = []
 
-        def fake_run(args, **kwargs):
+        def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
             calls.append((args, kwargs))
             import subprocess as _sp  # noqa: F401
 
-            result = type("Result", (), {})()
-            result.returncode = 0
+            result = SimpleNamespace(returncode=0)
             return result
 
         monkeypatch.setattr(module.subprocess, "run", fake_run)
 
-        shards = []
+        shards: list[dict[str, object]] = []
         assert (
             module.run_pytest_coverage(
                 "src/general_ludd",
@@ -738,42 +744,44 @@ class TestCoverageRunPytestCoverage:
         assert "--cov-fail-under=0" in args
         assert "--cov-append" in args
 
-    def test_run_pytest_coverage_sets_isolated_coverage_file(self, tmp_path, monkeypatch):
+    def test_run_pytest_coverage_sets_isolated_coverage_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         module = _load_module("branch_e2e_run_iso")
-        calls = []
+        calls: list[dict[str, object]] = []
 
-        def fake_run(args, **kwargs):
+        def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
             calls.append(kwargs)
-            result = type("Result", (), {})()
-            result.returncode = 0
+            result = SimpleNamespace(returncode=0)
             return result
 
         monkeypatch.setattr(module.subprocess, "run", fake_run)
 
-        shards = []
+        shards: list[dict[str, object]] = []
         module.run_pytest_coverage(
             "src/general_ludd",
             str(tmp_path / "coverage.json"),
             shards,
         )
         assert calls, "Expected subprocess.run to be called"
-        env = calls[0]["env"]
+        env = cast(dict[str, str], calls[0]["env"])
         assert "COVERAGE_FILE" in env
         assert ".coverage.audit." in env["COVERAGE_FILE"]
 
-    def test_run_pytest_coverage_records_shard_on_failure(self, tmp_path, monkeypatch):
+    def test_run_pytest_coverage_records_shard_on_failure(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         module = _load_module("branch_e2e_run_fail")
         call_count = [0]
 
-        def fake_run(args, **kwargs):
+        def fake_run(args: list[str], **kwargs: object) -> SimpleNamespace:
             call_count[0] += 1
-            result = type("Result", (), {})()
-            result.returncode = 3 if call_count[0] == 1 else 0
+            result = SimpleNamespace(returncode=3 if call_count[0] == 1 else 0)
             return result
 
         monkeypatch.setattr(module.subprocess, "run", fake_run)
 
-        shards = []
+        shards: list[dict[str, object]] = []
         rc = module.run_pytest_coverage(
             "src/general_ludd",
             str(tmp_path / "coverage.json"),
@@ -783,4 +791,4 @@ class TestCoverageRunPytestCoverage:
         assert len(shards) == 1
         assert shards[0]["status"] == "failed"
         assert shards[0]["returncode"] == 3
-        assert shards[0]["path"].startswith("tests/e2e/")
+        assert cast(str, shards[0]["path"]).startswith("tests/e2e/")
