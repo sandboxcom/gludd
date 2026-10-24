@@ -39,6 +39,15 @@ merely because time elapsed. Source publication, diagnostic CI, development
 integration, master deployment and version-tag publication have separate
 outcomes; retain every canonical branch, coverage, ZDD and promotion gate.
 
+Before attributing a hosted failure to an earlier phase, read that exact run,
+attempt and job's native step result through ci-job-failure-context. Workflow
+source order and a failed-step-only summary do not prove another step was skipped
+or failed. A passed earlier step removes that particular diagnostic prerequisite;
+it does not make the whole job green, resolve a failure family or prove a speed
+improvement. Keep all eight downstream shard intervals unknown when the gate
+barrier prevents their execution. The pipeline audit retains the actual attempt2
+runtime-pass/Node-failure correction and its bounded native lookup.
+
 Read actual scanner argv/process evidence before reserving local test workers.
 The current full scan requests five workers; staged hooks use a separate serial
 entrypoint. Do not assign one owner's width to another. Status lease labels do

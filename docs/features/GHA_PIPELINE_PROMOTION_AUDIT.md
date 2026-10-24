@@ -13,11 +13,25 @@ is129865/129889,24deselected,0errors53.36s/native58.976 at
 Root actually reran failed Build39826135809 with debug logging and failed-job
 selection, then observed attempt2 on published
  eb772a658a01db4485087813e4478eb6c59cc328. Its terminal failure is the locked Node
-audit, before the old runtime-admission step. Native ci-view retained attempt1
-and recorded39826135809:2; the old runtime family stays repaired locally, not
-hosted resolved. The four high findings are three TOML advisories and one Zod
-advisory. Native request/await/summary receipts and the raw job log remain;
-passing local tests did not create this hosted result.
+audit. The earlier description placing that failure before runtime admission was
+wrong. Native ci-job-failure-context for exact run39826135809/job120712542853
+returns0 and raw line7524 at2026-10-23T23:45:02.0291273Z reports the runtime
+watcher state=passed, rc=0, elapsed70.1s; preceding line7522 retains11TAIL passes
+in5.89s. The unchanged workflow runs that original90/60 admission at line278,
+then the later Node audit at411. This is actual hosted step evidence, not an
+inference from YAML order or the failed-step fingerprint. Native retrieval43516
+used the exact result marker, BEFORE8/AFTER5/MAX_MATCHES2, and fully drained0.
+
+The separate native run-summary81066 returns2 for the failed whole workflow:
+gate3.11 passes, gate3.12 fails, and all eight downstream shard intervals remain
+unknown/censored because the gate barrier failed. The passed earlier runtime
+step removes a needless runtime-copy prerequisite for diagnosing the later Node
+failure. It supplies no whole-job green, failure-family resolution, release
+proof or causal speed claim; the original runtime failure and local714 repair
+remain historical authority. Native ci-view retains attempt1 and39826135809:2;
+the old runtime family remains locally repaired. The four high Node findings
+are three TOML advisories and one Zod advisory. Passing local tests did not
+create these hosted results.
 
 The separate unchanged candidate package/lock passes the actual hosted LOW
 audit input with0 vulnerabilities, native0/0.836s:
@@ -31,9 +45,17 @@ behavior preference; accepting that behavior still requires its actual decision.
 
 Root remotely verified the existing candidate ref at exact eb, then created and
 registered feature/v012-diagnostic-build-20261024 from that exact published SHA.
-The new checkout has no implementation intake/push yet. Feature diagnostic
-publication uses existing guarded source transport/verification/signal owners;
-it needs no final release gate. Target branches remain feature/** or diagnostic/**.
+Its HTTPS prerequisites are now committed at immutable
+8b78776b2bb297f61028bf1b8af3352648ac6968 with independent source-only approval.
+All454 cases pass on311/312 in262.87/293.82s, native265.868/297.170, under the
+original300/60 bounds; exact sessions61064/79980 are drained. Normal commit65658
+collects129193/129217,24deselected/0errors121.77s/native128.3 at that checkout's
+test-count/20261024T014538Z-7800-de0df585. This is prerequisite receiving and
+collection, not a new hosted run. The separate reviewed854 route is being
+received through42 exact operations across19 paths, with current HTTPS bytes
+preserved and no workflow ancestry. Target route acceptance and source publication
+remain pending. Feature diagnostic publication uses existing guarded source
+transport/verification/signal owners; it needs no final release gate. Target branches remain feature/** or diagnostic/**.
 An explicitly published protected or canonical release-candidate/** baseline
 must pass actual native ref/fullSHA/local-object/ancestry and unchanged workflow
 bytes plus complete-history checks. This baseline eligibility grants no candidate
