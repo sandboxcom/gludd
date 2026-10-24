@@ -368,3 +368,93 @@ def test_native_hook_control_detects_mutated_missing_unset(local_hook: HookFixtu
     collected = json.loads(local_hook.collection_snapshot.read_text(encoding="utf-8"))
     assert result.returncode != 0 and collected["canonical_keys"] == ["GIT_DIR"]
     assert "pytest worktree confinement denied subprocess environment" in result.stdout + result.stderr
+
+
+
+@pytest.mark.parametrize("collection_ledger_location", ["canonical", "active"])
+@pytest.mark.parametrize("collection_ledger_e", [False, True])
+def test_pre_push_collection_retains_ledger_path_confinement_with_real_ansible(
+    tmp_path: Path, collection_ledger_location: str, collection_ledger_e: bool,
+) -> None:
+    """Native Make carries a ledger CLI value through the real pre-push hook."""
+    fixture = _create_local_hook(tmp_path)
+    # This fixture-owned legacy opt-out must not mask the real hook's plugins.
+    fixture.environment.pop("PYTEST_DISABLE_PLUGIN_AUTOLOAD", None)
+    conftest = fixture.linked / "conftest.py"
+    source = conftest.read_text(encoding="utf-8")
+    manual = (
+        "    args = [sys.executable, '-c', 'pass']\n"
+        "    _WorktreeConfinement(active_root=LINKED, canonical_root=MAIN).audit(\n"
+        "        'subprocess.Popen', (sys.executable, args, str(LINKED), env))\n"
+        "    subprocess.run(args, env=env, check=True)\n"
+    )
+    assert source.count(manual) == 1
+    source = source.replace(
+        manual, "    sys.addaudithook(_WorktreeConfinement(\n"
+        "        active_root=LINKED, canonical_root=MAIN).audit)\n",
+    )
+    snapshot = "        'local_present': sorted(set(local) & env.keys()), 'canonical_keys': leaks,\n"
+    assert source.count(snapshot) == 1
+    source = source.replace(
+        snapshot, snapshot
+        + "        'ansible_plugin': any(getattr(plugin, '__name__', None) == "
+        "'pytest_ansible.plugin' for plugin in config.pluginmanager.get_plugins()),\n",
+    )
+    conftest.write_text(source, encoding="utf-8")
+    makefile = fixture.linked / "Makefile"
+    source = makefile.read_text(encoding="utf-8")
+    uv_line = source.splitlines()[0]
+    assert uv_line.startswith("UV := ")
+    source += (
+        "\n.PHONY: owned-ledger-publication\nowned-ledger-publication:\n\t@"
+        + shlex.quote(fixture.native_git) + " push "
+        + shlex.quote(str(fixture.remote)) + " HEAD:refs/heads/ledger-probe\n"
+    )
+    makefile.write_text(source, encoding="utf-8")
+    ledger_root = fixture.main if collection_ledger_location == "canonical" else fixture.linked
+    ledger = ledger_root / ".gludd" / "ci-failure-ledger.json"
+    environment_before = dict(os.environ)
+    authority_before = _git_authority_bytes(fixture.main)
+    result = subprocess.run(
+        ["make", "--no-print-directory", *(["-e"] if collection_ledger_e else []),
+         "owned-ledger-publication", "CI_FAILURE_LEDGER=" + str(ledger),
+         "UV=" + uv_line.removeprefix("UV := ")],
+        cwd=fixture.linked, env=dict(fixture.environment),
+        check=False, capture_output=True, text=True, timeout=30,
+    )
+    hook = json.loads(fixture.hook_snapshot.read_text(encoding="utf-8"))
+    collected = json.loads(fixture.collection_snapshot.read_text(encoding="utf-8"))
+    output = result.stdout + result.stderr
+    print("COLLECTION_LEDGER_BOUNDARY " + json.dumps({
+        "location": collection_ledger_location, "early_environment": collection_ledger_e,
+        "hook_keys": hook["canonical_keys"], "collection_keys": collected["canonical_keys"],
+        "native_status": result.returncode, "ansible_plugin": collected["ansible_plugin"],
+        "ansible_failure_frame": "pytest_ansible/plugin.py" in output,
+    }, sort_keys=True))
+    assert hook["parent_unchanged"] is True
+    assert hook["cwd"] == collected["cwd"] == str(fixture.linked)
+    assert collected["local_present"] == []
+    assert collected["preserved"] == {key: fixture.environment.get(key) for key in PRESERVED_KEYS}
+    assert collected["ansible_plugin"] is True
+    assert _git_authority_bytes(fixture.main) == authority_before
+    assert os.environ == environment_before
+    assert (fixture.linked / "preserved.txt").read_text(encoding="utf-8") == "tracked source remains unchanged\n"
+    if collection_ledger_location == "canonical":
+        assert "CI_FAILURE_LEDGER" in hook["canonical_keys"]
+        assert "CI_FAILURE_LEDGER" in collected["canonical_keys"]
+        assert "MAKEFLAGS" in collected["canonical_keys"]
+        assert result.returncode != 0
+        assert "pytest_ansible/plugin.py" in output
+        assert "pytest worktree confinement denied subprocess environment" in output
+        assert "COLLECTION ERRORS DETECTED (rc=3" in output and "Collection OK" not in output
+        remote = fixture.git("--git-dir", str(fixture.remote), "rev-parse", "--verify", "refs/heads/ledger-probe")
+        assert remote.returncode != 0
+    else:
+        assert collected["canonical_keys"] == []
+        assert result.returncode == 0, output
+        logs = list((Path(fixture.environment["COLLECTION_OBSERVED_ROOT"]) / "collect-check").glob("*.log"))
+        assert len(logs) == 1
+        assert "3 tests collected" in logs[0].read_text(encoding="utf-8") and "Collection OK" in output
+        remote = fixture.git("--git-dir", str(fixture.remote), "rev-parse", "--verify", "refs/heads/ledger-probe")
+        assert remote.returncode == 0
+        assert remote.stdout == fixture.git("rev-parse", "HEAD").stdout

@@ -413,8 +413,11 @@ and every unchanged predecessor method. Exact native receipts are
 .gate-logs/observed/publication-probe-receiving/v012-publication-probe-receiving-canonical311.json
 and its canonical312 counterpart, tested source digest
 dd5cee8dba3d954f02739c8977af07b0f410406ab59e3ba94120a35bf7e71e12.
-The [runtime record](RUNTIME_ADMISSION_CLEAN_SHA.md) retains the entire union,
-failed filename inputs and separate startup-probe decision. These are combined
+The original Main runtime record, docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md
+at6d49e993360f8d20db906f03be0131a4007cbaaf lines607-638, retains the entire
+union, failed filename inputs and separate startup-probe decision. That record
+is not present in this diagnostic baseline; retrieve it with git-show-file-to
+rather than treating it as a local feature link. These are combined
 working-checkout observations before two sequential source commits, not
 isolated intermediate-commit, full-gate or exact-SHA hosted/deployment proof.
 
@@ -674,3 +677,120 @@ Package inputs and their prior clean2a advisory receipt retain only their
 unchanged measured scope. No audit/profile/Node replay, global runtime change,
 credential consent, product-behavior decision, full gate, hosted success,
 deployment or release approval is implied by this selector repair.
+
+## Pre-push source identity and checkout-owned inputs
+
+The next actual normal publication on
+65003637b27a632c63a36f2a6e853f2485ecf44a cleared all eight native guards,
+HTTPS authentication and workflow provenance, then failed in real pre-push
+hooks. The outer observation
+feature-diagnostic-publication/feature-diagnostic-publish-6500363 ended
+native2/27.6s. Mypy checked Main's installed editable package, reporting the
+Main locking.py import of stream_command. Native collect-check
+20261024T031002Z-2915-91d80c3b refused a canonical Main pathname in subprocess
+environment through the actual pytest_ansible scenario loader, native3/.7s.
+Whitespace, EOF, JSON, size, private-key, branch, secret, conflict and Ruff hooks
+passed. This was a failed push, never a new-source hosted result.
+
+The publisher conservatively reported transport_may_have_applied=true.
+Root reconciled through the existing verify-remote owner with the actual feature
+branch/full SHA: authentication passed, native ls-remote returned2 and no feature
+head existed. The checkout remained clean at650. No absent-ref result establishes
+the exact cause of another failure or permits a hook bypass.
+
+The collection defect was in Root's caller input. The command explicitly passed
+Main's absolute CI_FAILURE_LEDGER into the feature publisher. Native ordinary
+and -e captures found offending keys CI_FAILURE_LEDGER and MAKEFLAGS at
+collection; MAKEOVERRIDES was not present in the observed offending set.
+The existing admission owner correctly removed native GIT_DIR. Selected repair:
+CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json in the active feature checkout.
+Keep the canonical-Main rejection and every plugin enabled. The bounded native
+regression uses real Git pre-push and actual collection, owns workspace and state,
+and reports offending key names without printing values. No Make10, confinement
+guard, scanner baseline or environment-wide erasure is selected.
+
+Both full-package mypy recipes previously relied on package discovery without
+binding the checkout's src/scripts. Shared installed tooling can point at a
+different editable source tree. The selected minimal repair prepends the
+current physical checkout's src and scripts to MYPYPATH while retaining the
+unrelated inherited path, configured typings, installed dependencies, complete
+package analysis, original flags and hook null-cache policy. The native fixture
+uses actual recipes and real mypy, an owned outside-root decoy, ordinary/-e
+controls and native nonzero propagation. Do not resync a shared prefix or suppress
+imports to conceal source selection. Outcome guidance must retain tool failures
+and emit terminal success only after all required target children succeed.
+
+Focused research on2026-10-24 supports the path repair.
+The [official import search order](https://mypy.readthedocs.io/en/stable/running_mypy.html#how-imports-are-found)
+places MYPYPATH before configured paths and installed typed packages; this makes
+an explicit current-source prefix appropriate for this observed wrong-source
+case. [Installed-package guidance](https://mypy.readthedocs.io/en/stable/installed_packages.html)
+retains installed stub discovery and cautions that custom import hooks have
+limits. Neither source justifies disabling installed dependency analysis.
+The firsthand [2022 editable/stub report13214](https://github.com/python/mypy/issues/13214)
+was closed through13223 on2022-07-25. It records related editable-path/stub
+interactions, but its historical overlap error is different from this native
+Gludd failure; no current upstream regression is inferred.
+
+The user-directed promotion sequence remains feature to development to master.
+The [official manual-run interface](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)
+supports selecting another branch for an existing dispatchable default-branch
+workflow. Its [event reference](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_dispatch)
+binds the run to the selected ref's SHA. Use the normal feature-ci publisher and
+its existing exact-SHA dispatcher after narrow acceptance and a normal commit.
+An actual accepted diagnostic run permits remaining independent local receiving
+to overlap with GHA. Keep workflow-history authorization, canonical push proof,
+development/master promotion, Pages deployment and version release conditions.
+
+### Native repair acceptance before publication
+
+The actual mypy source-selection RED retained4FAIL/1PASS2.34s/native3.232
+at prepush-mypy-source/mypy-source-red311-6500363.json: both target names and
+ordinary/-e selected the owned outside decoy, while its unbound witness passed.
+After the minimal recipe repair, complete new owner11 passes on311,
+5.86s/native6.666 at mypy-source-green311-6500363.json. Eight complete affected
+hook/contract/AST structural consumers pass4.52s/native5.362 at
+mypy-consumers311-6500363.json. On312, the same complete19-case union passes
+10.79s/native11.740 at mypy-receiving312-6500363.json, all under that same label.
+Native matching protocol pairs are5/11/8/19 respectively, with no unfinished
+or pairing issue. The original package, configured second child, stub/carrier,
+native error, full-package unimported module and null-cache assertions remain.
+This is actual real-mypy behavior in owned tiny workspaces, not a full source
+typecheck or hosted/gate result.
+
+The collection regression preserves two initial fixture failures: the first
+guessed an unregistered plugin alias (4FAIL7.22s); the next looked for the
+exact3-count on quiet stdout instead of the existing native observed log
+(2PASS/2FAIL). Actual input outcomes were already correct. Corrections bind
+plugin identity to pytest_ansible.plugin and read the native result channel,
+retaining the exact count, enabled plugins, original guard and native status.
+Four input cases then pass5.45s/native6.220 at
+hook-ledger-input/hook-ledger-input311-observed-6500363.json.
+The complete changed collection owner passes24 on BOTH runtimes:
+31120.13s/native21.038 and31222.40s/native23.437, at
+hook-collection-owner/hook-collection-owner311-6500363.json and its312 counterpart.
+Each trace has24 complete matching pairs. Original20 cases remain; production
+collection code and the confinement guard are unchanged.
+
+Documentation receiving first retained67PASS/1FAIL3.83s/native4.7 at
+prepush-process-docs/prepush-docs311-6500363.json. Its missing link was inherited
+from Main's historical runtime record, absent in the diagnostic baseline.
+Root materialized immutable6d49e993360f8d20db906f03be0131a4007cbaaf's original
+record and verified the471 count, digest and receipt references. The historical
+paragraph now identifies that source context rather than a nonexistent local
+file. Both complete status-snapshot and Markdown owners then pass68 each:
+3113.73s/native4.425 and3124.17s/native5.162, at
+prepush-docs311-source-context-6500363.json and its312 counterpart under the same
+prepush-process-docs label. Rumdl passes all three changed guidance documents.
+
+Ruff, separate strict new-test scope, environment-write guard, target contract282
+and native Make inventory1159/zero duplicates/parity pass. These are working
+repair observations on65003637b27a632c63a36f2a6e853f2485ecf44a; native receipts
+retain their actual source identities. Normal collection and exact source review
+remain distinct. Root next owns the six-path staged guard, independent review,
+normal source commit, then actual normal guarded feature publication with the
+full installed runtime tuple in both outer watcher and actual CMD and the
+feature-local ledger. No new-source GHA has started at this checkpoint.
+Remaining C/B312/D312 acceptance overlaps only after a real run is accepted.
+The Node proposal's ordinary compatibility failure, full coverage/gate, canonical
+push, deployment and all release proofs stay open.

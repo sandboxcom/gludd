@@ -947,7 +947,16 @@ readiness. Native remote/object/ancestry, complete workflow
 bytes and full-history checks must pass; an edit/revert workflow history also
 refuses. Keep refs and use the existing authorized workflow repair route for
 workflow changes. No new token scope or force/no-verify path is introduced.
-Append the installed runtime tuple documented above to every Make invocation.
+Append the installed runtime tuple documented above to every Make invocation,
+including the actual Make CMD inside run-watched. Use the active checkout's
+CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json; never carry Main's absolute ledger
+path into a feature pre-push hook. CLI assignments can also propagate through
+MAKEFLAGS/MAKEOVERRIDES. Preserve confinement refusals and inspect key names
+without values before selecting a repair. Use branch-owned output with the
+existing native CI observer. A real accepted diagnostic run starts the overlap
+with remaining independent local receiving; do not wait for final gate or all
+local acceptance before dispatch. Preserve the exact branch/SHA while observing
+that run, then promote feature to development to master through existing gates.
 
 The default canonical purpose retains all existing EE/promotion/runtime90/60
 admission and promotion proof. Explicit feature-ci retains all eight guards,

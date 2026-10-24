@@ -1686,14 +1686,27 @@ fix-logger-imports:
 ruff-audit:
 	@$(UV) run python scripts/ruff_plugins/return_type_checker.py
 
+# Bind package discovery to this physical Make checkout before installed editables.
+# Keep inherited search carriers and each command's original config/cache policy.
 typecheck:
-	@$(UV) run mypy -p general_ludd
-	@$(UV) run mypy --config-file config/mypy-tests.toml tests/unit/test_config_gaps.py
+	@if MYPYPATH="$(CURDIR)/src:$(CURDIR)/scripts$${MYPYPATH:+:$$MYPYPATH}" $(UV) run mypy -p general_ludd; then \
+		if MYPYPATH="$(CURDIR)/src:$(CURDIR)/scripts$${MYPYPATH:+:$$MYPYPATH}" $(UV) run mypy --config-file config/mypy-tests.toml tests/unit/test_config_gaps.py; then \
+			printf '%s\n' 'AGENT_NEXT target=typecheck outcome=passed native_status=0 measured=general_ludd-and-configured-test-file next_owner=calling-workflow gate_evidence=false ci_evidence=false release_ready=false: Both native typing commands passed; complete remaining checks and exact-SHA CI before promotion.' >&2; \
+		else gludd_mypy_status=$$?; \
+			printf 'AGENT_NEXT target=typecheck outcome=failed phase=configured-test native_status=%s input=current-checkout-src-scripts next_action=repair-native-type-or-source-path-error gate_evidence=false ci_evidence=false release_ready=false\n' "$$gludd_mypy_status" >&2; \
+			exit "$$gludd_mypy_status"; fi; \
+	else gludd_mypy_status=$$?; \
+		printf 'AGENT_NEXT target=typecheck outcome=failed phase=package native_status=%s input=current-checkout-src-scripts next_action=repair-native-type-or-source-path-error gate_evidence=false ci_evidence=false release_ready=false\n' "$$gludd_mypy_status" >&2; \
+		exit "$$gludd_mypy_status"; fi
 
 # Pre-commit needs the full package analysis without writing a disposable cache.
 # os.devnull is /dev/null on Unix and nul on Windows; make selects equivalently.
 _precommit-mypy:
-	@$(UV) run mypy --cache-dir="$(MYPY_NULL_CACHE)" -p general_ludd
+	@if MYPYPATH="$(CURDIR)/src:$(CURDIR)/scripts$${MYPYPATH:+:$$MYPYPATH}" $(UV) run mypy --cache-dir="$(MYPY_NULL_CACHE)" -p general_ludd; then \
+		printf '%s\n' 'AGENT_NEXT target=_precommit-mypy outcome=passed native_status=0 measured=general_ludd next_owner=calling-pre-commit gate_evidence=false ci_evidence=false release_ready=false: Package typing passed; remaining native hooks and exact-SHA proof stay required.' >&2; \
+	else gludd_mypy_status=$$?; \
+		printf 'AGENT_NEXT target=_precommit-mypy outcome=failed phase=package native_status=%s input=current-checkout-src-scripts next_action=repair-native-type-or-source-path-error gate_evidence=false ci_evidence=false release_ready=false\n' "$$gludd_mypy_status" >&2; \
+		exit "$$gludd_mypy_status"; fi
 
 test:
 	@if [ -n "$(TESTFILE)" ]; then \
