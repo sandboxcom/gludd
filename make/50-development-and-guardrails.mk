@@ -990,15 +990,16 @@ _session-close-audit:
 check-assert-deps:
 	@$(UV) run python scripts/check_assert_deps.py
 
-# AA043 — _edit-commit-atomicity-guard: prevents committing when stashed changes
-# may be lost. When pre-commit hooks stash edits, the commit proceeds without
-# the edited content. Guard checks if working tree matches index before commit;
-# if there are unstaged changes that match known stash contents, warns agent.
+# AA043 — _edit-commit-atomicity-guard: advisory working-tree/index observation.
+# Preserve the existing PASS; unstaged changes do not establish lost edits or a
+# Git stash. Pre-commit can restore private patches; compare owned change evidence.
 _edit-commit-atomicity-guard:
 	@if ! git diff --quiet; then \
 		echo "EDIT-COMMIT-ATOMICITY: working tree has unstaged changes."; \
-		echo "If pre-commit hooks stashed edits, the commit will NOT include them."; \
-		echo "Run 'make git-stash-pop' to check for stashed pre-commit fixes. See AA043."; \
+		echo "Unstaged changes alone do not prove lost edits or a Git stash; pre-commit may restore private patches."; \
+		echo "Run 'make worktree-state' and 'make git-staged' in separate invocations; compare exact owned worktree/index paths with the intended change and checkpoint."; \
+		echo "Preserve intentional unrelated edits; reconcile only proven owned differences through the existing narrow Make owner."; \
+		echo "AGENT_NEXT target=_edit-commit-atomicity-guard outcome=observed scope=unstaged-observation gate_evidence=false release_ready=false next_owner=worktree-state"; \
 	fi
 	@echo "_edit-commit-atomicity-guard: PASS"
 
