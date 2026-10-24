@@ -1344,3 +1344,66 @@ original runtime replay, canonical full gate/global coverage and all exact-SHA
 hosted/deployment/reviewed-head/promotion proofs remain pending. The seven S98
 items stay open. A new prompt, source commit or elapsed time repairs none of
 those inputs.
+
+## Unstaged-edit advice follows native evidence, 2026-10-24 UTC
+
+Root's normal helper commit (session61292) preserved separate intentional Node
+edits, but the existing AA043 advisory said pre-commit's stashed edits would be
+missing from the commit and instructed the agent to run `make git-stash-pop`.
+That advice was unsupported: pre-commit had restored its private patch files.
+An unstaged working tree alone establishes neither lost owned edits nor a Git
+stash that is safe to apply.
+
+The result owner is the existing `_edit-commit-atomicity-guard` recipe in
+make/50-development-and-guardrails.mk. Its Git predicate, observed-unstaged line,
+native status and final PASS stay unchanged. The advisory now routes to
+`make worktree-state` and `make git-staged` as separate read invocations, then
+comparison of exact owned worktree/index paths with intended change/checkpoint
+evidence. Preserve intentional unrelated edits and use the existing narrow Make
+owner only for proven owned differences. PASS remains advisory and supplies no
+commit, full-gate or exact-SHA hosted/deployment/release proof.
+
+The regression uses the existing native pre-commit fixture and real installed
+entrypoint, followed by all three actual staged hooks and the literal AA043
+recipe. Ordinary and `-e` carriers cover clean and unrelated-unstaged cases.
+Native patch/restoration output, exact working bytes, staged blob/index tree,
+HEAD/refs and an empty Git stash are independently retained. No pop is executed.
+
+At immutable source713af3ac0869c17f7792e4f4348855efc6f7baed, the initial diagnostic
+retains5FAIL/6PASS5.07s/native6.051s at
+atomicity-advice-red/atomicity-advice-red311-713.json: two fixture assumptions
+incorrectly expected INFO messages from the imported context and three legacy
+structural assertions assumed direct public prerequisites. The installed CLI
+control corrected only the logging input; genuine advisory RED then retained
+2FAIL/2PASS10.51s/native11.7s at
+atomicity-advice-native-red/atomicity-advice-native-red311-713.json, failing on the
+actual stash-pop advice after native restoration/state assertions. The changed
+advice passes all four native cases6.38s/native7.4s at
+atomicity-advice-focus/atomicity-advice-focus311-713.json.
+
+Only the three affected P24/AA043 structural assertions conform to the existing
+public `_commit-transaction` route and exact private guarded prerequisites.
+Global assertion helpers and unrelated policy checks stay intact. Ruff for all
+three test files, native Make validation, environment-write guard,289-target
+contract and tracked-file line limits pass. Separate strict guidance-only
+typing passes. Including the two legacy structural files in strict typing fails
+with317errors; a bounded immutable713 export, preserving both package
+initializers and current root configuration, independently reproduces317errors
+at atomicity-legacy-type-baseline/atomicity-legacy-type-baseline311-713.json
+(native2.0s). This remains a failed legacy type scope, not a typing pass or a
+reason to suppress annotations/checks or expand this advisory repair.
+
+Complete affected classes, the complete native guidance owner and
+parameter-collision owner pass80 cases each with no skips on installed311 and312.
+The source stays fixed at the five-path receiving snapshot based on713af3ac.
+Native receipts atomicity-advice-receiving/atomicity-advice-receiving311-713.json
+and its312 counterpart retain12.99s/native13.931 and14.22s/native15.382,
+original300/60,n0,fatal warnings and literal ID=. Root's exact-five-path staged
+content guard also passed all three hooks and line limits in2.1s; its clone
+owner correctly skipped changed_production=0. Receipt:
+atomicity-advice-staged-preflight/atomicity-advice-staged-preflight311-713.json.
+The final receipt-only prose update does not recertify or require repeating
+those unchanged source tests. Normal per-commit collection, independent source
+review, Main receiving, canonical full gate and exact-SHA hosted/deployment
+proof remain separate and pending. No production Python, coverage scope,
+runner, cache, serving process or promotion gate changes in this advisory repair.

@@ -273,9 +273,15 @@ class TestP24EditCommitAtomicity:
         assert "git diff --quiet" in block, "P24: _edit-commit-atomicity-guard does not check working tree"
 
     def test_guard_wired_to_commit_targets(self):
-        assert target_uses_guard("git-commit", "_edit-commit-atomicity-guard") or target_uses_guard(
-            "ship-commit", "_edit-commit-atomicity-guard"
-        ), "P24: _edit-commit-atomicity-guard not wired to git-commit or ship-commit"
+        text = makefile_text()
+        guarded = []
+        for target in ("git-commit", "ship-commit"):
+            rule = re.search(rf"(?m)^{target}:[^\n]*\n(?:\t[^\n]*(?:\n|\Z))*", text)
+            delegated = rule is not None and "\t$(call _commit-transaction)\n" in rule.group()
+            guarded.append(target_uses_guard(target, "_edit-commit-atomicity-guard") or (
+                delegated and target_uses_guard("_commit-locked-" + target, "_edit-commit-atomicity-guard")
+            ))
+        assert any(guarded), "P24: _edit-commit-atomicity-guard not wired to git-commit or ship-commit"
 
 
 # ── P25 — Push-parameter-audit validates push arguments ───────────────────

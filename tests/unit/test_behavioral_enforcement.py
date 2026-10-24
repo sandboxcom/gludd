@@ -746,14 +746,16 @@ class TestAA043EditCommitAtomicityGuard:
         )
 
     def test_wired_to_git_commit(self):
-        assert target_uses_guard("git-commit", "_edit-commit-atomicity-guard"), (
-            "AA043: git-commit missing _edit-commit-atomicity-guard"
-        )
+        assert target_uses_guard("git-commit", "_edit-commit-atomicity-guard") or (
+            "\t$(call _commit-transaction)\n" in target_recipe("git-commit")
+            and target_uses_guard("_commit-locked-git-commit", "_edit-commit-atomicity-guard")
+        ), "AA043: git-commit missing _edit-commit-atomicity-guard"
 
     def test_wired_to_ship_commit(self):
-        assert target_uses_guard("ship-commit", "_edit-commit-atomicity-guard"), (
-            "AA043: ship-commit missing _edit-commit-atomicity-guard"
-        )
+        assert target_uses_guard("ship-commit", "_edit-commit-atomicity-guard") or (
+            "\t$(call _commit-transaction)\n" in target_recipe("ship-commit")
+            and target_uses_guard("_commit-locked-ship-commit", "_edit-commit-atomicity-guard")
+        ), "AA043: ship-commit missing _edit-commit-atomicity-guard"
 
 
 class TestAA044NonBlockingCheckHidesFailure:
