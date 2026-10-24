@@ -1701,7 +1701,7 @@ run-watched:
 		--item-progress --item-task "$(WORK_ITEM_ID)" \
 		$(if $(RUN_ID),--run-id "$(RUN_ID)",) $(if $(LOG),--log "$(LOG)",) --heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" \
 		--quiet-secs "$(STALL_SECS)" --max-secs "$(MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)" $${gludd_watched_pytest_trace_arg:+"--pytest-trace"} -- "$(SHELL)" -c "$$CMD"; then \
-		run_watched_guide passed 0 "next_owner=observed-status; inspect the exact new native receipt for the observed command and its actual exit, log and trace; no receipt means no verified observation; this wrapper result grants no full-gate or release authority"; \
+		run_watched_guide passed 0 "next_owner=observed-status; inspect the exact new native receipt for the observed command and its actual exit, log and trace; no receipt means no verified observation; this wrapper result grants no full-gate or release authority; after exact terminal drain, batch independent required reads within admitted slots and inspect every result; after exact status verification, continue the already authorized next Make action without another planning turn"; \
 	else run_watched_status=$$?; \
 		run_watched_guide failed "$$run_watched_status" "next_owner=observed-status; preserve the native reason and any new receipt, log and trace; failure before native start produces no new receipt, so never reuse an older current success; identify the actual failed owner and changed failing input before retry; reconcile potentially applied work"; \
 		exit "$$run_watched_status"; fi

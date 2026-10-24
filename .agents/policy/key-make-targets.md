@@ -311,8 +311,10 @@ neither changes a credential nor authorizes workflow-file edits.
 
 Canonical remains the default and keeps original EE/promotion/runtime90/60
 and release gates. Only explicit feature-ci separates source diagnostics from
-final release readiness: it retains guards/auth/hooks/saved-SHA record/verify,
-then sequentially calls the existing ci-trigger-committed-head. It starts no
+final release readiness: it checks source, remote binding and published workflow
+provenance, retains guards/auth/hooks/saved-SHA record/verify, then sequentially
+calls the existing ci-trigger-committed-head. It runs no local canonical
+EE/promotion/runtime replay; use the actual hosted job to assess those tests. It starts no
 canonical all-required-push waiter. A returned URL is diagnostic run visibility,
 not terminal CI, canonical push, deployment or release proof. Continue useful
 independent receiving while the accepted exact-SHA run executes; promote
@@ -445,7 +447,7 @@ before assigning parallel work or attributing a workflow to deployment.
 | development-merge-forward refused/failed | Retain native reason/status, wait for native transaction cleanup and inspect worktree-state; repair the reported input before retrying. |
 | development-merge-forward passed | Retain native merged-tree gate evidence and obtain exact-SHA CI/deployment/reviewed-head proof before guarded promotion. |
 | Guarded target extra-goal refusal | Retain Make2/original reason. Quote the whole assignment if extra words belong to its value; if values are already quoted and extra goals intentional, run separate Make invocations. No target body or release proof follows. |
-| run-watched passed | Inspect observed-status for the exact new command/receipt, native exit, log and trace. No receipt means no verified observation. A wrapper pass supplies no full-gate/release authority; a first-child receipt cannot certify commands outside its scope. |
+| run-watched passed | Inspect observed-status for the exact new command/receipt, native exit, log and trace. No receipt means no verified observation. A wrapper pass supplies no full-gate/release authority; a first-child receipt cannot certify commands outside its scope. After draining the exact session, batch this required verification with independent already-needed resource/report reads within admitted slots; inspect every result and drain yielded readers. After exact status verification passes, continue the already authorized next Make action without another planning turn. |
 | run-watched refused | Repair the reported CMD or literal trace input before native execution. Retain original usage/status; do not substitute a different owner to evade refusal. |
 | run-watched failed | Preserve its actual native status/reason and any new receipt. Failure before native start creates none; never reuse older current success. Identify the failing owner and changed input before retry; reconcile any potentially applied work. |
 | human-todo-module planned | Check mode performs no HTTP write; changed=true/id=null never means filing or resolution. Obtain an owned endpoint and [safe explicit credential binding](../../docs/features/MAKE_RESULT_GUIDANCE.md#explicit-controller-credentials). |

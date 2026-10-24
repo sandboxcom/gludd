@@ -132,3 +132,38 @@ def test_real_timeout_prompt_keeps_native_receipt_and_descendant_cleanup(tmp_pat
     assert isinstance(child_pid, int) and child_pid > 0
     with pytest.raises(ProcessLookupError):
         os.kill(child_pid, 0)
+
+
+def test_terminal_green_keeps_required_status_before_authorized_continuation(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    _native_child(fixture)
+    result = _make(fixture, "1", watched_trace_uv=_real_uv(fixture))
+    assert result.returncode == 0, result.stdout + result.stderr
+    status = _status(fixture)
+    assert status["state"] == "passed" and status["exit_code"] == 0
+    assert _child_payload(fixture)["argv"] == ["literal child argument"]
+    prompt = _assert_guide(result, "passed", 0)
+    assert "next_owner=observed-status" in prompt
+    assert "no receipt means no verified observation" in prompt
+    assert "after exact terminal drain" in prompt
+    assert "batch independent required reads within admitted slots" in prompt
+    assert "inspect every result" in prompt
+    assert "after exact status verification" in prompt
+    assert "already authorized next Make action without another planning turn" in prompt
+
+
+@pytest.mark.parametrize("watched_cadence_failed_status", [7, 125, 130])
+def test_failed_result_does_not_advise_authorized_continuation(
+    tmp_path: Path, watched_cadence_failed_status: int,
+) -> None:
+    fixture = _fixture(tmp_path)
+    fixture.environment["GLUDD_WATCHED_TRACE_RECORDER_EXIT"] = str(watched_cadence_failed_status)
+    result = _make(fixture, "1")
+    assert result.returncode == 2
+    _assert_recorder_arguments(fixture, True)
+    prompt = _assert_guide(result, "failed", watched_cadence_failed_status)
+    assert "never reuse an older current success" in prompt
+    assert "batch independent required reads" not in prompt
+    assert "already authorized next Make action" not in prompt

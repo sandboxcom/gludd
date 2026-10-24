@@ -525,6 +525,50 @@ replay follows from source approval or the added prompt.
 
 ## Watched command scope and result prompts
 
+Required observed-status verification remains the next owner after a watched
+pass. Drain the exact exec session before dependent work, then batch that
+verification with independently needed resource or raw-report reads within the
+already admitted local slots. Inspect every result and drain any yielded reader.
+After the exact run, command scope, native exit, receipt and required trace/report
+checks are verified, continue the already authorized next Make action in its
+reserved capacity without another planning turn. Keep runtime executions of an
+identical command serialized. This advice grants no new authority; pending,
+refused or failed input retains the existing repair/reconciliation path and no
+unchanged retry. A first-child receipt never certifies later unobserved work.
+
+### Native cadence evidence and limits (2026-10-24 UTC)
+
+This five-path repair is received on Main from
+546beea7a7122c1bf2d2344b4e7650a0cd2c6c3b. A genuine native success case first
+failed against the old result prompt; its three executable recorder controls
+for 7/125/130 passed.
+The old assertions and failure branches remain unchanged. The complete guidance,
+command-boundary and trace owners then pass 90 cases on each installed runtime;
+the complete item-progress, observer, target-contract and Make-layout owners
+pass 277 on each. These 367 distinct cases per runtime are local acceptance,
+not a complete gate, exact-SHA CI, deployment or measured model-speed result.
+
+Retain the immutable native receipts under
+.gate-logs/observed/make-cadence-prompt-red/make-cadence-prompt-red311-546beea.json
+and .gate-logs/observed/make-cadence-receiving/ with runs
+make-cadence-a311-546beea (15.183s), make-cadence-a312-546beea (16.027s),
+make-cadence-b311-546beea (76.171s) and make-cadence-b312-546beea (67.903s).
+The corresponding pytest outcomes are 13.98s, 14.57s, 73.73s and 65.65s.
+Exact terminal drain and observed-status verification precede dependent work.
+
+The earlier diagnostic-feedback packet based on
+3c60627bf8e974146de65d7c33f3707693cdbc79 retains four coverage-files receipts:
+20261024T084501Z-43248-f1d099b0,20261024T084601Z-44475-d05a5d08,
+20261024T084647Z-46824-e27f6afb and20261024T084806Z-52738-5e2add5a;
+its diagnostic-feedback-consumers receipts are
+diagnostic-feedback-consumers311-3c60627 and diagnostic-feedback-consumers312-3c60627.
+Their first-start to last terminal-updated span is 407.787170s; the sum of the
+six nonoverlapping recorded intervals is 89.591504s. The 318.195666s complement
+is uncovered by those six intervals only. It identifies no CPU time, idle time,
+cause, critical path or potential saving. The cadence change preserves mandatory
+verification and admitted capacity; the exact hosted scheduling SHA still needs
+its own measurements before any performance claim.
+
 Root owns this S98.4 repair and Main/shared/Git on
 release-candidate/v012-git-mutex-20261022 from exact
 d0aba940a650a14404853cf23499f932ee8ee5e3. Independent APPROVE SOURCE ONLY
