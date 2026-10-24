@@ -10,10 +10,13 @@ import sys
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
-from typing import Optional
+from pathlib import Path
+
+from scripts.workflow_state_guard import _run as _run
+from scripts.workflow_state_guard import _stdout as _git_stdout
 
 DEFAULT_MAIN_PATH = "/Users/shawnwilson/gludd"
-RunFn = Callable[[Sequence[str], Optional[str]], subprocess.CompletedProcess[str]]
+RunFn = Callable[[Sequence[str], "str | None"], subprocess.CompletedProcess[str]]
 
 
 @dataclass(frozen=True)
@@ -31,25 +34,6 @@ class WorktreeState:
         return self.dirty_count == 0
 
 
-def _run(argv: Sequence[str], cwd: Optional[str] = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        list(argv),
-        cwd=cwd,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-
-def _git_stdout(argv: Sequence[str], run: RunFn, cwd: Optional[str] = None) -> str:
-    result = run(argv, cwd)
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout or "git command failed").strip()
-        command = " ".join(argv)
-        raise RuntimeError(f"{command}: {detail}")
-    return result.stdout.strip()
-
-
 def _dirty_lines(status_output: str) -> list[str]:
     return [line for line in status_output.splitlines() if line.strip()]
 
@@ -62,7 +46,7 @@ def _untracked_count(lines: Sequence[str]) -> int:
     return sum(1 for line in lines if line.startswith("??"))
 
 
-def current_state(run: RunFn = _run, cwd: Optional[str] = None) -> WorktreeState:
+def current_state(run: RunFn = _run, cwd: str | None = None) -> WorktreeState:
     path = _git_stdout(["git", "rev-parse", "--show-toplevel"], run, cwd)
     branch = _git_stdout(["git", "branch", "--show-current"], run, cwd) or "DETACHED"
     head = _git_stdout(["git", "rev-parse", "--verify", "HEAD"], run, cwd)
@@ -96,7 +80,36 @@ def list_worktree_paths(run: RunFn = _run) -> list[str]:
 
 
 def all_worktree_states(run: RunFn = _run) -> list[WorktreeState]:
-    return [current_state(run=run, cwd=path) for path in list_worktree_paths(run=run)]
+    states: list[WorktreeState] = []
+    for path in list_worktree_paths(run=run):
+        if not Path(path).exists():
+            states.append(
+                WorktreeState(
+                    path=path,
+                    branch="UNKNOWN",
+                    head="",
+                    dirty_count=-1,
+                    staged_count=-1,
+                    untracked_count=-1,
+                    status=[f"error: worktree directory does not exist: {path}"],
+                )
+            )
+            continue
+        try:
+            states.append(current_state(run=run, cwd=path))
+        except (RuntimeError, OSError) as exc:
+            states.append(
+                WorktreeState(
+                    path=path,
+                    branch="UNKNOWN",
+                    head="",
+                    dirty_count=-1,
+                    staged_count=-1,
+                    untracked_count=-1,
+                    status=[f"error: {exc}"],
+                )
+            )
+    return states
 
 
 def main_worktree_state(main_path: str = DEFAULT_MAIN_PATH, run: RunFn = _run) -> WorktreeState:
@@ -107,26 +120,18 @@ def main_worktree_state(main_path: str = DEFAULT_MAIN_PATH, run: RunFn = _run) -
     return current_state(run=run, cwd=main_path)
 
 
-def format_claim_token(state: WorktreeState, checked_at: Optional[int] = None) -> str:
+def format_claim_token(state: WorktreeState, checked_at: int | None = None) -> str:
     if not state.is_clean:
         raise ValueError("cannot create WORKTREE-CLEAN token for dirty state")
     checked = int(time.time()) if checked_at is None else checked_at
-    return (
-        "WORKTREE-CLEAN "
-        f"path={state.path} branch={state.branch} head={state.head} "
-        f"dirty=0 checked_at={checked}"
-    )
+    return f"WORKTREE-CLEAN path={state.path} branch={state.branch} head={state.head} dirty=0 checked_at={checked}"
 
 
-def format_main_claim_token(state: WorktreeState, checked_at: Optional[int] = None) -> str:
+def format_main_claim_token(state: WorktreeState, checked_at: int | None = None) -> str:
     if not state.is_clean:
         raise ValueError("cannot create MAIN-WORKTREE-CLEAN token for dirty state")
     checked = int(time.time()) if checked_at is None else checked_at
-    return (
-        "MAIN-WORKTREE-CLEAN "
-        f"path={state.path} branch={state.branch} head={state.head} "
-        f"dirty=0 checked_at={checked}"
-    )
+    return f"MAIN-WORKTREE-CLEAN path={state.path} branch={state.branch} head={state.head} dirty=0 checked_at={checked}"
 
 
 def _state_prefix(state: WorktreeState, clean_prefix: str, dirty_prefix: str) -> str:
@@ -177,7 +182,7 @@ def _print_inventory(states: Sequence[WorktreeState], checked_at: int, *, as_jso
         _print_state(state, checked_at, as_json=False)
 
 
-def main(argv: Optional[Sequence[str]] = None, run: RunFn = _run) -> int:
+def main(argv: Sequence[str] | None = None, run: RunFn = _run) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="emit machine-readable state")
     parser.add_argument("--all", action="store_true", help="emit every registered worktree state")
