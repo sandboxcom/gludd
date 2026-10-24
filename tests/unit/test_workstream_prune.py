@@ -63,6 +63,69 @@ def test_registry_is_atomic_and_unregisters_explicitly(tmp_path: Path) -> None:
     assert registry.active_branches() == frozenset({"feature/two"})
 
 
+def test_registry_refuses_active_path_reassignment_without_write(tmp_path: Path) -> None:
+    registry = WorkstreamRegistry(tmp_path / "registry.json")
+    retained, requested = tmp_path / "retained", tmp_path / "requested"
+    registry.register("feature/owned", retained)
+    registry.register("feature/peer", tmp_path / "peer")
+    before = registry.path.read_bytes()
+    with pytest.raises(ValueError, match=r"active workstream path mismatch.*reconcile"):
+        registry.register("feature/owned", requested)
+    assert registry.path.read_bytes() == before
+    assert registry.active_branches() == frozenset({"feature/owned", "feature/peer"})
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+@pytest.mark.parametrize("registry_same_path_kind", ("same", "symlink", "tmp-alias"))
+def test_registry_renews_same_physical_owner(
+    tmp_path: Path, registry_same_path_kind: str,
+) -> None:
+    registry = WorkstreamRegistry(tmp_path / "registry.json")
+    retained = (tmp_path / "retained").resolve()
+    retained.mkdir()
+    registry.register("feature/owned", retained)
+    requested = retained
+    if registry_same_path_kind == "symlink":
+        requested = tmp_path / "owner-alias"
+        requested.symlink_to(retained, target_is_directory=True)
+    elif registry_same_path_kind == "tmp-alias":
+        requested = (Path(str(retained).replace("/private/tmp/", "/tmp/", 1))
+                     if str(retained).startswith("/private/tmp/")
+                     else retained / ".." / retained.name)
+    assert requested.resolve() == retained
+    registry.register("feature/owned", requested)
+    entry = json.loads(registry.path.read_text(encoding="utf-8"))["workstreams"]["feature/owned"]
+    assert entry["branch"] == "feature/owned" and entry["status"] == "active"
+    assert entry["worktree"] == str(retained)
+    assert registry.active_branches() == frozenset({"feature/owned"})
+
+
+@pytest.mark.parametrize("registry_invalid_active_path", [None, "", 17])
+def test_registry_refuses_unverifiable_active_path_without_write(
+    tmp_path: Path, registry_invalid_active_path: object,
+) -> None:
+    registry = WorkstreamRegistry(tmp_path / "registry.json")
+    payload = {"version": 1, "workstreams": {"feature/owned": {
+        "branch": "feature/owned", "status": "active", "worktree": registry_invalid_active_path,
+    }}}
+    registry.path.write_text(json.dumps(payload), encoding="utf-8")
+    before = registry.path.read_bytes()
+    with pytest.raises(ValueError, match="active workstream path mismatch"):
+        registry.register("feature/owned", tmp_path / "requested")
+    assert registry.path.read_bytes() == before
+
+
+def test_registry_can_replace_an_explicitly_inactive_path(tmp_path: Path) -> None:
+    registry = WorkstreamRegistry(tmp_path / "registry.json")
+    registry.path.write_text(json.dumps({"version": 1, "workstreams": {"feature/owned": {
+        "branch": "feature/owned", "status": "inactive", "worktree": str(tmp_path / "old"),
+    }}}), encoding="utf-8")
+    registry.register("feature/owned", tmp_path / "requested")
+    entry = json.loads(registry.path.read_text(encoding="utf-8"))["workstreams"]["feature/owned"]
+    assert entry["worktree"] == str((tmp_path / "requested").resolve())
+    assert entry["status"] == "active"
+
+
 def test_locked_and_main_worktrees_remain_protected(tmp_path: Path) -> None:
     main = WorktreeRecord(path=tmp_path / "main", branch="development", locked=False)
     locked = WorktreeRecord(path=tmp_path / "locked", branch="feature/locked", locked=True)

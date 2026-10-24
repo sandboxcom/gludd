@@ -7,13 +7,8 @@
 # If `development` doesn't exist locally, create it from `master` first.
 # Usage: make agent-worktree-dev BRANCH=agent-fix-slurm
 agent-worktree-dev:
-	@[ -n "$(BRANCH)" ] || { echo "Usage: make agent-worktree-dev BRANCH=agent-<name>"; exit 1; }
-	@git rev-parse --verify development 2>/dev/null || { echo "Creating development branch from master..."; git branch development master; }
-	@WORKTREE_PATH="/tmp/gludd-worktrees/$(BRANCH)"; \
-	mkdir -p /tmp/gludd-worktrees; \
-	git worktree add "$$WORKTREE_PATH" -b "$(BRANCH)" development 2>/dev/null || git worktree add "$$WORKTREE_PATH" "$(BRANCH)"; \
-	echo "WORKTREE_PATH=$$WORKTREE_PATH"; \
-	echo "Worktree ready at $$WORKTREE_PATH on branch $(BRANCH) (base: development)"
+	@[ -n '$(subst ','"'"',$(BRANCH))' ] || { echo "Usage: make agent-worktree-dev BRANCH=agent-<name>"; echo "AGENT_NEXT target=$@ outcome=refused native_status=1 next_action=supply-BRANCH gate_evidence=false release_ready=false" >&2; exit 1; }
+	$(call _agent-worktree-create,development,development,$(ACTIVE_WORKSTREAM_REGISTRY))
 
 # Merge a subagent's worktree branch back to `development` (--no-ff).
 # Checks out development, merges the feature branch, then returns to the

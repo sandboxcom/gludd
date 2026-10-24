@@ -104,17 +104,32 @@ class WorkstreamRegistry:
             if worktree is None:
                 workstreams.pop(branch, None)
             else:
+                requested_path = worktree.expanduser().resolve()
+                existing = workstreams.get(branch)
+                if isinstance(existing, dict) and existing.get("status") == "active":
+                    retained_path = existing.get("worktree")
+                    if (
+                        not isinstance(retained_path, str)
+                        or not retained_path
+                        or Path(retained_path).expanduser().resolve() != requested_path
+                    ):
+                        raise ValueError(
+                            f"active workstream path mismatch for {branch!r}: retained "
+                            f"{retained_path!r}, requested {str(requested_path)!r}; reconcile "
+                            "the existing logical owner before explicit registration; "
+                            "do not force-remove or unregister it"
+                        )
                 workstreams[branch] = {
                     "branch": branch,
                     "status": "active",
                     "updated_epoch": int(time.time()),
-                    "worktree": str(worktree.expanduser().resolve()),
+                    "worktree": str(requested_path),
                 }
             self._write(payload)
             fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
     def register(self, branch: str, worktree: Path) -> None:
-        """Register *branch* as an active logical workstream."""
+        """Register or renew one physical owner, refusing active path reassignment."""
         self._mutate(branch, worktree)
 
     def unregister(self, branch: str) -> None:

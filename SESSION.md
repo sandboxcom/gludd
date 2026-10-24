@@ -28,17 +28,39 @@ TOML behavior preference is pending. No source was changed by the audit.
 
 Root published and remotely verified feature/v012-diagnostic-build-20261024 at
 5e61dd51f414e781dffbd7a1c766c32fd2bdf723 through normal hooks and exact-SHA
-dispatch. Build40058674968 and Molecule40058744183 are real workflow_dispatch
-runs. B312140, C283each and D312194 pass while GHA runs; the feature stays frozen.
-The hosted3.11 runtime cohort now fails the CSS no-overrides assertion against
-the Node advisory proposal:2370PASS/1FAIL85.46s/native87.7. Actual job120767228286
-context owns that finding. Both hosted gates now fail the same assertion; Molecule
-has5PASS/1running. An exact scoped-security override policy decision is pending
-(one request); production dependency repair and all final proofs remain pending.
-No assertion or release gate is weakened. The phase audit
-retains precise native receipts. Workflow-file consent is no blanket Actions API
-refusal; manual diagnostics never supply canonical push/deployment proof.
-Last measured disk99percent remains above final95; no cleanup/clearance follows.
+dispatch. Build40058674968 is terminal failure, both2370PASS/1CSS-policyFAIL;
+Molecule40058744183 is terminalsuccess/all6PASS. Both are workflow_dispatch,
+not canonical push/deployment proof. The exact override-policy and TOML behavior
+requests remain pending; all eight Build shards are unknown/skipped.
+
+Main ci-await result guidance is committed at0ec6ed410563619beb7a899e2d78d6fcd0b06395.
+
+Main safe comparator checkpoint1eec791e4761fee468eda5302cb626407f259595 has independent
+source approval and194PASS each311/312. Its fresh normal collection is fixed
+129924selected/129948collected,24deselected,0errors48.60s/native54.016 at
+test-count/20261024T043830Z-75456-2475370c.json. Its mutation receipt is
+commit-transaction/20261024T043819Z-74973-e5adf06c.json/native65.851.
+Those source/focus/collection scopes supply no gate or exact-SHA hosted proof.
+
+Corrected Creation+Legacy postimages on base1eec791 pass the complete32-selector
+Main union683PASS/1existingcontextSKIP each311/312,198.51s/native200.197 and
+194.45s/native197.1. Receipts:coverage-files/20261024T051221Z-15508-5e241646.json
+and20261024T051650Z-36616-c3f094e5.json. Whole prune/registry audits93.6LINE/86.2BRANCH
+and whole legacy5-case profiles100/100BOTH retain85/75. Original11FAIL/672PASS/1SKIP,
+missing register-forwarding hunk and negative source review remain; current
+source review, normal collection and final gate/exact-SHA proofs are separate.
+Parallel peers own retained-leader lifecycle and visible retirement-plan repairs.
+The original source failures, scope-incorrect controls and corrected fixture inputs
+remain historical evidence, never relabeled as production acceptance.
+
+Direct native cleanup1393 ends nonzero/no-progress:99to97percent,6.7GiBfree,
+above final95. Six clean materializations retire through native completion proof,
+archival and exact branch/commit retention; Root reads all six matching refs and
+archive manifests. Manual transcript:/tmp/gludd-v012-capacity-apply-1393-transcript.log.
+This is not a generated observation or green capacity receipt. Feature evidence
+is retained under .git/gludd-release-evidence/486ad25a8561-5e61dd51f414e781dffbd7a1c766c32fd2bdf723;
+native producers must refresh observations after actual rehydration before reuse.
+No unchanged capacity retry or protected-data removal follows.
 All seven S98 tasks remain open;132 backlog items stay excluded.
 
 ## Retained diagnostic CI correction (2026-10-23)

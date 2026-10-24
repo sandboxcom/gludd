@@ -9,6 +9,7 @@ from pathlib import Path
 
 from scripts.makefile_layout import compose_makefile
 
+from tests.unit.test_agent_worktree_targets import _recipe
 from tests.unit.test_worktree_prune_preservation import (
     test_cleanup_alias_applies_the_real_registered_native_retirement as _assert_native_retirement,
 )
@@ -444,7 +445,7 @@ class TestWorktreeAgentsHaveOwnBranch:
         text = makefile_text()
         idx = text.find("agent-worktree:")
         assert idx != -1, "B23: agent-worktree target not found"
-        block = text[idx : idx + 500]
+        block = _recipe("agent-worktree", source=text)
         assert "worktree add" in block, "B23: agent-worktree does not create git worktree"
 
 

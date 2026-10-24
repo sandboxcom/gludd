@@ -16,7 +16,7 @@ sequence; manual diagnostics supply no canonical push or deployment proof.
 Normal publication19972 completed native0/109.803s with all eight guards,
 authentication, source/provenance checks, actual pre-push mypy and collection,
 saved-SHA transport, upstream setup, verdict recording and exact remote
-verification. Its producer-owned receipt in the feature checkout is
+verification. Its producer-owned receipt in the original feature checkout is
 feature-diagnostic-publication/feature-diagnostic-publish-5e61dd5.json.
 Molecule signal90180 completed native0/19.711s at
 feature-molecule-dispatch/feature-molecule-dispatch-5e61dd5.json.
@@ -68,8 +68,10 @@ two open runtime-admission families in the feature-local ledger:
 875995f58debbdaf553aaf8c9c2bbf46b69e1aeafa13037bbd9bfc5a38212c61 and
 96dd1ddd9d3f05e0644eb4023075c47687fc814e7d7686a04cb8da39f6664e5e.
 The regular ci-await producer now records exact5e terminal failure rather than
-its earlier timeout. Molecule independently has5PASS/1running at the last
-summary. All eight downstream Build shard intervals stay unknown/censored.
+its earlier timeout. Molecule independently reaches terminalsuccess/all6PASS;
+regular ci-await writes success at2026-10-24T04:00:16.329195Z. The native summary
+and archived producer retain that exact5e result. All eight downstream Build
+shard intervals stay unknown/censored.
 No clean hosted Node audit or whole gate is inferred from earlier local audit0.
 
 The observation interface also exposed a model-guidance gap. ci-await snapshot1
@@ -77,8 +79,9 @@ returned the exact run ID and0 without writing observation JSON, as its release
 baseline API intentionally specifies. A subsequent missing-file read was Root's
 incorrect expectation, not producer failure or CI green. Regular snapshot0
 then produced an exact-SHA timeout45.713s/still-pending observation; that native
-file remains producer-owned. Mode-specific stderr guidance is being received
-with numeric stdout, all statuses, existing baseline calls and observation
+file remains producer-owned. Mode-specific stderr guidance is committed at
+0ec6ed410563619beb7a899e2d78d6fcd0b06395, with numeric stdout, all statuses,
+existing baseline calls and observation
 ownership preserved. The source's seven additive regressions failed first only
 for missing stderr guidance; all original stdout/status/sentinel checks already
 passed. Complete source/consumer53 passes each runtime in the isolated peer,
@@ -114,6 +117,63 @@ Final95percent capacity, complete gate/coverage, canonical exact-SHA push,
 master deployment and version publication still require actual evidence.
 TOML wide-integer behavior remains an ordinary failure with unaccepted policy.
 Workflow-file consent remains separate from the demonstrated Actions ability.
+
+## Source inventory and next receiving owners (2026-10-24 UTC)
+
+This manual inventory distinguishes the Git index, local candidate checkpoints,
+published diagnostic source and release approval. Native worktree-state owns the
+actual index/current SHA; no inventory paragraph supplies a later observation.
+
+| Implemented work | Source/staging state | Missing authority |
+| --- | --- | --- |
+| Existing transaction, provider and HTTPS base | In local Main candidate | Frozen full gate, exact-SHA push and deployment |
+| ci-await outcome guidance | Main0ec6ed4;142BOTH,311AST143 | Final gate and exact-SHA proof |
+| Safe immutable commit comparator | Main1eec791;194BOTH | Final gate and exact-SHA proof |
+| Verified creation and retired unsafe cleanup | Corrected Main683/1contextSKIPBOTH;93.6LINE/86.2BRANCH plus legacy5/100percentBOTH | Repaired intake review/normal collection, final gate and exact-SHA proof |
+| Safe-P bootstrap and installed controller selection | Published feature5e61dd5; narrow Main intake pending | Current Main consumers; preserve newer Main code |
+| Feature/dev saved-source publication and dispatch | Published feature5e61dd5; Main semantic intake pending | Current Main full consumers and exact event proof |
+| Checkout-specific mypy and ledger inputs | Published feature5e61dd5; Main intake pending | Current Main receiving; collection policy unchanged |
+| Node advisory proposal | Published2a63ce1 ancestry; HOLD | Exact policy input, TOML compatibility, complete hosted audit |
+| v0.1.2 approval | None; all seven tasks open | Every required final proof and promotion |
+
+The four non-Node feature packets cover24unique paths, including two new test
+owners. Receive three coherent groups: safe-P/runtime selection, saved-source
+publication/feature dispatch, then checkout typing/ledger controls. Preserve
+Main's transaction lifetime/private-public split, comparator, read-only status,
+ci-await modes, consent owner, shared inspection functions, canonical runtime
+envelope, all eight pins and overlap assertions. Never copy the older whole
+feature Make fragments, runtime tests or282-entry contract over Main. Each group
+needs exact current preimages, complete affected consumers, independent source
+review and its own ordinary source commit/collection. Diagnostic feature CI
+runs alongside independent source work; development and master still require
+their normal guarded promotion. No Node package/test policy is silently imported.
+
+The current comparator source checkpoint1eec791 has normal collection
+129924/129948,24deselected,0errors48.60s/native54.016 at
+test-count/20261024T043830Z-75456-2475370c.json. Its194BOTH/source approval remain
+separate from that collection and future current HEAD.
+
+Direct cleanup1393 is manual receiving, not a watched receipt. Its retained
+transcript is /tmp/gludd-v012-capacity-apply-1393-transcript.log. It reclaims
+space but ends no-progress at97percent/6.7GiBfree, above final95. Root verifies
+six retained exact refs and matching archive manifests. The feature archive is
+.git/gludd-release-evidence/486ad25a8561-5e61dd51f414e781dffbd7a1c766c32fd2bdf723;
+its .gate-logs and .gludd preserve all referenced native receipts/observations.
+A manifest or archived success grants no new current observation. Rehydrate
+through verified native creation before the producer refreshes its own state.
+
+The automatic owner can retire a clean materialization after its own native
+completion proof, archive and ref checks. A selected agent-cleanup refusal is
+a different contract. A capped dry-run skip summary concealed this larger scope;
+the isolated existing-producer output repair has genuine2RED then6GREEN but
+still needs its complete20-owner/three-source receiving and final source review.
+No cleanup threshold, receipt grace, active-owner proof or retention rule changes.
+
+Lifecycle research and positive-identity/FD/passive-reader findings stay in the
+owning WATCHDOG_SECRETS_LIFECYCLE record. Native Darwin zombie-only killpg EPERM
+also covers denied live targets, so errno or a census cannot certify absence.
+The isolated repair retains raw failures and exact next controls; focused
+diagnostics/inner facts with a failed outer watcher grant no watched acceptance.
 
 ## Retained diagnostic execution and receiving checkpoint
 

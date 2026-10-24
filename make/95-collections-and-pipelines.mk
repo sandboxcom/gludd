@@ -628,12 +628,11 @@ worktree-health-check:
 worktree-merge-all:
 	@$(UV) run python scripts/worktree_merge_all.py
 
-# Remove worktrees whose branches are fully merged into development,
-# while protecting the canonical ``agent-uv-boundary-fix`` workstream.
-# Worktrees with uncommitted changes or non-ancestor branches are skipped.
-# Usage: make worktree-cleanup-merged
+# Retired bulk compatibility entry: no inventory, tools or mutation children.
+# Usage: make worktree-cleanup-merged (expected native status 2)
 worktree-cleanup-merged:
-	@PYTHONPATH=scripts $(UV) run python scripts/cleanup_merged_worktrees.py
+	@printf '%s\n' 'Retired: worktree-cleanup-merged performs no cleanup.' \
+		'AGENT_NEXT target=worktree-cleanup-merged outcome=refused native_status=2 gate_evidence=false release_ready=false next_owner=agent-cleanup; reconcile native exact BRANCH=, canonical WORKTREE=, full source SHA and released logical ownership. Preserve the configured registry; never pass an empty registry override or guess a registry file/path. Use the existing selected owner and its documented inputs with AGENT_CLEANUP_VALIDATE_ONLY=1. For genuinely missing registrations inspect the documented wt-prune-safe validate-only plan. Preserve branch refs, locks, checkpoints and gate proof; no force removal or implicit unregister.' >&2; exit 2
 
 PIPELINE_STATUS_REPO ?= sandboxcom/gludd
 PIPELINE_STATUS_BRANCH ?= development

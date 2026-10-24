@@ -5,7 +5,8 @@
 The operator's 2026-10-23 request to maximize parallel implementation and hosted
 CI work overrides the default three-agent/two-owner ceiling below for this
 active release audit. Use six independent implementation lanes in isolated
-registered worktrees and one Git/publication writer. Admit at most four local
+registered worktrees (at most6 concurrent worktree agents), with one
+Git/publication writer. Admit at most four local
 test cohorts while observed worker demand, current load and disk permit;
 the existing eight-worker resource ceiling and final95percent disk limit stay.
 Reserve test slots explicitly; coding and source review continue while tests or
@@ -15,6 +16,17 @@ Before every dispatch wave run make check-system-load. Keep one public HTTP
 research owner. Read-only Main audits do not authorize source edits. Set the
 installed runtime explicitly on status readers as well as tests. The [pipeline/agentic audit](docs/features/GHA_PIPELINE_PROMOTION_AUDIT.md)
 records actual failures, native repairs, phase ownership and missing proofs.
+
+### KNOWN GAP history: linked-worktree locking
+
+A linked worktree uses a .git file; the old directory-only lock path broke
+repository-wide exclusion. Current git_automation/locking.py reads bounded
+gitdir and commondir metadata for the common repository. Preserve its native
+identity, fork, re-entry and async ownership controls. Use the existing Make
+transaction owner and its actual receipts; creation/registration readiness
+does not certify locking, the complete gate or exact-SHA promotion. The
+[locking record](docs/features/GIT_REPOSITORY_MUTEX.md) retains the source and
+proof boundaries for this historical gap.
 
 Diagnostic GHA belongs in the implementation loop, before release sign-off.
 Use feature branches for changes, development for integration and master for
