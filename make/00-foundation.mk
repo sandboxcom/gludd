@@ -463,7 +463,10 @@ endif
 endif
 
 PYTHON := python3
+# Explicit command-line runtime selection is trusted; ambient inputs stay fixed.
+ifneq ($(origin SYSTEM_PYTHON),command line)
 override SYSTEM_PYTHON := /usr/bin/python3
+endif
 # Execution stays real for every explicit goal and prerequisite. UV_NO_SYNC
 # above prevents implicit environment changes without silencing owners/guards.
 UV := uv

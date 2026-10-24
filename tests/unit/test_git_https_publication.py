@@ -603,3 +603,117 @@ def test_https_auth_bootstrap_ignores_implicit_cwd_and_preserves_carriers(
     assert all(row["cwd"] == str(fixture.root) for row in inline)
     assert all(row["pythonpath"] == str(carrier) for row in inline)
     assert all(row["carrier"] == "explicit unrelated carrier  n q t" for row in inline)
+
+
+def _copy_confined_root_entrypoint(fixture: HttpsFixture) -> None:
+    """Copy the actual bounded include graph into the owned command workspace."""
+    entrypoint = (ROOT / "Makefile").read_bytes()
+    fixture.makefile.write_bytes(entrypoint)
+    for declaration in entrypoint.decode("utf-8").splitlines():
+        if not declaration.startswith("include "):
+            continue
+        fragment = Path(declaration.removeprefix("include "))
+        assert fragment.parent == Path("make") and fragment.suffix == ".mk"
+        destination = fixture.root / fragment
+        destination.parent.mkdir(exist_ok=True)
+        destination.write_bytes((ROOT / fragment).read_bytes())
+
+
+@pytest.mark.parametrize("https_runtime_selector_e", [False, True])
+@pytest.mark.parametrize("https_runtime_selector_prerequisite", [False, True], ids=["direct", "prerequisite"])
+def test_actual_main_https_auth_honors_explicit_system_python(
+    https_publication_repo: HttpsFixture, tmp_path: Path,
+    https_runtime_selector_e: bool, https_runtime_selector_prerequisite: bool,
+) -> None:
+    """The real Foundation selector must reach the installed safe-path runtime."""
+    fixture = https_publication_repo
+    _copy_confined_root_entrypoint(fixture)
+    fixture.git("remote", "set-url", "sandboxcom", HTTPS_URL)
+    fixture.bind_helper()
+    before_config = (fixture.root / ".git/config").read_bytes()
+    startup_trace = tmp_path / "actual-root-runtime.jsonl"
+    carrier = tmp_path / "explicit runtime carrier"
+    carrier.mkdir()
+    (carrier / "sitecustomize.py").write_text(
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        "argv = getattr(sys, 'orig_argv', sys.argv)\n"
+        f"if argv[-1:] == [{str(fixture.gh)!r}]:\n"
+        f"    with Path({str(startup_trace)!r}).open('a', encoding='utf-8') as stream:\n"
+        "        stream.write(json.dumps({'executable': sys.executable, "
+        "'safe_path': getattr(sys.flags, 'safe_path', False), 'cwd': os.getcwd(), "
+        "'pythonpath': os.environ.get('PYTHONPATH'), "
+        "'carrier': os.environ.get('HTTPS_RUNTIME_SELECTOR_CARRIER')}) + '\\n')\n",
+        encoding="utf-8",
+    )
+    environment = {
+        **fixture.environment, "GIT_DIR": str(fixture.root / ".git"),
+        "GIT_WORK_TREE": str(fixture.root), "PYTHONPATH": str(carrier),
+        "HTTPS_RUNTIME_SELECTOR_CARRIER": "owned unrelated runtime carrier",
+    }
+    arguments = [f"SYSTEM_PYTHON={sys.executable}"]
+    goal = "_require-sandboxcom-git-auth"
+    if https_runtime_selector_prerequisite:
+        prerequisite = tmp_path / "actual-root-auth-prerequisite.mk"
+        goal = "owned-runtime-auth-prerequisite"
+        prerequisite.write_text(
+            ".PHONY: " + goal + "\n" + goal + ": _require-sandboxcom-git-auth\n"
+            "\t@printf '%s\\n' native-auth-prerequisite-complete\n",
+            encoding="utf-8",
+        )
+        arguments.extend(("-f", str(prerequisite)))
+    result = fixture.invoke(
+        goal, *arguments, makefile=fixture.makefile, environment=environment,
+        cwd=fixture.root, early_environment=https_runtime_selector_e,
+    )
+    assert (fixture.root / ".git/config").read_bytes() == before_config
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert [row["argv"] for row in fixture.rows()] == [
+        ["auth", "status", "--active", "--hostname", "github.com"],
+    ]
+    startup = [
+        json.loads(line) for line in startup_trace.read_text(encoding="utf-8").splitlines()
+    ]
+    assert startup == [{
+        "executable": sys.executable, "safe_path": True, "cwd": str(fixture.root),
+        "pythonpath": str(carrier), "carrier": "owned unrelated runtime carrier",
+    }]
+    if https_runtime_selector_prerequisite:
+        assert "native-auth-prerequisite-complete" in result.stdout
+
+
+@pytest.mark.parametrize("https_runtime_policy_origin", ["default", "environment", "environment-e"])
+def test_actual_main_keeps_fixed_system_python_without_cli(
+    https_publication_repo: HttpsFixture, tmp_path: Path, https_runtime_policy_origin: str,
+) -> None:
+    """Default and ambient/e inputs retain the existing fixed system runtime."""
+    fixture = https_publication_repo
+    _copy_confined_root_entrypoint(fixture)
+    environment = {
+        **fixture.environment, "GIT_DIR": str(fixture.root / ".git"),
+        "GIT_WORK_TREE": str(fixture.root),
+        "HTTPS_RUNTIME_SELECTOR_CARRIER": "owned unrelated runtime carrier",
+    }
+    environment.pop("SYSTEM_PYTHON", None)
+    if https_runtime_policy_origin != "default":
+        environment["SYSTEM_PYTHON"] = sys.executable
+    policy = tmp_path / "actual-root-runtime-policy.mk"
+    policy.write_text(
+        ".PHONY: owned-system-runtime-policy\nowned-system-runtime-policy:\n"
+        "\t@printf 'origin=%s\\nvalue=%s\\ncarrier=%s\\n' "
+        "'$(origin SYSTEM_PYTHON)' '$(SYSTEM_PYTHON)' \"$$HTTPS_RUNTIME_SELECTOR_CARRIER\"\n",
+        encoding="utf-8",
+    )
+    before_config = (fixture.root / ".git/config").read_bytes()
+    result = fixture.invoke(
+        "owned-system-runtime-policy", "-f", str(policy), makefile=fixture.makefile,
+        environment=environment, cwd=fixture.root,
+        early_environment=https_runtime_policy_origin == "environment-e",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.splitlines() == [
+        "origin=override", "value=/usr/bin/python3",
+        "carrier=owned unrelated runtime carrier",
+    ]
+    assert fixture.rows() == []
+    assert (fixture.root / ".git/config").read_bytes() == before_config

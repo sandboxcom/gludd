@@ -627,3 +627,50 @@ aggregate/75each-file line AND branch on both runtimes, ZDD, complete full gate,
 exact-SHA canonical CI/deployment and release/promotion proofs remain required.
 The separately approved route plan is a later source change after an explicit
 new full-SHA binding, never an ancestor or proof implied by these receipts.
+
+## Explicit installed runtime at the actual Make entrypoint
+
+Actual publication attempts90613/17145 failed before transport on source
+`2a63ce1588541a3a57900b6bf22691b3f0029c22`. Explicit installed runtime
+assignments in both outer and inner commands did not fix the input:
+Foundation unconditionally overrode SYSTEM_PYTHON with /usr/bin/python3.
+The HTTPS helper therefore reached Apple3.9 and rejected the required -P flag.
+Both failed observations remain; no further unchanged publication retry or
+removal of safe-path protection is selected.
+
+The native regression copies only the actual root Makefile and its twelve
+declared semantic fragments into an owned real-Git fixture. Command CWD,
+GIT_DIR and GIT_WORK_TREE are physically owned; existing fakeGH and
+index/ref/worktree/checkpoint/global-config assertions remain. Four installed
+CLI cases exercise ordinary/-e and direct/native-prerequisite helper invocation.
+Three independent default/environment/-e controls retain the fixed system
+runtime. The previous isolated fixture's explicit runtime assignment had masked
+the real Foundation override. No live configuration, authentication or network
+operation supplies these fixture results.
+
+Before repair, all four CLI cases failed with the actual Unknown-P input while
+all three fixed-policy controls passed: pytest4FAIL/3PASS2.58 seconds,
+native2/3.573 at
+`.gate-logs/observed/system-python-selector/system-python-selector-red311-2a63ce1.json`.
+The minimal existing selector now honors only command-line SYSTEM_PYTHON:
+an origin conditional surrounds the unchanged fixed override. Default,
+environment and -e environment inputs retain /usr/bin/python3. The tested CLI
+choice is the installed sys.executable; -P, helper binding and all normal
+publication guards remain.
+
+The same seven cases then passed7 in3.53 seconds, native0/4.416 at
+`.gate-logs/observed/system-python-selector/system-python-selector-green311-2a63ce1.json`.
+Its exact trace has17 events,7 starts/finishes,7 matching protocol pairs and no
+failure, unfinished case or pairing issue. The actual inline helper witness
+retains the selected executable, safe_path=True, owned CWD and unrelated
+explicit PYTHONPATH/carrier. Ruff, strict typing, environment-write,
+tracked-line10854, target-contract282 and native Make validation1159/0duplicates
+passed. All original HTTPS assertions remain; this is bounded seven-case
+prerequisite proof, not a replay of complete receiving.
+
+Root next owns staged guard, independent review and a normal three-path repair
+commit before actual normal diagnostic publication and exact-SHA observation.
+Package inputs and their prior clean2a advisory receipt retain only their
+unchanged measured scope. No audit/profile/Node replay, global runtime change,
+credential consent, product-behavior decision, full gate, hosted success,
+deployment or release approval is implied by this selector repair.
