@@ -9,7 +9,34 @@ Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection 
 
 Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. The active operator-directed wave permits six isolated implementation lanes and four local test cohorts only while native load and the eight-worker ceiling permit. Diagnostic GHA runs alongside independent source work; canonical runtime and final-proof settings retain their original bounds.
 
-## Current diagnostic CI correction (2026-10-23)
+## Current observed diagnostic checkpoint (2026-10-24 UTC)
+
+The substantive source checkpoint d32c65b28c48cc563bb9615b890fa273a5429af0 has
+independent source-only approval. Actual Main advisory receiving passes80 cases
+each on311/312; native main-atomicity-receiving receipts retain source identity
+f8f1ef22f756d35cef3439b5ea9ff23b9376f4b07f3cd3477c6de400f851de81.
+Its normal collection is129865/129889,24deselected,0errors53.36s/native58.976s
+at test-count/20261024T004021Z-48298-3660bf4a. The earlier header remains fixed
+714 evidence; this paragraph does not recertify it or a later changing HEAD.
+
+Actual debug/failed-job rerun of Build39826135809 attempt2 on published
+ eb772a658a01db4485087813e4478eb6c59cc328 reached a terminal Node audit failure:
+three TOML advisories and one Zod advisory. Native ci-view preserved attempt1
+and recorded attempt2. The candidate lock passes a separate native low audit
+with0 vulnerabilities;14PASS/1FAIL compatibility remains unaccepted and the
+TOML behavior preference is pending. No source was changed by the audit.
+
+Root created and registered feature/v012-diagnostic-build-20261024 at the exact
+published eb baseline. No implementation source has been imported/pushed there.
+The diagnostic-only source route retains exact branch/SHA, native published
+baseline, workflow bytes/history and all integrity/auth/promotion checks; its
+complete acceptance and immutable source commit are in progress. The current
+phase record below owns pending repairs/receipts; native producers own actual
+state. Missing workflow-file consent is no blanket Actions API refusal.
+Last measured disk99percent remains above final95; no cleanup/clearance follows.
+All seven S98 tasks remain open;132 backlog items stay excluded.
+
+## Retained diagnostic CI correction (2026-10-23)
 
 Feature-branch diagnostic CI precedes development integration and master
 promotion. Root incorrectly treated candidate publication/readiness as the

@@ -1,6 +1,86 @@
 # GHA pipeline and agentic promotion audit
 
-## Current source inventory and next owners
+## Actual diagnostic execution and receiving checkpoint
+
+2026-10-24 UTC manual evidence, separate from generated current status. Root's
+substantive candidate source d32c65b28c48cc563bb9615b890fa273a5429af0 has source-only
+approval. Native Main advisory receiving passes80 cases each on311/312, at
+main-atomicity-receiving/main-atomicity-receiving311-8a2ccc7.json and its312
+counterpart:11.26s/native12.237 and11.97s/native12.888. Normal receiving collection
+is129865/129889,24deselected,0errors53.36s/native58.976 at
+ test-count/20261024T004021Z-48298-3660bf4a. These scopes grant no full-gate proof.
+
+Root actually reran failed Build39826135809 with debug logging and failed-job
+selection, then observed attempt2 on published
+ eb772a658a01db4485087813e4478eb6c59cc328. Its terminal failure is the locked Node
+audit, before the old runtime-admission step. Native ci-view retained attempt1
+and recorded39826135809:2; the old runtime family stays repaired locally, not
+hosted resolved. The four high findings are three TOML advisories and one Zod
+advisory. Native request/await/summary receipts and the raw job log remain;
+passing local tests did not create this hosted result.
+
+The separate unchanged candidate package/lock passes the actual hosted LOW
+audit input with0 vulnerabilities, native0/0.836s:
+ v012-node-advisory-current-candidate-low/20261024T003304Z-37901-9daa91d3.json.
+The already-started HIGH audit is retained separately,0/0.845s; it is not
+relabeled as the stronger LOW check. Both audits measured uncommitted candidate
+bytes;14PASS/1FAIL compatibility and the pending TOML behavior preference remain
+unaccepted. No post-fix hosted run, repair-owned clean-SHA receipt or failure
+resolution is inferred. Independent phase checks must not wait on an unrelated
+behavior preference; accepting that behavior still requires its actual decision.
+
+Root remotely verified the existing candidate ref at exact eb, then created and
+registered feature/v012-diagnostic-build-20261024 from that exact published SHA.
+The new checkout has no implementation intake/push yet. Feature diagnostic
+publication uses existing guarded source transport/verification/signal owners;
+it needs no final release gate. Target branches remain feature/** or diagnostic/**.
+An explicitly published protected or canonical release-candidate/** baseline
+must pass actual native ref/fullSHA/local-object/ancestry and unchanged workflow
+bytes plus complete-history checks. This baseline eligibility grants no candidate
+promotion. Current fd8 ancestry includes a Pages workflow edit; renaming or
+reverting it cannot satisfy those provenance checks. Receive reviewed immutable
+implementation hunks onto the clean baseline, retaining original refs and tests.
+Workflow-file consent remains separate; real Actions rerun capability is proved.
+
+Parallel acceptance retains current B303PASS each and C907PASS/12legacySKIP
+each. A completes230 cases in290.23s/native294.5 with2FAIL/228PASS, not timeout.
+Its native trace has230 START/FINISH pairs and no unfinished node. Both failures
+came from the confined fixture omitting Foundation's actual ci-trigger .PHONY
+declaration. Receiving the real complete declaration retains every assertion
+and passes all18 mode controls. Two complete-function groups cover all43
+functions/230 parameter cases; refresh actual C readers rather than every
+unchanged scope. Neither grouping nor protocol wall spans prove speed savings.
+Final receiving/source commit, independent review and live source CI remain.
+
+The separate comparison helper11d362870c177deabed363e76f7f2e4463dfa802 is preserved
+CHANGES REQUIRED: missing native -P allowed implicit-CWD subprocess import, and
+the copied environment field exposed repr data. Synthetic-only privacy RED was
+run before any ambient fixture failure; repr=False then passed. An active native
+stdin shadow witness reproduced3 failures before -P; all4 new controls pass.
+Whole repaired seven-owner receiving passes194 cases on each runtime; normal
+source checkpoint/review remain pending. Earlier190 receipts keep their old scope.
+The known-clean review comparisons retain their narrow actual input results,
+without approving the old helper for future untrusted-CWD use.
+
+Scanner width is arithmetic in the current full-scan owner, not an acquired
+shared weighted reservation. The existing common-Git resource lease is the
+identified reuse point; no new scanner/runner/cache/daemon is needed. Staged
+hooks use a separate require_serial entrypoint, so a full-scan five-worker
+capture cannot justify a five-worker staged-hook assumption. Native natural
+scan-2ab30fa8c73a4fd7aa995f7c658460d8 timed_out124/60.534s with null trace and
+requested5; no success/cause is inferred. Current convenience readiness refusal
+was preserved without stop/reload. This coordination repair is not implemented
+and adds no unrelated prerequisite to eligible source/diagnostic work.
+
+Last capacity measurement is99percent/3.7GiB before the new checkout, above
+unchanged final95. No prune, vacuum, HumanTodo filing or capacity clearance is
+claimed. Integration35 source has430 focused consumers passing each runtime;
+whole49/12/3/native2 coverage remains pending actual capacity reassessment.
+All seven S98 tasks remain unchecked;132 backlog items remain excluded.
+Native work-item, observed-status, ci-await and pipeline-status own current
+observations; this manual record supplies no gate, deployment or release proof.
+
+## Retained source inventory and next owners (2026-10-23)
 
 This is a manual source/evidence inventory for2026-10-23 UTC. Every checkpoint
 below still needs canonical receiving and the required final proofs. No row is

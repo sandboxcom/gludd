@@ -6,7 +6,7 @@ The operator's 2026-10-23 request to maximize parallel implementation and hosted
 CI work overrides the default three-agent/two-owner ceiling below for this
 active release audit. Use six independent implementation lanes in isolated
 registered worktrees and one Git/publication writer. Admit at most four local
-test cohorts while actual native worker leases, current load and disk permit;
+test cohorts while observed worker demand, current load and disk permit;
 the existing eight-worker resource ceiling and final95percent disk limit stay.
 Reserve test slots explicitly; coding and source review continue while tests or
 hosted CI run. A blocked hosted lane names its actual prerequisite and pending
@@ -38,6 +38,20 @@ input, not a code fix or release proof. Never repeat a known unchanged failure
 merely because time elapsed. Source publication, diagnostic CI, development
 integration, master deployment and version-tag publication have separate
 outcomes; retain every canonical branch, coverage, ZDD and promotion gate.
+
+Read actual scanner argv/process evidence before reserving local test workers.
+The current full scan requests five workers; staged hooks use a separate serial
+entrypoint. Do not assign one owner's width to another. Status lease labels do
+not acquire weighted capacity. Reserve room for overlapping native scans; the
+[phase record](docs/features/GHA_PIPELINE_PROMOTION_AUDIT.md) retains the identified
+coordination gap without claiming it is repaired or adding a release exemption.
+
+Confined Make fixtures must receive the real target's complete .PHONY and
+provider/include context. A touch-mode failure in an incomplete fixture does not
+establish a production parser defect. New inline Python metadata bootstraps use
+the existing native -P boundary and preserve explicit PYTHONPATH carriers; prove
+an active same-entrypoint import-shadow witness. Keep copied environment fields
+repr=False so a failed fixture cannot dump ambient carriers.
 
 1. During release stabilization, prioritize the active milestone and its required repairs. Do not start unrelated backlog work or pad dispatch waves while release blockers remain.
 2. Keep one proof owner and one explicit missing-proof record per milestone task; use [Release Proof Throughput](docs/features/RELEASE_PROOF_THROUGHPUT.md). Distinguish implementation, focused acceptance, source review, full gate, exact-SHA CI, and completion.
