@@ -1192,8 +1192,8 @@ clean-untracked:
 	@echo "Cleaned up reinvention-of-wheel files"
 
 git-remote-sandboxcom:
-	@chmod 600 sandboxcom_github_rsa
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git remote add sandboxcom git@github.com:sandboxcom/gludd.git 2>/dev/null || true
+	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git remote set-url sandboxcom git@github.com:sandboxcom/gludd.git || true
 	@echo "Remote sandboxcom configured"
 
 # -- Push gate: prevent CI thrash (cancelled runs, push storms, excessive pushes) --
