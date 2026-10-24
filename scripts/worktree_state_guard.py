@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -12,8 +13,13 @@ from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from scripts.workflow_state_guard import _run as _run
-from scripts.workflow_state_guard import _stdout as _git_stdout
+# Ensure sibling scripts are importable regardless of invocation path.
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+
+from workflow_state_guard import _run as _run
+from workflow_state_guard import _stdout as _git_stdout
 
 DEFAULT_MAIN_PATH = "/Users/shawnwilson/gludd"
 RunFn = Callable[[Sequence[str], "str | None"], subprocess.CompletedProcess[str]]
