@@ -85,7 +85,7 @@ def _git(
     *args: str, check: bool = True, timeout: float | None = None,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", *args],
+        ["git", "--no-optional-locks", *args],
         cwd=Path.cwd(),
         check=check,
         capture_output=True,

@@ -456,7 +456,17 @@ def _remove_worktree_materialization(
     commit_result = run_git("cat-file", "-e", f"{head}^{{commit}}", check=False)
     if commit_result.returncode != 0:
         return LifecycleDecision(False, "worktree commit is unavailable", True)
+    root = evidence_archive_root or record.path.parent / ".gludd-release-evidence"
+    branch_digest = hashlib.sha256(record.branch.encode("utf-8")).hexdigest()[:12]
     if dry_run:
+        print(
+            "phase=cleanup action=remove-worktree status=dry-run "
+            f"path={json.dumps(str(record.path))} branch={json.dumps(record.branch)} "
+            f"head={head} archive={json.dumps(str(root / f'{branch_digest}-{head}'))} "
+            "evidence_archival=required branch_ref=retained commit=retained "
+            "mutation=none capacity_proof=none integration_proof=none",
+            flush=True,
+        )
         return LifecycleDecision(True, "would remove materialization")
 
     archived: list[tuple[Path, Path]] = []
@@ -495,8 +505,6 @@ def _remove_worktree_materialization(
                 restored = False
         return restored
 
-    root = evidence_archive_root or record.path.parent / ".gludd-release-evidence"
-    branch_digest = hashlib.sha256(record.branch.encode("utf-8")).hexdigest()[:12]
     archive_dir = root / f"{branch_digest}-{head}"
     manifest = archive_dir / "manifest.json"
     if root.is_symlink() or archive_dir.exists() or archive_dir.is_symlink():
