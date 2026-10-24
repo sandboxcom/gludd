@@ -1137,7 +1137,7 @@ help:
 		"  opencode-disk         Bounded data usage using the authoritative OpenCode DB path" \
 		"  opencode-clean        Offline bounded DB/cache cleanup; refuses while OpenCode runs" \
 		"  opencode-clean-hard   Offline aggressive cache/log cleanup; refuses while OpenCode runs" \
-		"  opencode-db-stats     Bounded read-only table counts" \
+		"  opencode-db-stats     SQL-readonly table/page metadata; physical reclaim remains unknown" \
 		"  opencode-db-schema    Bounded read-only schema report" \
 		"  opencode-db-sample    Bounded read-only timestamp sample" \
 		"  opencode-db-prune     Offline bounded recursive session/event prune" \
