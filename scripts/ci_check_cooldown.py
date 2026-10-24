@@ -170,14 +170,18 @@ def cmd_record_restart_block(restart_count: int) -> int:
     return 0
 
 
-def cmd_record_push() -> int:
+def cmd_record_push(expected_sha: str | None = None) -> int:
     """Record exactly one push after it has successfully landed.
 
     Verdict history is armed before the restart count changes. If either
     durable write fails, the command surfaces the error and returns nonzero;
     callers must never retry the push itself.
     """
-    head_sha = get_head_sha()
+    if expected_sha is not None and (len(expected_sha) != 40 or any(
+            character not in "0123456789abcdefABCDEF" for character in expected_sha)):
+        print("RECORD-PUSH-FAILED: explicit SHA must be full40hex", file=sys.stderr)
+        return 2
+    head_sha = expected_sha.lower() if expected_sha is not None else get_head_sha()
     if not head_sha:
         print("RECORD-PUSH-FAILED: unable to resolve HEAD", file=sys.stderr)
         return 1
@@ -341,7 +345,10 @@ def main() -> int:
         sha = sys.argv[3] if len(sys.argv) > 3 else None
         return cmd_record_verdict(verdict, sha)
     if cmd == "record-push":
-        return cmd_record_push()
+        if len(sys.argv) > 3:
+            print("record-push accepts at most one explicit full40hex SHA", file=sys.stderr)
+            return 2
+        return cmd_record_push(sys.argv[2]) if len(sys.argv) == 3 else cmd_record_push()
     if cmd == "record-restart-block":
         try:
             restart_count = int(sys.argv[2])

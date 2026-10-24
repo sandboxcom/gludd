@@ -31,6 +31,18 @@ def _target(source: str, name: str) -> str:
     return source[start : source.index("\n\n", start)]
 
 
+def _publication_inspection_inputs(source: str) -> str:
+    marker = ".PHONY: batch-push git-push-sandboxcom\n"
+    start = source.index(marker)
+    foundation = (ROOT / "make/00-foundation.mk").read_text(encoding="utf-8")
+    provider_start = foundation.index("# Shared native Make inspection grammar.")
+    provider_end = foundation.index("# End shared native Make inspection grammar.", provider_start)
+    provider = foundation[provider_start:provider_end] + "# End shared native Make inspection grammar.\n"
+    inputs_start = foundation.index("# Keep expected publication identity literal before startup/export expansion.")
+    inputs = foundation[inputs_start:foundation.index("\n\n", inputs_start)] + "\n"
+    return inputs + provider + source[start:source.index("\ngit-push-sandboxcom:", start)] + "\n"
+
+
 def _publish(
     tmp_path: Path,
     *,
@@ -103,6 +115,9 @@ def _publish(
         "if args[:2] == ['log', '--oneline']:\n"
         f"    print('\\n'.join('a' + str(i) + ' commit' for i in range({count})))\n"
         "elif args[:2] == ['branch', '--show-current']: print('gludd-test-runtime-publish')\n"
+        "elif args[:2] == ['branch', '--set-upstream-to=sandboxcom/gludd-test-runtime-publish']:\n"
+        "    assert args == ['branch', '--set-upstream-to=sandboxcom/gludd-test-runtime-publish', "
+        "'gludd-test-runtime-publish']\n"
         "elif args[0] == 'rev-parse': print('a' * 40)\n"
         "elif args[0] == 'push':\n"
         "    with trace.open('a') as stream: stream.write(json.dumps(dict(kind='transport', args=args)) + '\\n')\n"
@@ -151,6 +166,7 @@ def _publish(
     prerequisites = sorted(
         {
             "require-sandboxcom-ssh-key",
+            "_require-sandboxcom-git-auth",
             "ci-busy-check",
             *(name for block in publication for name in block.splitlines()[0].partition(":")[2].split()),
         }
@@ -166,6 +182,7 @@ def _publish(
         f"RUNTIME_PUBLISH_ENVIRONMENT := {selected_environment}\n"
         f"RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY := {validate_only}\n"
         + policy_defaults + "\n"
+        + _publication_inspection_inputs(recovery)
         + f".PHONY: batch-push run-watched {OWNER} {PUBLISH_OWNER} test-files _record-push-verdict "
         f"{' '.join(prerequisites)}\n"
         + "".join(f"{name}:\n\t@true\n\n" for name in prerequisites)
@@ -247,7 +264,7 @@ def _assert_owned_once(rows: list[dict[str, object]], phases: list[tuple[str, st
         ("--heartbeat-secs", "10"),
     ):
         assert arguments[arguments.index(name) + 1] == value
-    assert arguments[-1] == OWNER
+    assert _observed_make_arguments(arguments) == [OWNER]
     identity = [row for row in rows if row["kind"] == "runtime-identity"]
     assert len(identity) == 1
     assert "sys.version_info[:2] == (3, 11)" in str(identity[0]["args"])
@@ -312,6 +329,20 @@ def test_green_runtime_owner_runs_once_before_normal_transport(tmp_path: Path, f
     assert isinstance(transport_args, list)
     assert "--no-verify" not in transport_args
     assert list(observed.rglob("*.json")), "existing observer must retain success evidence"
+
+
+@pytest.mark.parametrize("forced", (False, True))
+def test_canonical_normal_publisher_keeps_manifest_failure_before_runtime_and_transport(
+    tmp_path: Path, forced: bool,
+) -> None:
+    result, rows, _ = _publish(
+        tmp_path, goal="git-push-sandboxcom", manifest_status=81, forced=forced,
+    )
+    assert result.returncode != 0
+    assert [row["kind"] for row in rows] == ["runtime-identity", "manifest"]
+    assert "Pinned Ansible base manifest admission failed" in result.stdout + result.stderr
+    assert "[check-ansible-base-image] Error 81" in result.stderr
+    assert not any(row["kind"] in {"observer", "runtime", "transport", "verdict"} for row in rows)
 
 
 @pytest.mark.parametrize(("count", "threshold", "successful"), ((1, 5, True), (5, 1, False)))
@@ -458,13 +489,15 @@ def test_unavailable_exact_manifest_stops_before_runtime_and_transport(
     assert "Git transport was not attempted" in result.stdout + result.stderr
 
 
-SIX_PREREQUISITE_PINS = [
+EIGHT_PREREQUISITE_PINS = [
     "tests/unit/test_gate_failure_promotion.py::test_repository_manifest_seeds_each_promoted_failure_family",
     "tests/unit/test_gate_failure_promotion.py::test_make_wiring_and_target_contract_are_explicit",
     "tests/unit/test_runtime_admission_scheduling.py::test_runtime_admission_retains_entire_roster_and_fresh_help",
     "tests/unit/test_admission_cold_start_selection.py::test_real_admission_filters_only_never_selected_main_siblings",
     "tests/unit/test_runtime_admission_scheduling.py::test_native_git_metadata_query_count_executes_once_in_first_cohort",
     "tests/unit/test_gate_failure_promotion.py::test_async_canonical_profile_contract_fails_in_compatibility_admission_first",
+    "tests/unit/test_make_target_contract.py::test_key_make_targets_recommends_guarded_release_owners",
+    "tests/unit/test_makefile_targets_deep.py::TestVariableConsistency::test_no_bare_equals",
 ]
 
 
@@ -479,6 +512,21 @@ def _observer_arguments(rows: list[dict[str, object]], label: str) -> list[str]:
     return cast(list[str], arguments)
 
 
+def _observed_make_arguments(arguments: list[str]) -> list[str]:
+    """Retain exact argv checks inside the existing shell command envelope."""
+    command = arguments[arguments.index("--") + 1:]
+    assert len(command) == 3 and command[:2] == ["/bin/sh", "-c"]
+    native = shlex.split(command[2])
+    assert native[:3] == ["make", "--no-print-directory", "-f"]
+    assert 5 <= len(native) <= 7
+    assert Path(native[3]).name == "Makefile" and Path(native[3]).is_file()
+    label = arguments[arguments.index("--label") + 1]
+    if label.startswith("batch-push-"):
+        assert native[4] == "--no-print-directory"
+        return native[5:]
+    return native[4:]
+
+
 def _assert_prerequisite_once(
     rows: list[dict[str, object]], *, label: str = "batch-push-prerequisite-admission",
 ) -> None:
@@ -488,7 +536,7 @@ def _assert_prerequisite_once(
         ("--heartbeat-secs", "10"),
     ):
         assert arguments[arguments.index(name) + 1] == value
-    assert arguments[-2:] == [
+    assert _observed_make_arguments(arguments) == [
         "check-gate-failure-promotions",
         "GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json",
     ]
@@ -499,7 +547,7 @@ def _assert_prerequisite_once(
     assert isinstance(metadata, list)
     assert metadata[:3] == ["--manifest", "config/gate_failure_promotions.json", "--repository-root"]
     assert len(metadata) == 4 and Path(str(metadata[3])).is_absolute()
-    assert pins[0]["files"] == SIX_PREREQUISITE_PINS
+    assert pins[0]["files"] == EIGHT_PREREQUISITE_PINS
     assert (pins[0]["nproc"], pins[0]["workers"]) == ("1", "1")
     assert shlex.split(str(pins[0]["flags"])) == [
         "-W", "error", "-q", "-n", "0", "--maxprocesses", "1", "--timeout=30",
@@ -673,7 +721,7 @@ def test_hosted_native_stages_stop_at_first_failure(
     if stage in {"", "runtime"}:
         _assert_prerequisite_once(rows, label="ci-gate-failure-promotions")
         arguments = _observer_arguments(rows, "ci-runtime-regression-admission")
-        assert arguments[-1] == OWNER
+        assert _observed_make_arguments(arguments) == [OWNER]
         assert arguments[arguments.index("--max-secs") + 1] == "90"
         assert arguments[arguments.index("--quiet-secs") + 1] == "60"
         runtime = [row for row in rows if row["kind"] == "runtime"]

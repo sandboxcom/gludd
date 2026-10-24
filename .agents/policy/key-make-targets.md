@@ -298,6 +298,21 @@ path-carrying targets. Keep that refusal and use each documented native owner.
 For confined static checks, preserve the original package initializer and config.
 A flat export can change import classification; receiving checks run in the actual
 package layout. Keep original imports and lint rules while repairing fixture input.
+On older-baseline intake, run the complete changed native contract consumer
+before long positive groups (here, tests/unit/test_runtime_publish_admission.py).
+Retain passed unaffected scopes at their actual unchanged inputs. These receiving
+commands require explicit `-p scripts.xdist_trace_plugin` in pytest arguments
+alongside RUN_WATCHED_PYTEST_TRACE=1: the older test-files recipe does not load
+the plugin merely because a trace path was allocated. Require actual matching
+native protocol pairs before attributing trace timing or cause.
+After meaningful core focus, whole changed-source coverage, native contract
+acceptance and source review, perform normal feature-ci diagnostic publication
+and its exact-SHA signal before the remaining local acceptance. Run those local
+cohorts on the frozen published SHA in parallel with GHA once the signal is
+accepted. Diagnostic purpose requires no final all-local-green receipt or
+finished candidate; retain the owning feature's pending roster and actual
+failures. This ordering waives no development/master, canonical gate,
+exact-SHA candidate, deployment or release proof.
 The commit docstring guard scopes src and can report SKIP for script-only changes.
 Native make lint-docstrings DOCSTRING_FILES='scripts/changed_owner.py' checks that
 script explicitly; a commit-guard SKIP is distinct from script docstring acceptance.
@@ -886,3 +901,106 @@ threshold in prose is not evidence that current policy admits an action.
 The unused wt-prune-force-merged entrypoint has been removed after real native
 fixtures reproduced ignored-proof loss. Its historical existence audit grants
 no current authority; use the same supported plan/retirement owners above.
+
+### Normal source publication and diagnostic feature CI
+
+Source input8545106ab9dd608f9a45dcf7c52c00503dbc658c supplies the following route semantics.
+This is an implementation-only EB intake; historical source receipts are not target acceptance.
+The current HTTPS prerequisite, safe-P helper, exact baseline and every canonical gate remain.
+
+Development publication uses the existing normal publisher. Run
+`make development-push --question SSH_KEY=/tmp/gludd-contract-absent-key`
+or `make git-push-sandboxcom --question PUBLISH_EXPECTED_BRANCH= PUBLISH_EXPECTED_SHA= SSH_KEY=/tmp/gludd-contract-absent-key`
+for the documented native query: expected1 from the phony goal, no auth,
+runtime, transport, target touch or hosted observation, and no release proof.
+Real development publication requires current development, saves native full
+HEAD before delegation and retains its explicit development CI-busy check.
+The normal publisher validates optional literal PUBLISH_EXPECTED_BRANCH and
+PUBLISH_EXPECTED_SHA as a pair: both empty keeps ordinary behavior; a partial,
+malformed or changed candidate refuses before body auth/runtime/transport.
+BRANCH/SHA remain unrelated inputs. Existing FORCE policy and hooks remain.
+Transport uses saved fullSHA:refs/heads/savedbranch, then native named-branch
+upstream configuration, verdict recording and saved fullSHA verify-remote.
+A tracking/verdict/verification failure may follow applied transport: preserve
+native status and reconcile that actual input before any retry. The existing
+transport-aware auth owner selects SSH key or canonical repo-local GH HTTPS;
+configuration/read authentication grants no workflow-write permission.
+The [development publication record](../../docs/features/GITHUB_PUBLICATION_HTTPS.md#development-publication-binds-the-saved-candidate)
+retains native REDs, flag grammar, receiving scope and missing proofs. Hosted
+receiving replaces the final verify tail with its one existing exact-SHA
+verify-and-watched-CI macro; never add a second watcher or call CI success from
+local acceptance. Use the existing private Foundation mode provider when changing
+inspection behavior; retain each consumer's native capture and actual provider
+fixtures with ordinary/-e modes, argument/tail negatives and real witnesses.
+Full gate, exact-SHA hosted and deployment proof remain open.
+
+Feature source CI uses the existing normal publisher with explicit
+PUBLISH_PURPOSE=feature-ci after focused acceptance and a normal source commit.
+Use worktree-state to obtain the actual feature/** or diagnostic/** branch and
+full source SHA. Supply that pair through PUBLISH_EXPECTED_BRANCH/SHA and an
+explicit PUBLISH_BASELINE_REF naming master, main, development or an already
+published release-candidate/** branch, plus its actual full PUBLISH_BASELINE_SHA.
+The baseline is independently verified; native full branch grammar rejects
+malformed names and arbitrary agent/feature/tag baselines. An eligible candidate
+baseline never permits a release-candidate publication target or grants release
+readiness. Native remote/object/ancestry, complete workflow
+bytes and full-history checks must pass; an edit/revert workflow history also
+refuses. Keep refs and use the existing authorized workflow repair route for
+workflow changes. No new token scope or force/no-verify path is introduced.
+Append the installed runtime tuple documented above to every Make invocation.
+
+The default canonical purpose retains all existing EE/promotion/runtime90/60
+admission and promotion proof. Explicit feature-ci retains all eight guards,
+transport-aware auth, real Git hooks, saved-SHA transport, upstream setup,
+saved-SHA verdict recording and exact verification, then invokes the existing
+ci-trigger-committed-head sequentially. It starts no canonical all-required-push
+waiter. An actual returned run URL supplies diagnostic visibility; use its RUN
+with ci-run-summary and native failure/status owners for terminal evidence.
+Feature to development to master still requires unchanged promotion gates.
+Feature diagnostics require no final full-gate/all-local-tests-green receipt
+through this graph. Keep ordinary commit/hooks and selected focused evidence.
+The retained failure ledger blocks unresolved families on the actual candidate
+branch until its native focused repair receipt is verified and ancestral;
+other-branch findings are not release-readiness prerequisites. Preserve
+previous-verdict observation, active-CI/rate/restart, clean-state, ownership,
+auth and workflow-history refusals. A workflow edit anywhere after
+the published baseline still refuses even if reverted or the branch renamed.
+
+Before broad receiving, freeze the exact owned source/config/test path set and
+let the sole Git writer run the staged-content guard. A clone failure stops
+dependent batches: reuse the existing semantic owner, preserve its native
+error handling, carry its actual fixture include graph and add its complete
+affected test owner. Do not weaken the clone baseline or treat unstaged fixes
+as a measured staged success. Drain the narrow native regression/static checks,
+refreeze and let the Git writer restage and refresh that guard first.
+
+A native Make fixture must include the actual complete Foundation .PHONY
+declaration as well as its alias, prerequisite and recipe bytes. An extracted
+alias recipe alone can omit global no-touch behavior. Use the existing source
+extraction; preserve native ordinary/-e inspection assertions and detectable
+missing context instead of inventing a phony substitute. If a complete flat
+test owner approaches its unchanged bound, reconcile every native node with
+the source function roster and use disjoint complete function groups, retaining
+all parametrizations. Actual paired wall timing is diagnostic, not CPU,
+forecast savings or permission to enlarge a failed bound. Refresh the actual
+test-source/document readers after a fixture/prose change; retain accepted
+independent source scopes at their unchanged inputs. The owning feature records
+the full selectors and missing receiving proof.
+
+Native query and offline signal examples are owned by the target contract:
+
+~~~sh
+make git-push-sandboxcom --question PUBLISH_PURPOSE=canonical PUBLISH_BASELINE_REF= PUBLISH_BASELINE_SHA= PUBLISH_EXPECTED_BRANCH= PUBLISH_EXPECTED_SHA= WORK_ITEM_ID= SSH_KEY=/tmp/gludd-contract-absent-key
+make ci-trigger-committed-head EXAMPLE=1 REF=feature/contract REMOTE=sandboxcom REPO=sandboxcom/gludd WORKFLOW='Build and Release' DISCOVERY_POLLS=1 CONFIRM_POLLS=1 POLL_INTERVAL=0 PUBLISH_PURPOSE=feature-ci PUBLISH_EXPECTED_BRANCH=feature/contract PUBLISH_EXPECTED_SHA=0123456789abcdef0123456789abcdef01234567 PUBLISH_BASELINE_REF=master PUBLISH_BASELINE_SHA=abcdef0123456789abcdef0123456789abcdef01
+~~~
+
+The query returns1; the example returns0 with planned guidance and a synthetic
+URL. Neither executes publication or grants proof. For a live signal after
+already-applied publication, retain the saved expected pair and published
+baseline, use EXAMPLE=0 with the same guarded signal owner, and reconcile an
+accepted marker/run before retry. Do not repush just to request CI. The
+[feature CI record](../../docs/features/GITHUB_PUBLICATION_HTTPS.md#feature-source-ci-before-promotion)
+records exact native controls, the published workflow job/step guards and the
+required later Root composition with prepared task forwarding and one Hosted
+canonical macro. Native command wrappers remain the owners; add no observer,
+poller, cache or public credential field.

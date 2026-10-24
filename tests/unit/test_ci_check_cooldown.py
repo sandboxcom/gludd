@@ -14,6 +14,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -21,7 +22,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "ci_check_cooldown.py"
 
 
-def _load_module():
+def _load_module() -> ModuleType:
     spec = importlib.util.spec_from_file_location("ci_check_cooldown_under_test", SCRIPT_PATH)
     if spec is None or spec.loader is None:
         raise ImportError(f"failed to load {SCRIPT_PATH}")
@@ -180,6 +181,46 @@ def test_record_push_surfaces_state_write_failure(
     monkeypatch.setattr(ci_check_cooldown, "save_history_atomic", fail_write)
     assert ci_check_cooldown.cmd_record_push() == 1
     assert "state write failed" in capsys.readouterr().err.lower()
+
+
+@pytest.mark.parametrize("sha", ("a" * 40, "AB" * 20))
+def test_record_push_uses_explicit_full_sha_without_reading_new_head(
+    isolated_state: Path, monkeypatch: pytest.MonkeyPatch, sha: str,
+) -> None:
+    def unexpected_head() -> str:
+        raise AssertionError("a pinned publication must not re-read a later HEAD")
+
+    monkeypatch.setattr(ci_check_cooldown, "get_head_sha", unexpected_head)
+    assert ci_check_cooldown.cmd_record_push(sha) == 0
+    history = json.loads(ci_check_cooldown.HISTORY_FILE.read_text())
+    assert history["last_push_sha"] == sha.lower()
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_text() == "1"
+
+
+@pytest.mark.parametrize("sha", ("", "abc", "a" * 39, "a" * 41, "g" * 40, " a" + "b" * 38))
+def test_record_push_rejects_malformed_explicit_sha_before_state_write(
+    isolated_state: Path, sha: str, capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert ci_check_cooldown.cmd_record_push(sha) == 2
+    assert "explicit SHA must be full40hex" in capsys.readouterr().err
+    assert not ci_check_cooldown.HISTORY_FILE.exists()
+    assert not ci_check_cooldown.RESTART_COUNT_FILE.exists()
+
+
+def test_record_push_cli_forwards_saved_sha_and_rejects_extra_arguments(
+    isolated_state: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sha = "b" * 40
+    monkeypatch.setattr(ci_check_cooldown.sys, "argv", ["ci_check_cooldown.py", "record-push", sha])
+    assert ci_check_cooldown.main() == 0
+    assert json.loads(ci_check_cooldown.HISTORY_FILE.read_text())["last_push_sha"] == sha
+    history = ci_check_cooldown.HISTORY_FILE.read_bytes()
+    monkeypatch.setattr(ci_check_cooldown.sys, "argv", ["ci_check_cooldown.py", "record-push", sha, "extra"])
+    assert ci_check_cooldown.main() == 2
+    assert "at most one" in capsys.readouterr().err
+    assert ci_check_cooldown.HISTORY_FILE.read_bytes() == history
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_text() == "1"
 
 
 def test_non_mapping_json_state_and_history_fail_to_empty_defaults(

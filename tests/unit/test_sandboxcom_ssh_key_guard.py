@@ -32,8 +32,14 @@ def test_ssh_key_defaults_outside_repository() -> None:
 
 def test_development_push_uses_external_key_guard() -> None:
     block = _target_block("development-push")
-    assert "require-sandboxcom-ssh-key" in block
-    assert "ssh -i $(SSH_KEY)" in block
+    publisher = _target_block("git-push-sandboxcom")
+    authentication = _target_block("_require-sandboxcom-git-auth")
+    assert "git-push-sandboxcom" in block
+    assert "git push " not in block
+    assert "require-sandboxcom-ssh-key" not in block
+    assert "_require-sandboxcom-git-auth" in publisher
+    assert "require-sandboxcom-ssh-key" in authentication
+    assert "ssh -i $(SSH_KEY)" in publisher
     assert "/Users/shawnwilson/gludd/sandboxcom_gludd_rsa" not in block
 
 

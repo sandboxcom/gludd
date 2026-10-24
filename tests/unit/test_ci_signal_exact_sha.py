@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
+import os
 import subprocess
 import sys
+import time
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -402,6 +405,185 @@ def test_release_candidate_push_path_uses_idempotent_signal_script() -> None:
     assert "gha-ready" not in trigger
     assert "workflow-gate" not in trigger
     assert "ci-trigger-committed-head" in combined_line
+
+
+class FeatureSignalAdapter(FakeRunner):
+    """Combine existing GH response coverage with the shared unit Git boundary."""
+
+    def __init__(self, run_lists: Sequence[Sequence[dict[str, object]]]) -> None:
+        super().__init__(run_lists)
+        from tests.unit.test_ci_remote_head_guard import DiagnosticGitAdapter
+
+        self.git = DiagnosticGitAdapter()
+        self.move_on_lookup = False
+
+    def __call__(
+        self, argv: Sequence[str], cwd: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        if argv[0] == "git":
+            return self.git(argv, cwd)
+        result = super().__call__(argv, cwd)
+        if self.move_on_lookup and list(argv[:3]) == ["gh", "run", "list"]:
+            self.git.head = OTHER_SHA
+            self.git.remote_head = OTHER_SHA
+        return result
+
+
+def _feature_signal(runner: FeatureSignalAdapter, state_dir: Path) -> signal_module.SignalResult:
+    from tests.unit.test_ci_remote_head_guard import BASE_SHA, FEATURE_REF, FULL_SHA
+
+    return signal_exact_sha(
+        ref=FEATURE_REF, purpose="feature-ci", expected_branch=FEATURE_REF, expected_sha=FULL_SHA,
+        baseline_ref="master", baseline_sha=BASE_SHA, discovery_polls=1, confirm_polls=1,
+        poll_interval=0, state_dir=state_dir, run=runner, sleep=lambda _seconds: None,
+    )
+
+
+@pytest.mark.parametrize("existing", (False, True))
+def test_feature_signal_preserves_exact_sha_discovery_and_dispatch(
+    tmp_path: Path, existing: bool,
+) -> None:
+    from tests.unit.test_ci_remote_head_guard import FULL_SHA
+
+    runner = FeatureSignalAdapter([[_run_payload(sha=FULL_SHA)]] if existing
+                                  else [[], [], [_run_payload(sha=FULL_SHA, event="workflow_dispatch")]])
+    result = _feature_signal(runner, tmp_path)
+    assert result.sha == FULL_SHA
+    assert result.dispatched is not existing
+    assert runner.dispatch_count == (0 if existing else 1)
+    baseline_reads = [args for args in runner.git.calls if args[:4] == ["git", "ls-remote", "--exit-code", "--heads"]]
+    assert len(baseline_reads) == (1 if existing else 2)
+
+
+def test_feature_signal_rechecks_pinned_source_after_lookup_before_dispatch(tmp_path: Path) -> None:
+    runner = FeatureSignalAdapter([[], []])
+    runner.move_on_lookup = True
+    with pytest.raises(SignalError, match="saved expected candidate"):
+        _feature_signal(runner, tmp_path)
+    assert runner.dispatch_count == 0
+    assert not list(tmp_path.glob("*.json"))
+
+
+@pytest.mark.parametrize("field", ("ref", "remote", "repo", "workflow", "purpose"))
+def test_feature_signal_refuses_wrong_scope_before_git_or_gh(tmp_path: Path, field: str) -> None:
+    from tests.unit.test_ci_remote_head_guard import BASE_SHA, FEATURE_REF, FULL_SHA
+
+    values = {
+        "ref": FEATURE_REF, "remote": "sandboxcom", "repo": "sandboxcom/gludd",
+        "workflow": "Build and Release", "purpose": "feature-ci",
+    }
+    values[field] = "foreign"
+    runner = FeatureSignalAdapter([])
+    assert set(values) == {"ref", "remote", "repo", "workflow", "purpose"}
+    with pytest.raises(SignalError):
+        signal_exact_sha(
+            ref=values["ref"], remote=values["remote"], repo=values["repo"],
+            workflow=values["workflow"], purpose=values["purpose"],
+            expected_branch=FEATURE_REF, expected_sha=FULL_SHA,
+            baseline_ref="master", baseline_sha=BASE_SHA, state_dir=tmp_path, run=runner,
+        )
+    assert runner.git.calls == runner.gh_calls == []
+
+
+def test_signal_provider_errors_remain_failures_without_dispatch(tmp_path: Path) -> None:
+    for payload in ("invalid-json", "{}"):
+        def run(
+            argv: Sequence[str], cwd: str | None = None, *, response: str = payload,
+        ) -> subprocess.CompletedProcess[str]:
+            del cwd
+            return _completed(argv, stdout=response)
+
+        with pytest.raises(SignalError, match="JSON"):
+            signal_module._list_exact_runs(
+                repo="sandboxcom/gludd", workflow="Build and Release", sha=SHA, run=run, cwd=None,
+            )
+
+    def broken(argv: Sequence[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
+        del argv, cwd
+        raise OSError("owned lookup unavailable")
+
+    with pytest.raises(SignalError, match="owned lookup unavailable"):
+        signal_module._checked(["owned"], run=broken, cwd=None, operation="lookup")
+
+    def refused(argv: Sequence[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
+        del cwd
+        return _completed(argv, stderr="owned lookup refused", returncode=73)
+
+    with pytest.raises(SignalError, match="owned lookup refused"):
+        signal_module._checked(["owned"], run=refused, cwd=None, operation="lookup")
+    assert not list(tmp_path.glob("*.json"))
+
+
+@pytest.mark.parametrize("payload", ("invalid", "[]"))
+def test_signal_marker_refuses_malformed_private_state(tmp_path: Path, payload: str) -> None:
+    marker = tmp_path / "owned-marker.json"
+    marker.write_text(payload, encoding="utf-8")
+    with pytest.raises(SignalError, match="dispatch marker"):
+        signal_module._read_marker(marker)
+
+
+def test_signal_marker_write_failure_keeps_no_accepted_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = tmp_path / "owned-marker.json"
+
+    def refused_replace(_source: object, _destination: object) -> None:
+        raise OSError("owned atomic write refused")
+
+    assert vars(signal_module)["os"] is os
+    monkeypatch.setattr(os, "replace", refused_replace)
+    with pytest.raises(SignalError, match="owned atomic write refused"):
+        signal_module._write_marker(
+            marker, sha=SHA, ref="feature/owned", repo="sandboxcom/gludd",
+            workflow="Build and Release", dispatch_url=RUN_URL,
+        )
+    assert not marker.exists()
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_signal_lock_wait_and_timeout_are_bounded_native_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+    assert vars(signal_module)["fcntl"] is fcntl
+    assert vars(signal_module)["time"] is time
+    real_unlock = fcntl.LOCK_UN
+
+    def briefly_busy(_descriptor: int, mode: int) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1 and mode != real_unlock:
+            raise BlockingIOError
+
+    monkeypatch.setattr(fcntl, "flock", briefly_busy)
+    messages: list[str] = []
+    sleeps: list[float] = []
+    with signal_module._signal_lock(
+        tmp_path / "owned.lock", sleep=sleeps.append, progress=messages.append,
+    ):
+        assert sleeps == [1.0]
+    assert len(messages) == 1
+
+    def always_busy(_descriptor: int, _mode: int) -> None:
+        raise BlockingIOError
+
+    ticks = iter((0.0, 2.0))
+    monkeypatch.setattr(fcntl, "flock", always_busy)
+    monkeypatch.setattr(time, "monotonic", lambda: next(ticks))
+    with pytest.raises(SignalError, match="timed out"), signal_module._signal_lock(
+        tmp_path / "owned-timeout.lock", sleep=sleeps.append,
+        progress=messages.append, timeout=1.0,
+    ):
+        pytest.fail("an unowned lock must not admit dispatch")
+
+
+@pytest.mark.parametrize("arguments", (
+    ["--discovery-polls", "0"], ["--confirm-polls", "0"], ["--poll-interval", "-1"],
+))
+def test_signal_cli_rejects_invalid_poll_bounds(arguments: list[str]) -> None:
+    with pytest.raises(SystemExit) as result:
+        main(arguments)
+    assert result.value.code == 2
 
 
 def test_contract_and_docs_pin_network_free_behavioral_example() -> None:
