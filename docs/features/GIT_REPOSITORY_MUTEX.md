@@ -1,5 +1,144 @@
 # Git Repository Mutex Process Contract
 
+## Exact hosted observer warning graph (2026-10-26 UTC)
+
+Normal guarded feature publication remotely verified source
+265f8b6add9e5dda459d8df056e17c732e77ea2c. Build40339437973 and
+Molecule40340580626 were actually accepted at that full SHA, workflow_dispatch,
+attempt1. Build failed both runtime gates on the unchanged four high Node
+vulnerabilities; all eight downstream shard intervals remain unknown.
+Molecule passed five jobs and failed job121633872920 after a successful EXE
+build. Its required observer import was present; the strict graph audit rejected
+628561c8b618e40d24eb8a18bc06e7853b5b13a61996b3a47c78b88887932b95.
+Artifact verification/upload succeeded separately from that failed audit.
+
+Root downloaded the complete run-scoped molecule-linux-pyinstaller-warning-shard-1
+artifact with the native owner. The retained accepted raw37963738773 artifact
+matches raw SHA256091b524fcf71d5384947b30d471ec9f175a57ec5d928378c13edae86da46f00d.
+Current native normalization maps its866 edges to already accepted fd140a96a39f531fc6bffa207ba54474e8d2fdece099bda0e163a47da2f160bd.
+The new raw artifact has60619 bytes and SHA256
+c4993714ffff3670bb200f1006d09296bbac4df31256af3e05e6ea74739456fe.
+Existing compare-linux-pyinstaller-warnings generates the complete configuration
+receipt config/pyinstaller-warning-reviews/x86_64-628561c8b618e40d24eb8a18bc06e7853b5b13a61996b3a47c78b88887932b95.json:
+866 plus50 additions minus1 removal equals915. Both original raw files remain
+retained; no graph is accepted from a truncated console prefix.
+
+Independent source review accounts for every edge:44 scripts namespace edges
+belong to delayed progress/startup entrypoints, four Coverage imports are in
+those dormant CI modules, and one BaseModel edge names an existing Pydantic
+class attribute. The final addition/removal replaces only the native hook's
+temporary build coordinate. Locking's actual observer call passes neither
+progress_root nor progress_admission; default observer execution returns before
+those CI imports. The exact new x86_64 alternate retains the audit implementation,
+all22 reviewed missing edges,21 spec exclusions and3 hook-provided runtime
+edges. No missing observer exemption or scripts/coverage blanket exclusion is
+introduced. Native retained-artifact audit and new-review receipt check pass.
+
+The additive real-bytecode archive control actively makes all scripts and
+coverage imports unavailable, verifies native import refusal, and runs the real
+observer with child exit0 and7. It checks the actual durable native receipt,
+log and unchanged search paths; the two cases pass on Python3.12.15 at
+.gate-logs/observed/v012-package-denied-modules/v012-package-denied-modules312-20261026.json,
+native3.464 seconds. This strengthens the previous archive test's inherited
+search-path boundary; original assertions remain. Current complete receiving and
+independent frozen-delta review are recorded below; normal collection remains
+separate.
+
+The first four-path staged guard FAILED on five new hex-entropy findings in
+the policy/receipt, native2/1.751 seconds, retained at
+.gate-logs/observed/v012-warning-graph-content/v012-warning-graph-content-reviewed-20261026.json.
+Those values are the independently verified public graph/raw digests above.
+Root used the existing secrets-baseline owner for a full refresh with all eight
+native scanner workers reserved (actual spawn processes observed), not the
+separate five-worker readonly full-scan policy. The refresh added exactly5
+findings and removed0 in50.570 seconds; receipt
+.gate-logs/observed/v012-warning-baseline/v012-warning-baseline-refresh-20261026.json.
+Its settings digest changed only because the native disposable baseline
+filename changed; an initial private transaction refused that difference.
+Bounded inspection verified the sole filter filename parameter, unchanged
+plugins/exclusion rules and the exact five-identity inventory delta. The fixed
+Make review transaction calls existing manage_secrets_baseline.review_findings
+with the five explicit filename/detector/public-digest identities, verifies both
+raw artifacts and permits only that native temporary filename difference.
+The native owner preserves every other audit label, finding and current
+setting. Canonical check and readonly admission for all five paths pass.
+No detector suppression, filter change, baseline inventory waiver or production
+scanner code change is introduced. Final scope includes .secrets.baseline;
+the failed four-path guard supplies no current content admission.
+
+The independent final five-path baseline review approves source only. It retains
+all 1,352 previous review labels and marks exactly five new public-digest findings
+is_secret=False. The 59 native finding-coordinate changes span 11 files; the
+settings difference is confined to the native disposable filename parameter.
+Plugins, filters, exclusions and all unrelated audit fields retain their original
+values. The resulting five-path content guard passes native0 in 2.161 seconds:
+.gate-logs/observed/v012-warning-graph-content/v012-warning-graph-content-baseline-reviewed-20261026.json.
+That guard precedes this final receipt prose; Root must refresh its exact staged
+scope before the normal commit.
+
+Current complete receiving for this five-path follow-up is terminal on both
+installed runtimes: 507 whole-mutex cases plus 332 packaging/baseline consumers,
+839 distinct cases each, with fatal warnings and no skips. The earlier 505/237
+receipts in the archive-boundary section below retain their original snapshot;
+they are not reused as proof of the two new archive controls or baseline review.
+
+All eight current mutex owners are complete files under tests/unit:
+test_git_automation_locking.py, test_git_automation_locking_adversarial.py,
+test_git_locking.py, test_git_automation_deep.py,
+test_context_manager_audit_deep.py, test_make_commit_transaction.py,
+test_commit_observer_loading.py, test_commit_transaction_inputs.py.
+
+| Runtime | Whole mutex | Line coverage | Branch coverage | Native elapsed |
+| --- | --- | --- | --- | --- |
+| Python 3.11.14 |507 PASS,282.52s |447/465,96.129032% |135/152,88.815789% |284.562s |
+| Python 3.12.15 |507 PASS,301.78s |438/465,94.193548% |131/152,86.184211% |304.903s |
+
+Native profile receipts under .gate-logs/observed/coverage-files are
+20261026T155249Z-91510-2ae20a9a.json (3.11) and
+20261026T154657Z-70205-10a2db28.json (3.12). Raw reports are
+.gate-logs/v012-warning-mutex311.json and .gate-logs/v012-warning-mutex312.json;
+their native audits are .gate-logs/coverage-20261026T155733Z.json and
+.gate-logs/coverage-20261026T155201Z.json respectively. Both unchanged
+85 aggregate/75 per-file LINE and BRANCH audits pass. The original complete-file
+profile and 600total/180quiet boundary remain.
+
+The expanded packaging/baseline union retains all ten original owners and adds
+the two complete baseline review owners. Its twelve files under tests/unit are:
+test_pyinstaller_dynamic_imports.py, test_pyinstaller_spec_completeness.py,
+test_audit_pyinstaller_warnings.py, test_binary_build_verification.py,
+test_packaging_build_verification.py, test_cross_platform_binary.py,
+test_windows_sphincs_backend.py, test_molecule_binary_smoke_linux.py,
+test_check_pyinstaller_warning_reviews.py, test_compare_pyinstaller_warning_graphs.py,
+test_secrets_baseline_compaction.py, test_audit_public_secrets.py.
+All 332 pass on Python 3.11 in 10.95s/native12.495s and on Python 3.12 in
+14.00s/native15.511s. Receipts are
+.gate-logs/observed/v012-warning-consumers/v012-warning-consumers311-20261026.json
+and v012-warning-consumers312-20261026.json in the same directory. These exact
+native sessions are drained and their terminal observations independently
+verified; serial execution, fatal warnings and original300total/60quiet remain.
+
+Final documentation receiving uses both complete existing owners:
+tests/unit/test_markdown_docs_deep.py and
+tests/unit/test_s83_116_debounce_deck_sync.py, recovered from the actual debounce
+receipt. All 32 pass on each runtime: Python 3.11 takes 3.55s/native4.826s;
+Python 3.12 takes 4.04s/native5.481s. Exact receipts under
+.gate-logs/observed/v012-warning-docs are v012-warning-docs311-20261026.json and
+v012-warning-docs312-20261026.json. Both sessions are drained and verified
+inactive/passed0, with the original90total/60quiet, literal ID= and fatal warnings.
+Each native trace summary has 67 events,32 matching pairs and no timing issues,
+unfinished intervals or failure reports. Markdown and the strict line guard
+pass; this receipt-only prose does not repeat the unchanged source profiles.
+
+Historical frozen/source filename reports and official PyInstaller references
+below remain context, not proof of this new graph. This policy/baseline review
+restarts no running service. Root still owns the normal five-path commit and
+collection, fresh hosted PyInstaller bytes and warning audit, the original
+functional packaged-byte smoke outside the source checkout, the complete
+platform artifact matrix, canonical exact-SHA push CI, the complete gate/global
+coverage, development-to-master ZDD promotion and stable release artifacts.
+No archive simulation or structural smoke test certifies a built release
+executable. The failed original Build and Molecule runs remain failed.
+
 ## Frozen observer archive boundary (2026-10-26 UTC)
 
 This repair starts from c5e8278cbe0ecae3b46012ff07ff3c2f5cd33313 in the isolated

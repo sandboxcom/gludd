@@ -211,6 +211,47 @@ def test_frozen_observer_imports_real_archived_bytecode_without_source_script(
     assert tuple(sys.path) == initial_path
 
 
+
+@pytest.mark.parametrize("archive_child_status", [0, 7])
+def test_archived_observer_needs_no_ci_source_or_coverage_modules(
+    frozen_observer_archive: Path, tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch, archive_child_status: int,
+) -> None:
+    """Execute real frozen observer bytecode with unavailable development modules."""
+    import json
+    import os
+
+    with monkeypatch.context() as unavailable:
+        blocked_roots = ("scripts", "coverage")
+        for module_name in tuple(sys.modules):
+            if any(module_name == root or module_name.startswith(root + ".") for root in blocked_roots):
+                unavailable.setitem(sys.modules, module_name, None)
+        for root in blocked_roots:
+            unavailable.setitem(sys.modules, root, None)
+            with pytest.raises(ModuleNotFoundError) as refused:
+                importlib.import_module(root)
+            assert refused.value.name == root
+        original_path = tuple(sys.path)
+        observer_fn, identity_fn = locking._default_observer()
+        native_module = sys.modules["stream_command"]
+        assert native_module.__file__ is not None
+        assert str(frozen_observer_archive) in native_module.__file__
+        run_id = identity_fn()
+        observed_root = tmp_path / "without-development-modules"
+        log = tmp_path / "without-development-modules.log"
+        status = observer_fn(
+            [sys.executable, "-c", f"print('archive child status'); raise SystemExit({archive_child_status})"],
+            log, observed_root=observed_root, label="archive-dependencies", run_id=run_id,
+            heartbeat_seconds=1, quiet_seconds=0, max_seconds=10, retain_runs=2,
+            environment=dict(os.environ), cwd=tmp_path, pass_fds=(),
+        )
+        assert status == archive_child_status
+        receipt = json.loads((observed_root / "archive-dependencies" / (run_id + ".json")).read_text())
+        assert receipt["exit_code"] == archive_child_status
+        assert receipt["state"] == ("passed" if archive_child_status == 0 else "failed")
+        assert "archive child status" in log.read_text()
+        assert tuple(sys.path) == original_path
+
 def test_frozen_observer_import_failure_is_not_cached_and_can_retry(
     frozen_observer_archive: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
