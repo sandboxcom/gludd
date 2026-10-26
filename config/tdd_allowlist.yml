@@ -42,3 +42,6 @@ allowlist:
 
   - path: "src/general_ludd/ansible/paths.py"
     reason: "Pure path resolution utility — tested indirectly via ansible runner integration tests"
+
+  - path: "scripts/pyinstaller_hooks/hook-filelock._windows.py"
+    reason: "PyInstaller requires the hook-filelock._windows filename, which cannot be a normal Python import statement for the existing TDD mapper. Native runpy platform cases in tests/unit/test_pyinstaller_dynamic_imports.py execute the real hook; exact-file 85/75 line and branch coverage on Python 3.11/3.12, direct strict typing, and full native PyInstaller frozen import/lock smoke remain mandatory acceptance."

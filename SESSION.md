@@ -18,11 +18,16 @@ owners pass81 source cases, HELP1/TAIL14 pass, and MAIN2509 stays unproved with
 null trace. A separate full MAIN diagnostic passes2509 with complete pairs;
 that105.242s native run grants no admission or speed/CPU claim. The two-file
 shift to the existing TAIL now passes1267 complete-owner cases EACH runtime,
-including publication and lifecycle controls; clean original90/60 remains next.
+including publication and lifecycle controls. Normal runtime checkpoint
+8d2c97e8ca7887aa68dba27e25a601e176523ad4 has fresh131207/131231 collection,
+24 deselected/0 errors. Its actual release-proof admission passes151.016s;
+the original90/60 runtime passes86.989s with MAIN2390/HELP1/TAIL133.
 
 The c7 macOS build and native/mounted-DMG smokes pass, but the full build still
 warns about bare ntdll through filelock's Windows-only ctypes edge. The narrow
-platform-hook proposal is private. These are macOS/c7 proofs, not all-assets,
+platform hook now passes211 cases/6 original skips EACH and exact-file coverage;
+normal guarded hook collection/commit and fresh clean-source Mac build/smokes
+remain next. These are macOS/c7 proofs, not all-assets,
 Windows or canonical-gate certification. Feature-ci publication refuses changed
 workflow bytes against the verified82ec5170 baseline before transport/hooks or
 any Actions request; this is not an Actions API refusal.

@@ -123,7 +123,7 @@ a = Analysis(
         'azure.identity',
         'azure.mgmt',
     ],
-    hookspath=[],
+    hookspath=['scripts/pyinstaller_hooks'],
     hooksconfig={},
     runtime_hooks=[],
     # The beta4 core executable and Ansible controller are separate Python

@@ -1342,3 +1342,26 @@ consumer remains green. These establish behavior, not an admission speed claim.
 Ordinary collection/commit and the actual clean-SHA90/60 admission remain next. Full canonical21600 gate,
 global85/75 line AND branch BOTH, exact-SHA push CI, normal reviewed
 development/master promotion, ZDD and signed complete artifacts remain separate.
+
+## Original-bound admission at8d2c97e (2026-10-26 UTC)
+
+The normal runtime checkpoint is8d2c97e8ca7887aa68dba27e25a601e176523ad4.
+Mutation commit-transaction/20261026T230431Z-80709-73a72e87.json passes71.090s;
+fresh collection131207/131231,24deselected/0errors takes48.37s/native53.917s at
+test-count/20261026T230447Z-81983-be5be52b.json. An initial no-staged-changes
+refusal starts no mutation; staging exactly the nine reviewed paths repairs
+that caller input. Normal hooks, clone/line checks and collection remain intact.
+
+Actual release-proof-admission mode0 passes all nine owners in151.016s at
+v012-admission-main/v012-admission-tailpilot-8d2c97e-311-20261026.json.
+Its original90/60 runtime owner passes86.989s at
+release-proof-runtime-admission/proof-admission-20261026T230731Z-82524.json:
+MAIN2390 passes83.59s, HELP1 passes0.52s, TAIL133 passes51.42s;
+main_status=0/help_status=0/tail_status=0. Exact outer/inner sessions are drained,
+native statuses verified and Main remains clean at that full SHA throughout.
+The runtime trace remains null; no complete phase profile or percent speed
+improvement follows. This establishes one actual original-bound admission pass.
+
+The later packaging hook is a separate release-required source change.
+Candidate sealing still requires its own coherent source and all authoritative
+combined/full-gate/exact-SHA hosted, reviewed promotion, ZDD and release proofs.
