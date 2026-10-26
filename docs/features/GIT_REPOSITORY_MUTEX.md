@@ -31,7 +31,36 @@ native52.826/51.597/52.905s. Mutation receipts are commit-transaction/
 20261026T184216Z-43404-7da810ac.json (57.074s) and
 20261026T184411Z-45078-0d81b343.json (62.613s), under .gate-logs/observed.
 These measured the actual working source with identified unrelated WIP, not clean
-exact-SHA runtime proof. This packaging intake still needs its normal checkpoint.
+exact-SHA runtime proof. The fourth normal checkpoint is packaging source
+cf7fd28590f695b9149430761ed174fac36661f2 (8 paths): collection130959/130983,
+24deselected/0errors, pytest48.04s/native53.652s. Its native transaction is
+commit-transaction/20261026T184906Z-52161-15dfe6bd.json (63.998s); the native
+collection receipt is test-count/20261026T184915Z-53762-687b7f8f.json.
+
+### Packaging branch ancestry reconciliation
+
+The reviewed source copy above did not establish donor ancestry. The exact
+incoming feature/v012-packaged-observer-20261026 source is
+e9fa5cdf93acf8824d083f46d92f78577b0165b8, whose direct parent is published
+265f8b6add9e5dda459d8df056e17c732e77ea2c. The first guarded git-merge-nc found
+only this document's leading continuation in conflict: native merge1, owned
+abort0, outer Make2; fresh native status confirmed clean cf7fd28590f695b9149430761ed174fac36661f2.
+The existing conflict-preserving git-merge path then retained that same conflict,
+with both mutation/strategy guards and no conflict preference. Its failed
+observation is v012-package-ancestry/
+v012-package-ancestry-native-conflict-cf7fd28-20261026.json (native2/0.664s).
+
+Independent comparison proves the complete donor document is byte-identical to
+Main after removing only this leading continuation. The semantic resolution
+retains that entire donor body plus Main's continuation and actual fourth
+checkpoint receipt; no executable source or assertion changes. The normal
+merge checkpoint must retain fresh guarded collection and native parent
+verification. This reconciliation supplies no hosted success, full gate,
+reviewed development/master integration, deployment or artifact-release proof.
+The six pending Main edits are separately retained in the native owned checkpoint
+59e9c4292b8685076d98f2b4398c230ffd83cbe7; all four saved checkpoints verify as
+retained with zero unowned entries. Neither the Node behavior proposal nor its
+compatibility assertion changes are approved by this preservation operation.
 
 The separate integration55 coverage-owner repair and original49/12 profiles,
 Node/TOML preference, shared-account workflow consent, canonical full gate/global
