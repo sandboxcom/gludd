@@ -777,7 +777,7 @@ help:
 		"  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)" \
 		"  gate-tail             Print a bounded latest gate-log snapshot (GATE_TAIL_LINES=80)" \
 		"  gate-lite-tail        Print a bounded latest gate-lite-log snapshot (GATE_TAIL_LINES=80)" \
-		"  gate-progress         Estimate gate completion percent and ETA from historical logs (GATE_PROGRESS_MAX_HISTORICAL=10)" \
+		"  gate-progress         Estimate gate completion percent and ETA (GATE_PROGRESS_MAX_HISTORICAL=10; request post-output sleep for a RUNNING snapshot with GATE_PROGRESS_SLEEP=120..300, default 0; GATE_PROGRESS_COOLDOWN_SECS=120)" \
 		"  triage-failures       Incrementally group streamed failures (LOG, TRIAGE_STATE, TRIAGE_FORMAT)" \
 		"  collect-check         Fast collection-error gate" \
 		"  pre-commit-check      Fast lint + collection + typecheck commit preflight" \

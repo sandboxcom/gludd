@@ -865,7 +865,7 @@ A yielded session remains active until its exact terminal receipt is consumed. P
 
 #### Background-gate workflow (canonical way to run a long gate)
 
-gate-background returns<1s with native log/PID; continue useful work. gate-progress is preferred one-line state/%/elapsed/ETA/counts at natural breaks≤1/~2min (GATE_PROGRESS_COOLDOWN_SECS=120; GATE_PROGRESS_FORCE=1 only immediate genuine verdict). COOLDOWN still prints status/next poll; no stale-number polling.
+gate-background returns<1s with native log/PID; continue useful work. gate-progress is preferred one-line state/%/elapsed/ETA/counts at natural breaks≤1/~2min (GATE_PROGRESS_COOLDOWN_SECS=120; GATE_PROGRESS_FORCE=1 only immediate genuine verdict). COOLDOWN still prints status/next poll; no stale-number polling. Pace running-gate reads with `make gate-progress GATE_PROGRESS_SLEEP=120`, choosing 120–300 seconds (2–5 minutes). The native owner prints and flushes current status, then sleeps the requested interval only if that snapshot is RUNNING; a terminal or idle snapshot returns without that sleep. GATE_PROGRESS_SLEEP still defaults to0; this invocation guidance changes no owner or gate bound. Never rapid-fire bare `make gate-progress` polls.
 gate-status-check is for raw phase/terminal/.gate-status/last20-line failure diagnosis; gate-tail must not block main. gate-logs lists historical results; gate-kill TERM thenKILL after5s. On terminal ingest/act next: PASS→commit/push/verify; FAIL→named repair/gate-resume.
 No main make gate; gate-background only if nonblocking. Background markers “=== GATE PHASE: <name> ===”, terminal PASSED/FAILED and logs/PID remain. NEVER run on the main thread; in particular, never run `make gate` on the main thread; use `make gate-background` for non-blocking execution.
 
@@ -956,6 +956,7 @@ Checking ci-status more than3 times in a row without code changes is a stop patt
 ## CRITICAL: CI Wait Productivity (DC.1)
 
 During CI waits, advance release-related work: fix tests, write structural tests, update docs or investigate slow shards. Dispatch subagents for concrete independent deliverables when useful; zero subagents is valid when none exist. CI waiting never justifies filler. Use up to three useful owners.
+A running LOCAL gate is also a CI wait, not a stop: keep exercising the hosted pipeline in parallel instead of only polling the local gate. While the local gate runs, capture the hosted baseline with `make ci-await BRANCH=<branch> CI_AWAIT_SNAPSHOT_ONLY=1 CI_AWAIT_WORKFLOW='Build and Release' CI_AWAIT_EVENT=push` (use its stdout run ID as CI_AWAIT_AFTER_RUN_ID for the upcoming push), read the last hosted run's `ci-run-summary`/`ci-failed-tests`/`ci-faillog`/`ci-pyinstaller-warning-audit` evidence against the exact artifact, and keep `verify-remote` push readiness current. The moment the local gate turns green, commit the prepared batch and `make batch-push` + `make verify-remote` immediately so hosted CI starts without a serial gap; then monitor hosted runs at natural breaks while continuing local work. Never let the hosted pipeline sit idle through a whole local gate with nothing but gate-progress polls.
 
 ## CRITICAL: Polling CI Is Not Work (DC.2)
 

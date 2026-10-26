@@ -1,9 +1,72 @@
 # Current release handoff
 
-Last Updated: 2026-10-24 (local; receipts retain their actual UTC dates).
+Last Updated: 2026-10-26 (local; receipts retain their actual UTC dates).
 Published/remote-VERIFIED: release-candidate/v012-git-mutex-20261022 eb772a658a01db4485087813e4478eb6c59cc328.
 Previously recorded development publication: 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
 Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection errors in47.54s/native54.341s during the native guarded714ce2d65e3dbeec9d3dbbadced9f983c13c2a3d source commit preflight. Native receipt: .gate-logs/observed/test-count/20261022T234100Z-13723-e7e319e7.json. This is fixed714 evidence, not a later handoff-commit measurement; lock duration54.257s is distinct. Earlier23b/638/ef41/64 collections keep their actual refs/receipts. Collection is separate from runtime, full gate, hosted and deployment proof. Keep normal fresh collection per commit without repeating accepted source tests for a handoff alone.
+
+## Current continuation (2026-10-26 UTC)
+
+This manual receiving snapshot uses Main source
+18ec1ee55fca0433e4206e439ad2952a7724e3af on
+feature/v012-certification-repairs-20261026. Native worktree-state owns later
+HEAD/index state. Candidate82ec5170c173cfb52bb8bf3c6bbf7944cf3375e4 stays fixed;
+all seven S98 tasks remain unchecked. The leading714 collection is unchanged.
+
+Normal guarded source checkpoints include export coverageec17ce3fcbeb23b5d2dec01648058675d9247997,
+Git/runtimec5e8278cbe0ecae3b46012ff07ff3c2f5cd33313, controller metadata
+da86949df467666b42971812cb70eeb7a4cd9e7b and native conformance
+18ec1ee55fca0433e4206e439ad2952a7724e3af. Separate peers retain enforcement
+034afcf948d7aa3dba8c99d224db801535f74974, summary63eb3eeae5747540589fb8580ee3926d261f590c,
+historyb9049555424e8220e6bc5a612e892cc200de2138 and debounce
+739edeb0b3357e88221043950c8b09e85a7bdd61. Their owning features retain
+two-runtime acceptance, numeric coverage, normal collection and every failure.
+These checkpoints require semantic integration and final exact-SHA proof.
+
+The packaging successor e9fa5cdf93acf8824d083f46d92f78577b0165b8 normally commits
+the complete50-added/1-removed graph review and two active archive-import
+denial controls. Whole mutex507 and packaging/baseline332 cases pass EACH
+runtime, with unchanged85/75 line AND branch floors. Its five public-digest
+baseline reviews preserve all1352 existing labels. Native local repair records
+only the Molecule warning family; old hosted failure remains failed.
+Normal collection130808/130832,24deselected0errors43.67s/native49.3 is retained
+at .gate-logs/observed/test-count/20261026T162337Z-26415-da440b3a.json in that peer.
+
+Actual accepted diagnostic Build40339437973 and Molecule40340580626 tested
+published265f8b6add9e5dda459d8df056e17c732e77ea2c, workflow_dispatch/attempt1.
+Build failed both Node gates; all eight downstream shard intervals are unknown.
+Molecule built the EXE, then failed the strict changed-graph audit.
+The e9fa feature-ci publisher subsequently REFUSED on two open Node families,
+native2/0.856s before transport or any new Actions request. Retain
+v012-package-publication/v012-package-publication-e9fa5cd-20261026.json in its
+observed directory. No newer hosted, deployment or release result is implied.
+
+The Main nine-path receiving batch keeps two separate commit scopes. Current
+tracking/help readers pass649 on311 and648/1 existing311-policy skip on312,
+plus logical-Make AST first on each. Complete workflow consumers pass517 EACH.
+The new global90-second input is independently enforced by an existing early
+pin: actual180 gives1FAIL/7PASS, then90 gives8PASS. Full rosters, native
+receipts and missing proofs are in the GHA audit and release inventory.
+All native sessions are drained; final metadata/content reconciliation remains.
+
+Exact native index/blob recovery found omitted completed source despite
+ancestor merges; no writer/loss event is inferred. Current integration grows
+from49 to52 accepted paths, then53 for the actual readiness-source repair.
+Core31 and additional consumers pass both runtimes with original documented
+skips; legacy401/native324 profiles also pass both at their unchanged floors.
+The three-source readiness profile honestly FAILED: actual child imports
+selected Main's editable modules alongside the peer. The real producer binding
+is being repaired; no report filtering, exclusions or floor changes follow.
+Original49/12 and corrected3-source profiles remain unproved.
+
+Node patched-leaf/TOML behavior preference and shared-account workflow-scope
+consent remain pending; no permission is inferred. Repo-local HTTPS setup and
+accepted dispatches grant no account consent. Three owned checkpoints verify;
+the automatic stash was natively reconciled. Use current native load/disk/
+process owners before dispatch; six worktrees, four admitted test cohorts and
+the eight-worker ceiling remain. No canonical full gate/global85-75 coverage,
+required exact-SHA push CI, development/master promotion, ZDD deployment,
+stable tag or28-category/30-asset release is certified.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
@@ -12,6 +75,46 @@ Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch name
 ## Current implementation and proof inventory
 
 The [complete status inventory](docs/releases/v0.1.2-implementation-status.md) is the fixed S98.4 snapshot at ef3df16b1af11fa7afcd342ad59d3fc4db610b19. It records committed candidate work, separate branch work,874-case BOTH-runtime receiving, partial/known-failing candidates, exact native receipts and next Make owners. Resource3/EE4 still require separate Main normal commits in that snapshot. No all-branches development merge or release sign-off is claimed; native current producers supersede dated activity pointers. The first original header remains available at ef3df16b1af11fa7afcd342ad59d3fc4db610b19:SESSION.md.
+
+## 2026-10-24 session continuation
+
+Working branch `release-candidate/v012-git-mutex-20261022` at HEAD `82ec5170c173cfb52bb8bf3c6bbf7944cf3375e4` (pushed); dirty tree contains the runtime-admission/CSS-lint/docstring/helper-binding repair batch plus two test selector repairs discovered by gate runs.
+
+Fixed since the last green push:
+- `make/30-ci-and-release.mk`: `_sandboxcom_publication_gh_helper` now uses `$(SYSTEM_PYTHON)` instead of `$(PYTHON)`.
+- `make/40-cross-version-and-worktrees.mk`: public commit targets depend on `_commit-docstring-guard`; `_commit-locked-git-commit` retains the two `git diff --cached --name-only -z | xargs -0` commands.
+- `.github/workflows/build.yml`: prerequisite admission step uses `MAX_SECS=${RUNTIME_PUBLISH_MAX_SECS:-90}`; runtime regression admission step uses literal `MAX_SECS=90`.
+- `tests/unit/test_gate_status_attestation.py`: commit-guard assertion updated from `check-gate-fresh` to `_gate-fresh-check`.
+- `tests/unit/test_git_commit_staged_paths.py`: recipe selector updated from public `git-commit` to `_commit-locked-git-commit` to match the native transaction refactor.
+- `tests/unit/test_guardrails.py::TestCommitAfterGreenGuardrail`: test-and-commit assertions now inspect `_commit-locked-test-and-commit` for the pytest/adaptive runner invocation, `git commit`, and `$(MSG)`.
+
+Verification completed:
+- `make lint` PASS, `make typecheck` PASS, `make test-count` PASS (130782/130783 collected, 1 deselected, 0 errors).
+- Targeted tests pass: `test_git_commit_staged_paths.py` (1), combined `test_commit_gate_freshness.py`, `test_git_commit_staged_paths.py`, `test_precommit_quality_guards.py` (53).
+- Earlier targeted suites pass: `test_development_push_publication.py` (230), `test_git_https_publication.py` (65), `test_docstring_coverage_deep.py` (6), `test_gate_failure_promotion.py` (128), `test_runtime_publish_admission.py` (75).
+
+Gate attempt `pid=64710` (`run_id=20261024T205218Z-fe4fdd63`, log `.gate-logs/gate-20261024205218-fe4fdd63.log`) failed at `unit-2:batch-007` with `tests/unit/test_git_commit_staged_paths.py::test_git_commit_does_not_store_nul_delimited_paths_in_a_shell_variable`. After that fix, gate attempt `pid=13436` (`run_id=20261024T211219Z-e0330644`, log `.gate-logs/gate-20261024211219-e0330644.log`) reached the smoke phase but failed on `tests/unit/test_guardrails.py::TestCommitAfterGreenGuardrail` because the test-and-commit assertions still inspected the public target instead of `_commit-locked-test-and-commit`. A resumed gate `pid=67136` (`run_id=20261024T213102Z-4436b465`, log `.gate-logs/gate-20261024213102-4436b465.log`) reached the smoke phase but failed on `tests/unit/test_make_commit_transaction.py` and `tests/unit/test_make_result_guidance.py` because `uv run` in commit/guard recipes created isolated `.venv` directories in fixture repos (missing `pre_commit`/`psutil`). A stale assertion in `tests/unit/test_make_edit_targets_guardrails.py::test_ship_commit_emits_observable_phase_markers` also failed because observable markers moved to `_commit-locked-ship-commit`.
+
+Repaired since that gate:
+- `make/40-cross-version-and-worktrees.mk`: added `--active` to `uv run` in `_commit-transaction`, `_commit-lock-acquire`, `_commit-locked-git-commit`, `_pre-commit-secrets-guard` (outer and inner `run_native`), and `_commit-locked-ship-commit` pre-commit direct invocation.
+- `tests/unit/test_make_commit_transaction.py`: ADAPTER skips `run --active` before dispatching `pre-commit`/`python`; `test_publication_inspection_guard_has_native_unguarded_mutation_witness` now expects no `-q` witness because GNU Make does not execute `+` recipes for targets with prerequisites in query mode.
+- `tests/unit/test_precommit_formatting_admission.py`: `_native_calls` strips `--active` so existing argv assertions remain stable; inline `native_tool_boundary.py` and `native-status.py` stubs now normalize `run --active` before using argv indices so failing-hook/signal injection logic stays correct.
+- `tests/unit/test_make_edit_targets_guardrails.py`: `test_ship_commit_emits_observable_phase_markers` now reads `_commit-locked-ship-commit`.
+
+Verification completed:
+- `make lint` PASS, `make typecheck` PASS.
+- Targeted tests pass: 12/12 selected across `test_make_commit_transaction.py`, `test_make_result_guidance.py`, `test_make_edit_targets_guardrails.py`, `test_precommit_formatting_admission.py`.
+- `tests/unit/test_precommit_formatting_admission.py` full file passes: 67/67.
+- `make check-make-target-contract` PASS (299 targets).
+- Initial fresh gate `pid=69294` was killed after this additional fixture-stub gap was discovered; a corrected gate was restarted.
+- Corrected gate `pid=95880` ran the full test phase; only 2 failures remained in `unit-3a:batch-002`:
+  - `tests/unit/test_node_quality_security_floor.py::test_advisory_leaf_overrides_preserve_existing_plugin_and_effect_inputs` — expected nested `overrides` shape `{"@opencode-ai/plugin": {"zod": "4.6.7", "effect": {"toml": "5.0.1"}}}` but the relocked manifest uses the equivalent top-level `{"toml": "5.0.1", "zod": "4.6.7"}`.
+  - `tests/unit/test_node_dependency_compatibility.py::test_installed_dependency_consumer_semantics[wide-integer]` — toml 5.0.1 (the security-upgrade leaf) now rejects integers beyond `Number.MAX_SAFE_INTEGER` by default and parses them losslessly only with `{bigint: true}`; the old assertion expected the previous silent-`Number` behavior.
+- Repaired both tests to the actual installed semantics: overrides assertion now matches the top-level manifest form; `wide-integer` asserts the default rejection plus BigInt parsing via the installed `toml` leaf. Both test files pass (7/7 and 8/8).
+- `make gate-resume` natively refused the stale failed attestation (repository state changed) and started a full cold gate `pid=95057` (`run_id=20261025T005731Z-23984271`, log `.gate-logs/gate-20261025005731-23984271.log`).
+- Cold gate `pid=96992` (`run_id=20261025T005905Z-643e9acb`, log `.gate-logs/gate-20261025005905-643e9acb.log`) is running the full gate with all repairs applied.
+- Codified gate-progress poll pacing in AGENTS.md: pollers must use `GATE_PROGRESS_SLEEP` between 120 and 300 seconds (2-5 minutes) so each poll cycle stays in band; `make help` for gate-progress documents the same. `make check-make-help` and `make check-make-target-contract` still pass.
+- GHA pipeline verified live: `github-auth-status` OK (sandboxcom, repo scope), `ci-run-summary`/`ci-faillog`/`ci-artifact-download`/`ci-pyinstaller-warning-audit` all executed against real hosted runs; the PyInstaller audit PASSES against the exact failed Molecule artifact (run 40118134466). No hosted runs are in flight, so the next push will start fresh workflows.
 
 ## Historical diagnostic checkpoint (2026-10-24 UTC)
 
@@ -1595,3 +1698,27 @@ regenerates that region.
 The complete predecessor handoffs/indexes are immutable at5b25b9f163784163e6edbb931946eed6adcdec37, c0a4bf5a5fe3525bd0644cf0356c8619e6a4a31a and0297b90588a531cdf4e6b45f028f39f51b3c4094. Retrieve exact files through git-show-file-to; /tmp/gludd-v012-session-before-current-receiving-5b25.md retains the source handoff. This compaction preserves failed receipts, criteria and refs rather than presenting historical measurements as current authority.
 
 Owning features: PIPELINE_STATUS_PROCESS_BOUNDARY, NATIVE_REVIEWED_HEAD_INPUTS, INTEGRATION_ADMISSION, PYTEST_PARAMETER_FIXTURE_COLLISION_GUARD, GATE_RESOURCE_LIFECYCLE, CODE_INTELLIGENCE_IMPORT_BOUNDARY, IMPORT_TIME_MEASUREMENT_INTEGRITY, NATIVE_FILE_LISTING_STATUS, PRESENTATION_JAVASCRIPT_COVERAGE, SELF_IMPROVEMENT_RUNTIME_PROTOCOLS, STATUS_SNAPSHOT_PORTABILITY and RELEASE_PROOF_THROUGHPUT. They retain original REDs, whole-owner coverage, source decisions and commands. The pinned historical behavioral-spec corpus remains byte-identical; current guidance belongs in these features, AGENTS and the mandatory Make guide.
+
+## 2026-10-24 continuation
+- Diagnosed `unit-1d:batch-009` 30 failures in `tests/unit/test_development_push_publication.py` and `tests/unit/test_git_https_publication.py`: the `_sandboxcom_publication_gh_helper` macro in `make/30-ci-and-release.mk` used `$(PYTHON)`, which is undefined in the confined test Makefiles, causing `/bin/sh: : command not found`.
+- Fixed macro to use `$(SYSTEM_PYTHON)` (consistent with existing guarded-no-PYTHON policy and test assertions). Reverted the temporary `PYTHON := {sys.executable}` fixture workaround.
+- Verified focused and full tests: `tests/unit/test_development_push_publication.py` 230 passed in ~245s; `tests/unit/test_git_https_publication.py` 65 passed in ~13s.
+- `make lint`, `make typecheck`, `make check-task-registration`, `make check-task-integrity`, `make check-file-line-limits`, `make node-deps-audit`, and `make test-count` pass.
+- Registered active work in `TASKS.md` as `FIX-20261024-001`.
+- Gate reached `unit-1d:batch-009` and passed all 230 tests in that batch, then completed 54/56 segments before failing on `tests/unit/test_docstring_coverage_deep.py::test_docstring_policy_is_registered_and_commit_guarded`.
+- Fixed the failure by adding `_commit-docstring-guard` to public commit targets (`git-commit`, `commit-no-verify`, `git-amend-msg`, `git-commit-file`, `test-and-commit`, `commit-and-ship`, `commit-and-ship-push`, `ship-commit`, `ship-commit-files`, `repo-commit`) in `make/40-cross-version-and-worktrees.mk`, matching the policy already enforced by the locked variants.
+- Verified `tests/unit/test_docstring_coverage_deep.py` 6 passed.
+- Restarted full gate `make gate-resume` pid=79443, log `.gate-logs/gate-20261024201411-22811e28.log`.
+- Gate reached the smoke phase and failed on `tests/unit/test_gate_failure_promotion.py::test_hosted_fanout_requires_executed_runtime_admission`. The test asserts literal `STALL_SECS=60 MAX_SECS=90` in `.github/workflows/build.yml`; the workflow used `MAX_SECS=${RUNTIME_PUBLISH_MAX_SECS:-90}`.
+- Fixed by reverting the two CI runtime-admission `run-watched` invocations to literal `MAX_SECS=90` (lines 277 and 288), preserving the env var for Makefile batch-push admission.
+- Verified `tests/unit/test_gate_failure_promotion.py` 128 passed in ~7s; `make lint` and `make typecheck` pass.
+- Restarted full gate `make gate-resume` pid=10707, log `.gate-logs/gate-20261024203213-c6040f26.log`; running preflights.
+- Discovered `tests/unit/test_runtime_publish_admission.py::test_hosted_canonical_prerequisite_has_exact_order_bounds_and_environment` expects the **prerequisite admission** step (line 277) to keep `MAX_SECS=${RUNTIME_PUBLISH_MAX_SECS:-90}`, while `test_gate_failure_promotion.py::test_hosted_fanout_requires_executed_runtime_admission` expects the **runtime regression admission** step (line 288) to use literal `MAX_SECS=90`.
+- Adjusted `.github/workflows/build.yml` so prerequisite admission uses the variable default and runtime regression admission uses literal `MAX_SECS=90`.
+- Verified `tests/unit/test_gate_failure_promotion.py` 128 passed in ~7s and `tests/unit/test_runtime_publish_admission.py` 75 passed in ~120s; lint/typecheck/task-registration pass.
+- Killed the stale gate run (pid=10707) because source changed, then started fresh gate `make gate-background` pid=32175, log `.gate-logs/gate-20261024203744-e931bbb0.log`.
+- Fresh gate passed preflights and most phases, then failed in test phase at `unit-2:batch-005` on `tests/unit/test_gate_status_attestation.py::test_makefile_signs_final_gate_and_checks_before_commit`. The test expected literal `check-gate-fresh` in the `git-commit` recipe, but the Makefile commit guard is `_gate-fresh-check` (which itself depends on `check-gate-fresh`).
+- Fixed the stale assertion in `tests/unit/test_gate_status_attestation.py` to require `_gate-fresh-check` in the commit recipe, matching the current Makefile and AGENTS.md No-Commit-Bypass Policy.
+- Verified the targeted test passes; task-registration updated.
+- Uncommitted changes on `release-candidate/v012-git-mutex-20261022`: `.opencode/package*.json`, `.github/workflows/build.yml`, `config/pyinstaller-warning-allowlist-linux.json`, `make/30-ci-and-release.mk`, `make/40-cross-version-and-worktrees.mk`, `tests/unit/test_css_lint_target.py`, `tests/unit/test_development_push_publication.py`, `TASKS.md`, `SESSION.md`.
+- Next: wait for gate PASS, then `make git-commit` the repair batch and push the green SHA.
