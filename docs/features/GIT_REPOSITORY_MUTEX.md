@@ -1,5 +1,103 @@
 # Git Repository Mutex Process Contract
 
+## Frozen observer archive boundary (2026-10-26 UTC)
+
+This repair starts from c5e8278cbe0ecae3b46012ff07ff3c2f5cd33313 in the isolated
+feature/v012-packaged-observer-20261026 checkout. The source observer loader
+correctly binds an exact repository file, but that filename is absent from a
+frozen executable's compiled module archive. Adding a hidden import alone does
+not provide a physical scripts/stream_command.py at the source loader's path.
+
+Frozen callers now resolve stream_command with the standard importlib import
+machinery. The existing exact-file source loader, thread synchronization,
+fork reset, owned-module rollback and explicit native Make observer pair retain
+their original behavior. The executable spec adds the scripts analysis path and
+the observer hidden import. No missing-observer warning exemption or new
+allowlist category is introduced; missing, actionable and stale warning failures
+remain authoritative.
+
+Two new controls compile the actual current observer source into an owned zip
+archive, remove the physical repository-script path from the selected module
+identity, and use real Python archive import machinery. The success control
+executes the real observer and identity callbacks, checks its child result and
+native receipt, and verifies unchanged import search paths. The failure control
+retains a real archive initialization exception, absent failed cache and a
+successful current-source retry. The spec control resolves its actual literal
+Analysis inputs to the expected observer source. These controls simulate the
+frozen marker and exercise archive imports; they are not a PyInstaller
+bootloader run or certification of any release executable.
+
+The first attempted fixture run produced two setup errors because pytest's
+syspath_prepend tried to import fixup_namespace_packages from the existing
+pkg_resources harness stub. Its retained receipt is
+.gate-logs/observed/packaged-observer-red/packaged-observer-red312-20261026.json.
+It supplies no RED for the production boundary. Replacing only the fixture path
+setup with paired monkeypatch state and import cache invalidation allowed the
+same real boundary to execute.
+
+The corrected initial regressions produced three FAIL on Python3.12 in0.74s,
+native1.973s: two actual FileNotFoundError results for the absent owned
+scripts/stream_command.py and the absent spec hidden import. Retain
+.gate-logs/observed/packaged-observer-red/packaged-observer-native-red312-20261026.json.
+After repair the complete two changed owners pass15 cases in1.94s/native3.207s;
+.gate-logs/observed/packaged-observer-focus/packaged-observer-focus312-20261026.json
+is terminal and independently read through native observed-status.
+The unchanged eight-owner whole-mutex profile and ten complete packaging
+consumer owners now pass on both installed runtimes, 742 distinct cases each.
+Every native session is terminal and its exact status independently verified:
+
+- Python3.11 mutex profile:505 PASS,291.22s/native293.610s;447/465 lines
+  (96.1290322581percent) and135/152 branches (88.8157894737percent).
+  Receipt: .gate-logs/observed/coverage-files/20261026T134607Z-54242-c19b27a4.json.
+  Raw report: .gate-logs/packaged-observer-mutex311.json;
+  native audit: .gate-logs/coverage-20261026T135100Z.json.
+- Python3.12 mutex profile:505 PASS,303.99s/native306.768s;438/465 lines
+  (94.1935483871percent) and131/152 branches (86.1842105263percent).
+  Receipt: .gate-logs/observed/coverage-files/20261026T135207Z-4325-37a405aa.json.
+  Raw report: .gate-logs/packaged-observer-mutex312.json;
+  native audit: .gate-logs/coverage-20261026T135713Z.json.
+- Python3.11 packaging consumers:237 PASS,7.29s/native8.535s.
+  Receipt: .gate-logs/observed/packaged-observer-consumers/packaged-observer-consumers311-20261026.json.
+- Python3.12 packaging consumers:237 PASS,9.55s/native11.093s.
+  Receipt: .gate-logs/observed/packaged-observer-consumers/packaged-observer-consumers312-20261026.json.
+
+The mutex profile keeps85aggregate/75each-file LINE and BRANCH, with its original
+600total/180quiet boundary and all eight complete owners. The separate ten-owner
+packaging union retains300total/60quiet, fatal warnings and serial execution.
+Its complete owners cover dynamic imports, spec/data completeness, warning
+auditing, binary/build contracts, platform and SPHINCS coverage, the Linux
+Molecule smoke structure, warning-review admission and graph comparison. Those
+structural smoke controls do not execute a built release binary. Native source,
+thread, fork, rollback and original warning assertions remain intact; no tests,
+floors, package versions or warnings were weakened.
+
+Ruff, strict typing of all three changed Python owners on both installed
+runtimes, test-environment ownership and tracked-file bounds pass. Peer Markdown
+lint refused its absent locked Rumdl executable without installing anything;
+Root's native Markdown owner passed the pre-receipt feature snapshot and must
+check the final prose at intake. Independent five-path source-only review is
+approved; normal commit collection, canonical gate and required artifact/release
+proofs remain separate.
+
+The [official PyInstaller runtime contract](https://pyinstaller.org/en/stable/runtime-information.html)
+distinguishes bundle identity and module imports from source/data paths.
+The [firsthand CPython maintainer discussion from2021](https://github.com/python/cpython/issues/89822)
+explains that frozen modules can have derived filenames without backing files;
+it concerns historical stdlib FrozenImporter behavior, not a current PyInstaller
+defect. Brett Cannon's [firsthand Python forum discussion from2023](https://discuss.python.org/t/how-do-i-migrate-from-imp/27885)
+distinguishes exact-file loading from normal import search and execution.
+Root researched these sources on2026-10-26. Their relevance is the import
+boundary distinction; Gludd's actual absent-script/archive RED establishes this
+repair's local cause.
+
+Root still owns the clean candidate's native build-linux-executable, fresh
+warning audit, original functional packaged-byte smoke outside the source
+checkout, required platform artifact matrix, exact-SHA hosted CI and guarded
+deployment/release proofs. Any newly accepted warning-graph change needs the
+existing compare-linux-pyinstaller-warnings and check-pyinstaller-warning-reviews
+owners. Archive tests, retained older CI warnings and focused acceptance grant
+none of those artifact or release proofs.
+
 ## Atomic observer bootstrap repair (2026-10-26 UTC)
 
 The working repair based at82ec5170c173cfb52bb8bf3c6bbf7944cf3375e4 replaced a

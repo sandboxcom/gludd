@@ -147,3 +147,89 @@ def test_native_default_observer_probe_restores_prior_cache_state(
     with pytest.MonkeyPatch.context() as probe_patch:
         controls.test_default_observer_loads_real_stream_command_without_sys_path_mutation(probe_patch)
     assert sys.modules.get("stream_command", absent) is previous
+
+
+@pytest.fixture
+def frozen_observer_archive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> Path:
+    """Import actual current observer bytecode without a physical source-script path."""
+    import py_compile
+    import zipfile
+
+    _fresh_observer(monkeypatch)
+    compiled = tmp_path / "stream_command.pyc"
+    py_compile.compile(
+        str(ROOT / "scripts" / "stream_command.py"), cfile=str(compiled), doraise=True,
+    )
+    archive = tmp_path / "native-observer.zip"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.write(compiled, "stream_command.pyc")
+    frozen_root = tmp_path / "bundle"
+    frozen_root.mkdir()
+    monkeypatch.setattr(sys, "path", [str(archive), *sys.path])
+    importlib.invalidate_caches()
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "_MEIPASS", str(frozen_root), raising=False)
+    monkeypatch.setattr(
+        locking, "__file__", str(frozen_root / "general_ludd" / "git_automation" / "locking.py"),
+    )
+    assert not (tmp_path / "scripts" / "stream_command.py").exists()
+    return archive
+
+
+def test_frozen_observer_imports_real_archived_bytecode_without_source_script(
+    frozen_observer_archive: Path, tmp_path: Path,
+) -> None:
+    """Run the real observer resolved by archive machinery and preserve search paths."""
+    import json
+    import os
+    import zipimport
+
+    initial_path = tuple(sys.path)
+    observer_fn, identity_fn = locking._default_observer()
+    native_module = sys.modules["stream_command"]
+    assert isinstance(native_module.__loader__, zipimport.zipimporter)
+    assert native_module.__file__ is not None
+    assert str(frozen_observer_archive) in native_module.__file__
+    assert native_module.stream_command is observer_fn
+    assert locking._default_observer() == (observer_fn, identity_fn)
+    assert tuple(sys.path) == initial_path
+    run_id = identity_fn()
+    log = tmp_path / "native-observer.log"
+    observed_root = tmp_path / "observed"
+    result = observer_fn(
+        [sys.executable, "-c", "print('archived native observer child')"], log,
+        observed_root=observed_root, label="packaged-observer", run_id=run_id,
+        heartbeat_seconds=1, quiet_seconds=0, max_seconds=10, retain_runs=2,
+        environment=dict(os.environ), cwd=tmp_path, pass_fds=(),
+    )
+    assert result == 0
+    receipt = json.loads((observed_root / "packaged-observer" / (run_id + ".json")).read_text())
+    assert receipt["state"] == "passed" and receipt["exit_code"] == 0
+    assert "archived native observer child" in log.read_text()
+    assert tuple(sys.path) == initial_path
+
+
+def test_frozen_observer_import_failure_is_not_cached_and_can_retry(
+    frozen_observer_archive: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep normal archive import failure and rollback before a real-source retry."""
+    import zipfile
+
+    broken_archive = tmp_path / "broken-observer.zip"
+    with zipfile.ZipFile(broken_archive, "w") as bundle:
+        bundle.writestr("stream_command.py", "raise RuntimeError('archived observer initialization failed')\n")
+    with monkeypatch.context() as failed:
+        failed.setattr(sys, "path", [str(broken_archive), *sys.path])
+        importlib.invalidate_caches()
+        with pytest.raises(RuntimeError, match="archived observer initialization failed"):
+            locking._default_observer()
+    assert "stream_command" not in sys.modules
+    assert locking._observer_loading_module is None
+    observer_fn, identity_fn = locking._default_observer()
+    retried_module = sys.modules["stream_command"]
+    assert retried_module.stream_command is observer_fn
+    assert retried_module.__file__ is not None
+    assert str(frozen_observer_archive) in retried_module.__file__
+    assert identity_fn()

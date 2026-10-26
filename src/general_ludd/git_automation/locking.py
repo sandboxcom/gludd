@@ -752,6 +752,11 @@ def _default_observer() -> tuple[_CommitObserver, Callable[[], str]]:
     """Bind the native observer atomically without changing import search paths."""
     import importlib.util
 
+    # Frozen modules live in the bootloader archive, without repository script files.
+    if getattr(sys, "frozen", False):
+        frozen_observer = importlib.import_module("stream_command")
+        return frozen_observer.stream_command, frozen_observer._new_run_id
+
     global _observer_loading_module
     with _observer_import_guard:
         observer_module = sys.modules.get("stream_command")
