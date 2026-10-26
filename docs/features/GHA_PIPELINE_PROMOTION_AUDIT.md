@@ -1,6 +1,49 @@
 # GHA pipeline and agentic promotion audit
 
-## Latest implementation and proof inventory
+## Hosted prerequisite budget receiving (2026-10-26 UTC)
+
+At Main18ec1ee55fca0433e4206e439ad2952a7724e3af, the prepared literal runtime
+MAX_SECS=90 repair still left workflow-wide RUNTIME_PUBLISH_MAX_SECS=180.
+The prerequisite's shell fallback therefore selected180, outside the canonical
+90total/60quiet boundary. The earlier5a9c561 runtime-only checkpoint and492-case
+acceptance did not prove this global prerequisite input; retain that scope.
+
+An additive assertion in the existing hosted-fanout test inspects workflow,
+gate-job and watched-step environments while retaining every original assertion.
+Its actual native RED fails180 versus90, pytest1/watcher2/1.815 seconds, at
+.gate-logs/observed/v012-hosted-budget/v012-hosted-budget-global-red311-20261026.json.
+The existing early make-wiring pin independently checks the global budget.
+With a controlled180 input, the real check-gate-failure-promotions owner retains
+structural PASS180 families then fails1 of8 pins (7 PASS), native2/3.798 seconds:
+v012-hosted-budget-early-red311-20261026.json in the same native directory.
+This is a real early routing failure, not authority from preliminary PASS output.
+
+The workflow now fixes the global value to90 and retains literal runtime90.
+All eight original early pins pass, native0/3.703 seconds, at
+v012-hosted-budget-early-green311-20261026.json. The narrow hosted test also
+passes0.53 seconds/native1.683 at v012-hosted-budget-global-green311-20261026.json.
+Original180 families, eight-pin roster,21 phases,2850 ceiling,90/60 observers,
+canonical gate, fatal warnings and85/75 coverage requirements remain unchanged.
+
+The first added control exceeded the strict file bound (2507 lines), and its
+first compact early assertion hit E501 at143 characters. Only this receiving
+layout and the identical ordered fanout tuple were compacted; all original job
+names/assertions remain, current2498 lines and strict Ruff pass. Independent source-only review approves this three-path budget change.
+The complete eight-owner receiving passes517 EACH:311155.38s/native156.887
+and312160.75s/native162.429, exact inactive/native0 receipts under
+.gate-logs/observed/v012-hosted-budget-receiving/ named
+v012-hosted-budget-receiving{311,312}-18ec1ee-20261026.json. Both exact sessions
+are drained; Ruff, strict typing on each installed runtime, env-write and line
+guards pass. Normal collection and authorized workflow publication remain
+required. Root verified the [official environment precedence](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#env):
+step values override job/workflow values. The [firsthand2020 dispatch discussion](https://github.com/orgs/community/discussions/25924),
+with later followups, records persistent input/environment expectations and
+references that precedence. This is historical context, not a new GitHub defect;
+the actual Gludd failure is the configured180 input proven by native controls. These local controls neither execute
+hosted CI nor certify its duration, deployment, artifacts or release. Node/TOML
+preference and shared-account workflow-scope consent remain separate inputs.
+
+## Retained implementation and proof inventory
 
 The [complete current-workstream status inventory](../releases/v0.1.2-implementation-status.md) is recorded at Main source ef3df16b1af11fa7afcd342ad59d3fc4db610b19. It separates all candidate/peer packets, actual874/BOTH local receiving, corrected3a hosted manifest/promotion passes followed by CSS failure, six-job Molecule success, incomplete history/summary validation and missing canonical release proofs. Branch integration is not complete. Read native current owners before acting; this manual snapshot is not generated current success. The earlier top section is retained below as history, not the latest hosted verdict.
 

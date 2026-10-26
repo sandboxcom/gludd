@@ -491,6 +491,12 @@ def test_hosted_fanout_requires_executed_runtime_admission() -> None:
     workflow = yaml.safe_load((ROOT / ".github/workflows/build.yml").read_text())
     jobs = workflow["jobs"]
     steps = jobs["gate"]["steps"]
+    budget_environments = [
+        workflow.get("env", {}), jobs["gate"].get("env", {}),
+        *(step.get("env", {}) for step in steps if "make run-watched" in step.get("run", "")),
+    ]
+    for budget_environment in budget_environments:
+        assert str(budget_environment.get("RUNTIME_PUBLISH_MAX_SECS", "90")) == "90"
     owners = [step for step in steps if "make _pytest-runtime-compatibility-admission" in step.get("run", "")]
     assert len(owners) == 1
     owner = owners[0]
@@ -502,16 +508,7 @@ def test_hosted_fanout_requires_executed_runtime_admission() -> None:
     assert steps.index(dependency_step) < steps.index(owner)
     assert "--set ci --environment .venv" in dependency_step["run"]
     assert jobs["gate"]["strategy"]["matrix"]["python-version"] == ["3.11", "3.12"]
-    for job_name in (
-        "test-shard",
-        "linux",
-        "macos",
-        "windows",
-        "termux",
-        "container",
-        "ansible-ee",
-        "game-building",
-    ):
+    for job_name in ("test-shard", "linux", "macos", "windows", "termux", "container", "ansible-ee", "game-building"):
         assert "gate" in jobs[job_name]["needs"]
 
 
@@ -1925,6 +1922,8 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
 
 
 def test_make_wiring_and_target_contract_are_explicit() -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/build.yml").read_text())
+    assert str(workflow.get("env", {}).get("RUNTIME_PUBLISH_MAX_SECS", "90")) == "90"
     makefile = compose_makefile(ROOT / "Makefile")
     admission = _target_stanza(makefile, "integration-admission")
     owner = _target_stanza(makefile, "_project-dispatch-integration")
