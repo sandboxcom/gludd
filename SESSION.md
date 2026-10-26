@@ -7,68 +7,33 @@ Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection 
 
 ## Current receiving record (2026-10-26 UTC)
 
-Fixed inputs are Main17e20e5e37a965a089c073ac54e3e738ca49eae6 and recovered
-feature b4ea72bfa151b718cc6f99ad8c25d79e7b951997. The current branch is
-feature/v012-certification-repairs-20261026; native worktree-state owns later
-HEAD/index state. The leading714 collection and older publication header remain
-historical evidence. All seven S98 tasks remain unchecked.
+Normal merge c7c01337e8482927eb74c87fee34059a3d5d45f3 has parents17e20e5e
+and b4ea72bf. Fresh normal collection passes131194 selected/131218 collected,
+24 deselected/0 errors; the retained128-owner/static receipts keep their original
+scope. The release inventory below owns exact receipts and the earlier header.
 
-The earlier31-path intake has four normal checkpoints: CI/history34bb8a37,
-enforcement1ceab547, debounce790dcb9d and packagingcf7fd285. The owning features
-retain their complete2,926/1 existing skip EACH-runtime receiving and fresh
-130959/130983 collection receipts. Packaging's real native merge17e20e5e has
-parents cf7fd28590f695b9149430761ed174fac36661f2 and
-e9fa5cdf93acf8824d083f46d92f78577b0165b8, with fresh normal collection
-130959/130983,24 deselected/0 errors,49.26s/native54.968s.
+Native admission mode0 still fails the original90/60 runtime boundary:124 at
+90.558s with default UV and90.584s with the verified pinned UV. The first eight
+owners pass81 source cases, HELP1/TAIL14 pass, and MAIN2509 stays unproved with
+null trace. A separate full MAIN diagnostic passes2509 with complete pairs;
+that105.242s native run grants no admission or speed/CPU claim. The two-file
+shift to the existing TAIL now passes1267 complete-owner cases EACH runtime,
+including publication and lifecycle controls; clean original90/60 remains next.
 
-Recovered Source55 is now normally committed at b4ea72bfa151b718cc6f99ad8c25d79e7b951997:
-55 paths,131040/131064 collected,24 deselected/0 errors,100.17s/native106.658s.
-Its peer mutation receipt is commit-transaction/20261026T201536Z-86299-14158ad0.json,
-native125.579s. All four original coverage profiles pass with exact peer file
-sets, no foreign rows and unchanged85/75 LINE AND BRANCH floors:49 sources
-95.0%/89.8% BOTH;12 sources94.9%/90.0% BOTH. The12 profile retains its two original
-deselections. Complete24-owner consumers pass1,006 EACH and final documentation
-readers141 EACH. Full profile traces retain14 expected nested failure reports;
-the earlier ten-owner trace remains partial, with no timing claim.
-The feature LEGACY_INTEGRATION_ENTRYPOINTS.md owns every exact receipt and the
-preserved Source53 mixed61% failure, focused23% origin refusal and earlier errors.
+The c7 macOS build and native/mounted-DMG smokes pass, but the full build still
+warns about bare ntdll through filelock's Windows-only ctypes edge. The narrow
+platform-hook proposal is private. These are macOS/c7 proofs, not all-assets,
+Windows or canonical-gate certification. Feature-ci publication refuses changed
+workflow bytes against the verified82ec5170 baseline before transport/hooks or
+any Actions request; this is not an Actions API refusal.
 
-The actual native Main merge currently retains HEAD17e20e5e/MERGE_HEADb4ea72bf.
-Its sole guidance overlap preserves all79 Main and99 donor additions. Before
-these handoff edits, the native read-only verifier passed1.601s at
-v012-source55-merged-retention/v012-source55-merged-retention-b4ea72b-20261026.json:
-48 working/index code paths and32 protected Main paths exact, seven prose paths,
-zero unmerged/unstaged/untracked paths and retained checkpoint59e9. Independent
-source review approves those code/prose scopes; no merge commit or new combined
-Main acceptance follows from that reader.
-
-At clean17e20e5e, native repair-owned retained-artifact audits locally repair
-both warning families12d4361e and6fcd57a8, native0.698s/0.699s. Actual old run
-40118134466/job120943656124 failed the missing stream_command edge audit after
-successful EXE build; no hosted FileNotFound/bootloader failure is inferred.
-Main's native ledger now has4 open Node entries,7 repaired/50 resolved/166 runs.
-Published265f Build40339437973 and Molecule40340580626 remain failed dispatches;
-they supply no canonical push or deployment proof.
-
-Node/TOML behavior preference and shared-account workflow consent remain pending.
-The six unfinished Node/auditor edits are retained in owned checkpoint
-59e9c4292b8685076d98f2b4398c230ffd83cbe7; all four checkpoints verify as retained
-with zero unowned entries. Combined static receiving now passes full production
-package typing (1516 sources plus configured 1), all 54 separate strict scopes on
-EACH runtime, Ruff/docstrings, file bounds, target/resource/task contracts and all
-eight original promotion pins. The128 complete-owner union passes BOTH runtimes:
-311 has 6202 PASS/13 existing SKIP;312 has 6201 PASS/14 existing SKIP. Exact four
-v012-combined-receiving receipts, native durations and the retained partial trace
-limits are in the release inventory. Independent interaction review approves
-source only; no gate or deployment result follows. The release-page preview also
-validates byte-exact at v012-release-page-preview/
-v012-release-page-preview-17e-b4ea-20261026.json (0.629s).
-Next normal native merge collection/commit, verify the actual two parents, then
-run independent release-proof-admission mode0 with native S98.4 ownership. Before sealing/final proof, clear actual prerequisites and run
-release-proof-admission mode0. Full canonical21600 gate/global85/75 BOTH, exact-SHA
-push CI, reviewed development/master promotion, fresh built-byte smoke, ZDD and
-the complete signed stable artifact release remain unproved. The release inventory
-owns current native commands and separate proof scopes.
+Node/TOML preference and shared workflow consent remain pending. Four Node
+entries stay open; six unfinished edits remain in checkpoint59e9c4292b8685076d98f2b4398c230ffd83cbe7.
+All seven S98 tasks stay unchecked. Next receive the actual bounded repairs and
+clear publication prerequisites; then retain native admission, canonical21600
+gate/global85/75 BOTH, exact-SHA push CI, reviewed development/master promotion,
+fresh signed all-assets proofs and ZDD. No unchanged failed retry or proposal
+supplies those missing proofs. Details: docs/releases/v0.1.2-implementation-status.md.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 

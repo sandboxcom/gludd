@@ -229,7 +229,8 @@ def test_native_reviewed_finalization_executes_in_bounded_early_admission(test_n
     recipes = executable.split("$(MAKE) --no-print-directory test-files")
     assert len(recipes) == 4
     selectors = recipes[3].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
-    assert len(selectors) == 12 and selectors.count(node) == 1
+    assert len(selectors) == 14 and selectors.count(node) == 1
+    assert selectors[-3:-1] == ["tests/unit/test_observed_command.py", "tests/unit/test_status_heartbeat_terminal.py"]
     assert node not in recipes[1] and node not in recipes[2]
     phase = next(item for item in manifest["runtime_contract"]["phases"] if item["target"] == family["owner_target"])
     assert (phase["budget_class"], phase["max_seconds"], phase["quiet_seconds"]) == ("fast", 90, 60)
@@ -2078,7 +2079,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_presentation_browser_apt_source.py::"
         "test_apt_mode_is_literal_at_real_make_startup[environment-override] "
         "tests/unit/test_git_status_readonly.py::test_status_never_refreshes_native_index[inherited-one] "
-        "tests/unit/test_status_heartbeat_terminal.py " "tests/unit/test_task_ledger_validation.py "
+        "tests/unit/test_task_ledger_validation.py "
         "tests/unit/test_make_readonly_version.py " "tests/unit/test_make_help_audit.py "
         "tests/unit/test_clean_stale_resource_namespaces.py " "tests/unit/test_native_temp_artifact_target.py "
         "tests/unit/test_ci_run_summary_script.py " "tests/unit/test_ci_run_summary_target.py "
@@ -2119,7 +2120,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_release_asset_matrix.py "
         "tests/unit/test_release_ee_collection_closure.py "
         "tests/unit/test_mcp_topics_manifest.py::test_independent_topic_sizing_has_one_native_dump_per_topic "
-        "tests/unit/test_mcp_tool_gen.py " "tests/unit/test_observed_command.py "
+        "tests/unit/test_mcp_tool_gen.py "
         "tests/unit/test_observer_retention_concurrency.py " "tests/unit/test_ci_collect_all_stress.py "
         "tests/unit/test_admission_cold_start_selection.py::"
         "test_real_admission_filters_only_never_selected_main_siblings "

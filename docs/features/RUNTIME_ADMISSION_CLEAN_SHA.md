@@ -1261,3 +1261,84 @@ are not filed requests. Normal bounded prerequisite repairs and guarded CI
 repair pushes remain allowed. Canonical full gate, global coverage,
 exact-SHA hosted success, deployed reviewed-head acceptance and normal
 development/master promotion remain pending.
+
+## Native c7 admission and complete-selector redistribution (2026-10-26 UTC)
+
+Normal Main merge c7c01337e8482927eb74c87fee34059a3d5d45f3 retains parents
+17e20e5e37a965a089c073ac54e3e738ca49eae6 and b4ea72bfa151b718cc6f99ad8c25d79e7b951997.
+Its fresh normal collection passes131194 selected/131218 collected,
+24deselected/0errors at test-count/20261026T211716Z-19315-e95e642e.json.
+The128-owner/static receipts retain their unchanged source and actual scopes.
+
+Two actual mode0 admissions at c7 fail the unchanged90total/60quiet runtime
+owner with native124: proof-admission-20261026T211952Z-21001 (90.558s) and
+proof-admission-20261026T220416Z-78640 (90.584s), both under
+.gate-logs/observed/release-proof-runtime-admission. The second selects verified
+native UV0.13.1; that actual build-prerequisite correction supplies no timing
+repair. Each first eight admission stages passes, including81 source cases;
+HELP passes1 and the original12-selector TAIL passes14. MAIN collects2509
+but has no terminal result; both native traces are null. No timeout cause or
+speed benefit is inferred from that incomplete output.
+
+A bounded same-entrypoint witness passes2 original MAIN cases, then the complete
+unchanged142-selector MAIN passes2509 in101.66s/native105.242s under diagnostic
+300/60, at v012-runtime-main-profile/v012-main-profile-c7c0133-311-20261026.json.
+Its authoritative cprofile trace has5026events/2509complete pairs and zero
+issues, unfinished or failed reports. It is not original-bound admission.
+Two worker protocol-wall sums are not elapsed time, worker CPU or forecast
+savings; the controller profile mostly measures waiting. The actual trace
+selects observed_command75 and heartbeat44 as a bounded redistribution pilot.
+
+No process-group grace shortcut lands: a pinned zombie leader does not prove
+the group empty, and a process census is not an atomic absence proof.
+A private native CLI import experiment measures only about6ms in its selected
+cleanup import; its additive probe is restored and no production change lands.
+Neither experiment establishes an admission repair.
+
+The actual routing change moves only those two whole-file selectors from MAIN2
+to the existing TAIL1, immediately before the unchanged final dependency-profile
+guard. The155 unique original selector strings remain exactly once, in
+140/1/14 child inventories. Every earlier TAIL selector keeps its relative
+order. All three literal ID= assignments,2/1/1 widths, fatal warnings,
+initial-path filters, HELP-before-TAIL barrier, HELP failure skip, MAIN join,
+failure precedence,90/60 and outer timeout/signal descendant drain remain.
+There is no fourth child, new observer, deadline/grace change or family
+exception; current180families/21phases/2850 and full gate remain authoritative.
+
+The additive immutable155-token regression first passes the original inventory
+comparison and then fails solely at observed_command coverage[1,0,0] instead
+of[0,0,1]:1FAIL0.69s after logical-Makefile AST1PASS18.31s, native21.109s at
+v012-runtime-tail-red/v012-runtime-tail-red311-c7c0133-20261026.json.
+GREEN changes exactly two native TESTFILES values plus the three independent
+routing owners. All predecessor node mutations remain; the new whole-file
+controls narrow to actual existing nodes so no mutation becomes inert.
+Independent review approves source only. Ruff, three separate strict scopes,
+environment-write guard,303target contracts, AST, all eight promotion pins and
+the new GREEN regression pass native35.361s at v012-runtime-tail-static/
+v012-runtime-tail-static311-c7c0133-20261026.json.
+
+Initial complete16-owner receiving retains103FAIL/1164PASS on EACH runtime:
+311373.17s/native379.995s and312384.81s/native400.919s. Native process inspection
+and signaling fail with errno1 (psutil.process_iter/sysctl and os.killpg), and
+the outer observer seals125/observer-process-group-cleanup-failed. The compact
+output child writes all20 bytes before cleanup refusal. These sandboxed
+receipts remain v012-runtime-tail-receiving/v012-runtime-tail-receiving{311,312}-
+c7c0133-20261026.json. No assertion or cleanup rule changes in response.
+A native stop plan refuses the relative observer command's namespace; it
+applies no termination, and both original sessions reach terminal naturally.
+The required changed input is approved native execution outside that sandbox,
+with the exact same source, commands, bounds and original assertions.
+
+Approved native execution of the exact16 complete owners passes1267 on EACH
+installed runtime, with no skips:311417.21s/native423.633s and
+312430.89s/native446.095s. Receipts are v012-runtime-tail-native/
+v012-runtime-tail-native{311,312}-c7c0133-20261026.json. The actual source
+fingerprint is791a474104c6a727c47d8a578906328a6d62180dc2088885b7cbd9ee5a1cc4c5.
+EACH trace has2713events/1306complete pairs, zero issues or unfinished cases;
+10 reports belong only to original nested warning/assertion controls.
+All pass/fail-MAIN/fail-HELP/fail-TAIL, native124/143 descendant-drain and
+controller signal restoration/reap controls pass; the complete publication
+consumer remains green. These establish behavior, not an admission speed claim.
+Ordinary collection/commit and the actual clean-SHA90/60 admission remain next. Full canonical21600 gate,
+global85/75 line AND branch BOTH, exact-SHA push CI, normal reviewed
+development/master promotion, ZDD and signed complete artifacts remain separate.

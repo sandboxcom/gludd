@@ -122,7 +122,7 @@ ROSTER = (
     "tests/unit/test_xdist_trace_diagnostics.py::test_native_summary_cli_keeps_json_status_and_emits_guidance[trace_guidance_native_rows0-empty]",
     "tests/unit/test_presentation_browser_apt_source.py::test_apt_mode_is_literal_at_real_make_startup[environment-override]",
     "tests/unit/test_git_status_readonly.py::test_status_never_refreshes_native_index[inherited-one]",
-    "tests/unit/test_status_heartbeat_terminal.py", "tests/unit/test_task_ledger_validation.py",
+    "tests/unit/test_task_ledger_validation.py",
     "tests/unit/test_make_readonly_version.py", "tests/unit/test_make_help_audit.py",
     "tests/unit/test_clean_stale_resource_namespaces.py", "tests/unit/test_native_temp_artifact_target.py",
     "tests/unit/test_ci_run_summary_script.py", "tests/unit/test_ci_run_summary_target.py",
@@ -160,7 +160,6 @@ ROSTER = (
     "tests/unit/test_release_ee_collection_closure.py",
     "tests/unit/test_mcp_topics_manifest.py::test_independent_topic_sizing_has_one_native_dump_per_topic",
     "tests/unit/test_mcp_tool_gen.py",
-    "tests/unit/test_observed_command.py",
     "tests/unit/test_observer_retention_concurrency.py",
     "tests/unit/test_ci_collect_all_stress.py",
     "tests/unit/test_admission_cold_start_selection.py::test_real_admission_filters_only_never_selected_main_siblings",
@@ -221,6 +220,8 @@ REVIEWED_FINALIZATION = (
     "tests/unit/test_makefile_audit_deep.py::TestScriptReferencesExist::test_all_scripts_exist",
     "tests/unit/test_task_watchdog.py::test_live_gate_bound_waiter_protects_the_complete_tree[make-pid]",
     "tests/unit/test_push_discipline_checks.py::TestVerifyRemoteAfterPush::test_verify_remote_compares_sha",
+    "tests/unit/test_observed_command.py",
+    "tests/unit/test_status_heartbeat_terminal.py",
     "tests/unit/test_dependency_profiles.py::test_selected_profile_locks_preserve_controller_jsonpointer_requirement",
 )
 
@@ -274,7 +275,7 @@ def test_runtime_admission_retains_entire_roster_and_fresh_help(tmp_path: Path) 
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
     assert "tests/unit/test_makefile_audit_deep.py" not in str(rows[0]["files"])
     tail = rows[2]["files"]
-    assert isinstance(tail, list) and len(tail) == 12
+    assert isinstance(tail, list) and len(tail) == 14
     assert tail[-1] == (
         "tests/unit/test_dependency_profiles.py::"
         "test_selected_profile_locks_preserve_controller_jsonpointer_requirement"
@@ -295,6 +296,271 @@ def test_runtime_admission_retains_entire_roster_and_fresh_help(tmp_path: Path) 
     assert 'export VIRTUAL_ENV="$$UV_PROJECT_ENVIRONMENT"' in test_files
     assert "verbosity_test_cases" not in test_files
     assert "--dist loadgroup" in makefile_layout.compose_makefile(ROOT / "Makefile")
+
+
+def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp_path: Path) -> None:
+    """Keep both entire observer modules in TAIL with the original exact inventory."""
+    original_selectors = (
+        "tests/unit/test_ci_batch_receipts.py::test_receipt_validation_refuses_unsafe_artifact_mode[2432]",
+        "tests/unit/test_env_var_audit_deep.py::TestGLUDDNamingConvention::test_no_trailing_underscore",
+        "tests/unit/test_env_var_audit_deep.py::TestGLUDDDocumentation::test_config_reference_documents_"
+        "live_vars",
+        "tests/unit/test_env_var_audit_deep.py::TestGLUDDDefaultConsistency::test_default_values_"
+        "consistent",
+        "tests/unit/test_backlog_audit_target.py::test_backlog_target_is_public_registered_and_documented",
+        "tests/unit/test_canonical_release_gate.py::test_actual_local_release_recipe_collects_later_"
+        "failures_in_one_invocation",
+        "tests/unit/test_collection_hook_environment.py::test_real_pre_push_collection_isolates_only_"
+        "native_git_local_environment",
+        "tests/unit/test_content_addressed_unit_lane.py::test_atomic_json_candidate_and_control_evidence",
+        "tests/unit/test_owned_checkpoint_shared_worktree_admission.py::test_main_checkpoint_passes_peer_"
+        "native_guard_with_all_saved_bytes_intact",
+        "tests/unit/test_precommit_quality_guards.py::test_real_project_make_refuses_engine_expression_"
+        "before_parse_or_export_execution",
+        "tests/unit/test_session_start_crash_recovery.py",
+        "tests/unit/test_hook_runtime_split_compat.py",
+        "tests/unit/test_gate_async.py",
+        "tests/unit/test_session_persistence_integration.py",
+        "tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::test_primary_objective_"
+        "mentions_ci",
+        "tests/unit/test_start_gate_background.py",
+        "tests/unit/test_gate_run_lock.py",
+        "tests/unit/test_bulkhead_deep.py",
+        "tests/unit/test_bulkhead_admission.py",
+        "tests/unit/test_enhancement_ratio_plugin.py",
+        "tests/unit/test_pytest_param_fixture_collisions.py",
+        "tests/unit/test_ansible_runtime_artifacts.py",
+        "tests/unit/test_ansible_ee_full_warm_acceptance.py",
+        "tests/unit/test_ansible_ee_searx_acceptance.py",
+        "tests/unit/test_beta4_python_runtime_boundary.py",
+        "tests/unit/test_ansible_searxng_source_inspection.py",
+        "tests/unit/test_integration_admission_target.py",
+        "tests/unit/test_ci_failure_ledger.py",
+        "tests/unit/test_ci_failure_ledger_concurrency.py",
+        "tests/unit/test_proof_observations.py",
+        "tests/unit/test_ci_await_exact.py",
+        "tests/unit/test_ci_verdict_all_required.py",
+        "tests/unit/test_ci_verdict_structural_repair.py",
+        "tests/unit/test_secrets_baseline_compaction.py",
+        "tests/unit/test_pipeline_status_exact_sha.py",
+        "tests/unit/test_pipeline_status_job_progress.py",
+        "tests/unit/test_ci_cancel_contract.py",
+        "tests/unit/test_release_proof_admission_target.py",
+        "tests/unit/test_replace_lines_make_target.py",
+        "tests/unit/test_native_line_edit_targets.py",
+        "tests/unit/test_trace_summary_make_inputs.py::test_summary_public_inputs_never_execute_make_or_"
+        "shell_data[backticks-LOG-False]",
+        "tests/unit/test_cache_resource_policy.py::test_prohibited_home_roots_refuse_before_"
+        "measurement[library-caches-inventory]",
+        "tests/unit/test_run_watched_trace.py::test_native_trace_option_preserves_default_off_and_exact_"
+        "on_argv[enabled]",
+        "tests/unit/test_observability_guardrails.py::test_disk_and_native_temp_owner_keep_largest_"
+        "entries[disk]",
+        "tests/unit/test_ci_named_shard_files.py::test_coverage_files_exports_physical_checkout_to_"
+        "changed_cwd_children[False-command-line]",
+        "tests/unit/test_watchdog_secrets_lifecycle.py::test_native_scan_owns_terminal_receipt_and_"
+        "descendants[timeout-124-timed_out]",
+        "tests/unit/test_watchdog.py::test_watchdog_fixture_confines_command_workspace",
+        "tests/unit/test_task_watchdog.py::test_terminal_status_cap_preserves_native_gate_"
+        "protection[absent-64]",
+        "tests/unit/test_clean_ci_shard_scratch.py::test_stale_scratch_nested_symlink_preserves_external_"
+        "target_modes[file]",
+        "tests/unit/test_detect_secrets_full_scan.py::test_successful_full_scan_rejects_added_identity_"
+        "or_occurrence[new-digest]",
+        "tests/unit/test_audit_coverage_suite_provenance.py::test_imported_cobertura_never_proves_e2e_"
+        "execution",
+        "tests/unit/test_make_uv_cache_sandbox.py::test_native_prune_preserves_real_child_"
+        "status[native-failure]",
+        "tests/unit/test_make_uv_cache_sandbox.py::test_native_prune_target_policy_refuses_invalid[UV_"
+        "CACHE_PRUNE_TIMEOUT=0]",
+        "tests/unit/test_cache_resource_policy.py::test_shared_uv_inventory_reports_complete_without_"
+        "mutation",
+        "tests/unit/test_git_automation_locking_handoff.py::test_live_task_handoff_cannot_allow_critical_"
+        "section_overlap",
+        "tests/unit/test_git_automation_locking_handoff.py::test_wait_for_result_binds_nested_use_to_"
+        "consuming_task",
+        "tests/unit/test_git_merge_nc_safety.py::test_full_make_dirty_refusal_keeps_the_staged_source_"
+        "test[command]",
+        "tests/unit/test_git_merge_nc_safety.py::test_full_make_branch_data_stays_literal_before_"
+        "startup[make-expression-command]",
+        "tests/unit/test_make_result_guidance.py::test_promotion_make_guidance_waits_for_all_required_"
+        "children[validator]",
+        "tests/unit/test_make_checker_guidance.py::test_contract_native_input_error_guidance_retains_"
+        "exit_one[include]",
+        "tests/unit/test_development_merge_forward_targets.py::test_merge_forward_plan_guidance_does_not_"
+        "admit_integration[True-content]",
+        "tests/unit/test_development_merge_forward_targets.py::test_merge_forward_guidance_runs_despite_"
+        "namesake_file",
+        "tests/unit/test_gludd_human_todo_module.py::test_success_without_usable_id_never_verifies_"
+        "write[missing-present-200]",
+        "tests/unit/test_human_todo_make_target.py::test_human_todo_guidance_uses_actual_native_"
+        "outcome[0-1]",
+        "tests/unit/test_run_watched_result_guidance.py::test_native_status_drives_one_result_prompt_"
+        "without_changing_argv[7]",
+        "tests/unit/test_run_watched_result_guidance.py::test_namesake_file_cannot_suppress_native_"
+        "observation_or_guidance",
+        "tests/unit/test_run_watched_command_boundary.py::test_compound_tail_is_running_inside_one_"
+        "terminal_receipt[7-0]",
+        "tests/unit/test_make_uv_execution_boundary.py::test_guarded_multi_goal_refusal_teaches_both_"
+        "input_repairs_before_any_body[quoted-markdown]",
+        "tests/unit/test_item_progress.py::test_native_work_item_status_guidance_preserves_owned_"
+        "json[True]",
+        "tests/unit/test_release_pipeline_structure.py::TestReleaseCandidateHostedValidation::test_"
+        "candidate_push_filters_preserve_existing_routes",
+        "tests/unit/test_test_files_native_trace.py::test_observer_trace_contains_real_matching_protocol_"
+        "pairs[pass-serial]",
+        "tests/unit/test_xdist_trace_diagnostics.py::test_native_summary_cli_keeps_json_status_and_emits_"
+        "guidance[trace_guidance_native_rows0-empty]",
+        "tests/unit/test_presentation_browser_apt_source.py::test_apt_mode_is_literal_at_real_make_"
+        "startup[environment-override]",
+        "tests/unit/test_git_status_readonly.py::test_status_never_refreshes_native_index[inherited-one]",
+        "tests/unit/test_status_heartbeat_terminal.py",
+        "tests/unit/test_task_ledger_validation.py",
+        "tests/unit/test_make_readonly_version.py",
+        "tests/unit/test_make_help_audit.py",
+        "tests/unit/test_clean_stale_resource_namespaces.py",
+        "tests/unit/test_native_temp_artifact_target.py",
+        "tests/unit/test_ci_run_summary_script.py",
+        "tests/unit/test_ci_run_summary_target.py",
+        "tests/unit/test_ci_workflow_integrity.py",
+        "tests/unit/test_plugin_manifest_deep.py::TestHookValidity::test_no_duplicate_hooks_within_"
+        "single_plugin",
+        "tests/unit/test_plugin_session_start_deadlock.py::TestSessionStartNoDeadlock::test_no_plugin_"
+        "denies_reads_at_session_start",
+        "tests/unit/test_process_overhead.py::TestProcessTokenOverhead::test_anti_stop_plugins_are_lean",
+        "tests/unit/test_enforcement_executable_modes.py::test_enforcement_runtime_surfaces_have_"
+        "executable_git_mode",
+        "tests/unit/test_subagent_output_clean.py::TestSubagentOutputClean::test_all_tool_execute_before_"
+        "hooks_have_subagent_guard",
+        "tests/unit/test_no_idle_monitoring_plugin.py::test_fallback_subagent_guard_precedes_delegated_"
+        "handler",
+        "tests/unit/test_v011_exact_gate_repair_contract.py::test_all_six_exact_gate_repairs_remain_"
+        "green_together",
+        "tests/unit/test_secrets_scan_resources.py",
+        "tests/unit/test_css_lint_target.py::test_lint_css_dependency_config_and_contract_are_exactly_"
+        "pinned",
+        "tests/unit/test_gate_status_attestation.py::test_repository_identity_batches_only_fresh_"
+        "metadata_with_equivalent_digests",
+        "tests/unit/test_ci_stylelint_workflow.py",
+        "tests/security/test_ci_workflow.py",
+        "tests/unit/test_workflow_safe_parser.py",
+        "tests/unit/test_self_improve_private_policy_ci_contract.py",
+        "tests/unit/test_ci_shards_log_context.py",
+        "tests/unit/test_ci_shards_log_context_bounds.py",
+        "tests/unit/test_makefile_syntax.py",
+        "tests/unit/test_makefile_layout.py::test_each_invocation_reads_each_validated_source_once",
+        "tests/unit/test_makefile_layout.py::test_composition_emits_validated_bytes_and_revalidates_next_"
+        "invocation",
+        "tests/unit/test_makefile_targets_deep.py",
+        "tests/unit/test_azure_containerapp_coverage_target.py",
+        "tests/unit/test_ee_owned_collection_runtime_metadata.py",
+        "tests/unit/test_no_sleep_subagent.py",
+        "tests/unit/test_ansible_ee_locked_consumer.py",
+        "tests/unit/test_native_builder_optional_formats.py",
+        "tests/unit/test_native_format_profile_sync_target.py",
+        "tests/unit/test_ansible_ee_locked_consumer_admission.py",
+        "tests/unit/test_release_asset_matrix.py",
+        "tests/unit/test_release_ee_collection_closure.py",
+        "tests/unit/test_mcp_topics_manifest.py::test_independent_topic_sizing_has_one_native_dump_per_"
+        "topic",
+        "tests/unit/test_mcp_tool_gen.py",
+        "tests/unit/test_observed_command.py",
+        "tests/unit/test_observer_retention_concurrency.py",
+        "tests/unit/test_ci_collect_all_stress.py",
+        "tests/unit/test_admission_cold_start_selection.py::test_real_admission_filters_only_never_"
+        "selected_main_siblings",
+        "tests/unit/test_presentation_browser_runner.py::test_javascript_viewport_child_reads_the_actual_"
+        "producer_manifest",
+        "tests/unit/test_presentation_make_targets.py::test_native_browser_preserves_unset_empty_and_"
+        "explicit_worker_environment[1-command-line-None-NPROC]",
+        "tests/unit/test_presentation_make_targets.py::test_native_browser_preserves_unset_empty_and_"
+        "explicit_worker_environment[1-command-line-None-GLUDD_XDIST_WORKERS]",
+        "tests/unit/test_markdown_docs_deep.py::test_all_internal_links_resolve",
+        "tests/unit/test_markdown_docs_deep.py::test_relative_links_do_not_escape_repo",
+        "tests/unit/test_branch_discipline_checks.py::TestWorktreeCleanupAfterMerge::test_agent_cu_"
+        "removes_worktree",
+        "tests/unit/test_branch_discipline_checks.py::TestWorktreeCleanupAfterMerge::test_agent_cu_"
+        "preserves_branch_and_release_evidence",
+        "tests/unit/test_execution_adapter_protocols.py::test_core_protocols_do_not_claim_data_member_"
+        "validation",
+        "tests/unit/test_status_snapshot.py::TestStatusSnapshot::test_session_md_has_markers",
+        "tests/unit/test_status_snapshot.py::TestStatusSnapshot::test_validation_refuses_invalid_session_"
+        "structure_without_writes",
+        "tests/unit/test_status_snapshot.py::TestStatusSnapshot::test_repeated_native_rewrite_keeps_one_"
+        "header_and_surrounding_handoff[absent]",
+        "tests/unit/test_active_work_status.py::test_process_inventory_does_not_promote_resource_"
+        "directory_names[pytest]",
+        "tests/unit/test_agent_watchdog_lifecycle.py::test_native_sigterm_during_acquisition_releases_"
+        "the_actual_lease[fsync]",
+        "tests/unit/test_agent_watchdog_lifecycle.py::test_native_start_acknowledges_one_child_and_stop_"
+        "drains",
+        "tests/unit/test_agent_worktree_targets.py::TestAgentWorktreeRecipeShape::test_agent_cleanup_"
+        "delegates_to_registered_native_retirement",
+        "tests/unit/test_agent_worktree_targets.py::TestAgentWorktreeLifecycle::test_agent_cleanup_"
+        "removes_worktree[False]",
+        "tests/unit/test_task_watchdog.py::test_watchdog_absence_refusal_names_the_exact_pid_and_"
+        "cwd[True]",
+        "tests/unit/test_active_work_status.py::test_process_inventory_preserves_python_module_argument_"
+        "forms",
+        "tests/unit/test_code_intelligence_import_boundary.py::test_extractor_import_does_not_load_"
+        "introspection_or_database",
+        "tests/unit/test_list_files_target.py::test_listing_missing_input_preserves_native_failure",
+        "tests/unit/test_import_time_deep.py::test_measurement_contract_parses_native_numeric_rows",
+        "tests/unit/test_import_time_deep.py::test_measurement_contract_rejects_failed_children",
+        "tests/unit/test_import_time_deep.py::test_measurement_contract_consumers_fail_for_missing_data",
+        "tests/unit/test_runtime_publish_admission.py::test_green_runtime_owner_runs_once_before_normal_"
+        "transport[False]",
+        "tests/unit/test_makefile_audit_deep.py::TestHelpNoDupTargets::test_no_duplicate_help_entries",
+        "tests/unit/test_reviewed_head_inputs.py::test_historical_focus_binds_candidate_adapter_blobs_"
+        "not_inspecting_files",
+        "tests/unit/test_reviewed_head_inputs.py::test_finalization_accepts_actual_native_background_"
+        "producer_command",
+        "tests/unit/test_reviewed_head_inputs.py::test_native_focus_commands_preserve_watchdog_ownership",
+        "tests/unit/test_task_watchdog.py::test_watchdog_destructive_boundary_requires_registered_"
+        "ownership",
+        "tests/unit/test_task_watchdog.py::test_watchdog_handoff_confirms_exit_after_metadata_changes",
+        "tests/unit/test_task_watchdog.py::test_native_watchdog_start_requires_child_acknowledgement",
+        "tests/unit/test_task_watchdog.py::test_native_start_serializes_existing_acknowledgement",
+        "tests/unit/test_task_watchdog.py::test_unit_watchdog_fault_logs_belong_to_the_test_namespace",
+        "tests/unit/test_makefile_audit_deep.py::TestScriptReferencesExist::test_all_scripts_exist",
+        "tests/unit/test_task_watchdog.py::test_live_gate_bound_waiter_protects_the_complete_"
+        "tree[make-pid]",
+        "tests/unit/test_push_discipline_checks.py::TestVerifyRemoteAfterPush::test_verify_remote_"
+        "compares_sha",
+        "tests/unit/test_dependency_profiles.py::test_selected_profile_locks_preserve_controller_"
+        "jsonpointer_requirement",
+    )
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert len(rows) == 3
+    selections: list[list[str]] = []
+    for row in rows:
+        files = row["files"]
+        assert isinstance(files, list) and all(isinstance(node, str) for node in files)
+        selections.append(files)
+    assert len(original_selectors) == len(set(original_selectors)) == 155
+    assert Counter(node for files in selections for node in files) == Counter(original_selectors)
+    moved = (
+        "tests/unit/test_observed_command.py",
+        "tests/unit/test_status_heartbeat_terminal.py",
+    )
+    for file in moved:
+        coverage = [
+            sum(node == file or node.startswith(file + "::") for node in files)
+            for files in selections
+        ]
+        assert coverage == [0, 0, 1], (file, coverage)
+        assert selections[2].count(file) == 1
+    assert [len(files) for files in selections] == [140, 1, 14]
+    assert selections[0] == [node for node in original_selectors[:142] if node not in moved]
+    assert selections[1] == [original_selectors[142]]
+    original_tail = list(original_selectors[143:])
+    assert len(original_tail) == 12
+    assert selections[2] == original_tail[:-1] + list(moved) + original_tail[-1:]
+    assert selections[2][-1] == (
+        "tests/unit/test_dependency_profiles.py::"
+        "test_selected_profile_locks_preserve_controller_jsonpointer_requirement"
+    )
 
 
 @pytest.mark.parametrize(
