@@ -56,7 +56,7 @@ if sys.platform != "win32":
 
 a = Analysis(
     ['src/general_ludd/cli.py'],
-    pathex=['src'],
+    pathex=['src', 'scripts'],
     binaries=[],
     datas=datas,
     hiddenimports=[
@@ -84,10 +84,11 @@ a = Analysis(
         'general_ludd.models.router',
         'general_ludd.db.models',
         'general_ludd.db.repository',
-        # stream_command.py performs a delayed/conditional import of the Git
-        # repository mutex for observed commit transactions; static analysis of
-        # cli.py does not reach it, so declare it explicitly.
+        # Keep the native mutex and its dynamically imported frozen observer in
+        # the compiled module graph. The source checkout loads the observer by
+        # exact filename; frozen code uses the bootloader's normal import machinery.
         'general_ludd.git_automation.locking',
+        'stream_command',
         # SQLAlchemy resolves the sqlite+aiosqlite dialect from the configured
         # database URL at runtime. PyInstaller cannot follow that entry-point
         # lookup, so keep the core async driver explicit in the frozen graph.
