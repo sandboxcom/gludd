@@ -24,11 +24,19 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from proof_observations import write_snapshot
 
-    from scripts.ci_check_cooldown import record_diagnostic_verdict
+    from scripts.ci_check_cooldown import (
+        diagnostic_push_generation,
+        record_diagnostic_pending,
+        record_diagnostic_verdict,
+    )
 else:
     if __package__ in {None, ""}:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from scripts.ci_check_cooldown import record_diagnostic_verdict
+    from scripts.ci_check_cooldown import (
+        diagnostic_push_generation,
+        record_diagnostic_pending,
+        record_diagnostic_verdict,
+    )
     from scripts.proof_observations import write_snapshot
 
 DEFAULT_REPO = "sandboxcom/gludd"
@@ -209,16 +217,18 @@ def _publish_observation(
 
 def _record_diagnostic_feedback(
     path: Path | None, selector: RunSelector, run: dict[str, Any],
-    *, elapsed: float, progress: ProgressFn,
+    *, elapsed: float, progress: ProgressFn, generation: int | None,
 ) -> bool:
-    """Use only the just-published terminal producer observation for feedback."""
-    if path is None:
+    """Use only the just-published observation and pre-query history generation."""
+    if path is None or generation is None:
         return True
     try:
-        recorded = record_diagnostic_verdict(
+        pending = run.get("status") in ("queued", "in_progress", "pending", "requested", "waiting")
+        recorder = record_diagnostic_pending if pending else record_diagnostic_verdict
+        recorded = recorder(
             repo=selector.repo, branch=selector.ref, sha=selector.sha,
             workflow=selector.workflow, event=selector.event,
-            run=run, after_run_id=selector.after_run_id,
+            run=run, after_run_id=selector.after_run_id, expected_generation=generation,
         )
     except (OSError, ValueError) as exc:
         progress(f"CI-AWAIT: diagnostic-history-error={exc}")
@@ -233,7 +243,16 @@ def _record_diagnostic_feedback(
             "reconcile the existing history/state/counter before retrying."
         )
         return False
-    if recorded:
+    if recorded and pending:
+        progress(
+            "AGENT_NEXT target=ci-await outcome=diagnostic-pending-acknowledged "
+            "native_status=2 history_recorded=true history_only=true counter_reset=false "
+            "canonical_push=false ci_green=false gate_evidence=false release_ready=false: "
+            "Exact current feature Build is pending. Independent normal guarded publication "
+            "may proceed within the unchanged cap; continue bounded observation. "
+            "See .agents/policy/key-make-targets.md."
+        )
+    elif recorded:
         progress(
             f"AGENT_NEXT target=ci-await outcome=diagnostic-feedback-recorded "
             f"native_status={0 if run.get('conclusion') == 'success' else 1} "
@@ -266,6 +285,20 @@ def ci_await(
         f"{_describe(selector)} every {poll_interval:g}s (timeout={timeout}s) ==="
     )
 
+    try:
+        generation = diagnostic_push_generation() if (
+            observation_path is not None and selector.repo == DEFAULT_REPO
+            and selector.workflow == "Build and Release" and selector.event == "workflow_dispatch"
+            and selector.ref.startswith(("feature/", "diagnostic/"))
+        ) else None
+    except OSError as exc:
+        progress(f"CI-AWAIT: history-generation-error={exc}")
+        _publish_observation(
+            observation_path, selector, None, state="lookup_error", elapsed=0.0,
+            exit_code=1, error=str(exc), progress=progress,
+        )
+        return 1
+
     while True:
         elapsed = max(0.0, clock() - started)
         lookup_error: str | None = None
@@ -296,6 +329,7 @@ def ci_await(
                     return 1
                 if not _record_diagnostic_feedback(
                     observation_path, selector, run, elapsed=elapsed, progress=progress,
+                    generation=generation,
                 ):
                     return 1
                 progress(
@@ -308,6 +342,7 @@ def ci_await(
                     return 1
                 if not _record_diagnostic_feedback(
                     observation_path, selector, run, elapsed=elapsed, progress=progress,
+                    generation=generation,
                 ):
                     return 1
                 progress(
@@ -324,12 +359,22 @@ def ci_await(
         if elapsed >= timeout:
             if not publish(state="timeout", exit_code=2):
                 return 1
+            if run is not None and not _record_diagnostic_feedback(
+                observation_path, selector, run, elapsed=elapsed, progress=progress,
+                generation=generation,
+            ):
+                return 1
             progress(
                 f"=== CI-AWAIT: TIMEOUT after {elapsed:g}s (still pending) ==="
             )
             return 2
 
         if not publish(state="lookup_error" if lookup_error else "pending", exit_code=None):
+            return 1
+        if run is not None and not _record_diagnostic_feedback(
+            observation_path, selector, run, elapsed=elapsed, progress=progress,
+            generation=generation,
+        ):
             return 1
 
         wait_seconds = min(poll_interval, timeout - elapsed)

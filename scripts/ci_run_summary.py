@@ -10,6 +10,7 @@ import runpy
 import subprocess
 import sys
 from collections.abc import Iterable, Sequence
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import cast
@@ -313,6 +314,63 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _summary_outcome(payload: Payload, status: int) -> str:
+    """Describe the existing result without changing its native status."""
+    if status == 0:
+        return "passed"
+    raw_jobs = payload.get("jobs", [])
+    if not isinstance(raw_jobs, list) or any(not isinstance(job, dict) for job in raw_jobs):
+        return "lookup-error"
+    jobs = [cast(Job, job) for job in raw_jobs]
+    if payload.get("conclusion") in ("failure", "cancelled", "timed_out", "skipped", "stale") or any(
+        job.get("conclusion") == "failure"
+        or (job.get("status") == "completed" and job.get("conclusion") != "success")
+        for job in jobs
+    ):
+        return "failed"
+    if payload.get("status") in ("queued", "waiting", "pending", "requested", "in_progress") or any(
+        job.get("status") != "completed" for job in jobs
+    ):
+        return "pending"
+    return "failed" if jobs and payload.get("status") == "completed" else "lookup-error"
+
+
+def _report_result(
+    status: int,
+    outcome: str,
+    *,
+    run_id: str | None = None,
+    repository: str | None = None,
+    head_sha: str | None = None,
+    identity: str = "unverified",
+    scope: str = "legacy-listed-jobs",
+) -> int:
+    """Emit advisory stderr context while preserving stdout and native status."""
+    safe_run = run_id if run_id is not None and _RUN_ID.fullmatch(run_id) else "unknown"
+    safe_repo = repository if repository is not None and _REPOSITORY.fullmatch(repository) else "unknown"
+    safe_sha = head_sha if head_sha is not None and _FULL_SHA.fullmatch(head_sha) else "unknown"
+    next_owner, action = {
+        "planned": ("ci-run-summary", "run-live-only-when-authorized;offline-plan-performs-no-lookup"),
+        "pending": ("ci-await", "select-actual-branch-workflow-and-kind-before-bounded-await"),
+        "lookup-error": ("ci-view", "repair-reported-lookup-or-identity-input-before-a-new-query"),
+        "failed": ("ci-view", "inspect-exact-run-and-failed-or-censored-job-before-repair"),
+        "passed": ("pipeline-status", "verify-caller-branch-sha-and-required-workflows"),
+        "refused": ("ci-run-summary", "repair-literal-input-before-retry"),
+    }[outcome]
+    # Advisory output cannot replace the already determined native result.
+    with suppress(OSError, ValueError):
+        print(
+            f"AGENT_NEXT target=ci-run-summary outcome={outcome} native_status={status} "
+            f"run_id={safe_run} repository={safe_repo} head_sha={safe_sha} "
+            f"identity={identity} scope={scope} authority=diagnostic-only "
+            f"gate_evidence=false release_ready=false next_owner={next_owner} "
+            f"no_unchanged_rerun=true action={action}",
+            file=sys.stderr,
+            flush=True,
+        )
+    return status
+
+
 def main(argv: Sequence[str] = ()) -> int:
     """Validate inputs and summarize one immutable run or legacy stdin payload."""
     args = _parser().parse_args(argv)
@@ -324,44 +382,62 @@ def main(argv: Sequence[str] = ()) -> int:
     if run_id is None:
         if validate_only:
             print("ci-run-summary: --validate-only requires --run", file=sys.stderr)
-            return 2
+            return _report_result(2, "refused", scope="offline-inputs")
         try:
             raw_payload = sys.stdin.read()
         except OSError as exc:
             print(f"ci-run-summary: failed to read JSON from stdin: {exc}", file=sys.stderr)
-            return 1
+            return _report_result(1, "lookup-error")
         payload = _parse_payload(raw_payload, "stdin")
         if payload is None:
-            return 1
+            return _report_result(1, "lookup-error")
         if shard_timings:
             source_id = str(payload.get("databaseId", ""))
             if _RUN_ID.fullmatch(source_id) is None or not _validate_identity(payload, source_id):
                 print("ci-run-summary: immutable run identity is required for shard timings", file=sys.stderr)
-                return 1
+                return _report_result(1, "lookup-error")
             result = _summarize(payload)
             _print_shard_timings(payload, source_id)
-            return result
-        return _summarize(payload)
+            return _report_result(
+                result, _summary_outcome(payload, result), run_id=source_id,
+                head_sha=cast(str, payload["headSha"]), identity="validated-stdin-id-sha",
+                scope="stdin-listed-jobs-and-shard-timings",
+            )
+        result = _summarize(payload)
+        return _report_result(result, _summary_outcome(payload, result))
 
     if _RUN_ID.fullmatch(run_id) is None:
         print("ci-run-summary: --run must be a positive numeric ID", file=sys.stderr)
-        return 2
+        return _report_result(2, "refused", repository=repository, scope="offline-inputs")
     if _REPOSITORY.fullmatch(repository) is None:
         print("ci-run-summary: --repo must be owner/repository", file=sys.stderr)
-        return 2
+        return _report_result(2, "refused", run_id=run_id, scope="offline-inputs")
     if validate_only:
         print(f"CI-RUN-SUMMARY VALIDATED run={run_id} repo={repository}")
-        return 0
+        return _report_result(
+            0, "planned", run_id=run_id, repository=repository,
+            identity="requested-only", scope="offline-inputs",
+        )
 
     payload, fetch_rc = _fetch_run(run_id, repository)
     if payload is None:
-        return fetch_rc or 1
+        return _report_result(
+            fetch_rc or 1, "lookup-error", run_id=run_id, repository=repository,
+            identity="requested-only", scope="run-lookup",
+        )
     if not _validate_identity(payload, run_id):
-        return 1
+        return _report_result(
+            1, "lookup-error", run_id=run_id, repository=repository,
+            identity="requested-only", scope="run-lookup",
+        )
     result = _summarize(payload, run_id)
     if shard_timings:
         _print_shard_timings(payload, run_id)
-    return result
+    return _report_result(
+        result, _summary_outcome(payload, result), run_id=run_id, repository=repository,
+        head_sha=cast(str, payload["headSha"]), identity="validated-run-id-sha",
+        scope="reported-run-and-listed-jobs",
+    )
 
 
 if __name__ == "__main__":

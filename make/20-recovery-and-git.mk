@@ -1347,7 +1347,7 @@ git-push-sandboxcom: check-clean-tree _test-disabled-guard _push-rate-guard _sta
 	gludd_publish_writes=true; \
 	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom "$$gludd_publish_head:refs/heads/$$gludd_publish_branch" || gludd_publish_fail "$$?" failed transport; \
 	git branch --set-upstream-to="sandboxcom/$$gludd_publish_branch" "$$gludd_publish_branch" || gludd_publish_fail "$$?" failed tracking; \
-	$(MAKE) --no-print-directory _record-push-verdict PUSH_VERDICT_SHA="$$gludd_publish_head" || gludd_publish_fail "$$?" failed verdict; \
+	$(MAKE) --no-print-directory _record-push-verdict PUSH_VERDICT_SHA="$$gludd_publish_head" PUBLISH_EXPECTED_BRANCH="$$gludd_publish_branch" PUBLISH_EXPECTED_SHA="$$gludd_publish_head" PUBLISH_PURPOSE="$$gludd_publish_purpose" || gludd_publish_fail "$$?" failed verdict; \
 	$(MAKE) --no-print-directory verify-remote BRANCH="$$gludd_publish_branch" SHA="$$gludd_publish_head" || gludd_publish_fail "$$?" failed remote-verification; \
 	if [ "$$gludd_publish_purpose" = feature-ci ]; then \
 		$(MAKE) --no-print-directory ci-trigger-committed-head PUBLISH_PURPOSE=feature-ci \

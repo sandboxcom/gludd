@@ -20,8 +20,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import time
+from collections.abc import Callable
 from pathlib import Path
+from types import ModuleType
 from unittest.mock import patch
 
 import pytest
@@ -30,7 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "ci_check_cooldown.py"
 
 
-def _load_module() -> object:
+def _load_module() -> ModuleType:
     spec = importlib.util.spec_from_file_location("ci_cooldown_state_under_test", SCRIPT_PATH)
     if spec is None or spec.loader is None:
         raise ImportError(f"failed to load {SCRIPT_PATH}")
@@ -57,12 +60,34 @@ def _write_state(path: Path, **fields: object) -> None:
 def isolated_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Point ci_check_cooldown at a per-test state file under tmp_path."""
     state_file = tmp_path / "state.json"
-    monkeypatch.setenv("GLUDD_CI_STATE_FILE", str(state_file))
-    monkeypatch.setattr(ci_check_cooldown, "STATE_FILE", state_file)
+    owned = (
+        ("STATE_FILE", "GLUDD_CI_STATE_FILE", state_file),
+        ("HISTORY_FILE", "GLUDD_CI_HISTORY_FILE", tmp_path / "history.json"),
+        ("RESTART_COUNT_FILE", "GLUDD_CI_RESTART_COUNT_FILE", tmp_path / "restart-count"),
+        ("PUSH_STATE_FILE", "GLUDD_PUSH_STATE_FILE", tmp_path / "push-state.json"),
+    )
+    for field, carrier, path in owned:
+        monkeypatch.setenv(carrier, str(path))
+        monkeypatch.setattr(ci_check_cooldown, field, path)
     return state_file
 
 
-def _mock_subproc(sha: str = "deadbeefcafebabe"):
+def test_native_ci_state_paths_are_confined_before_runtime_calls(isolated_state: Path) -> None:
+    """Verify ownership before any legacy history or restart writer can execute."""
+    carriers = {
+        "STATE_FILE": "GLUDD_CI_STATE_FILE",
+        "HISTORY_FILE": "GLUDD_CI_HISTORY_FILE",
+        "RESTART_COUNT_FILE": "GLUDD_CI_RESTART_COUNT_FILE",
+        "PUSH_STATE_FILE": "GLUDD_PUSH_STATE_FILE",
+    }
+    for field, carrier in carriers.items():
+        actual = getattr(ci_check_cooldown, field)
+        assert isinstance(actual, Path)
+        assert actual.parent == isolated_state.parent, field
+        assert os.environ[carrier] == str(actual), carrier
+
+
+def _mock_subproc(sha: str = "deadbeefcafebabe") -> Callable[..., str]:
     """Mock subprocess.check_output for git rev-parse / gh run list calls.
 
     Returns a side_effect callable that handles both the cooldown script's
@@ -70,7 +95,7 @@ def _mock_subproc(sha: str = "deadbeefcafebabe"):
     invocation shaped like the one ``make ci-verdict`` performs.
     """
 
-    def _fake(cmd, *args, **kwargs):
+    def _fake(cmd: object, *args: object, **kwargs: object) -> str:
         cmd_list = list(cmd) if isinstance(cmd, (list, tuple)) else [cmd]
         if "rev-parse" in cmd_list:
             return sha

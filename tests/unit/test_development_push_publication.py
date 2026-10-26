@@ -1668,3 +1668,213 @@ def test_expected_pair_remains_literal_at_native_startup_and_publication(
     assert not marker.exists()
     assert "phase=expected-input" in result.stderr
     _not_started(fixture, "auth", "runtime", "transport", "verdict")
+
+
+@pytest.mark.parametrize("record_arm_failure", [False, True], ids=["independent-source", "failed-first-arm"])
+def test_owned_pending_build_allows_independent_new_branch_publication(
+    feature_repo: DevelopmentFixture, record_arm_failure: bool,
+) -> None:
+    """Observe real A's queued Build before admitting B through the native guards."""
+    fixture = feature_repo
+    history = Path(fixture.environment["GLUDD_CI_HISTORY_FILE"])
+    restart = Path(fixture.environment["GLUDD_CI_RESTART_COUNT_FILE"])
+    runner = shlex.quote(sys.executable) + " " + shlex.quote(str(fixture.root / "native-boundary.py"))
+    source = fixture.makefile.read_text(encoding="utf-8")
+    guard_source = GUARDRAILS.read_text(encoding="utf-8")
+    for name in ("_ci-verdict-history-guard", "_ci-restart-cap"):
+        stub = f"{name}:\n\t@{runner} guard {name}"
+        assert source.count(stub) == 1
+        rule = _target(guard_source, name)
+        if name == "_ci-verdict-history-guard":
+            literal = "STATE_FILE=/tmp/gludd-ci-verdict-history.json;"
+            assert rule.count(literal) == 1
+            rule = rule.replace(literal, "STATE_FILE=" + shlex.quote(str(history)) + ";")
+        header, body = rule.split("\n", 1)
+        source = source.replace(stub, header + f"\n\t@{runner} guard {name}\n" + body)
+    fixture.makefile.write_text(source, encoding="utf-8")
+    gh = Path(fixture.environment["PATH"].split(os.pathsep)[0]) / "gh"
+    gh_source = gh.read_text(encoding="utf-8")
+    run_fields = "'status': 'queued', 'conclusion': '', 'event': 'workflow_dispatch'"
+    assert gh_source.count(run_fields) == 1
+    gh.write_text(
+        gh_source.replace(run_fields, "'headBranch': os.environ['FEATURE_BRANCH'], "
+                          "'workflowName': 'Build and Release', " + run_fields),
+        encoding="utf-8",
+    )
+
+    published_a = fixture.invoke("git-push-sandboxcom", *_feature_arguments(fixture))
+    assert published_a.returncode == 0, published_a.stdout + published_a.stderr
+    sha_a = fixture.sha
+    assert _feature_remote_sha(fixture) == sha_a
+    assert restart.read_text(encoding="utf-8") == "1"
+    observation = fixture.root.parent / "owned-pending-observation.json"
+    state = Path(fixture.environment["GLUDD_CI_STATE_FILE"])
+    before_state = state.read_bytes() if state.exists() else None
+    wait = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/ci_await.py"),
+         "--repo", "sandboxcom/gludd", "--ref", fixture.environment["FEATURE_BRANCH"],
+         "--sha", sha_a, "--workflow", "Build and Release",
+         "--event", "workflow_dispatch", "--timeout", "1", "--poll-interval", "0.05",
+         "--observation-output", str(observation)],
+        cwd=fixture.root, env=fixture.environment, capture_output=True, text=True,
+        check=False, timeout=10,
+    )
+    assert wait.returncode == 2, wait.stdout + wait.stderr
+    observed = json.loads(observation.read_text(encoding="utf-8"))
+    assert observed["state"] == "timeout"
+    assert observed["evidence"]["run"]["status"] == "queued"
+    assert observed["release_ready"] is False
+    assert restart.read_text(encoding="utf-8") == "1"
+    assert (state.read_bytes() if state.exists() else None) == before_state
+
+    prior_history = history.read_bytes()
+    fixture.git("checkout", "--quiet", "-b", "feature/owned-parallel")
+    if not record_arm_failure:
+        fixture.git("-c", "commit.gpgSign=false", "commit", "--allow-empty",
+                    "--quiet", "-m", "owned independent B")
+    fixture.sha = fixture.git("rev-parse", "HEAD").stdout.strip()
+    assert (fixture.sha != sha_a) is (not record_arm_failure)
+    fixture.environment["FEATURE_BRANCH"] = "feature/owned-parallel"
+    arguments = _feature_arguments(fixture)
+    if record_arm_failure:
+        driver = fixture.root.parent / "owned-first-arm-driver.py"
+        driver.write_text(
+            "import importlib.util, os, pathlib, sys\n"
+            "script = sys.argv.pop(1)\n"
+            "sys.argv[0] = script\n"
+            "if pathlib.Path(script).name != 'ci_check_cooldown.py':\n"
+            "    os.execv(sys.executable, [sys.executable, *sys.argv])\n"
+            "spec = importlib.util.spec_from_file_location('owned_writer', script)\n"
+            "module = importlib.util.module_from_spec(spec)\n"
+            "spec.loader.exec_module(module)\n"
+            "def fail_first_history(_history):\n"
+            "    raise OSError('owned initial history arm failure')\n"
+            "module.save_history_atomic = fail_first_history\n"
+            "raise SystemExit(module.main())\n",
+            encoding="utf-8",
+        )
+        arguments = [value for value in arguments if not value.startswith("PYTHON=")]
+        arguments.append("PYTHON=" + shlex.quote(sys.executable) + " " + shlex.quote(str(driver)))
+    published_b = fixture.invoke("git-push-sandboxcom", *arguments)
+    if record_arm_failure:
+        assert published_b.returncode != 0
+        assert "owned initial history arm failure" in published_b.stdout + published_b.stderr
+        for token in ("phase=verdict", "transport_may_have_applied=true", "reconcile"):
+            assert token in published_b.stderr
+        assert _feature_remote_sha(fixture) == sha_a
+        assert history.read_bytes() == prior_history
+        prior = json.loads(history.read_text())
+        assert prior["diagnostic_push"]["branch"] == "feature/owned-source"
+        assert prior["diagnostic_push"]["generation"] == prior["push_generation"] == 1
+        assert prior["push_record_complete"] is True
+        assert prior["last_verdict"] == "pending"
+        assert restart.read_text() == "1"
+        assert (state.read_bytes() if state.exists() else None) == before_state
+        assert len(fixture.rows("transport")) == len(fixture.rows("hook")) == 2
+        assert len(fixture.rows("dispatch")) == 1
+        return
+    assert published_b.returncode == 0, published_b.stdout + published_b.stderr
+    assert _feature_remote_sha(fixture) == fixture.sha
+    assert fixture.git("rev-parse", "refs/heads/feature/owned-source", bare=True).stdout.strip() == sha_a
+    assert restart.read_text(encoding="utf-8") == "2"
+    assert json.loads(history.read_text(encoding="utf-8"))["last_push_sha"] == fixture.sha
+    assert len(fixture.rows("transport")) == 2
+    assert len(fixture.rows("hook")) == 2
+    assert all(sum(row["args"] == [guard] for row in fixture.rows("guard")) == 2
+               for guard in ORIGINAL_GUARDS)
+
+
+@pytest.mark.parametrize("origin", ("argv", "environment", "environment-e"))
+def test_native_recorder_uses_saved_feature_metadata_from_literal_inputs(
+    development_repo: DevelopmentFixture, origin: str,
+) -> None:
+    fixture = development_repo
+    history, restart = _install_native_recorder(fixture)
+    values = {
+        "PUSH_VERDICT_SHA": fixture.sha, "PUBLISH_EXPECTED_SHA": fixture.sha,
+        "PUBLISH_EXPECTED_BRANCH": "feature/owned-feedback", "PUBLISH_PURPOSE": "feature-ci",
+    }
+    environment = dict(fixture.environment)
+    arguments = ["PYTHON=" + shlex.quote(sys.executable)]
+    if origin == "argv":
+        arguments.extend(name + "=" + value for name, value in values.items())
+    else:
+        environment.update(values)
+
+    result = fixture.invoke(
+        "_record-push-verdict", *arguments, environment=environment,
+        early_environment=origin == "environment-e",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    recorded = json.loads(history.read_text())
+    assert recorded["last_push_sha"] == fixture.sha
+    assert recorded["diagnostic_push"]["sha"] == fixture.sha
+    assert recorded["diagnostic_push"]["branch"] == "feature/owned-feedback"
+    assert recorded["diagnostic_push"]["purpose"] == "feature-ci"
+    assert recorded["push_generation"] == recorded["diagnostic_push"]["generation"] == 1
+    assert recorded["push_record_complete"] is True
+    assert restart.read_text() == "1"
+    _not_started(fixture, "auth", "runtime", "transport", "hook", "dispatch")
+
+
+@pytest.mark.parametrize("origin", ("argv", "environment", "environment-e"))
+@pytest.mark.parametrize("variable", ("PUBLISH_PURPOSE", BRANCH_INPUT, SHA_INPUT))
+@pytest.mark.parametrize("payload_kind", ("make", "shell"))
+def test_native_recorder_metadata_stays_literal_with_same_origin_unguarded_witness(
+    development_repo: DevelopmentFixture, origin: str, variable: str, payload_kind: str,
+) -> None:
+    fixture = development_repo
+    history, restart = _install_native_recorder(fixture)
+    marker = fixture.root / "owned unexpected metadata evaluation"
+    command = "touch " + shlex.quote(str(marker))
+    payload = "$(shell " + command + ")" if payload_kind == "make" else chr(96) + command + chr(96)
+    values = {
+        "PUSH_VERDICT_SHA": fixture.sha, "PUBLISH_EXPECTED_SHA": fixture.sha,
+        "PUBLISH_EXPECTED_BRANCH": "feature/owned-feedback", "PUBLISH_PURPOSE": "feature-ci",
+    }
+    environment = dict(fixture.environment)
+    arguments = ["PYTHON=" + shlex.quote(sys.executable)]
+    arguments.extend(name + "=" + value for name, value in values.items() if name != variable)
+    if origin == "argv":
+        arguments.append(variable + "=" + payload)
+    else:
+        environment[variable] = payload
+    control = fixture.root.parent / "owned-unguarded-record-metadata.mk"
+    control.write_text(
+        "literal-control:\n\t@printf '%s\\n' \"$(" + variable + ")\"\n",
+        encoding="utf-8",
+    )
+    witness = fixture.invoke(
+        "literal-control", *arguments, makefile=control, environment=environment,
+        early_environment=origin == "environment-e",
+    )
+    assert witness.returncode == 0, witness.stdout + witness.stderr
+    assert marker.exists(), "the identical metadata variable/payload/origin must execute unguarded"
+    marker.unlink()
+
+    result = fixture.invoke(
+        "_record-push-verdict", *arguments, environment=environment,
+        early_environment=origin == "environment-e",
+    )
+
+    assert result.returncode != 0
+    assert "RECORD-PUSH-FAILED" in result.stdout + result.stderr
+    assert not marker.exists()
+    assert not history.exists() and not restart.exists()
+    _not_started(fixture, "auth", "runtime", "transport", "hook", "dispatch")
+
+
+def test_native_recorder_refuses_mismatched_saved_sha_before_history_write(
+    development_repo: DevelopmentFixture,
+) -> None:
+    fixture = development_repo
+    history, restart = _install_native_recorder(fixture)
+    result = fixture.invoke(
+        "_record-push-verdict", "PYTHON=" + shlex.quote(sys.executable),
+        "PUSH_VERDICT_SHA=" + fixture.sha, "PUBLISH_EXPECTED_SHA=" + "b" * 40,
+        "PUBLISH_EXPECTED_BRANCH=" + "feature/owned-feedback", "PUBLISH_PURPOSE=feature-ci",
+    )
+    assert result.returncode != 0
+    assert "saved SHA does not match" in result.stderr
+    assert not history.exists() and not restart.exists()

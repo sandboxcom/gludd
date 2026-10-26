@@ -5,68 +5,54 @@ Published/remote-VERIFIED: release-candidate/v012-git-mutex-20261022 eb772a658a0
 Previously recorded development publication: 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
 Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection errors in47.54s/native54.341s during the native guarded714ce2d65e3dbeec9d3dbbadced9f983c13c2a3d source commit preflight. Native receipt: .gate-logs/observed/test-count/20261022T234100Z-13723-e7e319e7.json. This is fixed714 evidence, not a later handoff-commit measurement; lock duration54.257s is distinct. Earlier23b/638/ef41/64 collections keep their actual refs/receipts. Collection is separate from runtime, full gate, hosted and deployment proof. Keep normal fresh collection per commit without repeating accepted source tests for a handoff alone.
 
-## Current continuation (2026-10-26 UTC)
+## Current receiving record (2026-10-26 UTC)
 
-This manual receiving snapshot uses Main source
-18ec1ee55fca0433e4206e439ad2952a7724e3af on
+Fixed Main input is078d409366e8cb1a38d34f0c56d88dcf302e3b2d on
 feature/v012-certification-repairs-20261026. Native worktree-state owns later
-HEAD/index state. Candidate82ec5170c173cfb52bb8bf3c6bbf7944cf3375e4 stays fixed;
-all seven S98 tasks remain unchecked. The leading714 collection is unchanged.
+HEAD/index state. The original82ec5170c173cfb52bb8bf3c6bbf7944cf3375e4 candidate
+and the leading714 collection remain fixed; all seven S98 tasks stay unchecked.
 
-Normal guarded source checkpoints include export coverageec17ce3fcbeb23b5d2dec01648058675d9247997,
-Git/runtimec5e8278cbe0ecae3b46012ff07ff3c2f5cd33313, controller metadata
-da86949df467666b42971812cb70eeb7a4cd9e7b and native conformance
-18ec1ee55fca0433e4206e439ad2952a7724e3af. Separate peers retain enforcement
-034afcf948d7aa3dba8c99d224db801535f74974, summary63eb3eeae5747540589fb8580ee3926d261f590c,
-historyb9049555424e8220e6bc5a612e892cc200de2138 and debounce
-739edeb0b3357e88221043950c8b09e85a7bdd61. Their owning features retain
-two-runtime acceptance, numeric coverage, normal collection and every failure.
-These checkpoints require semantic integration and final exact-SHA proof.
+Normally guarded tracking/help baa7d6ad6e24ebbd3896afd3f071d64c5a9c3aa0 and
+workflow budget078d409 follow native18ec and earlier checkpoints. Their actual
+649/648+1 and517 EACH receiving and fresh collections remain scoped evidence.
+Five separate committed peer packets are now semantically received into Main:
+summary/history, enforcement, debounce and packaged observer/graph. Private
+manifests93e2ea4f and717d5249 preserve exact exports/preimages, assertions,
+Main controller additions and0644 modes.31 selected paths yield30 staged changes;
+the accepted controller Make30 bytes were already present. Copying source grants
+no donor ancestry, clean exact-SHA test execution or promotion authority.
 
-The packaging successor e9fa5cdf93acf8824d083f46d92f78577b0165b8 normally commits
-the complete50-added/1-removed graph review and two active archive-import
-denial controls. Whole mutex507 and packaging/baseline332 cases pass EACH
-runtime, with unchanged85/75 line AND branch floors. Its five public-digest
-baseline reviews preserve all1352 existing labels. Native local repair records
-only the Molecule warning family; old hosted failure remains failed.
-Normal collection130808/130832,24deselected0errors43.67s/native49.3 is retained
-at .gate-logs/observed/test-count/20261026T162337Z-26415-da440b3a.json in that peer.
+Complete63-owner receiving passes2,926/1 existing skip EACH runtime after the
+logical-Make AST and all eight native admission pins. Observed receipts:
+v012-five-family-receiving/v012-five-family-receiving311-078d409-20261026.json
+(native980.619s) and the312 counterpart (native1017.364s), under .gate-logs/observed.
+Each5957-event trace has2961 pairs/0 issues/0 unfinished; two reports belong to
+the intentional nested fatal-warning control, whose parent passes. Package1516
+plus configured1 and all16 changed Python files typecheck on BOTH runtimes;
+source, secrets, line, duplicate, environment,299 contracts and265 resources pass.
+Normal scoped intake commits still require their own fresh collection.
 
-Actual accepted diagnostic Build40339437973 and Molecule40340580626 tested
-published265f8b6add9e5dda459d8df056e17c732e77ea2c, workflow_dispatch/attempt1.
-Build failed both Node gates; all eight downstream shard intervals are unknown.
-Molecule built the EXE, then failed the strict changed-graph audit.
-The e9fa feature-ci publisher subsequently REFUSED on two open Node families,
-native2/0.856s before transport or any new Actions request. Retain
-v012-package-publication/v012-package-publication-e9fa5cd-20261026.json in its
-observed directory. No newer hosted, deployment or release result is implied.
+Source53 readiness3 coverage now passes BOTH with exactly three peer files,
+96.5/93.5 line/branch on311 and96.3/93.3 on312. The broader original49 run then
+fails native coverage61% after7,972 passes/5 skips/1 xfail:42 Main rows appear
+beside49 peer rows; no JSON/audit is produced. Preserve native855.285s receipt
+coverage-files/20261026T173239Z-50742-823e1757.json in that peer. One original
+daemon child independently proves Main imports at the physical peer CWD.
+The actual coverage-files producer now has a bounded physical PYTHONPATH repair
+and10 GREEN controls EACH; Source55 remains unaccepted pending exact guard,
+independent review, complete consumers and original49/12 profiles. No filtering,
+floor, warning, selector, deadline or assertion waiver follows either failure.
 
-The Main nine-path receiving batch keeps two separate commit scopes. Current
-tracking/help readers pass649 on311 and648/1 existing311-policy skip on312,
-plus logical-Make AST first on each. Complete workflow consumers pass517 EACH.
-The new global90-second input is independently enforced by an existing early
-pin: actual180 gives1FAIL/7PASS, then90 gives8PASS. Full rosters, native
-receipts and missing proofs are in the GHA audit and release inventory.
-All native sessions are drained; final metadata/content reconciliation remains.
-
-Exact native index/blob recovery found omitted completed source despite
-ancestor merges; no writer/loss event is inferred. Current integration grows
-from49 to52 accepted paths, then53 for the actual readiness-source repair.
-Core31 and additional consumers pass both runtimes with original documented
-skips; legacy401/native324 profiles also pass both at their unchanged floors.
-The three-source readiness profile honestly FAILED: actual child imports
-selected Main's editable modules alongside the peer. The real producer binding
-is being repaired; no report filtering, exclusions or floor changes follow.
-Original49/12 and corrected3-source profiles remain unproved.
-
-Node patched-leaf/TOML behavior preference and shared-account workflow-scope
-consent remain pending; no permission is inferred. Repo-local HTTPS setup and
-accepted dispatches grant no account consent. Three owned checkpoints verify;
-the automatic stash was natively reconciled. Use current native load/disk/
-process owners before dispatch; six worktrees, four admitted test cohorts and
-the eight-worker ceiling remain. No canonical full gate/global85-75 coverage,
-required exact-SHA push CI, development/master promotion, ZDD deployment,
-stable tag or28-category/30-asset release is certified.
+Actual hosted Build40339437973 and Molecule40340580626 remain failed at published
+265f8b6add9e5dda459d8df056e17c732e77ea2c, workflow_dispatch/attempt1. Local clean
+e9fa5cdf93acf8824d083f46d92f78577b0165b8 repairs only the retained-artifact
+Molecule graph family. Its normal feature publisher REFUSES native2/0.856s on
+two open Node families before transport/new Actions. Node/TOML behavior preference
+and shared-account workflow consent remain pending. No canonical full gate,
+global85/75 BOTH, exact-SHA push CI, development/master promotion, ZDD deployment
+or complete28-category/30-asset stable release is certified. Three owned
+checkpoints remain verified. Earlier bounded handoff is retained at
+baa7d6ad6e24ebbd3896afd3f071d64c5a9c3aa0:SESSION.md.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 

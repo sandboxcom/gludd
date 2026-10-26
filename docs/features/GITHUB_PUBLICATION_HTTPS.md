@@ -34,6 +34,146 @@ concerns authorization, not this controller-binding defect; the native decoy
 controls establish this defect's actual input and repaired execution boundary.
 
 
+## Recovered diagnostic publication ownership (2026-10-26 UTC)
+
+At receiving base c5e8278cbe0ecae3b46012ff07ff3c2f5cd33313, the completed
+ten-file publication-history packet was absent despite ancestor
+0517ad3f298a7e5d3f53929841a0ba6bb65a6814. The await source and two test owners
+still matched original 3a693d3aee571ef96666c62ef719f8f05b5ace38 exactly. The
+publisher/recorder lacked saved feature metadata, and the cooldown owner lacked
+generation-bound pending acknowledgement. Exact source inventory establishes
+the current omission; it does not identify a historical writer or loss event.
+
+The surviving native peer index has SHA256
+c7381d9df45610935f0e54b16ba403a8f9c1c9704294f9c56e6aec330d28c689. The fixed
+private Make exporter verified its HEAD, native stage roster, blob identities,
+exact exported bytes and modes while preserving peer index/metadata; it neither
+observed nor changed Main's index. It retains original and recovered source
+under /tmp/gludd-v012-history-packet-export-20261026 with its exact manifest.
+Native three-way proposals preserved later source improvements. Conflicts in
+the cooldown docstring, contract explanation and evolved feature prose were
+resolved semantically; no source or index was overwritten by proposal creation.
+
+The recovered source forwards the landed branch/full SHA/purpose to the native
+recorder. It arms a new publication generation before updating restart debt and
+marks diagnostic provenance complete only after both durable writes. The actual
+producer captures that generation once before its first GitHub lookup. Exact
+current pending dispatch feedback may acknowledge history so independent
+feature work can proceed, while native timeout remains 2, restart debt remains,
+and canonical state remains unchanged. Same-SHA republication invalidates the
+older waiter; a later exact terminal observation can upgrade the same run once.
+Incomplete, stale, mismatched or failed inputs retain native refusal/status.
+Every existing hook, source/remote check and canonical promotion gate remains.
+
+Fresh failing-first receiving restored the original four controls before the
+production delta. All four FAIL on Python 3.11: the real recorder rejected
+saved metadata, and ordinary/command-line/make -e inputs produced history with
+no diagnostic ownership. Retain the terminal native receipt
+.gate-logs/observed/history-recovery-red/history-recovery-red311-c5e8278-20261026.json
+(4 FAIL, 1.87 seconds; native 3.168 seconds). After source recovery all four
+controls PASS in 1.36 seconds/native 2.609 seconds; the verified receipt is
+.gate-logs/observed/history-recovery-focus/history-recovery-focus311-c5e8278-20261026.json.
+All six changed Python owners pass individual strict typing; a combined
+invocation's duplicate module-name refusal remains a failed diagnostic. Native
+docstring admission required ten missing existing cooldown docstrings, now
+documented without behavior/configuration changes. Ruff, native environment and
+line guards, Markdown and the 299-target contract pass. No assertion was relaxed.
+
+Before whole-consumer execution, source review found an existing cooldown-state
+fixture that bound only STATE_FILE. It could otherwise write shared history and
+restart state. The added ownership check calls no history writer: its corrected
+initial run FAILS on the actual default HISTORY_FILE, then PASSES after all four
+state/history/restart/push paths and corresponding child environment carriers
+are bound through monkeypatch to pytest-owned paths. Retain
+.gate-logs/observed/history-fixture-ownership/history-fixture-ownership-native-red311-20261026.json
+(native 1.764 seconds) and history-fixture-ownership-green311-20261026.json
+(native 1.655 seconds). An earlier missing-os NameError is fixture-only failed
+input, not production RED. Module/callback annotation corrections retain every
+original assertion. The old ten-path content guard does not certify this
+eleventh path; refreshed content admission and complete receiving are required.
+
+The first complete fourteen-owner run passed 1,002 cases and FAILED one on
+Python 3.11 in 451.06 seconds/native 455.452 seconds. Receipt:
+.gate-logs/observed/history-recovery-receiving/history-recovery-receiving311-c5e8278-20261026.json.
+Its real failure was helper-binding status 127/authentication before transport:
+the old metadata bootstrap treated a composite application PYTHON driver as one
+executable, so the intended first-history-write OSError had not executed.
+Root applied the separately accepted controller prerequisite from
+da86949df467666b42971812cb70eeb7a4cd9e7b. The fixture already supplied
+SYSTEM_PYTHON; every original fault/status/provenance assertion remained.
+The exact two-case changed-input owner then PASSED in 15.10 seconds/native
+16.471 seconds, verified in
+.gate-logs/observed/history-controller-prerequisite/history-controller-prerequisite-green311-20261026.json.
+The final source scope is twelve paths, including the safe legacy fixture and
+accepted Make30 controller dependency. Root's twelve-path staged guard passed
+8.157 seconds with zero new clones; earlier ten/eleven-path guards retain their
+narrower scope.
+
+Both unchanged existing coverage profiles pass on EACH installed runtime.
+Await measures 219/226 lines and 76/82 branches
+(96.902655 percent / 92.682927 percent); cooldown measures 329/346 lines and
+90/96 branches (95.086705 percent / 93.75 percent). All native 85 aggregate /
+75 per-file line AND branch audits pass.
+
+| Runtime | Complete profile | Cases | Receipt below .gate-logs/observed/coverage-files | Native seconds |
+| --- | --- | --- | --- | --- |
+| 3.11.14 | Await | 76 | 20261026T141447Z-87268-de77f795.json | 22.929 |
+| 3.11.14 | Cooldown and confined legacy caller | 164 | 20261026T141553Z-89024-5c7c9d5d.json | 4.040 |
+| 3.12.15 | Await | 76 | 20261026T141720Z-89620-fafb069a.json | 26.342 |
+| 3.12.15 | Cooldown and confined legacy caller | 164 | 20261026T141801Z-91256-a506e838.json | 5.782 |
+
+Corresponding numeric audits are .gate-logs/coverage-20261026T141509Z.json,
+coverage-20261026T141556Z.json, coverage-20261026T141746Z.json and
+coverage-20261026T141807Z.json. These profiles retain their actual unchanged
+source/tests/configuration/interpreter scope across the controller prerequisite.
+
+The refreshed complete deduplicated fourteen-owner cohort PASSED all 1,003
+cases on EACH runtime, with fatal warnings and a single worker. Python 3.11
+measured 456.08 seconds/native 460.551 seconds; Python 3.12 measured
+470.10 seconds/native 474.817 seconds. Receipts below
+.gate-logs/observed/history-recovery-receiving/ are
+history-recovery-receiving311-controller-20261026.json and
+history-recovery-receiving312-controller-20261026.json. Each exact exec session
+was drained and its terminal inactive/native0 observation verified before edits.
+The union uses these complete owners with no selector or assertion weakening:
+
+~~~text
+tests/unit/test_ci_await_exact.py
+tests/unit/test_ci_check_cooldown.py
+tests/unit/test_development_push_publication.py
+tests/unit/test_ci_cooldown_state.py
+tests/unit/test_pipeline_status_exact_sha.py
+tests/unit/test_pipeline_status_inprocess_ledger.py
+tests/unit/test_pipeline_status_job_progress.py
+tests/unit/test_status_heartbeat_terminal.py
+tests/unit/test_ci_await_codification.py
+tests/unit/test_workflow_failure_class_guards.py
+tests/unit/test_runtime_publish_admission.py
+tests/unit/test_push_discipline_checks_p2.py
+tests/unit/test_push_discipline_checks.py
+tests/unit/test_ci_interaction_discipline.py
+~~~
+
+Root reports source-only approval for the recovered eleven paths and the
+separately approved controller prerequisite. Final receipt prose needs its
+normal staged-content reconciliation, then Root owns the twelve-path normal
+ship-commit-files checkpoint with fresh collection and semantic Main intake.
+The complete canonical gate, aggregate repository coverage, exact-SHA hosted
+push CI, guarded development/master promotion, ZDD deployment and release
+artifacts remain unproved by this local receiving.
+
+Historical firsthand reports in [community discussion 9752](https://github.com/orgs/community/discussions/9752)
+and [maintainer discussion 126578](https://github.com/orgs/community/discussions/126578)
+describe dispatch/run correlation problems, including concurrent-run ambiguity.
+GitHub subsequently [added optional dispatch run details in February 2026](https://github.blog/changelog/2026-02-19-workflow-dispatch-api-now-returns-run-ids/);
+GitHub CLI 2.87 and later can return the created run URL. Root researched this
+history and current improvement on 2026-10-26. This recovery retains the existing
+signal owner; its local once-captured publication-generation race is distinct
+from historical API correlation gaps. The exact inventory and four native RED
+controls establish Gludd's omission. Recovery, diagnostics and focused coverage
+cannot certify hosted execution, canonical push CI, deployment or release artifacts.
+
+
 ## Make-owned workflow consent receiving afterd54d7a5
 
 Root owns S98.4/Main/shared/Git on release-candidate/v012-git-mutex-20261022.

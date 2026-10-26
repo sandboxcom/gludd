@@ -855,3 +855,298 @@ def test_atomic_failure_cleanup_preserves_a_foreign_replacement_temporary(
     assert interrupted[0].read_text() == (
         "foreign bytes" if replacement == "symlink" else "foreign temporary bytes"
     )
+
+
+def _owned_diagnostic_pending() -> dict[str, object]:
+    arguments = _diagnostic_arguments()
+    assert ci_check_cooldown.cmd_record_push(
+        str(arguments["sha"]), str(arguments["branch"]), "feature-ci",
+    ) == 0
+    arguments["expected_generation"] = ci_check_cooldown.diagnostic_push_generation()
+    run = arguments["run"]
+    assert isinstance(run, dict)
+    run.update(status="queued", conclusion="")
+    return arguments
+
+
+@pytest.mark.parametrize("status", ["queued", "in_progress", "pending", "requested", "waiting"])
+def test_owned_pending_acknowledgement_keeps_counter_and_canonical_state(
+    isolated_state: Path, status: str,
+) -> None:
+    arguments = _owned_diagnostic_pending()
+    run = arguments["run"]
+    assert isinstance(run, dict)
+    run["status"] = status
+    _write_state(isolated_state, last_verdict="failure", check_count=9)
+    before = isolated_state.read_bytes()
+    ci_check_cooldown.RESTART_COUNT_FILE.write_text("3")
+
+    assert ci_check_cooldown.record_diagnostic_pending(**arguments) is True
+
+    history = json.loads(ci_check_cooldown.HISTORY_FILE.read_text())
+    assert history["last_checked_sha"] == history["last_push_sha"] == arguments["sha"]
+    assert history["last_verdict"] == "pending"
+    assert history["diagnostic_run"]["generation"] == history["push_generation"] == 1
+    assert history["diagnostic_run"]["status"] == status
+    assert isolated_state.read_bytes() == before
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_text() == "3"
+    pending = ci_check_cooldown.HISTORY_FILE.read_bytes()
+    assert ci_check_cooldown.record_diagnostic_pending(**arguments) is False
+    assert ci_check_cooldown.HISTORY_FILE.read_bytes() == pending
+
+
+@pytest.mark.parametrize("conclusion", ["failure", "success"])
+def test_current_pending_run_can_upgrade_to_terminal_exactly_once(
+    isolated_state: Path, conclusion: str,
+) -> None:
+    arguments = _owned_diagnostic_pending()
+    assert ci_check_cooldown.record_diagnostic_pending(**arguments) is True
+    run = arguments["run"]
+    assert isinstance(run, dict)
+    run.update(status="completed", conclusion=conclusion)
+    ci_check_cooldown.RESTART_COUNT_FILE.write_text("3")
+
+    assert ci_check_cooldown.record_diagnostic_verdict(**arguments) is True
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_text() == "0"
+    history = ci_check_cooldown.HISTORY_FILE.read_bytes()
+    state = isolated_state.read_bytes()
+    ci_check_cooldown.RESTART_COUNT_FILE.write_text("2")
+    assert ci_check_cooldown.record_diagnostic_verdict(**arguments) is False
+    assert ci_check_cooldown.HISTORY_FILE.read_bytes() == history
+    assert isolated_state.read_bytes() == state
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_text() == "2"
+
+
+@pytest.mark.parametrize("change", [
+    "legacy", "canonical", "branch", "purpose", "repo", "sha", "generation",
+    "boolean-generation", "incomplete", "record-incomplete", "floor", "missing-token",
+])
+def test_pending_requires_complete_current_saved_feature_publication(
+    isolated_state: Path, change: str,
+) -> None:
+    arguments = _owned_diagnostic_pending()
+    history = json.loads(ci_check_cooldown.HISTORY_FILE.read_text())
+    if change == "legacy":
+        history = {"last_push_sha": arguments["sha"], "last_checked_sha": ""}
+    elif change == "canonical":
+        assert ci_check_cooldown.cmd_record_push(str(arguments["sha"])) == 0
+        history = json.loads(ci_check_cooldown.HISTORY_FILE.read_text())
+        arguments["expected_generation"] = history["push_generation"]
+    elif change == "record-incomplete":
+        history["push_record_complete"] = False
+    elif change == "missing-token":
+        arguments["expected_generation"] = None
+    else:
+        saved = history["diagnostic_push"]
+        field, value = {
+            "branch": ("branch", "feature/foreign"),
+            "purpose": ("purpose", "canonical"), "repo": ("repo", "other/project"),
+            "sha": ("sha", "c" * 40), "generation": ("generation", 2),
+            "boolean-generation": ("generation", True),
+            "incomplete": ("complete", False), "floor": ("run_floor", 42),
+        }[change]
+        saved[field] = value
+    ci_check_cooldown.HISTORY_FILE.write_text(json.dumps(history))
+    before = ci_check_cooldown.HISTORY_FILE.read_bytes()
+    count = ci_check_cooldown.RESTART_COUNT_FILE.read_bytes()
+
+    assert ci_check_cooldown.record_diagnostic_pending(**arguments) is False
+
+    assert ci_check_cooldown.HISTORY_FILE.read_bytes() == before
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_bytes() == count
+    assert not isolated_state.exists()
+
+
+@pytest.mark.parametrize("new_branch", ["feature/owned-feedback", "diagnostic/other"])
+@pytest.mark.parametrize("terminal", [False, True])
+def test_generation_captured_before_lookup_cannot_acknowledge_same_sha_republication(
+    isolated_state: Path, new_branch: str, terminal: bool,
+) -> None:
+    arguments = _owned_diagnostic_pending()
+    assert ci_check_cooldown.cmd_record_push(str(arguments["sha"]), new_branch, "feature-ci") == 0
+    run = arguments["run"]
+    assert isinstance(run, dict)
+    if terminal:
+        run.update(status="completed", conclusion="success")
+    before = ci_check_cooldown.HISTORY_FILE.read_bytes()
+
+    recorder = (ci_check_cooldown.record_diagnostic_verdict if terminal
+                else ci_check_cooldown.record_diagnostic_pending)
+    assert recorder(**arguments) is False
+
+    assert ci_check_cooldown.HISTORY_FILE.read_bytes() == before
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_text() == "2"
+    assert not isolated_state.exists()
+
+
+@pytest.mark.parametrize("failed_stage", ["arm", "counter", "complete"])
+def test_partial_publication_record_never_enables_pending_acknowledgement(
+    isolated_state: Path, failed_stage: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    arguments = _diagnostic_arguments()
+    ci_check_cooldown.HISTORY_FILE.write_text(json.dumps({"last_push_sha": "a" * 40}))
+    ci_check_cooldown.RESTART_COUNT_FILE.write_text("2")
+    original = ci_check_cooldown._replace_atomic
+    history_writes = 0
+
+    def fail_stage(path: Path, contents: str) -> None:
+        nonlocal history_writes
+        if path == ci_check_cooldown.HISTORY_FILE:
+            history_writes += 1
+        if (
+            (failed_stage == "arm" and path == ci_check_cooldown.HISTORY_FILE)
+            or (failed_stage == "counter" and path == ci_check_cooldown.RESTART_COUNT_FILE)
+            or (failed_stage == "complete" and path == ci_check_cooldown.HISTORY_FILE
+                and history_writes == 2)
+        ):
+            raise OSError("owned partial publication record")
+        original(path, contents)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(ci_check_cooldown, "_replace_atomic", fail_stage)
+        assert ci_check_cooldown.cmd_record_push(
+            str(arguments["sha"]), str(arguments["branch"]), "feature-ci",
+        ) == 1
+    history = json.loads(ci_check_cooldown.HISTORY_FILE.read_text())
+    assert history.get("push_record_complete") is not True
+    assert "diagnostic_push" not in history
+    assert history.get("last_checked_sha", "") == ""
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_text() == (
+        "3" if failed_stage == "complete" else "2"
+    )
+    arguments["expected_generation"] = ci_check_cooldown.diagnostic_push_generation()
+    run = arguments["run"]
+    assert isinstance(run, dict)
+    run.update(status="queued", conclusion="")
+    before = ci_check_cooldown.HISTORY_FILE.read_bytes()
+    assert ci_check_cooldown.record_diagnostic_pending(**arguments) is False
+    run.update(status="completed", conclusion="success")
+    assert ci_check_cooldown.record_diagnostic_verdict(**arguments) is False
+    assert ci_check_cooldown.HISTORY_FILE.read_bytes() == before
+    assert not isolated_state.exists()
+
+
+@pytest.mark.parametrize("branch,purpose", [
+    ("development", "feature-ci"), ("feature/", "feature-ci"),
+    ("feature/a..b", "feature-ci"), ("feature/.hidden", "feature-ci"),
+    ("feature/a.lock", "feature-ci"), ("feature/a", "canonical"),
+    (None, "feature-ci"), ("feature/a", None),
+])
+def test_record_push_rejects_invalid_diagnostic_metadata_before_any_write(
+    isolated_state: Path, branch: str | None, purpose: str | None,
+) -> None:
+    assert ci_check_cooldown.cmd_record_push("b" * 40, branch, purpose) == 2
+    assert not ci_check_cooldown.HISTORY_FILE.exists()
+    assert not ci_check_cooldown.RESTART_COUNT_FILE.exists()
+
+
+@pytest.mark.parametrize("generation", [-1, True, "1", None])
+def test_record_push_refuses_corrupt_generation_without_counter_or_history_change(
+    isolated_state: Path, generation: object,
+) -> None:
+    ci_check_cooldown.HISTORY_FILE.write_text(json.dumps({"push_generation": generation}))
+    ci_check_cooldown.RESTART_COUNT_FILE.write_text("2")
+    before = ci_check_cooldown.HISTORY_FILE.read_bytes()
+    assert ci_check_cooldown.cmd_record_push("b" * 40) == 1
+    assert ci_check_cooldown.HISTORY_FILE.read_bytes() == before
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_text() == "2"
+
+
+def test_record_push_cli_persists_saved_feature_metadata(
+    isolated_state: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ci_check_cooldown.sys, "argv", [
+        "ci_check_cooldown.py", "record-push", "b" * 40, "feature/owned-feedback", "feature-ci",
+    ])
+    assert ci_check_cooldown.main() == 0
+    saved = json.loads(ci_check_cooldown.HISTORY_FILE.read_text())["diagnostic_push"]
+    assert saved["sha"] == "b" * 40
+    assert saved["branch"] == "feature/owned-feedback"
+    assert saved["purpose"] == "feature-ci"
+    assert saved["generation"] == 1
+
+
+@pytest.mark.parametrize("field,value", [
+    ("status", "completed"), ("status", "unknown"), ("conclusion", "success"),
+    ("headBranch", "feature/other"), ("databaseId", True),
+])
+def test_pending_rejects_inexact_or_terminal_runs(
+    isolated_state: Path, field: str, value: object,
+) -> None:
+    arguments = _owned_diagnostic_pending()
+    run = arguments["run"]
+    assert isinstance(run, dict)
+    run[field] = value
+    before = ci_check_cooldown.HISTORY_FILE.read_bytes()
+    assert ci_check_cooldown.record_diagnostic_pending(**arguments) is False
+    assert ci_check_cooldown.HISTORY_FILE.read_bytes() == before
+    assert not isolated_state.exists()
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_text() == "1"
+
+
+def test_pending_history_write_failure_preserves_counter_and_canonical_state(
+    isolated_state: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    arguments = _owned_diagnostic_pending()
+    before = ci_check_cooldown.HISTORY_FILE.read_bytes()
+
+    def fail_history(_history: dict[str, object]) -> None:
+        raise OSError("owned pending history failure")
+
+    monkeypatch.setattr(ci_check_cooldown, "save_history_atomic", fail_history)
+    with pytest.raises(OSError, match="owned pending history failure"):
+        ci_check_cooldown.record_diagnostic_pending(**arguments)
+    assert ci_check_cooldown.HISTORY_FILE.read_bytes() == before
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_text() == "1"
+    assert not isolated_state.exists()
+
+
+def test_saved_feature_terminal_feedback_also_requires_pre_lookup_generation(
+    isolated_state: Path,
+) -> None:
+    arguments = _owned_diagnostic_pending()
+    run = arguments["run"]
+    assert isinstance(run, dict)
+    run.update(status="completed", conclusion="success")
+    arguments.pop("expected_generation")
+    before = ci_check_cooldown.HISTORY_FILE.read_bytes()
+    assert ci_check_cooldown.record_diagnostic_verdict(**arguments) is False
+    assert ci_check_cooldown.HISTORY_FILE.read_bytes() == before
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_text() == "1"
+    assert not isolated_state.exists()
+
+
+def test_fresh_same_sha_publication_retains_known_run_floor_before_new_feedback(
+    isolated_state: Path,
+) -> None:
+    arguments = _owned_diagnostic_pending()
+    assert ci_check_cooldown.record_diagnostic_pending(**arguments) is True
+    assert ci_check_cooldown.cmd_record_push(
+        str(arguments["sha"]), str(arguments["branch"]), "feature-ci",
+    ) == 0
+    arguments["expected_generation"] = ci_check_cooldown.diagnostic_push_generation()
+    history = json.loads(ci_check_cooldown.HISTORY_FILE.read_text())
+    assert history["diagnostic_push"]["run_floor"] == 42
+    before = ci_check_cooldown.HISTORY_FILE.read_bytes()
+    assert ci_check_cooldown.record_diagnostic_pending(**arguments) is False
+    assert ci_check_cooldown.HISTORY_FILE.read_bytes() == before
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_text() == "2"
+    run = arguments["run"]
+    assert isinstance(run, dict)
+    run["databaseId"] = 43
+    assert ci_check_cooldown.record_diagnostic_pending(**arguments) is True
+    assert not isolated_state.exists()
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_text() == "2"
+
+
+def test_publication_record_refuses_a_malformed_prior_run_floor(
+    isolated_state: Path,
+) -> None:
+    ci_check_cooldown.HISTORY_FILE.write_text(json.dumps({
+        "last_push_sha": "a" * 40, "diagnostic_run": {"id": "invalid"},
+    }))
+    ci_check_cooldown.RESTART_COUNT_FILE.write_text("2")
+    before = ci_check_cooldown.HISTORY_FILE.read_bytes()
+    assert ci_check_cooldown.cmd_record_push("b" * 40) == 1
+    assert ci_check_cooldown.HISTORY_FILE.read_bytes() == before
+    assert ci_check_cooldown.RESTART_COUNT_FILE.read_text() == "2"

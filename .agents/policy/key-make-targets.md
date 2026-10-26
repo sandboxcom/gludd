@@ -878,6 +878,21 @@ retains whole-owner/native-bootstrap controls and Make-version research.
 
 The immutable ci-run-summary owner with CI_RUN_SUMMARY_SHARD_TIMINGS=1 retains the exact run/SHA, all eight shard source job IDs and pending/censored intervals. Its nonterminal diagnostic can supply the numeric job binding for failure context; final timing comparisons and proof still require terminal evidence. No search or ad hoc parser over a current JSON snapshot replaces the native authority.
 
+The same result owner emits one final `AGENT_NEXT target=ci-run-summary`
+stderr line after its table and optional timing output, preserving stdout and
+native status. Advisory `OSError` and closed-stream `ValueError` preserve the already
+computed native result. Planned output performs no lookup. Pending output directs
+`ci-await` only after selecting the actual branch, workflow and kind. Failed
+output directs `ci-view` for the exact failed or censored run; lookup-error
+requires the reported lookup or identity input to change before another query.
+Passed output directs `pipeline-status` for the caller's branch, SHA and required
+workflows. The prompt distinguishes validated remote identity, bound stdin and
+unverified legacy listed jobs; invalid or mismatched response identity supplies
+no trusted SHA. Every outcome remains diagnostic-only and grants no gate,
+canonical push, deployment or release proof. Script input refusals retain their
+native status and name literal input repair; Make's earlier validation remains
+unchanged.
+
 For production-binding mutation probes, the existing fixture extracts exactly one real declaration before fixture defaults or a child. Missing/duplicate declarations refuse; valid-one positives and the original opposite-binding native-Make controls remain. Existing text-forwarding source pins follow the complete raw-value/export/unexport/quoted-argv chain and retain atomic copy/move intent. The [hosted assertion record](../../docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#published-unit-3a-assertion-repair-2026-10-21) binds the actual failures, original cases and whole-owner acceptance.
 
 For a completed job whose sibling is still running, use ci-job-failure-context
@@ -1388,10 +1403,11 @@ native status and reconcile that actual input before any retry. The existing
 transport-aware auth owner selects SSH key or canonical repo-local GH HTTPS;
 configuration/read authentication grants no workflow-write permission.
 The [development publication record](../../docs/features/GITHUB_PUBLICATION_HTTPS.md#development-publication-binds-the-saved-candidate)
-retains native REDs, flag grammar, receiving scope and missing proofs. Hosted
-receiving replaces the final verify tail with its one existing exact-SHA
-verify-and-watched-CI macro; never add a second watcher or call CI success from
-local acceptance. Use the existing private Foundation mode provider when changing
+retains native REDs, flag grammar, receiving scope and missing proofs. The
+original development route was received in Main6c36e93e2c785d38c4c435a14fb1da814e682b4d;
+its historical source receipts supply no current hosted proof. Hosted receiving
+uses its one existing exact-SHA verify-and-watched-CI macro; never add a second
+watcher or call CI success from local acceptance. Use the existing private Foundation mode provider when changing
 inspection behavior; retain each consumer's native capture and actual provider
 fixtures with ordinary/-e modes, argument/tail negatives and real witnesses.
 Full gate, exact-SHA hosted and deployment proof remain open.
@@ -1436,6 +1452,35 @@ other-branch findings are not release-readiness prerequisites. Preserve
 previous-verdict observation, active-CI/rate/restart, clean-state, ownership,
 auth and workflow-history refusals. A workflow edit anywhere after
 the published baseline still refuses even if reverted or the branch renamed.
+
+The unchanged global previous-push guard requires an actual check, while the
+global restart cap remains3. After the normal feature-ci publisher records its
+saved branch/fullSHA/purpose, ci-await may acknowledge an exact queued or running
+Build dispatch in existing locked history. Pending remains native2/non-green;
+counter and canonical cooldown-state bytes stay unchanged. Legacy/canonical or
+incomplete publication records cannot acquire pending authority. The waiter
+captures the push generation once before its first GitHub lookup and keeps that
+token for its entire wait. Every feedback write rechecks current branch/SHA,
+purpose and generation under the native history lock. A fresh push, including
+sameSHA republication, invalidates the old waiter; never recapture after polling.
+A current pending run may upgrade to terminal once; stale/duplicate feedback
+cannot clear fresh restart debt. Preserve writer errors and reconcile partially
+applied history/counter writes before retry. No manual pending record is a bypass.
+
+Already-published workflows use the existing dispatcher. Explicit feature-ci
+accepts only exact workflow 'Build and Release'. For independent Molecule use
+PUBLISH_PURPOSE=canonical, exact WORKFLOW='Molecule Tests', saved published ref/fullSHA
+and explicit empty baseline inputs; that interface label grants no canonical push
+proof. The offline shape below returns a synthetic URL only. Append the installed
+runtime tuple; live mode retains native discovery6/confirm15/poll2 and authority.
+
+~~~console
+make ci-trigger-committed-head EXAMPLE=1 REF=feature/v012-ci-await-guidance-20261024 REMOTE=sandboxcom REPO=sandboxcom/gludd WORKFLOW='Molecule Tests' DISCOVERY_POLLS=1 CONFIRM_POLLS=1 POLL_INTERVAL=0 PUBLISH_PURPOSE=canonical PUBLISH_EXPECTED_BRANCH=feature/v012-ci-await-guidance-20261024 PUBLISH_EXPECTED_SHA=3a693d3aee571ef96666c62ef719f8f05b5ace38 PUBLISH_BASELINE_REF= PUBLISH_BASELINE_SHA=
+~~~
+
+Use ci-view RUN for actual dispatch failure families, ci-await for exact observed
+status, and canonical pipeline-status for required push proof. Diagnostic
+dispatch, checked-pending and terminal feedback grant no deployment/release proof.
 
 Before broad receiving, freeze the exact owned source/config/test path set and
 let the sole Git writer run the staged-content guard. A clone failure stops

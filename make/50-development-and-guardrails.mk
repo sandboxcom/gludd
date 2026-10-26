@@ -940,7 +940,14 @@ _ci-verdict-history-guard:
 # forcing a fresh 10-minute cooldown verdict for a push that never happened.
 _record-push-verdict:
 	@gludd_record_sha="$$GLUDD_PUSH_VERDICT_SHA"; \
-	if [ -n "$$gludd_record_sha" ]; then \
+	if [ "$$GLUDD_PUBLISH_PURPOSE" = feature-ci ]; then \
+		if [ -z "$$gludd_record_sha" ] || [ "$$GLUDD_PUBLISH_EXPECTED_SHA" != "$$gludd_record_sha" ]; then \
+			echo "RECORD-PUSH-FAILED: diagnostic saved SHA does not match the landed source" >&2; exit 2; \
+		fi; \
+		$(PYTHON) scripts/ci_check_cooldown.py record-push "$$gludd_record_sha" "$$GLUDD_PUBLISH_EXPECTED_BRANCH" feature-ci; \
+	elif [ -n "$$GLUDD_PUBLISH_PURPOSE" ] && [ "$$GLUDD_PUBLISH_PURPOSE" != canonical ]; then \
+		echo "RECORD-PUSH-FAILED: unrecognized publication purpose" >&2; exit 2; \
+	elif [ -n "$$gludd_record_sha" ]; then \
 		$(PYTHON) scripts/ci_check_cooldown.py record-push "$$gludd_record_sha"; \
 	else $(PYTHON) scripts/ci_check_cooldown.py record-push; fi
 
