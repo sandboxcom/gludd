@@ -57,7 +57,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
-from types import CodeType, TracebackType
+from types import CodeType, ModuleType, TracebackType
 from typing import Protocol, TypeVar
 
 logger = logging.getLogger(__name__)
@@ -83,6 +83,8 @@ _POLL_INTERVAL = 0.05
 # Guards the registry dict itself; held only for the dict lookup, never while
 # a per-repo lock is held (so it can never become a contention bottleneck).
 _registry_guard = threading.Lock()
+_observer_import_guard = threading.RLock()
+_observer_loading_module: ModuleType | None = None
 _repo_locks: dict[str, threading.RLock] = {}
 
 # Re-entrancy depth for the CROSS-PROCESS file lock, per repo key. flock is
@@ -127,7 +129,7 @@ _NativeResult = TypeVar("_NativeResult")
 
 def _reset_after_fork() -> None:
     """Discard parent-owned mutex state in a newly forked child."""
-    global _async_workers_guard, _registry_guard
+    global _async_workers_guard, _registry_guard, _observer_import_guard, _observer_loading_module
 
     for fd in tuple(_file_lock_fds.values()):
         with contextlib.suppress(OSError):
@@ -139,6 +141,10 @@ def _reset_after_fork() -> None:
     _async_workers.clear()
     _registry_guard = threading.Lock()
     _async_workers_guard = threading.Lock()
+    _observer_import_guard = threading.RLock()
+    if _observer_loading_module is not None and sys.modules.get("stream_command") is _observer_loading_module:
+        del sys.modules["stream_command"]
+    _observer_loading_module = None
 
 
 if hasattr(os, "register_at_fork"):
@@ -461,8 +467,7 @@ def git_repo_lock(
     deadline = time.monotonic() + timeout
     if not inproc.acquire(timeout=max(0.0, timeout)):
         raise TimeoutError(
-            f"timed out after {timeout}s acquiring in-process git lock for {key!r} "
-            "(another thread holds the repo)"
+            f"timed out after {timeout}s acquiring in-process git lock for {key!r} (another thread holds the repo)"
         )
     try:
         if git_dir is None:
@@ -642,12 +647,24 @@ async def async_git_repo_lock(
         raise
     return _EnteredAsyncGitRepoLock(cm, worker)
 
+
 # Native Make owns these public names; this boundary is not a generic executor.
-_MAKE_COMMIT_TARGETS = frozenset({
-    "git-commit", "commit-no-verify", "git-commit-no-verify", "git-amend-msg",
-    "repo-commit", "ship-commit", "ship-commit-files", "git-commit-file",
-    "test-and-commit", "commit-bootstrap", "commit-and-ship", "commit-and-ship-push",
-})
+_MAKE_COMMIT_TARGETS = frozenset(
+    {
+        "git-commit",
+        "commit-no-verify",
+        "git-commit-no-verify",
+        "git-amend-msg",
+        "repo-commit",
+        "ship-commit",
+        "ship-commit-files",
+        "git-commit-file",
+        "test-and-commit",
+        "commit-bootstrap",
+        "commit-and-ship",
+        "commit-and-ship-push",
+    }
+)
 _MAKE_TRANSACTION_FD = "GLUDD_COMMIT_TRANSACTION_FD"
 
 
@@ -713,12 +730,48 @@ class _CommitObserver(Protocol):
     """The existing stream owner surface needed by one native commit."""
 
     def __call__(
-        self, command: Sequence[str], log_path: Path, *,
-        observed_root: Path, label: str, run_id: str,
-        heartbeat_seconds: float, quiet_seconds: float, max_seconds: float,
-        retain_runs: int, environment: Mapping[str, str], cwd: Path, pass_fds: tuple[int, ...],
+        self,
+        command: Sequence[str],
+        log_path: Path,
+        *,
+        observed_root: Path,
+        label: str,
+        run_id: str,
+        heartbeat_seconds: float,
+        quiet_seconds: float,
+        max_seconds: float,
+        retain_runs: int,
+        environment: Mapping[str, str],
+        cwd: Path,
+        pass_fds: tuple[int, ...],
     ) -> int:
         """Execute and drain the existing owned command."""
+
+
+def _default_observer() -> tuple[_CommitObserver, Callable[[], str]]:
+    """Bind the native observer atomically without changing import search paths."""
+    import importlib.util
+
+    global _observer_loading_module
+    with _observer_import_guard:
+        observer_module = sys.modules.get("stream_command")
+        if observer_module is None:
+            observer_path = Path(__file__).resolve().parents[3] / "scripts" / "stream_command.py"
+            observer_spec = importlib.util.spec_from_file_location("stream_command", observer_path)
+            if observer_spec is None or observer_spec.loader is None:
+                raise ValueError("native observer requires a loadable scripts/stream_command.py")
+            observer_module = importlib.util.module_from_spec(observer_spec)
+            sys.modules["stream_command"] = observer_module
+            _observer_loading_module = observer_module
+            try:
+                observer_spec.loader.exec_module(observer_module)
+            except BaseException:
+                if sys.modules.get("stream_command") is observer_module:
+                    del sys.modules["stream_command"]
+                raise
+            finally:
+                _observer_loading_module = None
+        return observer_module.stream_command, observer_module._new_run_id
 
 
 def _run_make_transaction(
@@ -767,19 +820,14 @@ def _run_make_transaction(
     if (observer_fn is None) != (identity_fn is None):
         raise ValueError("native observer and identity owner must be bound together")
     if observer_fn is None or identity_fn is None:
-        source_scripts = str(Path(__file__).resolve().parents[3] / "scripts")
-        if not sys.path or sys.path[0] != source_scripts:
-            sys.path.insert(0, source_scripts)
-        from stream_command import _new_run_id, stream_command
-        observer_fn = stream_command
-        identity_fn = _new_run_id
+        observer_fn, identity_fn = _default_observer()
     observer_code = getattr(observer_fn, "__code__", None)
     if not isinstance(observer_code, CodeType):
         raise ValueError("native observer must bind its actual source function")
     print(
-        f"COMMIT-LOCK: source={Path(__file__).resolve()} "
-        f"observer={Path(observer_code.co_filename).resolve()}",
-        file=sys.stderr, flush=True,
+        f"COMMIT-LOCK: source={Path(__file__).resolve()} observer={Path(observer_code.co_filename).resolve()}",
+        file=sys.stderr,
+        flush=True,
     )
     print(f"COMMIT-LOCK: waiting target={target} repository={common}", file=sys.stderr, flush=True)
     with git_repo_lock(str(root)):
@@ -791,18 +839,24 @@ def _run_make_transaction(
         result = observer_fn(
             [make, "--no-print-directory", "-f", str(selected_makefile), "_commit-locked-" + target],
             observation / "commit-transaction" / (run_id + ".log"),
-            observed_root=observation, label="commit-transaction", run_id=run_id,
-            heartbeat_seconds=heartbeat_seconds, quiet_seconds=quiet_seconds,
-            max_seconds=max_seconds, retain_runs=retain_runs,
-            environment=environment, cwd=root, pass_fds=(fd, *jobserver_fds),
+            observed_root=observation,
+            label="commit-transaction",
+            run_id=run_id,
+            heartbeat_seconds=heartbeat_seconds,
+            quiet_seconds=quiet_seconds,
+            max_seconds=max_seconds,
+            retain_runs=retain_runs,
+            environment=environment,
+            cwd=root,
+            pass_fds=(fd, *jobserver_fds),
         )
     outcome = "passed" if result == 0 else "failed"
     next_action = (
         "Only the mutation child finished; public publication and CI children retain their own status. "
         "A local source checkpoint is not full-gate or exact-SHA hosted/deployment proof; "
         "retain its collection and obtain independent source review."
-        if result == 0 else
-        "Preserve this native receipt and any staged or applied state; inspect the exact "
+        if result == 0
+        else "Preserve this native receipt and any staged or applied state; inspect the exact "
         "failed child/input before reconciliation or another commit."
     )
     print(
@@ -815,7 +869,8 @@ def _run_make_transaction(
 
 
 def main(
-    argv: Sequence[str] | None = None, *,
+    argv: Sequence[str] | None = None,
+    *,
     observer_fn: _CommitObserver | None = None,
     identity_fn: Callable[[], str] | None = None,
     require_make_target: bool = False,
@@ -843,11 +898,16 @@ def main(
             _assert_make_transaction(os.getcwd(), os.environ.get(_MAKE_TRANSACTION_FD, ""))
             return 0
         return _run_make_transaction(
-            str(args.make_target), str(args.make), str(args.makefile),
+            str(args.make_target),
+            str(args.make),
+            str(args.makefile),
             observed_root=str(args.observed_root),
-            heartbeat_seconds=float(args.heartbeat_secs), quiet_seconds=float(args.quiet_secs),
-            max_seconds=float(args.max_secs), retain_runs=int(args.retain_runs),
-            observer_fn=observer_fn, identity_fn=identity_fn,
+            heartbeat_seconds=float(args.heartbeat_secs),
+            quiet_seconds=float(args.quiet_secs),
+            max_seconds=float(args.max_secs),
+            retain_runs=int(args.retain_runs),
+            observer_fn=observer_fn,
+            identity_fn=identity_fn,
         )
     except (OSError, TimeoutError, ValueError) as error:
         print(f"COMMIT-LOCK: refused: {error}", file=sys.stderr)

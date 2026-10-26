@@ -280,9 +280,7 @@ class TestBashGuardrailPrompting:
         ],
         ids=["unbound-inventory", "archive-substitution", "optional-current-link"],
     )
-    def test_make_target_inventory_requires_current_mandatory_link(
-        self, tmp_path: Path, reference: str
-    ) -> None:
+    def test_make_target_inventory_requires_current_mandatory_link(self, tmp_path: Path, reference: str) -> None:
         policy = tmp_path / "AGENTS.md"
         policy.write_text(f"make init\nmake lint\nmake test\n{reference}\n", encoding="utf-8")
         with pytest.raises(AssertionError, match="mandatory current Make target"):
@@ -352,7 +350,9 @@ class TestGuardrailIntegrity:
 class TestCommitAfterGreenGuardrail:
     def test_makefile_test_and_commit_runs_tests_first(self) -> None:
         content = compose_makefile(MAKEFILE)
-        tac_start = content.index("\ntest-and-commit:")
+        # The public target delegates to the native locked transaction where the
+        # actual test-and-commit recipe is implemented.
+        tac_start = content.index("\n_commit-locked-test-and-commit:")
         tac_end = content.index("\n\n", tac_start) if "\n\n" in content[tac_start:] else len(content)
         tac_section = content[tac_start:tac_end]
         # test-and-commit now routes its test phase through the RAM-bounded
@@ -369,13 +369,11 @@ class TestCommitAfterGreenGuardrail:
         run_idx = (
             tac_section.index("adaptive_test.py") if "adaptive_test.py" in tac_section else tac_section.index("pytest")
         )
-        assert run_idx < tac_section.index("git commit"), (
-            "tests must run BEFORE git commit in the test-and-commit target"
-        )
+        assert run_idx < tac_section.index("git commit"), "tests must run BEFORE git commit in test-and-commit target"
 
     def test_makefile_test_and_commit_rejects_if_tests_fail(self) -> None:
         content = compose_makefile(MAKEFILE)
-        tac_start = content.index("\ntest-and-commit:")
+        tac_start = content.index("\n_commit-locked-test-and-commit:")
         tac_end = content.index("\n\n", tac_start) if "\n\n" in content[tac_start:] else len(content)
         tac_section = content[tac_start:tac_end]
         lines = tac_section.split("\n")
@@ -392,7 +390,7 @@ class TestCommitAfterGreenGuardrail:
     def test_makefile_test_and_commit_supports_custom_msg(self) -> None:
         content = compose_makefile(MAKEFILE)
         assert "MSG" in content, "test-and-commit should support MSG variable"
-        tac_start = content.index("test-and-commit:")
+        tac_start = content.index("_commit-locked-test-and-commit:")
         tac_end = content.index("\n\n", tac_start) if "\n\n" in content[tac_start:] else len(content)
         tac_section = content[tac_start:tac_end]
         assert "$(MSG)" in tac_section

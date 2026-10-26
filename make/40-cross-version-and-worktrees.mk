@@ -324,7 +324,7 @@ endif
 endif
 
 define _commit-transaction
-$(if $(filter execute,$(_commit-native-mode)),+@$(UV) run python scripts/stream_command.py --commit-transaction --label commit-transaction --make-target "$@" --make "$(MAKE)" --makefile "$(firstword $(MAKEFILE_LIST))" --observed-root "$(OBSERVED_ROOT)" --heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" --quiet-secs "$(OBSERVED_QUIET_SECS)" --max-secs "$(OBSERVED_MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)",@true)
+$(if $(filter execute,$(_commit-native-mode)),+@$(UV) run --active python scripts/stream_command.py --commit-transaction --label commit-transaction --make-target "$@" --make "$(MAKE)" --makefile "$(firstword $(MAKEFILE_LIST))" --observed-root "$(OBSERVED_ROOT)" --heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" --quiet-secs "$(OBSERVED_QUIET_SECS)" --max-secs "$(OBSERVED_MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)",@true)
 endef
 
 # Hosted CI may wait after publication; these fixed public actions never retain the mutation lock.
@@ -354,47 +354,47 @@ $(if $(filter execute,$(_commit-native-mode)),+@set -eu; \
 endef
 
 _commit-lock-acquire: _gate-mutation-guard
-	@$(UV) run python -P src/general_ludd/git_automation/locking.py --assert-transaction
+	@$(UV) run --active python -P src/general_ludd/git_automation/locking.py --assert-transaction
 
-git-commit: _gate-fresh-check _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
+git-commit: _gate-fresh-check _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
 	@[ -n "$(MSG)" ] || { echo "Usage: make git-commit MSG='message'" >&2; exit 1; }
 	$(call _commit-transaction)
 
-commit-no-verify: _gate-fresh-check _pre-commit-stage-guard _edit-commit-atomicity-guard
+commit-no-verify: _gate-fresh-check _commit-docstring-guard _pre-commit-stage-guard _edit-commit-atomicity-guard
 	$(call _commit-transaction)
 
 git-commit-no-verify: _gate-fresh-check
 	$(call _commit-transaction)
 
-git-amend-msg: _gate-fresh-check _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
+git-amend-msg: _gate-fresh-check _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
 	$(call _commit-transaction)
 
-repo-commit:
+repo-commit: _commit-docstring-guard
 	$(call _commit-transaction)
 
-ship-commit: _pre-commit-stage-guard _stash-leak-guard _push-parameter-audit _pre-commit-stash-audit _edit-commit-atomicity-guard
+ship-commit: _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _push-parameter-audit _pre-commit-stash-audit _edit-commit-atomicity-guard
 	@: # PUSH ?= 0 default: commit locally; set PUSH=1 to also run _commit-publication
 	$(call _commit-transaction)
 	$(call _commit-publication)
 
-ship-commit-files: _pre-commit-stage-guard _stash-leak-guard _push-parameter-audit _pre-commit-stash-audit _edit-commit-atomicity-guard
+ship-commit-files: _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _push-parameter-audit _pre-commit-stash-audit _edit-commit-atomicity-guard
 	$(call _commit-transaction)
 	$(call _commit-publication)
 
-git-commit-file: _gate-fresh-check _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
+git-commit-file: _gate-fresh-check _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
 	$(call _commit-transaction)
 
-test-and-commit: _gate-fresh-check _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
+test-and-commit: _gate-fresh-check _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
 	$(call _commit-transaction)
 
 commit-bootstrap: _gate-fresh-check
 	$(call _commit-transaction)
 
-commit-and-ship: _gate-fresh-check _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
+commit-and-ship: _gate-fresh-check _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
 	$(call _commit-transaction)
 	$(call _commit-publication)
 
-commit-and-ship-push: _gate-fresh-check _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
+commit-and-ship-push: _gate-fresh-check _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
 	$(call _commit-transaction)
 	$(call _commit-publication)
 
@@ -407,7 +407,7 @@ endif
 # pre-commit hooks and do not repeat these checks.
 .PHONY: _pre-commit-secrets-guard
 _pre-commit-secrets-guard:
-	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run python -P -c 'import os, subprocess, sys; exec( \
+	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run --active python -P -c 'import os, subprocess, sys; exec( \
 		"def native_status(code):\n" \
 		"    return code if code >= 0 else 128 - code\n" \
 		"def run_native(arguments, **options):\n" \
@@ -444,7 +444,7 @@ _pre-commit-secrets-guard:
 		"from pre_commit.store import Store\n" \
 		"with staged_files_only(Store().directory):\n" \
 		"    for command in (\"pre-commit run trailing-whitespace\", \"pre-commit run end-of-file-fixer\", \"pre-commit run detect-secrets-readonly\"):\n" \
-		"        result = run_native([*sys.argv[1:], \"run\", *command.split(), \"--files\", *paths])\n" \
+		"        result = run_native([*sys.argv[1:], \"run\", \"--active\", *command.split(), \"--files\", *paths])\n" \
 		"        if result.returncode:\n" \
 		"            status = native_status(result.returncode)\n" \
 		"            hook = command.rsplit(\" \", 1)[1]\n" \
@@ -463,7 +463,7 @@ _commit-locked-git-commit: _commit-lock-acquire _gate-fresh-check _commit-lint-g
 	@$(MAKE) --no-print-directory collect-check
 	@echo "Gate fresh and green. Running pre-commit directly on staged files..."
 	@if ! git diff --cached --quiet; then \
-		git diff --cached --name-only -z | xargs -0 $(UV) run pre-commit run --files && \
+		git diff --cached --name-only -z | xargs -0 $(UV) run --active pre-commit run --files && \
 		git diff --cached --name-only -z | xargs -0 git add; \
 	fi
 	@$(MAKE) --no-print-directory check-gate-fresh

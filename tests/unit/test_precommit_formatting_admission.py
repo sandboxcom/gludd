@@ -25,12 +25,7 @@ FIXTURE_PATH = "tests/fixtures/ansible_ee_searxng/limiter.toml.txt"
 
 def _selected(hook_id: str, names: list[str]) -> list[str]:
     config = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
-    hook = next(
-        hook
-        for repo in config["repos"]
-        for hook in repo["hooks"]
-        if hook["id"] == hook_id
-    )
+    hook = next(hook for repo in config["repos"] for hook in repo["hooks"] if hook["id"] == hook_id)
     selector = cast(
         Callable[[list[str], str, str], Iterator[str]],
         import_module("pre_commit.commands.run").filter_by_include_exclude,
@@ -41,9 +36,14 @@ def _selected(hook_id: str, names: list[str]) -> list[str]:
 @pytest.mark.parametrize("hook_id", ("trailing-whitespace", "end-of-file-fixer"))
 def test_only_exact_frozen_fixture_is_excluded(hook_id: str) -> None:
     ordinary = [
-        "src/general_ludd/example.py", "scripts/example.py", "tests/unit/test_example.py",
-        "tests/fixtures/ansible_ee_searxng/other.txt", FIXTURE_PATH + ".py",
-        "nested/" + FIXTURE_PATH, "docs/example.md", "config/example.json",
+        "src/general_ludd/example.py",
+        "scripts/example.py",
+        "tests/unit/test_example.py",
+        "tests/fixtures/ansible_ee_searxng/other.txt",
+        FIXTURE_PATH + ".py",
+        "nested/" + FIXTURE_PATH,
+        "docs/example.md",
+        "config/example.json",
     ]
     assert _selected(hook_id, [FIXTURE_PATH, *ordinary]) == ordinary
     assert _selected(hook_id, ["docs/presentation/deck/vendor/reveal.js"]) == []
@@ -51,13 +51,15 @@ def test_only_exact_frozen_fixture_is_excluded(hook_id: str) -> None:
         assert _selected(hook_id, ["config/self-improve/catalog-truth.json"]) == []
 
 
-
 @pytest.mark.parametrize("failing_hook", (None, "trailing-whitespace", "end-of-file-fixer", "detect-secrets-readonly"))
 @pytest.mark.parametrize("inherited_index", (None, "https://private.invalid/simple"))
 @pytest.mark.parametrize("environment_override", (False, True))
 def test_existing_guard_routes_formatter_failure_before_later_checks(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failing_hook: str | None,
-    inherited_index: str | None, environment_override: bool,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failing_hook: str | None,
+    inherited_index: str | None,
+    environment_override: bool,
 ) -> None:
     if inherited_index is None:
         monkeypatch.delenv("PIP_INDEX_URL", raising=False)
@@ -73,6 +75,8 @@ def test_existing_guard_routes_formatter_failure_before_later_checks(
     stub.write_text(
         "import json, os, pathlib, sys\n"
         "args = sys.argv[1:]\n"
+        "if args[:2] == ['run', '--active']:\n"
+        "    args = ['run'] + args[2:]\n"
         "if args[:2] == ['run', 'python']:\n"
         "    os.execve(sys.executable, [sys.executable, *args[2:]], dict(os.environ))\n"
         f"trace = pathlib.Path({str(trace)!r})\n"
@@ -84,7 +88,7 @@ def test_existing_guard_routes_formatter_failure_before_later_checks(
     result = _native_guard(root, stub, environment_override=environment_override)
     calls = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines()]
     hooks = ["trailing-whitespace", "end-of-file-fixer", "detect-secrets-readonly"]
-    expected = hooks if failing_hook is None else hooks[:hooks.index(failing_hook) + 1]
+    expected = hooks if failing_hook is None else hooks[: hooks.index(failing_hook) + 1]
     assert [call["argv"] for call in calls] == [
         ["run", "pre-commit", "run", hook, "--files", filename] for hook in expected
     ]
@@ -98,15 +102,26 @@ NATIVE_HOOKS = ("trailing-whitespace", "end-of-file-fixer", "detect-secrets-read
 
 def _native_environment() -> dict[str, str]:
     excluded = {
-        "MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "MAKELEVEL", "PYTEST_ARGS",
-        "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
-        "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT",
+        "MAKEFLAGS",
+        "MFLAGS",
+        "MAKEOVERRIDES",
+        "MAKELEVEL",
+        "PYTEST_ARGS",
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_COMMON_DIR",
+        "GIT_CONFIG_PARAMETERS",
+        "GIT_CONFIG_COUNT",
     }
     environment = {key: value for key, value in os.environ.items() if key not in excluded}
-    environment.update({
-        "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_OPTIONAL_LOCKS": "0",
-    })
+    environment.update(
+        {
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_OPTIONAL_LOCKS": "0",
+        }
+    )
     return environment
 
 
@@ -114,8 +129,13 @@ def _native_git(root: Path, *arguments: str) -> subprocess.CompletedProcess[str]
     executable = shutil.which("git")
     assert executable is not None
     return subprocess.run(
-        [executable, *arguments], cwd=root, env=_native_environment(),
-        capture_output=True, text=True, check=True, timeout=15,
+        [executable, *arguments],
+        cwd=root,
+        env=_native_environment(),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=15,
     )
 
 
@@ -125,18 +145,30 @@ def _native_config(root: Path) -> None:
     upstream = next(repo for repo in config["repos"] if repo["repo"].endswith("/pre-commit-hooks"))
     formatters = [hook for hook in upstream["hooks"] if hook["id"] in NATIVE_HOOKS[:2]]
     secret = next(
-        dict(hook) for repo in config["repos"] if repo["repo"] == "local"
-        for hook in repo["hooks"] if hook["id"] == NATIVE_HOOKS[2]
+        dict(hook)
+        for repo in config["repos"]
+        if repo["repo"] == "local"
+        for hook in repo["hooks"]
+        if hook["id"] == NATIVE_HOOKS[2]
     )
-    secret["entry"] = shlex.join((
-        sys.executable, str(ROOT / "scripts/detect_secrets_readonly.py"),
-        "--baseline", str(ROOT / ".secrets.baseline"),
-    ))
+    secret["entry"] = shlex.join(
+        (
+            sys.executable,
+            str(ROOT / "scripts/detect_secrets_readonly.py"),
+            "--baseline",
+            str(ROOT / ".secrets.baseline"),
+        )
+    )
     (root / ".pre-commit-config.yaml").write_text(
-        yaml.safe_dump({"repos": [
-            {"repo": upstream["repo"], "rev": upstream["rev"], "hooks": formatters},
-            {"repo": "local", "hooks": [secret]},
-        ]}), encoding="utf-8",
+        yaml.safe_dump(
+            {
+                "repos": [
+                    {"repo": upstream["repo"], "rev": upstream["rev"], "hooks": formatters},
+                    {"repo": "local", "hooks": [secret]},
+                ]
+            }
+        ),
+        encoding="utf-8",
     )
 
 
@@ -148,8 +180,8 @@ def _native_workspace(tmp_path: Path) -> tuple[Path, Path]:
     _native_git(root, "config", "user.name", "Gludd staged guard fixture")
     _native_config(root)
     (root / "pyproject.toml").write_text(
-        '[project]\nname = "gludd-native-guard-fixture"\nversion = "0.0.0"\n'
-        'requires-python = ">=3.11"\n', encoding="utf-8",
+        '[project]\nname = "gludd-native-guard-fixture"\nversion = "0.0.0"\nrequires-python = ">=3.11"\n',
+        encoding="utf-8",
     )
     (root / "anchor.txt").write_text("base anchor\n", encoding="utf-8")
     _native_git(root, "add", "--", ".pre-commit-config.yaml", "pyproject.toml", "anchor.txt")
@@ -171,22 +203,31 @@ def _native_workspace(tmp_path: Path) -> tuple[Path, Path]:
     )
     source = SHIPPING_PATH.read_text(encoding="utf-8")
     start = source.index("\n_pre-commit-secrets-guard:") + 1
-    guard = source[start:source.index("\n\n", start)]
+    guard = source[start : source.index("\n\n", start)]
     (root / "Makefile").write_text("UV := false\n" + guard + "\n", encoding="utf-8")
     return root, adapter
 
 
 def _native_guard(
-    root: Path, adapter: Path, *, environment_override: bool,
+    root: Path,
+    adapter: Path,
+    *,
+    environment_override: bool,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
-            "make", "--no-print-directory", *(("-e",) if environment_override else ()),
+            "make",
+            "--no-print-directory",
+            *(("-e",) if environment_override else ()),
             "_pre-commit-secrets-guard",
             "UV=" + shlex.join((sys.executable, str(adapter))),
         ],
-        cwd=root, env=_native_environment(), capture_output=True, text=True,
-        check=False, timeout=45,
+        cwd=root,
+        env=_native_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=45,
     )
 
 
@@ -194,9 +235,24 @@ def _native_calls(adapter: Path) -> list[dict[str, object]]:
     trace = adapter.parent / "native-precommit-argv.jsonl"
     if not trace.exists():
         return []
+
+    def _normalize(argv: list[str]) -> list[str]:
+        # The guard passes --active to uv so it uses the active environment; strip
+        # it from the recorded argv so existing assertions remain stable.
+        if (
+            len(argv) >= 4
+            and argv[0] == "run"
+            and argv[1] == "--active"
+            and argv[2] == "pre-commit"
+            and argv[3] == "run"
+        ):
+            return ["run", "pre-commit", "run", *argv[4:]]
+        return argv
+
     return [
-        json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines()
-        if json.loads(line)["argv"][:3] == ["run", "pre-commit", "run"]
+        {**json.loads(line), "argv": _normalize(json.loads(line)["argv"])}
+        for line in trace.read_text(encoding="utf-8").splitlines()
+        if _normalize(json.loads(line)["argv"])[:3] == ["run", "pre-commit", "run"]
     ]
 
 
@@ -228,7 +284,9 @@ def _native_merge(root: Path, bad_file: str, contents: str) -> list[str]:
 
 @pytest.mark.parametrize("environment_override", (False, True))
 def test_native_clean_merge_guard_checks_all_staged_formatter_paths(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, environment_override: bool,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    environment_override: bool,
 ) -> None:
     """A conflict-free merge still owes the actual native whitespace hook."""
     monkeypatch.setenv("GUARD_CARRIER", "opaque n q t carrier with  two spaces")
@@ -263,7 +321,9 @@ def test_native_clean_merge_guard_checks_all_staged_formatter_paths(
 
 @pytest.mark.parametrize("environment_override", (False, True))
 def test_native_clean_merge_guard_checks_real_readonly_secret_hook(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, environment_override: bool,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    environment_override: bool,
 ) -> None:
     monkeypatch.setenv("GUARD_CARRIER", "readonly secret carrier")
     root, adapter = _native_workspace(tmp_path)
@@ -296,16 +356,26 @@ def test_native_precommit_explicit_filename_grammar(tmp_path: Path, filename: st
     _native_git(root, "add", "--", filename)
     command = [sys.executable, "-m", "pre_commit", "run", "trailing-whitespace", "--files"]
     raw = subprocess.run(
-        [*command, filename], cwd=root, env=_native_environment(), check=False,
-        capture_output=True, text=True, timeout=30,
+        [*command, filename],
+        cwd=root,
+        env=_native_environment(),
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
     if filename.startswith("-"):
         assert raw.returncode == 2, raw.stdout + raw.stderr
         assert "unrecognized arguments" in raw.stderr
         assert path.read_text(encoding="utf-8") == "owned native grammar  \n"
         normalized = subprocess.run(
-            [*command, "./" + filename], cwd=root, env=_native_environment(), check=False,
-            capture_output=True, text=True, timeout=30,
+            [*command, "./" + filename],
+            cwd=root,
+            env=_native_environment(),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         assert normalized.returncode == 1, normalized.stdout + normalized.stderr
         assert "trailing-whitespace-fixer: error: unrecognized arguments" in normalized.stdout
@@ -317,7 +387,8 @@ def test_native_precommit_explicit_filename_grammar(tmp_path: Path, filename: st
 
 @pytest.mark.parametrize("environment_override", (False, True))
 def test_native_clean_merge_guard_preserves_real_end_of_file_failure(
-    tmp_path: Path, environment_override: bool,
+    tmp_path: Path,
+    environment_override: bool,
 ) -> None:
     root, adapter = _native_workspace(tmp_path)
     filename = "merged missing newline.txt"
@@ -334,7 +405,8 @@ def test_native_clean_merge_guard_preserves_real_end_of_file_failure(
 
 @pytest.mark.parametrize("environment_override", (False, True))
 def test_native_clean_merge_guard_success_retains_complete_explicit_scope(
-    tmp_path: Path, environment_override: bool,
+    tmp_path: Path,
+    environment_override: bool,
 ) -> None:
     root, adapter = _native_workspace(tmp_path)
     names = _native_merge(root, "clean merged file.txt", "owned clean content\n")
@@ -358,7 +430,8 @@ def test_native_clean_merge_guard_success_retains_complete_explicit_scope(
 
 @pytest.mark.parametrize("environment_override", (False, True))
 def test_native_guard_empty_index_starts_no_hooks_or_security_claim(
-    tmp_path: Path, environment_override: bool,
+    tmp_path: Path,
+    environment_override: bool,
 ) -> None:
     root, adapter = _native_workspace(tmp_path)
     decoy = root / "untracked secret.txt"
@@ -376,7 +449,8 @@ def test_native_guard_empty_index_starts_no_hooks_or_security_claim(
 
 @pytest.mark.parametrize("environment_override", (False, True))
 def test_native_guard_refuses_option_looking_scope_before_any_hook(
-    tmp_path: Path, environment_override: bool,
+    tmp_path: Path,
+    environment_override: bool,
 ) -> None:
     root, adapter = _native_workspace(tmp_path)
     filename = "--markdown-linebreak-ext=txt"
@@ -393,13 +467,22 @@ def test_native_guard_refuses_option_looking_scope_before_any_hook(
 
 
 @pytest.mark.parametrize("environment_override", (False, True))
-@pytest.mark.parametrize(("owner", "failure"), (
-    ("staged", 73), ("staged", -15), ("staged", "unterminated"),
-    ("unmerged", 73), ("unmerged", -15),
-))
+@pytest.mark.parametrize(
+    ("owner", "failure"),
+    (
+        ("staged", 73),
+        ("staged", -15),
+        ("staged", "unterminated"),
+        ("unmerged", 73),
+        ("unmerged", -15),
+    ),
+)
 def test_native_inventory_failure_never_runs_a_hook_or_changes_owned_state(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, environment_override: bool,
-    owner: str, failure: int | str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    environment_override: bool,
+    owner: str,
+    failure: int | str,
 ) -> None:
     root, adapter = _native_workspace(tmp_path)
     _native_merge(root, "clean inventory.txt", "owned clean input\n")
@@ -451,7 +534,9 @@ def test_native_inventory_failure_never_runs_a_hook_or_changes_owned_state(
 @pytest.mark.parametrize("environment_override", (False, True))
 @pytest.mark.parametrize("native_status", (73, -15))
 def test_native_hook_status_and_signal_stop_before_later_hooks(
-    tmp_path: Path, environment_override: bool, native_status: int,
+    tmp_path: Path,
+    environment_override: bool,
+    native_status: int,
 ) -> None:
     root, _ = _native_workspace(tmp_path)
     filename = "owned native status.txt"
@@ -464,6 +549,8 @@ def test_native_hook_status_and_signal_stop_before_later_hooks(
     stub.write_text(
         "import json, os, sys\n"
         "args = sys.argv[1:]\n"
+        "if args[:2] == ['run', '--active']:\n"
+        "    args = ['run'] + args[2:]\n"
         "if args[:2] == ['run', 'python']:\n"
         "    os.execve(sys.executable, [sys.executable, *args[2:]], dict(os.environ))\n"
         f"with open({str(trace)!r}, 'a') as stream:\n"
@@ -488,7 +575,8 @@ def test_native_hook_status_and_signal_stop_before_later_hooks(
 
 @pytest.mark.parametrize("environment_override", (False, True))
 def test_native_deleted_only_scope_retains_native_skip_proof_limits(
-    tmp_path: Path, environment_override: bool,
+    tmp_path: Path,
+    environment_override: bool,
 ) -> None:
     root, adapter = _native_workspace(tmp_path)
     _native_git(root, "rm", "--", "anchor.txt")
@@ -507,7 +595,8 @@ def test_native_deleted_only_scope_retains_native_skip_proof_limits(
 
 @pytest.mark.parametrize("environment_override", (False, True))
 def test_native_unmerged_index_never_becomes_empty_success(
-    tmp_path: Path, environment_override: bool,
+    tmp_path: Path,
+    environment_override: bool,
 ) -> None:
     root, adapter = _native_workspace(tmp_path)
     _native_git(root, "checkout", "-b", "conflicted")
@@ -519,18 +608,29 @@ def test_native_unmerged_index_never_becomes_empty_success(
     _native_git(root, "add", "--", "anchor.txt")
     _native_git(root, "-c", "core.hooksPath=/dev/null", "commit", "-m", "conflicting base")
     merge = subprocess.run(
-        ["git", "merge", "--no-ff", "--no-commit", "conflicted"], cwd=root,
-        env=_native_environment(), capture_output=True, text=True, check=False, timeout=15,
+        ["git", "merge", "--no-ff", "--no-commit", "conflicted"],
+        cwd=root,
+        env=_native_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
     )
     assert merge.returncode == 1, merge.stdout + merge.stderr
     before = (
         _native_git(root, "rev-parse", "HEAD").stdout,
         _native_git(root, "ls-files", "--stage", "-z").stdout,
-        (root / "anchor.txt").read_bytes(), (root / ".git/MERGE_HEAD").read_bytes(),
+        (root / "anchor.txt").read_bytes(),
+        (root / ".git/MERGE_HEAD").read_bytes(),
     )
     implicit = subprocess.run(
-        [sys.executable, "-m", "pre_commit", "run", "trailing-whitespace"], cwd=root,
-        env=_native_environment(), capture_output=True, text=True, check=False, timeout=30,
+        [sys.executable, "-m", "pre_commit", "run", "trailing-whitespace"],
+        cwd=root,
+        env=_native_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
     )
     assert implicit.returncode != 0 and "unmerged" in (implicit.stdout + implicit.stderr).lower()
     result = _native_guard(root, adapter, environment_override=environment_override)
@@ -541,11 +641,12 @@ def test_native_unmerged_index_never_becomes_empty_success(
     assert (
         _native_git(root, "rev-parse", "HEAD").stdout,
         _native_git(root, "ls-files", "--stage", "-z").stdout,
-        (root / "anchor.txt").read_bytes(), (root / ".git/MERGE_HEAD").read_bytes(),
+        (root / "anchor.txt").read_bytes(),
+        (root / ".git/MERGE_HEAD").read_bytes(),
     ) == before
 
 
-STAGED_CONTEXT_PROBE = r'''import inspect
+STAGED_CONTEXT_PROBE = r"""import inspect
 import subprocess
 import sys
 from pre_commit.staged_files_only import staged_files_only
@@ -566,12 +667,16 @@ with context:
         if result.returncode:
             break
 raise SystemExit(result.returncode if result.returncode >= 0 else 128 - result.returncode)
-'''
+"""
 
 
 def _exercise_native_staged_byte_boundary(
-    tmp_path: Path, environment_override: bool, staged_bad: bool, kind: str,
-    *, use_context: bool,
+    tmp_path: Path,
+    environment_override: bool,
+    staged_bad: bool,
+    kind: str,
+    *,
+    use_context: bool,
 ) -> None:
     root, adapter = _native_workspace(tmp_path)
     filename = "split staged bytes.txt" if kind == "formatter" else "split-staged-secret.py"
@@ -586,8 +691,13 @@ def _exercise_native_staged_byte_boundary(
     hook = "trailing-whitespace" if kind == "formatter" else "detect-secrets-readonly"
 
     implicit = subprocess.run(
-        [sys.executable, "-m", "pre_commit", "run", hook], cwd=root,
-        env=_native_environment(), capture_output=True, text=True, check=False, timeout=30,
+        [sys.executable, "-m", "pre_commit", "run", hook],
+        cwd=root,
+        env=_native_environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
     )
     implicit_output = implicit.stdout + implicit.stderr
     assert (implicit.returncode != 0) is staged_bad, implicit_output
@@ -600,7 +710,12 @@ def _exercise_native_staged_byte_boundary(
         environment["PIP_INDEX_URL"] = "https://pypi.org/simple"
         result = subprocess.run(
             [sys.executable, "-c", STAGED_CONTEXT_PROBE, filename, sys.executable, str(adapter)],
-            cwd=root, env=environment, capture_output=True, text=True, check=False, timeout=45,
+            cwd=root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=45,
         )
         print(result.stdout)
     else:
@@ -618,30 +733,45 @@ def _exercise_native_staged_byte_boundary(
 @pytest.mark.parametrize("staged_bad", (False, True))
 @pytest.mark.parametrize("kind", ("formatter", "secret"))
 def test_native_guard_measures_staged_bytes_and_preserves_unstaged_changes(
-    tmp_path: Path, environment_override: bool, staged_bad: bool, kind: str,
+    tmp_path: Path,
+    environment_override: bool,
+    staged_bad: bool,
+    kind: str,
 ) -> None:
     """Cached filenames alone cannot certify different working-tree bytes."""
     _exercise_native_staged_byte_boundary(
-        tmp_path, environment_override, staged_bad, kind, use_context=False,
+        tmp_path,
+        environment_override,
+        staged_bad,
+        kind,
+        use_context=False,
     )
 
 
 @pytest.mark.parametrize("staged_bad", (False, True))
 @pytest.mark.parametrize("kind", ("formatter", "secret"))
 def test_pinned_precommit_staged_context_preserves_index_boundary(
-    tmp_path: Path, staged_bad: bool, kind: str,
+    tmp_path: Path,
+    staged_bad: bool,
+    kind: str,
 ) -> None:
     """Measure the installed mature context before making it production policy."""
     _exercise_native_staged_byte_boundary(
-        tmp_path, False, staged_bad, kind, use_context=True,
+        tmp_path,
+        False,
+        staged_bad,
+        kind,
+        use_context=True,
     )
 
 
 @pytest.mark.parametrize("environment_override", (False, True))
 @pytest.mark.parametrize("module_name", ("pre_commit", "subprocess"))
 def test_native_guard_does_not_import_untracked_implicit_cwd_modules(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-    environment_override: bool, module_name: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    environment_override: bool,
+    module_name: str,
 ) -> None:
     """Keep the installed entrypoint's boundary while retaining explicit carriers."""
     root, adapter = _native_workspace(tmp_path)
@@ -680,14 +810,24 @@ def test_native_guard_does_not_import_untracked_implicit_cwd_modules(
     command = [sys.executable, str(adapter), "run"]
     original = subprocess.run(
         [*command, "pre-commit", "run", "trailing-whitespace", "--files", filename],
-        cwd=root, env=environment, capture_output=True, text=True, check=False, timeout=30,
+        cwd=root,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
     )
     assert original.returncode == 0, original.stdout + original.stderr
     assert not entered.exists(), "the original installed entrypoint was not isolated"
 
     unguarded = subprocess.run(
-        [*command, "python", "-c", f"import {module_name}"], cwd=root, env=environment,
-        capture_output=True, text=True, check=False, timeout=30,
+        [*command, "python", "-c", f"import {module_name}"],
+        cwd=root,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
     )
     assert unguarded.returncode == 79, unguarded.stdout + unguarded.stderr
     assert entered.read_text(encoding="utf-8") == "owned implicit CWD module executed"
@@ -703,13 +843,8 @@ def test_native_guard_does_not_import_untracked_implicit_cwd_modules(
     assert _native_identity(root) == before
     assert (root / filename).read_text(encoding="utf-8") == "owned clean content\n"
     assert os.environ == inherited
-    events = [
-        json.loads(line) for line in startup_trace.read_text(encoding="utf-8").splitlines()[previous_events:]
-    ]
-    bootstrap = [
-        event for event in events
-        if event["argv"] == ["-c", sys.executable, str(adapter)]
-    ]
+    events = [json.loads(line) for line in startup_trace.read_text(encoding="utf-8").splitlines()[previous_events:]]
+    bootstrap = [event for event in events if event["argv"] == ["-c", sys.executable, str(adapter)]]
     assert bootstrap, events
     assert all(event["pythonpath"] == str(carrier) for event in bootstrap)
     assert all(event["carrier"] == "explicit carrier  n q t must remain" for event in bootstrap)

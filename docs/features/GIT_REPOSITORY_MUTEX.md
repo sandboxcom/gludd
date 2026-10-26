@@ -1,5 +1,88 @@
 # Git Repository Mutex Process Contract
 
+## Atomic observer bootstrap repair (2026-10-26 UTC)
+
+The working repair based at82ec5170c173cfb52bb8bf3c6bbf7944cf3375e4 replaced a
+sys.path insertion with a direct importlib source loader. Independent source
+review found that its sys.modules publication preceded module execution without
+synchronization or rollback. Two concurrent default callers could observe a
+partial module; a failed initialization poisoned later calls.
+
+The new regression owner reproduced3 failures on Python3.12: the second thread
+raised AttributeError during a deliberately blocked real-source load, and both
+RuntimeError and KeyboardInterrupt left a cached incomplete module. Retain
+.gate-logs/observed/v012-observer-loading/v012-observer-loading-red-20261026.json.
+The source repair uses the existing threading.RLock facility around lookup and
+initialization, removes only the same failed module entry, and replaces inherited
+observer lock/cache state in the existing fork hook. Native Make still supplies
+its real observer/identity pair; no import search path is changed.
+
+The initial complete seven-owner profile passed491 cases but its native coverage
+owner FAILED:92.4percent line and80.6666666667percent branch, below the unchanged
+85aggregate branch floor. This is not a green profile or gate. Failed receipt:
+.gate-logs/observed/coverage-files/20261026T123224Z-72274-f69747b8.json;
+raw audit .gate-logs/coverage-20261026T123659Z.json.
+
+The missing input was direct native error/inspection coverage. Additional
+controls preserve query/dry-run/touch state, refuse incomplete or non-function
+observer bindings before locking, exercise real invalid jobserver descriptors
+without closing caller resources, retain a replacement module on failed load,
+and reject a direct CLI that skips the native stream owner. All15 narrow cases
+pass on Python3.12 in1.26s, receipt
+.gate-logs/observed/v012-observer-inputs/v012-observer-inputs-green312-20261026.json.
+The subsequent eight-owner profile passed501 cases on Python3.12 with435/462
+lines and129/150 branches covered (94.1558441558percent/86percent). Receipt:
+.gate-logs/observed/coverage-files/20261026T125509Z-2300-d312a83d.json;
+audit .gate-logs/coverage-20261026T125942Z.json. The complete12-owner caller
+union passed416 cases on Python3.12, receipt
+.gate-logs/observed/v012-git-repair-consumers/v012-git-repair-consumers312-20261026.json.
+
+Later independent review found a test-state leak in the successful native
+observer probe: deleting an initially absent module with raising=False recorded
+no undo, so its newly loaded cache entry survived teardown. A direct two-state
+probe reproduced1 FAIL/1 PASS, retained in
+.gate-logs/observed/v012-observer-cache-restore/v012-observer-cache-restore-red-20261026.json.
+The three native loader controls now pair a temporary setitem with delitem,
+restoring both originally absent and originally cached states. Two added controls
+retain this boundary without altering the original source/path assertions.
+All 17 narrow controls then pass on Python 3.12. Final receiving passed all
+503 profile cases and all 416 complete callers on EACH installed runtime.
+Python 3.12 measured 435/462 lines and 129/150 branches
+(94.1558441558 percent / 86 percent); Python 3.11 measured 444/462 lines and
+133/150 branches (96.1038961039 percent / 88.6666666667 percent). Both native
+85 aggregate / 75 per-file line and branch audits passed without profile changes.
+
+Final profile receipts are
+.gate-logs/observed/coverage-files/20261026T131018Z-46079-515402c7.json (3.12)
+and 20261026T131018Z-46080-db8534f9.json (3.11), with numeric audits
+.gate-logs/coverage-20261026T131505Z.json and coverage-20261026T131457Z.json.
+Caller receipts are under .gate-logs/observed/v012-git-repair-consumers/ as
+v012-git-repair-consumers-cache-final-{312,311}-20261026.json. Their native
+elapsed times are 348.765 seconds and 285.998 seconds respectively. Root drained
+each exact session and verified its terminal observation before further edits.
+The earlier 501/416 receipts retain their actual pre-correction scope.
+
+The complete import and pytest fixture-audit owners additionally passed
+5,589 cases with 46 skips on each runtime. Receipts under
+.gate-logs/observed/v012-git-source-boundaries/ are
+v012-git-source-boundaries{312,311}-20261026.json, native 246.418/244.762 seconds.
+Independent review approves source only. Normal commit collection, full gate,
+exact-SHA hosted proof and fresh packaged-byte smoke tests remain separate.
+
+Native make typecheck passed1516 production sources and its configured test
+child. Strict checks pass for changed locking and the three typed observer/native
+input owners. An optional all-consumer mypy diagnostic first refused mixed
+makefile_layout/scripts.makefile_layout module identities; individual diagnostics
+also exposed pre-existing untyped legacy test methods. Those optional diagnostics
+are not green, and no config, stub or assertion was weakened to hide them.
+
+[CPython's2020 firsthand lazy-import race report](https://github.com/python/cpython/issues/83611)
+and the [official loader failure contract](https://docs.python.org/3.12/reference/import.html#loading)
+were researched on2026-10-26. They describe partial initialization and failed
+module cleanup; the upstream historical tarfile repair is not a current Python
+regression or evidence that Gludd is accepted. Gludd's actual three-case RED
+and its owned-entry/thread/fork controls establish this repair's native scope.
+
 Status: beta4 release contract
 
 ## Contract

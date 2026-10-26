@@ -53,7 +53,7 @@ class TestCommitTargetsEnforceGate:
         assert "2>/dev/null || true" not in recipe
         assert "git diff --name-only | xargs" not in recipe
         assert "git diff --cached --name-only -z" in recipe
-        assert "$(UV) run pre-commit run --files" in recipe
+        assert "$(UV) run --active pre-commit run --files" in recipe
 
     def test_commit_no_verify_enforces_gate(self):
         """git-commit-no-verify must check .gate-status freshness.

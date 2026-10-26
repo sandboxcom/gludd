@@ -15,6 +15,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from types import FunctionType, ModuleType
 from typing import TYPE_CHECKING
 
 import pytest
@@ -36,17 +37,33 @@ else:
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGETS = (
-    "git-commit", "commit-no-verify", "git-commit-no-verify", "git-amend-msg",
-    "repo-commit", "ship-commit", "ship-commit-files", "git-commit-file",
-    "test-and-commit", "commit-bootstrap", "commit-and-ship", "commit-and-ship-push",
+    "git-commit",
+    "commit-no-verify",
+    "git-commit-no-verify",
+    "git-amend-msg",
+    "repo-commit",
+    "ship-commit",
+    "ship-commit-files",
+    "git-commit-file",
+    "test-and-commit",
+    "commit-bootstrap",
+    "commit-and-ship",
+    "commit-and-ship-push",
 )
 GUARDS = (
-    "_gate-mutation-guard", "_gate-fresh-check", "_commit-lint-guard",
-    "_commit-docstring-guard", "_pre-commit-stage-guard", "_stash-leak-guard",
-    "_push-parameter-audit", "_pre-commit-stash-audit", "_edit-commit-atomicity-guard",
-    "_pre-commit-spec-quality-guard", "_pre-commit-content-guard",
+    "_gate-mutation-guard",
+    "_gate-fresh-check",
+    "_commit-lint-guard",
+    "_commit-docstring-guard",
+    "_pre-commit-stage-guard",
+    "_stash-leak-guard",
+    "_push-parameter-audit",
+    "_pre-commit-stash-audit",
+    "_edit-commit-atomicity-guard",
+    "_pre-commit-spec-quality-guard",
+    "_pre-commit-content-guard",
 )
-ADAPTER = r'''import json
+ADAPTER = r"""import json
 import os
 import signal
 import subprocess
@@ -89,6 +106,8 @@ if Path(sys.argv[0]).name == "git":
     os.execve(os.environ["TRANSACTION_REAL_GIT"], ["git", *args], dict(os.environ))
 if args and args[0] == "run":
     args = args[1:]
+    if args and args[0] == "--active":
+        args = args[1:]
     if args and args[0] == "pre-commit":
         event("pre-commit")
         raise SystemExit(0)
@@ -116,7 +135,7 @@ if args and args[0] == "guard":
     event("guard-" + args[1])
     raise SystemExit(75 if args[1] == os.environ.get("TRANSACTION_FAIL_GUARD") else 0)
 raise SystemExit("unknown native adapter input")
-'''
+"""
 
 
 def _block(text: str, name: str) -> str | None:
@@ -128,13 +147,15 @@ def _native_rules() -> str:
     foundation = (ROOT / "make/00-foundation.mk").read_text(encoding="utf-8")
     provider = re.search(
         r"^# Shared native Make inspection grammar\.\n.*?^# End shared native Make inspection grammar\.\n",
-        foundation, re.MULTILINE | re.DOTALL,
+        foundation,
+        re.MULTILINE | re.DOTALL,
     )
     assert provider is not None, "native fixtures must load the actual shared provider graph"
     sources = [
         (ROOT / "make" / name).read_text(encoding="utf-8")
         for name in (
-            "20-recovery-and-git.mk", "40-cross-version-and-worktrees.mk",
+            "20-recovery-and-git.mk",
+            "40-cross-version-and-worktrees.mk",
             "50-development-and-guardrails.mk",
         )
     ]
@@ -144,35 +165,52 @@ def _native_rules() -> str:
     blocks = [block for name in names if (block := _block(text, name)) is not None]
     macros = re.findall(
         r"^define _commit-(?:transaction|publication)\n.*?^endef\n",
-        text, re.MULTILINE | re.DOTALL,
+        text,
+        re.MULTILINE | re.DOTALL,
     )
     frontend = re.search(
         r"^# Native Make inspection owns.*?(?=^define _commit-transaction\n)",
-        text, re.MULTILINE | re.DOTALL,
+        text,
+        re.MULTILINE | re.DOTALL,
     )
     scheduling = re.search(
         r"^ifneq \(\$\(filter _commit-locked-%,\$\(MAKECMDGOALS\)\),\)\n\.NOTPARALLEL:\nendif\n",
-        text, re.MULTILINE,
+        text,
+        re.MULTILINE,
     )
     phony = re.search(r"^\.PHONY: _commit-lock-acquire _gate-mutation-guard[^\n]*\n", text, re.MULTILINE)
     return (
-        provider.group() + (frontend.group() if frontend else "") + "".join(macros)
+        provider.group()
+        + (frontend.group() if frontend else "")
+        + "".join(macros)
         + (scheduling.group() if scheduling else "")
-        + (phony.group() if phony else "") + "\n".join(blocks)
+        + (phony.group() if phony else "")
+        + "\n".join(blocks)
     )
 
 
 def _environment() -> dict[str, str]:
     excluded = {
-        "MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "MAKELEVEL", "PYTEST_ARGS",
-        "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
-        "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT",
+        "MAKEFLAGS",
+        "MFLAGS",
+        "MAKEOVERRIDES",
+        "MAKELEVEL",
+        "PYTEST_ARGS",
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_COMMON_DIR",
+        "GIT_CONFIG_PARAMETERS",
+        "GIT_CONFIG_COUNT",
     }
     environment = {key: value for key, value in os.environ.items() if key not in excluded}
-    environment.update({
-        "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
-        "PYTHONPATH": os.pathsep.join((str(ROOT), str(ROOT / "src"), str(ROOT / "scripts"))),
-    })
+    environment.update(
+        {
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "PYTHONPATH": os.pathsep.join((str(ROOT), str(ROOT / "src"), str(ROOT / "scripts"))),
+        }
+    )
     return environment
 
 
@@ -180,8 +218,13 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     command = shutil.which("git")
     assert command is not None
     return subprocess.run(
-        [command, *args], cwd=root, env=_environment(), capture_output=True,
-        text=True, check=True, timeout=15,
+        [command, *args],
+        cwd=root,
+        env=_environment(),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=15,
     )
 
 
@@ -192,21 +235,43 @@ class NativeTransaction:
     environment: dict[str, str]
 
     def start(
-        self, *, case: str = "first", target: str = "ship-commit-files",
-        filename: str = "first.txt", block: bool = False, state: dict[str, str] | None = None,
-        make_flags: tuple[str, ...] = (), pass_fds: tuple[int, ...] = (), uv: str | None = None,
+        self,
+        *,
+        case: str = "first",
+        target: str = "ship-commit-files",
+        filename: str = "first.txt",
+        block: bool = False,
+        state: dict[str, str] | None = None,
+        make_flags: tuple[str, ...] = (),
+        pass_fds: tuple[int, ...] = (),
+        uv: str | None = None,
         push: str = "0",
     ) -> subprocess.Popen[str]:
         environment = dict(self.environment)
-        environment.update({
-            "TRANSACTION_CASE": case, "TRANSACTION_BLOCK": "1" if block else "0",
-            **(state or {}),
-        })
+        environment.update(
+            {
+                "TRANSACTION_CASE": case,
+                "TRANSACTION_BLOCK": "1" if block else "0",
+                **(state or {}),
+            }
+        )
         return subprocess.Popen(
-            ["make", "--no-print-directory", *make_flags, target, f"FILES={filename}",
-             f"FILE={self.state / 'message.txt'}", f"MSG=owned {case}", f"PUSH={push}",
-             f"UV={uv or shlex.join((sys.executable, str(self.state / 'adapter.py')))}"],
-            cwd=self.root, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            [
+                "make",
+                "--no-print-directory",
+                *make_flags,
+                target,
+                f"FILES={filename}",
+                f"FILE={self.state / 'message.txt'}",
+                f"MSG=owned {case}",
+                f"PUSH={push}",
+                f"UV={uv or shlex.join((sys.executable, str(self.state / 'adapter.py')))}",
+            ],
+            cwd=self.root,
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
             pass_fds=pass_fds,
         )
 
@@ -233,10 +298,13 @@ def _fixture(root: Path, state: Path) -> NativeTransaction:
     (state / "message.txt").write_text("owned message file\n")
     _write_fixture_inputs(root, state)
     environment = _environment()
-    environment.update({
-        "PATH": str(state / "bin") + os.pathsep + environment["PATH"],
-        "TRANSACTION_STATE": str(state), "TRANSACTION_REAL_GIT": str(shutil.which("git")),
-    })
+    environment.update(
+        {
+            "PATH": str(state / "bin") + os.pathsep + environment["PATH"],
+            "TRANSACTION_STATE": str(state),
+            "TRANSACTION_REAL_GIT": str(shutil.which("git")),
+        }
+    )
     return NativeTransaction(root, state, environment)
 
 
@@ -255,7 +323,10 @@ def _write_fixture_inputs(root: Path, state: Path) -> None:
         f"UV := {helper}\nPYTHON := {shlex.quote(sys.executable)}\n"
         "OBSERVED_ROOT := .gate-logs/observed\nOBSERVED_HEARTBEAT_SECS := 2\n"
         "OBSERVED_QUIET_SECS := 0\nOBSERVED_MAX_SECS := 30\nOBSERVED_RETAIN_RUNS := 20\n"
-        + guards + "\ntest-count collect-check:\n\t@" + helper + " collect\n"
+        + guards
+        + "\ntest-count collect-check:\n\t@"
+        + helper
+        + " collect\n"
         "check-gate-fresh preflight dist lint-fix:\n\t@true\n"
         "development-push ci-verdict batch-push:\n\t+@" + helper + " publish $@\n" + native
     )
@@ -291,7 +362,8 @@ def _drain(process: subprocess.Popen[str]) -> tuple[str, str]:
 
 @pytest.mark.parametrize("linked", [False, True])
 def test_native_two_make_callers_hold_common_lock_through_collection(
-    tmp_path: Path, linked: bool,
+    tmp_path: Path,
+    linked: bool,
 ) -> None:
     first = _fixture(tmp_path / "repo", tmp_path / "first-state")
     second_root = first.root
@@ -353,13 +425,17 @@ def test_independent_repository_can_commit_while_other_transaction_is_held(tmp_p
 @pytest.mark.parametrize("target", TARGETS)
 @pytest.mark.parametrize("make_flags", [(), ("-e",)])
 def test_every_public_commit_target_holds_native_mutex_until_actual_commit(
-    tmp_path: Path, target: str, make_flags: tuple[str, ...],
+    tmp_path: Path,
+    target: str,
+    make_flags: tuple[str, ...],
 ) -> None:
     fixture = _fixture(tmp_path / "repo", tmp_path / "state")
     if target != "ship-commit-files":
         _git(fixture.root, "add", "first.txt")
     process = fixture.start(
-        target=target, block=True, make_flags=make_flags,
+        target=target,
+        block=True,
+        make_flags=make_flags,
         state={"TRANSACTION_BLOCK_PHASE": "commit"},
     )
     try:
@@ -374,15 +450,20 @@ def test_every_public_commit_target_holds_native_mutex_until_actual_commit(
     assert "outcome=passed" in stderr and "release_ready=false" in stderr
 
 
-@pytest.mark.parametrize("state,expected_status", [
-    ({"TRANSACTION_ADD_RC": "73"}, 73),
-    ({"TRANSACTION_COLLECT_RC": "2"}, 2),
-    ({"TRANSACTION_COLLECT_RC": "124"}, 124),
-    ({"TRANSACTION_COMMIT_RC": "73"}, 73),
-    ({"TRANSACTION_FAIL_GUARD": "_commit-lint-guard"}, 75),
-])
+@pytest.mark.parametrize(
+    "state,expected_status",
+    [
+        ({"TRANSACTION_ADD_RC": "73"}, 73),
+        ({"TRANSACTION_COLLECT_RC": "2"}, 2),
+        ({"TRANSACTION_COLLECT_RC": "124"}, 124),
+        ({"TRANSACTION_COMMIT_RC": "73"}, 73),
+        ({"TRANSACTION_FAIL_GUARD": "_commit-lint-guard"}, 75),
+    ],
+)
 def test_failure_preserves_native_status_and_owned_state_then_releases_mutex(
-    tmp_path: Path, state: dict[str, str], expected_status: int,
+    tmp_path: Path,
+    state: dict[str, str],
+    expected_status: int,
 ) -> None:
     fixture = _fixture(tmp_path / "repo", tmp_path / "state")
     before = _git(fixture.root, "rev-parse", "HEAD").stdout
@@ -403,7 +484,8 @@ def test_failure_preserves_native_status_and_owned_state_then_releases_mutex(
 
 @pytest.mark.parametrize("descriptor", ["", "-1", "bad", "3.0", "1", "99999999999", "9999999999", "\u0663"])
 def test_descriptor_text_cannot_grant_native_transaction_entry(
-    tmp_path: Path, descriptor: str,
+    tmp_path: Path,
+    descriptor: str,
 ) -> None:
     fixture = _fixture(tmp_path / "repo", tmp_path / "state")
     with pytest.raises(ValueError):
@@ -431,7 +513,8 @@ def test_actual_flock_rejects_same_inode_contender_but_accepts_inherited_owner(t
 
 @pytest.mark.parametrize("mode", ["forged-environment", "foreign-descriptor", "same-inode-contender"])
 def test_private_native_rule_refuses_unowned_descriptor_before_staging(
-    tmp_path: Path, mode: str,
+    tmp_path: Path,
+    mode: str,
 ) -> None:
     fixture = _fixture(tmp_path / "repo", tmp_path / "state")
     index = (fixture.root / ".git" / "index").read_bytes()
@@ -467,7 +550,9 @@ def test_signal_drains_native_make_descendants_before_another_caller_can_stage(t
         owner_pid = int(receipt["owner_pid"])
         assert owner_pid != one.pid and owner_pid > 0
         two = fixture.start(
-            case="second", filename="first.txt", state={"TRANSACTION_CHECK_FIRST_CHILD": "1"},
+            case="second",
+            filename="first.txt",
+            state={"TRANSACTION_CHECK_FIRST_CHILD": "1"},
         )
         os.kill(owner_pid, signal.SIGTERM)
         out_one = _drain(one)
@@ -489,11 +574,73 @@ def test_signal_drains_native_make_descendants_before_another_caller_can_stage(t
             _drain(two)
 
 
+def test_default_observer_loads_real_stream_command_without_sys_path_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "stream_command", ModuleType("stream_command"))
+    monkeypatch.delitem(sys.modules, "stream_command")
+    initial_path = tuple(sys.path)
+    observer_fn, identity_fn = locking._default_observer()
+    assert isinstance(observer_fn, FunctionType)
+    assert Path(observer_fn.__code__.co_filename).resolve() == ROOT / "scripts" / "stream_command.py"
+    assert Path(identity_fn.__code__.co_filename).resolve() == ROOT / "scripts" / "stream_command.py"
+    registered = sys.modules["stream_command"]
+    assert registered.stream_command is observer_fn and registered._new_run_id is identity_fn
+    assert tuple(sys.path) == initial_path
+    run_id = identity_fn()
+    assert isinstance(run_id, str) and run_id
+
+
+def test_default_observer_refuses_missing_spec(monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib.util
+
+    monkeypatch.setitem(sys.modules, "stream_command", ModuleType("stream_command"))
+    monkeypatch.delitem(sys.modules, "stream_command")
+    monkeypatch.setattr(
+        importlib.util,
+        "spec_from_file_location",
+        lambda *_args: None,
+    )
+    try:
+        locking._default_observer()
+    except ValueError as error:
+        assert "loadable scripts/stream_command.py" in str(error)
+    else:
+        raise AssertionError("default observer must refuse a missing spec")
+
+
+def test_default_observer_refuses_spec_without_loader(monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib.util
+
+    monkeypatch.setitem(sys.modules, "stream_command", ModuleType("stream_command"))
+    monkeypatch.delitem(sys.modules, "stream_command")
+    loaderless = importlib.util.spec_from_file_location(
+        "stream_command",
+        str(ROOT / "scripts" / "stream_command.py"),
+    )
+    assert loaderless is not None
+    loaderless.loader = None
+    monkeypatch.setattr(
+        importlib.util,
+        "spec_from_file_location",
+        lambda *_args, **_kwargs: loaderless,
+    )
+    try:
+        locking._default_observer()
+    except ValueError as error:
+        assert "loadable scripts/stream_command.py" in str(error)
+    else:
+        raise AssertionError("default observer must refuse a spec without a loader")
+
+
 @pytest.mark.parametrize("target", TARGETS)
 @pytest.mark.parametrize("native_status", [0, 73, 143])
 def test_existing_observer_receives_exact_transaction_and_open_native_descriptor(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
-    target: str, native_status: int,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    target: str,
+    native_status: int,
 ) -> None:
     fixture = _fixture(tmp_path / "repo", tmp_path / "state")
     monkeypatch.chdir(fixture.root)
@@ -516,12 +663,22 @@ def test_existing_observer_receives_exact_transaction_and_open_native_descriptor
 
     monkeypatch.setattr(observer, "stream_command", capture)
     result = locking._run_make_transaction(
-        target, "make", "Makefile", observed_root=".gate-logs/observed",
-        heartbeat_seconds=2, quiet_seconds=7, max_seconds=31, retain_runs=4,
+        target,
+        "make",
+        "Makefile",
+        observed_root=".gate-logs/observed",
+        heartbeat_seconds=2,
+        quiet_seconds=7,
+        max_seconds=31,
+        retain_runs=4,
     )
     assert result == native_status and len(calls) == 1
     assert calls[0][0] == [
-        "make", "--no-print-directory", "-f", str(fixture.root / "Makefile"), "_commit-locked-" + target,
+        "make",
+        "--no-print-directory",
+        "-f",
+        str(fixture.root / "Makefile"),
+        "_commit-locked-" + target,
     ]
     assert dict(os.environ) == carried
     guidance = capsys.readouterr().err
@@ -529,29 +686,45 @@ def test_existing_observer_receives_exact_transaction_and_open_native_descriptor
     assert f"native_status={native_status}" in guidance and "release_ready=false" in guidance
 
 
-@pytest.mark.parametrize("target,make,makefile,observed_root,message", [
-    ("unrelated", "make", "Makefile", ".gate-logs/observed", "unsupported native"),
-    ("ship-commit", "sh", "Makefile", ".gate-logs/observed", "one Make executable"),
-    ("ship-commit", "make -j8", "Makefile", ".gate-logs/observed", "one Make executable"),
-    ("ship-commit", "make", "missing.mk", ".gate-logs/observed", "Makefile"),
-    ("ship-commit", "make", "Makefile", "../foreign-observed", "private"),
-])
+@pytest.mark.parametrize(
+    "target,make,makefile,observed_root,message",
+    [
+        ("unrelated", "make", "Makefile", ".gate-logs/observed", "unsupported native"),
+        ("ship-commit", "sh", "Makefile", ".gate-logs/observed", "one Make executable"),
+        ("ship-commit", "make -j8", "Makefile", ".gate-logs/observed", "one Make executable"),
+        ("ship-commit", "make", "missing.mk", ".gate-logs/observed", "Makefile"),
+        ("ship-commit", "make", "Makefile", "../foreign-observed", "private"),
+    ],
+)
 def test_transaction_input_refusals_start_no_child(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-    target: str, make: str, makefile: str, observed_root: str, message: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    target: str,
+    make: str,
+    makefile: str,
+    observed_root: str,
+    message: str,
 ) -> None:
     fixture = _fixture(tmp_path / "repo", tmp_path / "state")
     monkeypatch.chdir(fixture.root)
     with pytest.raises(ValueError, match=message):
         locking._run_make_transaction(
-            target, make, makefile, observed_root=observed_root,
-            heartbeat_seconds=2, quiet_seconds=0, max_seconds=30, retain_runs=4,
+            target,
+            make,
+            makefile,
+            observed_root=observed_root,
+            heartbeat_seconds=2,
+            quiet_seconds=0,
+            max_seconds=30,
+            retain_runs=4,
         )
     assert fixture.events() == []
 
 
 def test_cli_assertion_and_usage_preserve_native_refusal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     fixture = _fixture(tmp_path / "repo", tmp_path / "state")
     monkeypatch.chdir(fixture.root)
@@ -612,7 +785,12 @@ def test_native_parent_siblings_remain_parallel_on_installed_make(tmp_path: Path
             stream.write(f"\ngludd-parallel-{name}:\n\t@{command}\n")
     result = subprocess.run(
         ["make", "--no-print-directory", "-j2", "gludd-parallel-left", "gludd-parallel-right"],
-        cwd=fixture.root, env=fixture.environment, capture_output=True, text=True, check=False, timeout=10,
+        cwd=fixture.root,
+        env=fixture.environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "warning:" not in result.stderr.lower()
@@ -621,7 +799,8 @@ def test_native_parent_siblings_remain_parallel_on_installed_make(tmp_path: Path
 def test_invalid_private_entry_cannot_run_quality_children_in_parallel(tmp_path: Path) -> None:
     fixture = _fixture(tmp_path / "repo", tmp_path / "state")
     process = fixture.start(
-        target="_commit-locked-ship-commit", make_flags=("-j2",),
+        target="_commit-locked-ship-commit",
+        make_flags=("-j2",),
         state={"GLUDD_COMMIT_TRANSACTION_PYTHON": sys.executable, "GLUDD_COMMIT_TRANSACTION_FD": "9999999999"},
     )
     stdout, stderr = _drain(process)
@@ -643,19 +822,34 @@ def test_native_source_fronts_its_own_observer_ahead_of_outside_decoy(tmp_path: 
     assert "outside observer was imported" not in stdout + stderr
 
 
-@pytest.mark.parametrize("flags", [
-    "n -- ID=ordinary", "nrR -- MSG=owned", "--dry-run -- MSG=owned",
-    "--just-print", "--recon", "-n", "--jobserver-auth=fifo:/unused-native-input",
-    "-- ID=contains-n",
-])
+@pytest.mark.parametrize(
+    "flags",
+    [
+        "n -- ID=ordinary",
+        "nrR -- MSG=owned",
+        "--dry-run -- MSG=owned",
+        "--just-print",
+        "--recon",
+        "-n",
+        "--jobserver-auth=fifo:/unused-native-input",
+        "-- ID=contains-n",
+    ],
+)
 def test_native_make_flag_modes_retain_make_input_meaning(
-    monkeypatch: pytest.MonkeyPatch, flags: str,
+    monkeypatch: pytest.MonkeyPatch,
+    flags: str,
 ) -> None:
     monkeypatch.setenv("MAKEFLAGS", flags)
     mode, descriptors = locking._native_make_options()
-    assert mode == ("execute" if flags in {
-        "--jobserver-auth=fifo:/unused-native-input", "-- ID=contains-n",
-    } else "dry-run")
+    assert mode == (
+        "execute"
+        if flags
+        in {
+            "--jobserver-auth=fifo:/unused-native-input",
+            "-- ID=contains-n",
+        }
+        else "dry-run"
+    )
     assert descriptors == ()
 
 
@@ -674,11 +868,17 @@ def test_native_make_pipe_jobserver_preserves_exact_open_descriptors(monkeypatch
         os.close(write_fd)
 
 
-@pytest.mark.parametrize("flags", [
-    "--jobserver-auth=bad", "--jobserver-auth=3,3", "--jobserver-fds=9999999999,3",
-])
+@pytest.mark.parametrize(
+    "flags",
+    [
+        "--jobserver-auth=bad",
+        "--jobserver-auth=3,3",
+        "--jobserver-fds=9999999999,3",
+    ],
+)
 def test_unusable_native_jobserver_refuses_instead_of_hiding_warning(
-    monkeypatch: pytest.MonkeyPatch, flags: str,
+    monkeypatch: pytest.MonkeyPatch,
+    flags: str,
 ) -> None:
     monkeypatch.setenv("MAKEFLAGS", flags)
     with pytest.raises(ValueError):
@@ -686,14 +886,21 @@ def test_unusable_native_jobserver_refuses_instead_of_hiding_warning(
 
 
 def test_native_cli_rejects_missing_common_directory_and_platform(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     (tmp_path / "Makefile").write_text("help:\n\t@true\n")
     with pytest.raises(ValueError, match="POSIX Git common"):
         locking._run_make_transaction(
-            "ship-commit", "make", "Makefile", observed_root=".gate-logs/observed",
-            heartbeat_seconds=2, quiet_seconds=0, max_seconds=30, retain_runs=4,
+            "ship-commit",
+            "make",
+            "Makefile",
+            observed_root=".gate-logs/observed",
+            heartbeat_seconds=2,
+            quiet_seconds=0,
+            max_seconds=30,
+            retain_runs=4,
         )
     with pytest.raises(ValueError, match="POSIX Git common"):
         locking._assert_make_transaction(str(tmp_path), "3")
@@ -702,8 +909,14 @@ def test_native_cli_rejects_missing_common_directory_and_platform(
     monkeypatch.setattr(locking, "_HAVE_FCNTL", False)
     with pytest.raises(ValueError, match="POSIX Git common"):
         locking._run_make_transaction(
-            "ship-commit", "make", "Makefile", observed_root=".gate-logs/observed",
-            heartbeat_seconds=2, quiet_seconds=0, max_seconds=30, retain_runs=4,
+            "ship-commit",
+            "make",
+            "Makefile",
+            observed_root=".gate-logs/observed",
+            heartbeat_seconds=2,
+            quiet_seconds=0,
+            max_seconds=30,
+            retain_runs=4,
         )
 
 
@@ -738,9 +951,13 @@ def test_native_cli_mode_returns_actual_owner_status(
         return 73
 
     monkeypatch.setattr(locking, "_run_make_transaction", receive)
-    assert locking.main(
-        ["--label", "commit-transaction", "--make-target", "ship-commit"], require_make_target=True,
-    ) == 73
+    assert (
+        locking.main(
+            ["--label", "commit-transaction", "--make-target", "ship-commit"],
+            require_make_target=True,
+        )
+        == 73
+    )
     assert calls == ["ship-commit"]
 
 
@@ -782,7 +999,8 @@ def test_live_transaction_is_visible_and_protected_by_actual_native_owners(tmp_p
             (fixture.root / ".gate-logs/observed/commit-transaction/current.json").read_text(),
         )
         observed = inventory_owner._observer_owned_processes_from_output(
-            inventory_owner._process_output(), repository_roots=(fixture.root,),
+            inventory_owner._process_output(),
+            repository_roots=(fixture.root,),
         )
         owner = next(row for row in observed if row["observer_role"] == "owner")
         assert int(owner["pid"]) == receipt["owner_pid"]
@@ -799,14 +1017,21 @@ def test_live_transaction_is_visible_and_protected_by_actual_native_owners(tmp_p
     assert process.returncode == 0, (stdout, stderr)
 
 
-@pytest.mark.parametrize("arguments", [
-    ["--status"], ["--tail", "5"], ["--assert-transaction"],
-    ["--make-target", "ship-commit", "--", "true"],
-    ["--make-target", "unrelated"],
-    ["--make-target", "ship-commit", "--label", "foreign"],
-])
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["--status"],
+        ["--tail", "5"],
+        ["--assert-transaction"],
+        ["--make-target", "ship-commit", "--", "true"],
+        ["--make-target", "unrelated"],
+        ["--make-target", "ship-commit", "--label", "foreign"],
+    ],
+)
 def test_internal_stream_dispatch_refuses_mixed_or_unbounded_modes_before_execution(
-    arguments: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    arguments: list[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.chdir(tmp_path)
     with pytest.raises(SystemExit) as result:
@@ -838,7 +1063,10 @@ def test_same_named_public_and_private_files_cannot_skip_commit_transaction(tmp_
 @pytest.mark.parametrize("flag,status", [("-q", 1), ("-t", 0), ("-n", 0)])
 @pytest.mark.parametrize("prior_observation", [False, True])
 def test_native_query_touch_and_dry_run_preserve_source_and_current_pointer(
-    tmp_path: Path, flag: str, status: int, prior_observation: bool,
+    tmp_path: Path,
+    flag: str,
+    status: int,
+    prior_observation: bool,
 ) -> None:
     fixture = _fixture(tmp_path / "repo", tmp_path / "state")
     pointer = fixture.root / ".gate-logs/observed/commit-transaction/current.json"
@@ -854,7 +1082,9 @@ def test_native_query_touch_and_dry_run_preserve_source_and_current_pointer(
     received = compose_makefile(fixture.root / "Makefile")
     macro = re.search(r"define _commit-transaction\n.*?endef", received, re.DOTALL)
     assert process.returncode == status, (
-        stdout, stderr, macro.group() if macro else "missing native macro",
+        stdout,
+        stderr,
+        macro.group() if macro else "missing native macro",
         _block(received, "ship-commit-files"),
     )
     guidance = stdout + stderr
@@ -864,21 +1094,28 @@ def test_native_query_touch_and_dry_run_preserve_source_and_current_pointer(
     assert (fixture.root / ".git/index").read_bytes() == original_index
     assert (pointer.read_bytes() if pointer.exists() else None) == original_pointer
     assert not {"first:add", "first:collect", "first:commit"}.intersection(
-        fixture.events()[len(original_events):],
+        fixture.events()[len(original_events) :],
     )
     assert all(not (fixture.root / name).exists() for name in TARGETS)
 
 
-@pytest.mark.parametrize("target,push,phase", [
-    ("ship-commit", "1", "batch-push"),
-    ("ship-commit-files", "1", "batch-push"),
-    ("commit-and-ship", "1", "batch-push"),
-    ("commit-and-ship-push", "0", "development-push"),
-    ("commit-and-ship-push", "1", "ci-verdict"),
-])
+@pytest.mark.parametrize(
+    "target,push,phase",
+    [
+        ("ship-commit", "1", "batch-push"),
+        ("ship-commit-files", "1", "batch-push"),
+        ("commit-and-ship", "1", "batch-push"),
+        ("commit-and-ship-push", "0", "development-push"),
+        ("commit-and-ship-push", "1", "ci-verdict"),
+    ],
+)
 @pytest.mark.parametrize("make_flags", [(), ("-e",)])
 def test_publication_wait_releases_native_mutex_for_linked_writer(
-    tmp_path: Path, target: str, push: str, phase: str, make_flags: tuple[str, ...],
+    tmp_path: Path,
+    target: str,
+    push: str,
+    phase: str,
+    make_flags: tuple[str, ...],
 ) -> None:
     first = _fixture(tmp_path / "repo", tmp_path / "state")
     linked = tmp_path / "linked"
@@ -888,7 +1125,10 @@ def test_publication_wait_releases_native_mutex_for_linked_writer(
     if target != "ship-commit-files":
         _git(first.root, "add", "first.txt")
     one = first.start(
-        target=target, push=push, block=True, make_flags=make_flags,
+        target=target,
+        push=push,
+        block=True,
+        make_flags=make_flags,
         state={"TRANSACTION_BLOCK_PHASE": phase},
     )
     two: subprocess.Popen[str] | None = None
@@ -930,7 +1170,12 @@ def test_publication_wait_releases_native_mutex_for_linked_writer(
     assert two is not None and two.returncode == 0, output_two
     assert progressed, (
         "linked writer could not commit while publication was blocked",
-        phase, mutex_held, receipt_state, events_before_release, output_one, output_two,
+        phase,
+        mutex_held,
+        receipt_state,
+        events_before_release,
+        output_one,
+        output_two,
     )
     assert not mutex_held, "publication wait retained the mutation mutex after the peer drained"
     assert receipt_state == "passed", "mutation receipt must finish before publication starts"
@@ -946,19 +1191,26 @@ def _publication_events(fixture: NativeTransaction) -> list[str]:
     return [event.partition(":")[2] for event in fixture.events() if event.partition(":")[2] in phases]
 
 
-@pytest.mark.parametrize("target,push,expected", [
-    ("ship-commit", "0", ()),
-    ("ship-commit", "1", ("batch-push",)),
-    ("ship-commit-files", "0", ()),
-    ("ship-commit-files", "1", ("batch-push",)),
-    ("commit-and-ship", "0", ()),
-    ("commit-and-ship", "1", ("batch-push",)),
-    ("commit-and-ship-push", "0", ("development-push", "ci-verdict")),
-    ("commit-and-ship-push", "1", ("batch-push", "development-push", "ci-verdict")),
-])
+@pytest.mark.parametrize(
+    "target,push,expected",
+    [
+        ("ship-commit", "0", ()),
+        ("ship-commit", "1", ("batch-push",)),
+        ("ship-commit-files", "0", ()),
+        ("ship-commit-files", "1", ("batch-push",)),
+        ("commit-and-ship", "0", ()),
+        ("commit-and-ship", "1", ("batch-push",)),
+        ("commit-and-ship-push", "0", ("development-push", "ci-verdict")),
+        ("commit-and-ship-push", "1", ("batch-push", "development-push", "ci-verdict")),
+    ],
+)
 @pytest.mark.parametrize("make_flags", [(), ("-e",), ("-j2",)])
 def test_public_post_actions_preserve_original_conditions_order_and_jobserver(
-    tmp_path: Path, target: str, push: str, expected: tuple[str, ...], make_flags: tuple[str, ...],
+    tmp_path: Path,
+    target: str,
+    push: str,
+    expected: tuple[str, ...],
+    make_flags: tuple[str, ...],
 ) -> None:
     fixture = _fixture(tmp_path / "repo", tmp_path / "state")
     if target != "ship-commit-files":
@@ -978,22 +1230,30 @@ def test_public_post_actions_preserve_original_conditions_order_and_jobserver(
     assert "warning" not in stderr.lower()
 
 
-@pytest.mark.parametrize("target,failed_child,expected", [
-    ("ship-commit-files", "batch-push", ("batch-push",)),
-    ("commit-and-ship-push", "batch-push", ("batch-push",)),
-    ("commit-and-ship-push", "development-push", ("batch-push", "development-push")),
-    ("commit-and-ship-push", "ci-verdict", ("batch-push", "development-push", "ci-verdict")),
-])
+@pytest.mark.parametrize(
+    "target,failed_child,expected",
+    [
+        ("ship-commit-files", "batch-push", ("batch-push",)),
+        ("commit-and-ship-push", "batch-push", ("batch-push",)),
+        ("commit-and-ship-push", "development-push", ("batch-push", "development-push")),
+        ("commit-and-ship-push", "ci-verdict", ("batch-push", "development-push", "ci-verdict")),
+    ],
+)
 @pytest.mark.parametrize("make_flags", [(), ("-e",)])
 def test_failed_post_child_preserves_commit_status_and_stops_later_children(
-    tmp_path: Path, target: str, failed_child: str, expected: tuple[str, ...],
+    tmp_path: Path,
+    target: str,
+    failed_child: str,
+    expected: tuple[str, ...],
     make_flags: tuple[str, ...],
 ) -> None:
     fixture = _fixture(tmp_path / "repo", tmp_path / "state")
     if target != "ship-commit-files":
         _git(fixture.root, "add", "first.txt")
     process = fixture.start(
-        target=target, push="1", make_flags=make_flags,
+        target=target,
+        push="1",
+        make_flags=make_flags,
         state={"TRANSACTION_PUBLICATION_FAIL_TARGET": failed_child, "TRANSACTION_PUBLICATION_RC": "73"},
     )
     stdout, stderr = _drain(process)
@@ -1012,13 +1272,22 @@ def test_failed_post_child_preserves_commit_status_and_stops_later_children(
         fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
-@pytest.mark.parametrize("target", [
-    "ship-commit", "ship-commit-files", "commit-and-ship", "commit-and-ship-push",
-])
+@pytest.mark.parametrize(
+    "target",
+    [
+        "ship-commit",
+        "ship-commit-files",
+        "commit-and-ship",
+        "commit-and-ship-push",
+    ],
+)
 @pytest.mark.parametrize("failure", ["TRANSACTION_COLLECT_RC", "TRANSACTION_COMMIT_RC"])
 @pytest.mark.parametrize("make_flags", [(), ("-e",)])
 def test_mutation_failure_starts_no_public_post_action(
-    tmp_path: Path, target: str, failure: str, make_flags: tuple[str, ...],
+    tmp_path: Path,
+    target: str,
+    failure: str,
+    make_flags: tuple[str, ...],
 ) -> None:
     fixture = _fixture(tmp_path / "repo", tmp_path / "state")
     if target != "ship-commit-files":
@@ -1035,14 +1304,24 @@ def test_mutation_failure_starts_no_public_post_action(
     assert "first.txt" in _git(fixture.root, "diff", "--cached", "--name-only").stdout.splitlines()
 
 
-@pytest.mark.parametrize("target", [
-    "ship-commit", "ship-commit-files", "commit-and-ship", "commit-and-ship-push",
-])
+@pytest.mark.parametrize(
+    "target",
+    [
+        "ship-commit",
+        "ship-commit-files",
+        "commit-and-ship",
+        "commit-and-ship-push",
+    ],
+)
 @pytest.mark.parametrize("flag,status", [("-n", 0), ("-q", 1), ("-t", 0)])
 @pytest.mark.parametrize("make_flags", [(), ("-e",)])
 @pytest.mark.parametrize("prior_observation", [False, True])
 def test_publication_inspection_modes_preserve_source_pointer_and_no_post_action(
-    tmp_path: Path, target: str, flag: str, status: int, make_flags: tuple[str, ...],
+    tmp_path: Path,
+    target: str,
+    flag: str,
+    status: int,
+    make_flags: tuple[str, ...],
     prior_observation: bool,
 ) -> None:
     fixture = _fixture(tmp_path / "repo", tmp_path / "state")
@@ -1063,7 +1342,10 @@ def test_publication_inspection_modes_preserve_source_pointer_and_no_post_action
     mutex = fixture.root / ".git/gludd-git.lock"
     mutex_before = mutex.read_bytes() if mutex.exists() else None
     process = fixture.start(
-        case="inspection", target=target, push="1", make_flags=(*make_flags, flag),
+        case="inspection",
+        target=target,
+        push="1",
+        make_flags=(*make_flags, flag),
     )
     stdout, stderr = _drain(process)
     assert process.returncode == status, (stdout, stderr)
@@ -1075,15 +1357,23 @@ def test_publication_inspection_modes_preserve_source_pointer_and_no_post_action
     assert (fixture.root / ".git/index").read_bytes() == index_before
     assert (pointer.read_bytes() if pointer.exists() else None) == pointer_before
     assert (mutex.read_bytes() if mutex.exists() else None) == mutex_before
-    assert all(not (fixture.root / name).exists() for name in (
-        *TARGETS, "batch-push", "development-push", "ci-verdict",
-    ))
+    assert all(
+        not (fixture.root / name).exists()
+        for name in (
+            *TARGETS,
+            "batch-push",
+            "development-push",
+            "ci-verdict",
+        )
+    )
 
 
 @pytest.mark.parametrize("flag", ["-n", "-q", "-t"])
 @pytest.mark.parametrize("make_flags", [(), ("-e",)])
 def test_publication_inspection_guard_has_native_unguarded_mutation_witness(
-    tmp_path: Path, flag: str, make_flags: tuple[str, ...],
+    tmp_path: Path,
+    flag: str,
+    make_flags: tuple[str, ...],
 ) -> None:
     fixture = _fixture(tmp_path / "repo", tmp_path / "state")
     entrypoint = fixture.root / "Makefile"
@@ -1105,7 +1395,13 @@ def test_publication_inspection_guard_has_native_unguarded_mutation_witness(
     index = (fixture.root / ".git/index").read_bytes()
     process = fixture.start(case="inspection", push="1", make_flags=(*make_flags, flag))
     stdout, stderr = _drain(process)
-    assert _publication_events(fixture) == ["batch-push"], (stdout, stderr)
+    # GNU Make executes + recipes under -n and -t even when the target has
+    # prerequisites, but in -q mode it only returns out-of-date status and
+    # does not run the recipe. The unguarded witness must not run under -q.
+    if flag == "-q":
+        assert _publication_events(fixture) == [], (stdout, stderr)
+    else:
+        assert _publication_events(fixture) == ["batch-push"], (stdout, stderr)
     assert "inspection:collect" not in fixture.events() and "inspection:commit" not in fixture.events()
     assert _git(fixture.root, "rev-parse", "HEAD").stdout == before
     assert (fixture.root / ".git/index").read_bytes() == index
@@ -1121,42 +1417,55 @@ def _mode_classification_source() -> str:
     return prefix + "\n.PHONY: classifier\nclassifier:\n\t@printf '%s\\n' '$(_commit-native-mode)'\n"
 
 
-@pytest.mark.parametrize("flags,expected", [
-    ("", "execute"), ("erR -- MSG=plain", "execute"),
-    (" --no-print-directory -qe", "query"),
-    (" --no-print-directory -ne", "dry-run"),
-    (" --no-print-directory -te", "touch"),
-    (" --no-print-directory -srqke", "query"),
-    (" --no-print-directory -srnke", "dry-run"),
-    (" --no-print-directory -tsrke", "touch"),
-    ("--question -- MSG=owned", "query"),
-    ("--just-print -- MSG=owned", "dry-run"),
-    ("--touch -- MSG=owned", "touch"),
-    ("nrR -- MSG=owned", "dry-run"),
-    ("q -- MSG=literal -n", "query"),
-    ("-- MSG=literal -q -n -t", "execute"),
-    (" -- MSG=literal -q", "execute"),
-    ("-- MSG=don't parse -qe", "execute"),
-    ("-I/tmp/query-nqt", "execute"),
-    ("-Iquerynqt", "execute"),
-    ("-I /tmp/query-nqt", "execute"),
-    ("--directory=/tmp/query-nqt", "execute"),
-    ("--jobserver-auth=fifo:/tmp/nqt", "execute"),
-    ("-j2 -l4", "execute"),
-    ("--no-print-directory -Lne", "dry-run"),
-    ("--no-print-directory -Sqe", "query"),
-    ("--no-print-directory -Iquery -n", "dry-run"),
-    ("--no-print-directory -Iquery -- MSG=literal -n", "execute"),
-    ("-qnt", "query"), ("t", "touch"),
-])
+@pytest.mark.parametrize(
+    "flags,expected",
+    [
+        ("", "execute"),
+        ("erR -- MSG=plain", "execute"),
+        (" --no-print-directory -qe", "query"),
+        (" --no-print-directory -ne", "dry-run"),
+        (" --no-print-directory -te", "touch"),
+        (" --no-print-directory -srqke", "query"),
+        (" --no-print-directory -srnke", "dry-run"),
+        (" --no-print-directory -tsrke", "touch"),
+        ("--question -- MSG=owned", "query"),
+        ("--just-print -- MSG=owned", "dry-run"),
+        ("--touch -- MSG=owned", "touch"),
+        ("nrR -- MSG=owned", "dry-run"),
+        ("q -- MSG=literal -n", "query"),
+        ("-- MSG=literal -q -n -t", "execute"),
+        (" -- MSG=literal -q", "execute"),
+        ("-- MSG=don't parse -qe", "execute"),
+        ("-I/tmp/query-nqt", "execute"),
+        ("-Iquerynqt", "execute"),
+        ("-I /tmp/query-nqt", "execute"),
+        ("--directory=/tmp/query-nqt", "execute"),
+        ("--jobserver-auth=fifo:/tmp/nqt", "execute"),
+        ("-j2 -l4", "execute"),
+        ("--no-print-directory -Lne", "dry-run"),
+        ("--no-print-directory -Sqe", "query"),
+        ("--no-print-directory -Iquery -n", "dry-run"),
+        ("--no-print-directory -Iquery -- MSG=literal -n", "execute"),
+        ("-qnt", "query"),
+        ("t", "touch"),
+    ],
+)
 def test_native_make_and_python_mode_owners_share_the_complete_flag_grammar(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, flags: str, expected: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    flags: str,
+    expected: str,
 ) -> None:
     selected = tmp_path / "mode-classification.mk"
     selected.write_text(_mode_classification_source(), encoding="utf-8")
     result = subprocess.run(
         ["make", "--no-print-directory", "-f", str(selected), "classifier", "CLASSIFIER_FLAGS=" + flags],
-        cwd=tmp_path, env=_environment(), capture_output=True, text=True, timeout=15, check=False,
+        cwd=tmp_path,
+        env=_environment(),
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
     )
     assert result.returncode == 0, (result.stdout, result.stderr)
     assert result.stdout.strip() == expected
@@ -1165,14 +1474,21 @@ def test_native_make_and_python_mode_owners_share_the_complete_flag_grammar(
     assert locking._native_make_options() == (expected, ())
 
 
-@pytest.mark.parametrize("provider,unguarded_mode", [
-    ("_native-make-option-prefix", "query"),
-    ("_native-make-remove-letters", "execute"),
-    ("_native-make-boolean-cluster", "query"),
-])
+@pytest.mark.parametrize(
+    "provider,unguarded_mode",
+    [
+        ("_native-make-option-prefix", "query"),
+        ("_native-make-remove-letters", "execute"),
+        ("_native-make-boolean-cluster", "query"),
+    ],
+)
 @pytest.mark.parametrize("origin", ["environment_override", "command_line"])
 def test_shared_provider_overrides_reject_replacement_with_native_unguarded_witness(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: str, unguarded_mode: str, origin: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+    unguarded_mode: str,
+    origin: str,
 ) -> None:
     source = _mode_classification_source()
     binding = "override " + provider + " ="
@@ -1190,7 +1506,12 @@ def test_shared_provider_overrides_reject_replacement_with_native_unguarded_witn
         selected.write_text(contents, encoding="utf-8")
         result = subprocess.run(
             ["make", "--no-print-directory", *make_flags, "-f", str(selected), "classifier", *assignments],
-            cwd=tmp_path, env=_environment(), capture_output=True, text=True, timeout=15, check=False,
+            cwd=tmp_path,
+            env=_environment(),
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
         )
         assert result.returncode == 0, (result.stdout, result.stderr)
         assert result.stdout.strip() == expected
