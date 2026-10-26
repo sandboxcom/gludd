@@ -1,5 +1,39 @@
 # Repository-local GitHub HTTPS publication
 
+## Controller runtime for credential metadata (2026-10-26 UTC)
+
+The credential-helper quoting bootstrap must use the installed SYSTEM_PYTHON,
+independently of the application's PYTHON selection. The inherited working
+repair changed this one native binding and updated the development-publication
+fixture to provide its real controller. It preserves the existing -P boundary,
+explicit PYTHONPATH/unrelated carriers and native authentication failures.
+
+An added actual native auth test supplies an executable application-Python
+decoy that records invocation and exits 79. Restoring the old PYTHON binding
+caused BOTH ordinary and make -e controls to fail: the real helper executed
+the decoy and retained native helper-binding status 79. RED receipt:
+.gate-logs/observed/v012-publication-controller/v012-publication-controller-red-20261026.json.
+After restoring SYSTEM_PYTHON, both controls pass on Python 3.11. The real
+repository-local configuration bytes remain unchanged, the application/runtime
+carriers remain intact, and runtime replay/transport/hooks/dispatch never start
+in this read-only auth check. GREEN receipt:
+.gate-logs/observed/v012-publication-controller/v012-publication-controller-green311-20261026.json.
+
+Complete HTTPS/development-publication and runtime-admission receiving passes
+all 372 cases on EACH installed runtime, with fatal warnings and no new skips.
+Native terminal receipts under .gate-logs/observed/v012-publication-receiving/
+are v012-publication-receiving311-20261026.json (369.269 seconds) and
+v012-publication-receiving312-20261026.json (377.815 seconds). Root drained both
+sessions and verified their exact passed/inactive observations. Ruff, strict
+focused typing, logical-Makefile AST, environment-write, line-limit and native
+staged-content guards passed. Independent review approves source only.
+No live credential, publication, hosted gate, deployment or release proof
+follows from these confined tests. The
+[retained firsthand workflow-scope report](https://github.com/cli/cli/issues/5355)
+concerns authorization, not this controller-binding defect; the native decoy
+controls establish this defect's actual input and repaired execution boundary.
+
+
 ## Make-owned workflow consent receiving afterd54d7a5
 
 Root owns S98.4/Main/shared/Git on release-candidate/v012-git-mutex-20261022.
