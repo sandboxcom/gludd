@@ -125,6 +125,15 @@ override ImageOS := $(value ImageOS)
 export GITHUB_ACTIONS RUNNER_ENVIRONMENT RUNNER_OS ImageOS
 endif
 
+# Refuse nonliteral selected-owner context before startup/export children expand it.
+ifneq ($(filter workstream-unregister agent-cleanup,$(MAKECMDGOALS)),)
+ifneq (,$(findstring $$,$(value BRANCH)$(value WORKTREE)$(value WORKSTREAM_EXPECTED_HEAD)$(value ACTIVE_WORKSTREAM_REGISTRY)$(value AGENT_CLEANUP_PURPOSE)$(value AGENT_CLEANUP_EXPECTED_HEAD)$(value AGENT_CLEANUP_VALIDATE_ONLY)))
+$(error workstream release/retirement inputs must be literal data, not Make expressions)
+endif
+unexport BRANCH WORKTREE WORKSTREAM_EXPECTED_HEAD ACTIVE_WORKSTREAM_REGISTRY
+unexport AGENT_CLEANUP_PURPOSE AGENT_CLEANUP_EXPECTED_HEAD AGENT_CLEANUP_VALIDATE_ONLY
+endif
+
 # Keep no-commit merge branch data literal before startup or export children.
 override GLUDD_GIT_MERGE_NC_BR := $(value BR)
 export GLUDD_GIT_MERGE_NC_BR
@@ -767,8 +776,8 @@ help:
 		"  gate-lite             Local validation (lint+typecheck+collect+smoke+unit@2w); no OOM" \
 		"  gate-audit            Gate + coverage audit (85% per-file threshold)" \
 		"  coverage-files        Observable targeted coverage (COVERAGE_* plus OBSERVED_ROOT, OBSERVED_HEARTBEAT_SECS, OBSERVED_QUIET_SECS, OBSERVED_MAX_SECS, OBSERVED_RETAIN_RUNS)" \
-		"  observed-status       Print current/exact retained command status (OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_STALE_SECS)" \
-		"  observed-tail         Print bounded current/exact retained log tail (OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_TAIL_LINES)" \
+		"  observed-status       Print current/exact retained command status (PYTHON, OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_STALE_SECS)" \
+		"  observed-tail         Print bounded current/exact retained log tail (PYTHON, OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_TAIL_LINES)" \
 		"  run-watched           Observe one bounded command with quoted child arguments (CMD, OBSERVED_LABEL, RUN_ID, STALL_SECS, MAX_SECS, LOG, OBSERVED_ROOT, OBSERVED_HEARTBEAT_SECS, OBSERVED_RETAIN_RUNS)" \
 		"  runtime-startup-diagnostic Plan a fixed serial collection diagnostic (RUNTIME_DIAGNOSTIC_*, OBSERVED_*, RUN_ID, LOG, WORK_ITEM_ID)" \
 		"  runtime-startup-report Read one exact retained/archive startup run; never launches work (RUNTIME_DIAGNOSTIC_*, OBSERVED_ROOT, OBSERVED_LABEL, RUN_ID)" \
@@ -952,11 +961,11 @@ help:
 		"  agent-worktree-base BRANCH=<name> BASE=<ref>  Isolated worktree from an explicit base ref" \
 		"  agent-worktree-retain  Plan a native retention lock (BRANCH, WORKTREE, WORKTREE_RETAIN_REASON, WORKTREE_RETAIN_VALIDATE_ONLY=1)" \
 		"  workstream-register BRANCH=<name> WORKTREE=<path>  Protect an active logical workstream" \
-		"  workstream-unregister BRANCH=<name>  Release a completed logical workstream" \
-		"  agent-cleanup         Plan native merged-owner retirement (BRANCH, WORKTREE, ACTIVE_WORKSTREAM_REGISTRY, AGENT_CLEANUP_VALIDATE_ONLY=1; 0 applies)" \
+		"  workstream-unregister Release exact BRANCH/WORKTREE/WORKSTREAM_EXPECTED_HEAD into the existing registry (ACTIVE_WORKSTREAM_REGISTRY)" \
+		"  agent-cleanup         Plan selected retirement (BRANCH, WORKTREE, ACTIVE_WORKSTREAM_REGISTRY, AGENT_CLEANUP_PURPOSE=merged|self-improve-evaluation, AGENT_CLEANUP_EXPECTED_HEAD, AGENT_CLEANUP_VALIDATE_ONLY=1; 0 applies)" \
 		"  clean-stale-worktrees Plan native clean pruning (ACTIVE_WORKSTREAM_REGISTRY, CLEAN_STALE_WORKTREES_VALIDATE_ONLY=1; 0 applies)" \
 		"  wt-prune-safe         Default clean pruning; WT_PRUNE_RETIRE_MERGED=1 retires one merged BRANCH/WORKTREE with archived proof (WT_PRUNE_RETIRE_VALIDATE_ONLY=1 plans; ACTIVE_WORKSTREAM_REGISTRY, WT_PRUNE_VALIDATE_ONLY)" \
-		"  agent-merge          Legacy master helper; use agent-merge-dev then release-promote" \
+		"  agent-merge          Retired: status 2; use canonical release-promote" \
 		"  agent-worktree-list           List active git worktrees" \
 		"  worktree-commit-changes MSG='...'  Commit all changes in the current worktree" \
 		"  worktree-cleanup-merged       Retired: exits 2; use selected native retirement plan" \
@@ -990,12 +999,13 @@ help:
 		"  agent-report                 Agent activity dashboard (reads /tmp/gludd-agent-results.jsonl)" \
 		"  check-duplicate-targets           Detect Makefile targets declared on parallel branches" \
 		"  agent-worktree-dev BRANCH=<name>  Isolated git worktree from development branch" \
-		"  agent-merge-dev BRANCH=<name>     Merge a subagent worktree branch into development" \
+		"  agent-merge-dev             Retired: status 2; use pinned canonical development integration" \
 		"  development-push             Push the development branch to remote" \
 		"  development-merge-forward SOURCE=<ref> MODE=content|ancestry-only APPLY=0|1  Transactional reconciliation into development (dry-run default)" \
 		"  development-merge-forward-batch SOURCES='<refs>' APPLY=0|1  Atomic ancestry-only reconciliation for multiple superseded refs" \
 		"  development-fast-forward SOURCE=<ref> EXPECTED_BEFORE_SHA=<sha> EXPECTED_AFTER_SHA=<sha> APPLY=0|1  Guarded development fast-forward (default 0; APPLY=1 requires full 40-character SHAs)" \
-		"  development-merge-to-master  Merge development into master (release prep; CI-green required)" \
+		"  worktree-merge-all            Retired: status 2; select reviewed source via development-merge-forward" \
+		"  development-merge-to-master  Retired: status 2; use canonical release-promote and exact-SHA proof" \
 		"  development-start            Create development branch from master if it doesn't exist" \
 		"  development-status           Show commits on development not yet on master" \
 		"  git-tag-push TAG=<t> [COMMIT=<sha>] [MSG='...']  Create annotated tag + push to sandboxcom" \

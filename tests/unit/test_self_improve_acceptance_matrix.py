@@ -11,6 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from scripts.check_make_target_contract import _stanzas
 from scripts.makefile_layout import compose_makefile
 
 from general_ludd.routing_roles.small_model_policy import DEFAULT_TASK_CONTRACTS
@@ -809,12 +810,15 @@ def test_runner_cli_returns_bounded_status_for_failed_and_invalid_matrix(
 
 def test_git_show_commit_exposes_stable_boundary_metadata_additively() -> None:
     makefile = compose_makefile(ROOT / "Makefile")
-    target = _target_block(makefile, "git-show-commit")
+    target = _stanzas(makefile)["git-show-commit"]
 
     assert "git log -1 --format='%H%nparent: %P%ncommitter_unix: %ct%n%s' $(C)" in target
     assert 'echo "--- $(C) summary ---"' in target
     assert 'echo "--- files touched ---"' in target
-    assert "git show --stat --oneline $(C) | tail -n +2" in target
+    assert "GIT_SHOW_FILES=$$(git show --stat --oneline $(C)) ||" in target
+    assert 'printf \'%s\\n\' "$$GIT_SHOW_FILES" | tail -n +2 ||' in target
+    assert 'exit "$$GIT_SHOW_STATUS"' in target
+    assert target.index("outcome=passed") > target.index("tail -n +2")
 
     contract = json.loads(
         (ROOT / "config/make_target_contract.json").read_text(encoding="utf-8")

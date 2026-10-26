@@ -795,7 +795,7 @@ feature-done:
 # Each subagent that mutates files works in an isolated git worktree on its
 # own branch, so concurrent edits cannot interleave on the shared checkout
 # (no dirty-tree surprises, no commit races, no misattributed work).
-# Lifecycle: agent-worktree -> branch edits+commits -> reviewed agent-merge-dev
+# Lifecycle: isolated edits+commits -> pinned accepted development integration -> owned retirement
 # -> proven release-promote -> native planned agent-cleanup. Read-only
 # research tasks skip this entirely — they do not touch the working tree.
 
@@ -898,20 +898,21 @@ agent-worktree-retain:
 		--reason '$(subst ','"'"',$(value WORKTREE_RETAIN_REASON))' \
 		--retain-validate-only '$(subst ','"'"',$(value WORKTREE_RETAIN_VALIDATE_ONLY))'
 
-# Merge a subagent's worktree branch back to master. Run on the MAIN checkout
-# (never from inside a worktree). Usage:
-#   make agent-merge BRANCH=agent-fix-slurm
-agent-merge: _gate-mutation-guard
-	@[ -n "$(BRANCH)" ] || { echo "Usage: make agent-merge BRANCH=agent-<name>"; exit 1; }
-	@git merge --no-ff "$(BRANCH)" -m "merge: $(BRANCH) worktree work into master"
-	@echo "Merged $(BRANCH) into master"
+# Retired: master promotion is owned by release-promote, never a feature merge.
+.PHONY: agent-merge
+agent-merge:
+	@printf '%s\n' 'RETIRED: agent-merge bypassed the canonical development-to-master release owner.' >&2; \
+	printf '%s\n' 'AGENT_NEXT target=agent-merge outcome=retired native_status=2 gate_evidence=false release_ready=false; preserve candidate/index/refs/checkpoints; integrate reviewed source into the actual development receiver, then use release-promote with exact-SHA local/hosted/deployment evidence and the genuine REVIEWED_HEAD_INTEGRATION_RECEIPT; no checkout, Git, cleanup or publication was attempted' >&2; \
+	exit 2
 
 # Compatibility cleanup routes retain the existing native ownership authority.
 AGENT_CLEANUP_VALIDATE_ONLY ?= 1
+AGENT_CLEANUP_PURPOSE ?= merged
+AGENT_CLEANUP_EXPECTED_HEAD ?=
 CLEAN_STALE_WORKTREES_VALIDATE_ONLY ?= 1
-unexport AGENT_CLEANUP_VALIDATE_ONLY CLEAN_STALE_WORKTREES_VALIDATE_ONLY
+unexport AGENT_CLEANUP_VALIDATE_ONLY AGENT_CLEANUP_PURPOSE AGENT_CLEANUP_EXPECTED_HEAD CLEAN_STALE_WORKTREES_VALIDATE_ONLY
 ifneq (,$(filter agent-cleanup clean-stale-worktrees,$(MAKECMDGOALS)))
-ifneq (,$(findstring $$,$(value BRANCH)$(value WORKTREE)$(value ACTIVE_WORKSTREAM_REGISTRY)$(value AGENT_CLEANUP_VALIDATE_ONLY)$(value CLEAN_STALE_WORKTREES_VALIDATE_ONLY)))
+ifneq (,$(findstring $$,$(value BRANCH)$(value WORKTREE)$(value ACTIVE_WORKSTREAM_REGISTRY)$(value AGENT_CLEANUP_VALIDATE_ONLY)$(value AGENT_CLEANUP_PURPOSE)$(value AGENT_CLEANUP_EXPECTED_HEAD)$(value CLEAN_STALE_WORKTREES_VALIDATE_ONLY)))
 $(error cleanup inputs must be literal data, not Make expressions)
 endif
 endif
@@ -919,10 +920,14 @@ endif
 # Explicit selected-owner retirement; plan by default, never delete branch refs.
 agent-cleanup:
 	@case '$(subst ','"'"',$(value AGENT_CLEANUP_VALIDATE_ONLY))' in 0|1) ;; *) echo "AGENT_CLEANUP_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
-	@exec $(UV) run python -m scripts.prune_worktrees_safe --retire-merged \
-		--branch '$(subst ','"'"',$(value BRANCH))' --worktree '$(subst ','"'"',$(value WORKTREE))' \
+	@set -- --branch '$(subst ','"'"',$(value BRANCH))' --worktree '$(subst ','"'"',$(value WORKTREE))' \
 		$(if $(value ACTIVE_WORKSTREAM_REGISTRY),--registry '$(subst ','"'"',$(value ACTIVE_WORKSTREAM_REGISTRY))') \
-		--retire-validate-only '$(subst ','"'"',$(value AGENT_CLEANUP_VALIDATE_ONLY))'
+		$(if $(value AGENT_CLEANUP_EXPECTED_HEAD),--expected-head '$(subst ','"'"',$(value AGENT_CLEANUP_EXPECTED_HEAD))') \
+		--retire-validate-only '$(subst ','"'"',$(value AGENT_CLEANUP_VALIDATE_ONLY))'; \
+		case '$(subst ','"'"',$(value AGENT_CLEANUP_PURPOSE))' in \
+		merged) exec $(UV) run python -m scripts.prune_worktrees_safe --retire-merged "$$@";; \
+		self-improve-evaluation) exec $(UV) run python -m scripts.prune_worktrees_safe --retire-self-improve-evaluation "$$@";; \
+		*) echo "AGENT_CLEANUP_PURPOSE must be merged or self-improve-evaluation"; exit 2;; esac
 
 # Logical workstreams represent model-agent ownership and therefore cannot be
 # inferred from OS PIDs.  Registration is explicit and shared by all worktrees.
@@ -931,10 +936,19 @@ workstream-register:
 	@UV_NO_SYNC=0 $(UV) run --no-project python -m scripts.workstream_registry register --branch '$(subst ','"'"',$(BRANCH))' --worktree '$(subst ','"'"',$(WORKTREE))' \
 		$(if $(ACTIVE_WORKSTREAM_REGISTRY),--registry '$(subst ','"'"',$(ACTIVE_WORKSTREAM_REGISTRY))')
 
+# Release only an explicitly pinned native owner; retain its verified tuple.
+ifneq (,$(filter workstream-unregister,$(MAKECMDGOALS)))
+ifneq (,$(findstring $$,$(value BRANCH)$(value WORKTREE)$(value WORKSTREAM_EXPECTED_HEAD)$(value ACTIVE_WORKSTREAM_REGISTRY)))
+$(error workstream release inputs must be literal data, not Make expressions)
+endif
+endif
+unexport WORKSTREAM_EXPECTED_HEAD
 workstream-unregister:
-	@[ -n "$(BRANCH)" ] || { echo "Usage: make workstream-unregister BRANCH=<name>"; exit 2; }
-	@UV_NO_SYNC=0 $(UV) run --no-project python -m scripts.workstream_registry unregister --branch "$(BRANCH)" \
-		$(if $(ACTIVE_WORKSTREAM_REGISTRY),--registry "$(ACTIVE_WORKSTREAM_REGISTRY)")
+	@[ -n '$(subst ','"'"',$(value BRANCH))' ] && [ -n '$(subst ','"'"',$(value WORKTREE))' ] && [ -n '$(subst ','"'"',$(value WORKSTREAM_EXPECTED_HEAD))' ] || { echo "Usage: make workstream-unregister BRANCH=<name> WORKTREE=<canonical-path> WORKSTREAM_EXPECTED_HEAD=<full-sha>"; exit 2; }
+	@UV_NO_SYNC=0 $(UV) run --no-project python -m scripts.workstream_registry unregister \
+		--branch '$(subst ','"'"',$(value BRANCH))' --worktree '$(subst ','"'"',$(value WORKTREE))' \
+		--expected-head '$(subst ','"'"',$(value WORKSTREAM_EXPECTED_HEAD))' \
+		$(if $(value ACTIVE_WORKSTREAM_REGISTRY),--registry '$(subst ','"'"',$(value ACTIVE_WORKSTREAM_REGISTRY))')
 
 # Plan ordinary clean pruning through the native registry/lock-aware owner.
 clean-stale-worktrees:
@@ -1232,6 +1246,7 @@ test-self-improve-multifile:
 
 # Verify an immutable managed-promotion marker only on development history.
 # Usage: make self-improve-promotion-marker SELF_IMPROVE_PROMOTION_ARTIFACT_DIGEST=<sha256> SELF_IMPROVE_PROMOTION_PLAN_DIGEST=<sha256> SELF_IMPROVE_PROMOTION_ATTEMPT_DIGEST=<sha256> SELF_IMPROVE_PROMOTION_VALIDATE_ONLY=0|1
+.PHONY: self-improve-promotion-marker
 self-improve-promotion-marker:
 	@ARTIFACT="$(SELF_IMPROVE_PROMOTION_ARTIFACT_DIGEST)"; \
 	PLAN="$(SELF_IMPROVE_PROMOTION_PLAN_DIGEST)"; \
@@ -1242,15 +1257,19 @@ self-improve-promotion-marker:
 		[ "$${#VALUE}" -eq 64 ] || { echo "promotion digests must contain 64 characters"; exit 2; }; \
 	done; \
 	case "$$VALIDATE_ONLY" in 0|1) ;; *) echo "SELF_IMPROVE_PROMOTION_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac; \
-	if [ "$$VALIDATE_ONLY" = 1 ]; then echo "PROMOTION_MARKER_VALIDATE_ONLY=ok branch=development"; exit 0; fi; \
-	git rev-parse --verify development^{commit} >/dev/null 2>&1 || { echo "development branch is unavailable"; exit 2; }; \
-	COMMIT=$$(git log development --fixed-strings --grep="Gludd-Self-Improve-Artifact=$$ARTIFACT" --format='%H' -n 1); \
-	if [ -z "$$COMMIT" ]; then echo "PROMOTION_ABSENT"; exit 3; fi; \
-	BODY=$$(git show -s --format='%B' "$$COMMIT"); \
+	if [ "$$VALIDATE_ONLY" = 1 ]; then echo "PROMOTION_MARKER_VALIDATE_ONLY=ok branch=development"; echo "AGENT_NEXT target=self-improve-promotion-marker outcome=planned native_status=0 gate_evidence=false release_ready=false; digest grammar only; no marker or development history was inspected" >&2; exit 0; fi; \
+	git rev-parse --verify refs/heads/development^{commit} >/dev/null 2>&1 || { echo "development branch is unavailable"; exit 2; }; \
+	COMMIT=$$(git log --fixed-strings --grep="Gludd-Self-Improve-Artifact=$$ARTIFACT" --format='%H' -n 1 refs/heads/development --) || { \
+		STATUS=$$?; echo "AGENT_NEXT target=self-improve-promotion-marker outcome=lookup-error native_status=$$STATUS gate_evidence=false release_ready=false; repair the actual Git log failure before marker lookup or cleanup" >&2; exit "$$STATUS"; }; \
+	if [ -z "$$COMMIT" ]; then \
+		echo "PROMOTION_ABSENT"; echo "AGENT_NEXT target=self-improve-promotion-marker outcome=absent native_status=3 gate_evidence=false release_ready=false; no matching development marker; GNU Make returns 2 for this recipe outcome; a plan or absent marker grants no promotion proof" >&2; exit 3; fi; \
+	BODY=$$(git show -s --format='%B' "$$COMMIT" --) || { \
+		STATUS=$$?; echo "AGENT_NEXT target=self-improve-promotion-marker outcome=lookup-error native_status=$$STATUS gate_evidence=false release_ready=false; repair the actual Git show failure before marker verification or cleanup" >&2; exit "$$STATUS"; }; \
 	printf '%s\n' "$$BODY" | grep -Fq "Gludd-Self-Improve-Artifact=$$ARTIFACT" || { echo "artifact marker mismatch"; exit 2; }; \
 	printf '%s\n' "$$BODY" | grep -Fq "Gludd-Self-Improve-Plan=$$PLAN" || { echo "plan marker mismatch"; exit 2; }; \
 	printf '%s\n' "$$BODY" | grep -Fq "Gludd-Self-Improve-Attempt=$$ATTEMPT" || { echo "attempt marker mismatch"; exit 2; }; \
-	echo "PROMOTION_COMMIT=$$COMMIT"
+	echo "PROMOTION_COMMIT=$$COMMIT"; \
+	echo "AGENT_NEXT target=self-improve-promotion-marker outcome=verified native_status=0 gate_evidence=false release_ready=false; exact development marker identity only; verify native acceptance and owned cleanup before durable completion; exact-SHA hosted and deployment proof remain pending" >&2
 
 # Compatibility alias retains one explicit reference boundary; it never fans out.
 test-self-improve-all:

@@ -1,9 +1,8 @@
 """Tests for scripts/check_worktree_health.py — the worktree health gate.
 
-Covers: stale worktree detection (>24h), unmerged branch detection,
-remote tracking verification, main checkout exclusion, merge-all behavior
-with conflicts, cleanup after merge, error handling for missing branches,
-prunable worktree flagging, and fail-open on git unavailability.
+Covers stale worktrees, unmerged branches, remote tracking, canonical inventory,
+missing branches, prunable flags, native inventory failures, and explicit
+retirement of the former automatic bulk merge/commit/cleanup executor.
 
 Uses mocked subprocess.run so no real git operations occur.
 """
@@ -15,7 +14,6 @@ import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -325,235 +323,48 @@ class TestConstantsDocumented:
 
 
 class TestMergeAllBehavior:
-    """The merge_all script (scripts/worktree_merge_all.py) is the runtime
-    backing for `make worktree-merge-all`. These tests verify the script's
-    units: merge resolution, cleanup, and conflict reporting.
+    """The former executor is intentionally retired, including its helper API.
+
+    Real Git preservation/error controls live in test_legacy_integration_entrypoints.
+    Keeping automatic commit/merge/prune helpers would preserve the bypass.
     """
 
-    wma: ModuleType
+    def test_retired_executor_refuses_without_running_a_process(
+        self, capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        wma = importlib.import_module("worktree_merge_all")
+        with patch("subprocess.run") as child:
+            assert wma.main() == 2
+        child.assert_not_called()
+        output = capsys.readouterr().err
+        assert "outcome=retired" in output
+        assert "development-merge-forward" in output
+        assert "AGENT_CLEANUP_VALIDATE_ONLY=1" in output
+        assert "a zero plan has merged or cleaned nothing" in output
 
-    @pytest.fixture(autouse=True)
-    def _import_merge_all(self) -> None:
-        sys.path.insert(0, str(SCRIPT_DIR))
-        import worktree_merge_all as wma
-
-        self.wma = wma
-
-    def test_is_merged_ancestor(self) -> None:
-        with patch(
-            "worktree_merge_all.run",
-            return_value=(0, "", ""),
-        ) as mock_run:
-            assert self.wma.is_merged("agent-merged")
-            mock_run.assert_called_once()
-            cmd = mock_run.call_args[0][0]
-            assert "agent-merged" in cmd
-            assert "development" in cmd
-
-    def test_is_merged_not_ancestor(self) -> None:
-        with patch(
-            "worktree_merge_all.run",
-            return_value=(1, "", ""),
+    def test_unguarded_mutation_helpers_are_not_an_alternate_api(self) -> None:
+        wma = importlib.import_module("worktree_merge_all")
+        for name in (
+            "commit_changes", "merge_branch", "cleanup_branch", "prune_worktrees",
         ):
-            assert not self.wma.is_merged("agent-diverged")
+            assert not hasattr(wma, name), f"retired helper {name} must not remain callable"
 
-    def test_merge_branch_success(self) -> None:
-        with patch(
-            "worktree_merge_all.run",
-            return_value=(0, "merge ok", ""),
-        ) as mock_run:
-            assert self.wma.merge_branch("agent-good")
-            cmd = mock_run.call_args[0][0]
-            assert "git" in cmd
-            assert "merge" in cmd
-            assert "--no-ff" in cmd
 
-    def test_merge_branch_conflict(self) -> None:
-        call_count = 0
-
-        def _side_effect(cmd: list[str], **kwargs: Any) -> tuple[int, str, str]:
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return (1, "", "CONFLICT")
-            return (0, "", "")
-
-        with patch("worktree_merge_all.run", side_effect=_side_effect) as mock_run:
-            assert not self.wma.merge_branch("agent-conflict")
-            assert mock_run.call_count == 2  # merge + merge --abort
-
-    def test_cleanup_branch_success(self) -> None:
-        with patch(
-            "worktree_merge_all.run",
-            return_value=(0, "cleaned", ""),
-        ) as mock_run:
-            assert self.wma.cleanup_branch("agent-done")
-            cmd = mock_run.call_args[0][0]
-            assert "make" in cmd
-            assert "agent-cleanup" in cmd
-
-    def test_get_worktrees_excludes_main(self) -> None:
-        porcelain = (
-            f"worktree {self.wma.MAIN_CHECKOUT}\nHEAD a1b2\nbranch refs/heads/development\n\n"
-            f"worktree /tmp/gludd-worktrees/agent-1\nHEAD c3d4\nbranch refs/heads/agent-1\n\n"
-            f"worktree /tmp/gludd-worktrees/agent-2\nHEAD e5f6\nbranch refs/heads/agent-2\n"
-        )
-        with patch(
-            "worktree_merge_all.run",
-            return_value=(0, porcelain.strip(), ""),
-        ):
-            wts = self.wma.get_worktrees()
-        paths = [w["worktree"] for w in wts]
-        assert self.wma.MAIN_CHECKOUT not in paths, "main checkout excluded"
-        assert len(wts) == 2
-        assert "/tmp/gludd-worktrees/agent-1" in paths
-        assert "/tmp/gludd-worktrees/agent-2" in paths
-
-    def test_main_no_worktrees_returns_zero(self) -> None:
-        with (
-            patch.object(self.wma, "get_worktrees", return_value=[]),
-            patch.object(self.wma, "prune_worktrees"),
-        ):
-            assert self.wma.main() == 0
-
-    def test_main_with_conflicts_returns_one(self) -> None:
-        wts = [
-            {
-                "worktree": "/tmp/gludd-worktrees/w1",
-                "branch": "refs/heads/w1",
-                "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            },
-            {
-                "worktree": "/tmp/gludd-worktrees/w2",
-                "branch": "refs/heads/w2",
-                "head": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            },
-        ]
-        with (
-            patch.object(self.wma, "get_worktrees", return_value=wts),
-            patch.object(self.wma, "has_uncommitted_changes", return_value=False),
-            patch.object(self.wma, "is_merged", return_value=False),
-            patch.object(self.wma, "merge_branch", side_effect=[True, False]),
-            patch.object(self.wma, "cleanup_branch", return_value=True),
-            patch.object(self.wma, "prune_worktrees"),
-        ):
-            exit_code = self.wma.main()
-        assert exit_code == 1, "conflict should produce exit 1"
-
-    def test_main_all_clean_returns_zero(self) -> None:
-        wts = [
-            {
-                "worktree": "/tmp/gludd-worktrees/w1",
-                "branch": "refs/heads/w1",
-                "head": "cccccccccccccccccccccccccccccccccccccccc",
-            },
-        ]
-        with (
-            patch.object(self.wma, "get_worktrees", return_value=wts),
-            patch.object(self.wma, "has_uncommitted_changes", return_value=False),
-            patch.object(self.wma, "is_merged", return_value=False),
-            patch.object(self.wma, "merge_branch", return_value=True),
-            patch.object(self.wma, "cleanup_branch", return_value=True),
-            patch.object(self.wma, "prune_worktrees"),
-        ):
-            exit_code = self.wma.main()
-        assert exit_code == 0
-
-    def test_main_already_merged_skips_merge(self) -> None:
-        wts = [
-            {
-                "worktree": "/tmp/gludd-worktrees/w1",
-                "branch": "refs/heads/w1",
-                "head": "dddddddddddddddddddddddddddddddddddddddd",
-            },
-        ]
-        with (
-            patch.object(self.wma, "get_worktrees", return_value=wts),
-            patch.object(self.wma, "has_uncommitted_changes", return_value=False),
-            patch.object(self.wma, "is_merged", return_value=True),
-            patch.object(self.wma, "merge_branch") as mock_merge,
-            patch.object(self.wma, "cleanup_branch", return_value=True),
-            patch.object(self.wma, "prune_worktrees"),
-        ):
-            exit_code = self.wma.main()
-        mock_merge.assert_not_called()
-        assert exit_code == 0
-
-    def test_has_uncommitted_changes_true(self) -> None:
-        with patch(
-            "worktree_merge_all.run",
-            return_value=(0, " M scripts/foo.py", ""),
-        ) as mock_run:
-            assert self.wma.has_uncommitted_changes("/tmp/gludd-worktrees/w1")
-        mock_run.assert_called_once_with(["git", "status", "--porcelain"], cwd="/tmp/gludd-worktrees/w1")
-
-    def test_has_uncommitted_changes_false(self) -> None:
-        with patch(
-            "worktree_merge_all.run",
-            return_value=(0, "", ""),
-        ) as mock_run:
-            assert not self.wma.has_uncommitted_changes("/tmp/gludd-worktrees/w1")
-        mock_run.assert_called_once_with(["git", "status", "--porcelain"], cwd="/tmp/gludd-worktrees/w1")
-
-    def test_commit_changes_success(self) -> None:
-        with patch(
-            "worktree_merge_all.run",
-            return_value=(0, "commit ok", ""),
-        ) as mock_run:
-            assert self.wma.commit_changes("/tmp/gludd-worktrees/w1", "agent-1")
-        assert mock_run.call_count == 2
-        add_cmd = mock_run.call_args_list[0][0][0]
-        commit_cmd = mock_run.call_args_list[1][0][0]
-        assert add_cmd == ["git", "add", "-A"]
-        assert commit_cmd[:2] == ["git", "commit"]
-        assert "agent-1" in commit_cmd[-1]
-
-    def test_commit_changes_failure(self) -> None:
-        with patch(
-            "worktree_merge_all.run",
-            return_value=(1, "", "nothing to commit"),
-        ) as mock_run:
-            assert not self.wma.commit_changes("/tmp/gludd-worktrees/w1", "agent-1")
-        assert mock_run.call_count == 1
-
-    def test_main_commits_clean_changes_then_merges(self) -> None:
-        wts = [
-            {
-                "worktree": "/tmp/gludd-worktrees/w1",
-                "branch": "refs/heads/w1",
-                "head": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-            },
-        ]
-        with (
-            patch.object(self.wma, "get_worktrees", return_value=wts),
-            patch.object(self.wma, "is_merged", return_value=False),
-            patch.object(self.wma, "has_uncommitted_changes", return_value=True),
-            patch.object(self.wma, "commit_changes", return_value=True),
-            patch.object(self.wma, "merge_branch", return_value=True),
-            patch.object(self.wma, "cleanup_branch", return_value=True),
-            patch.object(self.wma, "prune_worktrees"),
-        ):
-            exit_code = self.wma.main()
-        assert exit_code == 0
-
-    def test_main_dirty_not_ready_skips_and_reports(self) -> None:
-        wts = [
-            {
-                "worktree": "/tmp/gludd-worktrees/w1",
-                "branch": "refs/heads/w1",
-                "head": "ffffffffffffffffffffffffffffffffffffffff",
-            },
-        ]
-        with (
-            patch.object(self.wma, "get_worktrees", return_value=wts),
-            patch.object(self.wma, "is_merged", return_value=False),
-            patch.object(self.wma, "has_uncommitted_changes", return_value=True),
-            patch.object(self.wma, "commit_changes", return_value=False),
-            patch.object(self.wma, "merge_branch") as mock_merge,
-            patch.object(self.wma, "cleanup_branch") as mock_cleanup,
-            patch.object(self.wma, "prune_worktrees"),
-        ):
-            exit_code = self.wma.main()
-        mock_merge.assert_not_called()
-        mock_cleanup.assert_not_called()
-        assert exit_code == 1
+def test_health_failure_teaches_selected_native_owners(capsys: pytest.CaptureFixture[str]) -> None:
+    wt = _worktree_entry("/tmp/gludd-worktrees/agent-stale", "agent-stale")
+    with (
+        patch.object(cwh, "get_worktrees", return_value=[wt]),
+        patch.object(cwh, "get_tree_age", return_value=cwh.MAX_AGE_SECONDS + 1),
+        patch.object(cwh, "is_merged", return_value=False),
+        patch.object(cwh, "branch_exists_on_remote", return_value=True),
+        patch("os.path.isdir", return_value=True),
+    ):
+        assert cwh.main() == 1
+    output = capsys.readouterr().out
+    assert "worktree-merge-all" not in output
+    assert "development-merge-forward SOURCE=<reviewed-ref> MODE=content APPLY=0" in output
+    assert "BRANCH=<exact-branch> WORKTREE=<canonical-worktree> AGENT_CLEANUP_VALIDATE_ONLY=1" in output
+    assert "preserve unmerged, active or locked worktrees and every checkpoint" in output
+    assert "a zero integration or cleanup plan has merged or cleaned nothing" in output
+    assert "target=worktree-health-check outcome=failed native_status=1" in output
+    assert "gate_evidence=false release_ready=false" in output

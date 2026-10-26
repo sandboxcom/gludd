@@ -225,7 +225,14 @@ def test_workflow_state_machine_targets_back_release_and_ci_paths() -> None:
     assert "scripts/ci_remote_head_guard.py" in gha_block
     assert "$(SSH_KEY)" in gha_block
     assert "--assert-no-unintegrated-worktrees" in merge_block
-    assert "merge-ready" in merge_line
+    assert merge_line == "development-merge-to-master:"
+    retired = _target_block("development-merge-to-master")
+    assert "outcome=retired" in retired and "exit 2" in retired
+    assert "git merge" not in retired and "git checkout" not in retired
+    canonical = _target_block("release-promote")
+    assert "DUAL_TRACK_CI_VALIDATE_ONLY=0" in canonical
+    assert "RELEASE_READINESS_VALIDATE_ONLY=0" in canonical
+    assert "worktree-guard" in canonical and "main-worktree-guard" in canonical
 
 
 def test_committed_head_ci_path_uses_worktree_safe_key_and_fails_closed() -> None:

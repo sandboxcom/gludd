@@ -1,188 +1,33 @@
 #!/usr/bin/env python3
-"""
-worktree_merge_all.py — bulk merge all worktree branches into development,
-clean up merged worktrees, and report conflicts.
+"""Refuse the retired bulk integration path without inspecting or mutating Git.
 
-Replaces the inline shell script in the Makefile target `worktree-merge-all`
-that failed with `/bin/sh: \\: command not found` due to Makefile escaping issues.
+Use the existing selected-source integration and native retirement owners.
+A cleanup plan is not cleanup, and a passing plan supplies no release proof.
 """
 
 from __future__ import annotations
 
-import os
-import subprocess
 import sys
-
-MAIN_CHECKOUT = "/Users/shawnwilson/gludd"
-WORKTREE_ROOT = "/tmp/gludd-worktrees"
-
-
-def run(cmd: list[str], cwd: str | None = None) -> tuple[int, str, str]:
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=60)
-        return r.returncode, r.stdout.strip(), r.stderr.strip()
-    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
-        return 2, "", str(e)
-
-
-def get_worktrees() -> list[dict[str, str]]:
-    """Parse `git worktree list --porcelain`, exclude main checkout."""
-    exit_code, stdout, _stderr = run(["git", "worktree", "list", "--porcelain"], cwd=MAIN_CHECKOUT)
-    if exit_code != 0:
-        print(f"ERROR: git worktree list failed (exit {exit_code})", file=sys.stderr)
-        return []
-
-    entries: list[dict[str, str]] = []
-    current: dict[str, str] = {}
-    for line in stdout.split("\n"):
-        if line.startswith("worktree "):
-            if current:
-                entries.append(current)
-            current = {"worktree": line[len("worktree ") :]}
-        elif line.startswith("HEAD ") and current:
-            current["head"] = line[len("HEAD ") :]
-        elif line.startswith("branch ") and current:
-            current["branch"] = line[len("branch ") :]
-    if current:
-        entries.append(current)
-
-    return [e for e in entries if e.get("worktree", "") != MAIN_CHECKOUT and "worktree" in e]
-
-
-def is_merged(branch: str, target: str = "development") -> bool:
-    exit_code, _stdout, _stderr = run(
-        ["git", "merge-base", "--is-ancestor", branch, target],
-        cwd=MAIN_CHECKOUT,
-    )
-    return exit_code == 0
-
-
-def has_uncommitted_changes(worktree_path: str) -> bool:
-    """Return True if the worktree has any uncommitted changes."""
-    exit_code, stdout, _stderr = run(
-        ["git", "status", "--porcelain"],
-        cwd=worktree_path,
-    )
-    if exit_code != 0:
-        return True  # fail-safe: treat status failure as dirty
-    return bool(stdout.strip())
-
-
-def commit_changes(worktree_path: str, branch: str) -> bool:
-    """Stage and commit all uncommitted changes in a worktree."""
-    exit_code, _stdout, _stderr = run(
-        ["git", "add", "-A"],
-        cwd=worktree_path,
-    )
-    if exit_code != 0:
-        return False
-    exit_code, _stdout, _stderr = run(
-        [
-            "git",
-            "commit",
-            "-m",
-            f"chore(worktree): auto-commit pending changes on {branch}",
-        ],
-        cwd=worktree_path,
-    )
-    return exit_code == 0
-
-
-def merge_branch(branch: str) -> bool:
-    """Attempt to merge branch into development --no-ff. Returns True on success."""
-    exit_code, stdout, stderr = run(
-        ["git", "merge", "--no-ff", branch, "-m", f"merge: {branch} worktree work into development"],
-        cwd=MAIN_CHECKOUT,
-    )
-    if exit_code == 0:
-        return True
-    # Abort on failure
-    run(["git", "merge", "--abort"], cwd=MAIN_CHECKOUT)
-    return False
-
-
-def cleanup_branch(branch: str) -> bool:
-    """Run `make agent-cleanup BRANCH=<name>`. Returns True on success."""
-    exit_code, stdout, stderr = run(
-        ["make", "agent-cleanup", f"BRANCH={branch}"],
-        cwd=MAIN_CHECKOUT,
-    )
-    return exit_code == 0
-
-
-def prune_worktrees() -> None:
-    """Remove stale worktree metadata."""
-    run(["git", "worktree", "prune"], cwd=MAIN_CHECKOUT)
 
 
 def main() -> int:
-    print("=== Bulk merging worktrees into development ===")
-    worktrees = get_worktrees()
-
-    if not worktrees:
-        print("No worktrees to merge.")
-        prune_worktrees()
-        print("\n=== Worktree merge complete: 0 total, 0 merged, 0 conflicts ===")
-        return 0
-
-    print(f"Found {len(worktrees)} worktree(s) to process.\n")
-
-    total = len(worktrees)
-    merged_count = 0
-    conflict_count = 0
-    dirty_count = 0
-
-    for i, wt in enumerate(worktrees, 1):
-        path = wt.get("worktree", "?")
-        branch = wt.get("branch", "").removeprefix("refs/heads/")
-        head = wt.get("head", "?")[:8]
-
-        if not branch:
-            print(f"--- [{i}/{total}] {path} (no branch, skipping) ---")
-            continue
-
-        print(f"--- [{i}/{total}] {branch} ({path}) ---")
-
-        if has_uncommitted_changes(path):
-            print(f"  Uncommitted changes detected — attempting auto-commit")
-            if not commit_changes(path, branch):
-                print(
-                    f"  DIRTY-NOT-READY: {branch} — uncommitted changes could not be committed; leaving worktree active"
-                )
-                dirty_count += 1
-                continue
-            print(f"  Committed pending changes on {branch}")
-
-        if is_merged(branch):
-            print(f"  Already merged into development — cleaning up")
-            if cleanup_branch(branch):
-                merged_count += 1
-                print(f"  Cleaned up")
-            else:
-                print(f"  WARNING: cleanup failed for {branch}")
-        else:
-            print(f"  Not merged — attempting --no-ff merge into development")
-            if merge_branch(branch):
-                print(f"  Merged {branch} into development — cleaning up")
-                if cleanup_branch(branch):
-                    merged_count += 1
-                    print(f"  Cleaned up")
-                else:
-                    print(f"  WARNING: merge succeeded but cleanup failed for {branch}")
-            else:
-                print(f"  CONFLICT: {branch} — manual resolution required")
-                conflict_count += 1
-
-    prune_worktrees()
-
-    print()
+    """Retain a discoverable compatibility entrypoint with an explicit refusal."""
     print(
-        f"=== Worktree merge complete: {total} total, {merged_count} merged/cleaned, {conflict_count} conflicts, {dirty_count} dirty-not-ready ==="
+        "RETIRED: worktree-merge-all cannot safely select, integrate or retire parallel worktrees.",
+        file=sys.stderr,
     )
-
-    if conflict_count > 0 or dirty_count > 0:
-        return 1
-    return 0
+    print(
+        "AGENT_NEXT target=worktree-merge-all outcome=retired native_status=2 "
+        "gate_evidence=false release_ready=false; preserve source, index, refs, locks and checkpoints; "
+        "inspect make worktree-state and make active-work-status; independently review one selected "
+        "SOURCE and use make development-merge-forward SOURCE=<reviewed-ref> MODE=content APPLY=0 "
+        "from clean development, then follow its guarded apply and proof requirements; "
+        "retirement uses make agent-cleanup BRANCH=<exact-branch> WORKTREE=<canonical-worktree> "
+        "AGENT_CLEANUP_VALIDATE_ONLY=1 before explicit mode0 with valid ownership release; "
+        "a zero plan has merged or cleaned nothing; never autocommit foreign work or force cleanup",
+        file=sys.stderr,
+    )
+    return 2
 
 
 if __name__ == "__main__":

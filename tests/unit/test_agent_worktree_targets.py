@@ -96,11 +96,14 @@ class TestAgentWorktreeRecipeShape:
             "agent-worktree must consume a BRANCH=<name> argument"
         )
 
-    def test_agent_merge_uses_no_ff(self) -> None:
+    def test_agent_merge_refuses_before_git_and_names_canonical_owner(self) -> None:
         recipe = _recipe("agent-merge")
-        assert "--no-ff" in recipe, (
-            "agent-merge must use --no-ff (preserves branch topology per ORCHESTRATION.md)"
-        )
+        assert "outcome=retired" in recipe and "native_status=2" in recipe
+        assert "exit 2" in recipe and "release-promote" in recipe
+        assert "git merge" not in recipe and "git checkout" not in recipe
+        canonical = _recipe("development-fast-forward")
+        assert "merge --ff-only" in canonical
+        assert "EXPECTED_BEFORE_SHA" in canonical and "EXPECTED_AFTER_SHA" in canonical
 
     def test_agent_cleanup_delegates_to_registered_native_retirement(self) -> None:
         recipe = _recipe("agent-cleanup")

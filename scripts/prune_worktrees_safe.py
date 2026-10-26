@@ -4,13 +4,16 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import math
 import os
+import re
 import shutil
 import stat
 import subprocess
 import sys
+from contextlib import redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -286,7 +289,8 @@ def _validate_retirement_controllers(
         request = _parser().parse_args(python.argv[3:])
     except SystemExit as exc:
         raise ValueError("retirement controller argv is not a supported request") from exc
-    if not request.retire_merged or request.branch != branch or request.worktree != worktree:
+    if (not (request.retire_merged or request.retire_self_improve_evaluation)
+            or request.branch != branch or request.worktree != worktree):
         raise ValueError("retirement controller argv differs from selected owner")
     if len(records) == 3:
         uv = records[1]
@@ -334,6 +338,13 @@ def _validate_retirement_controllers(
     else:
         fragment = source / "make/30-ci-and-release.mk"
         policy_key, policy_value = "WT_PRUNE_RETIRE_MERGED", "1"
+    if target == "agent-cleanup":
+        purpose = "self-improve-evaluation" if request.retire_self_improve_evaluation else "merged"
+        if (assignments.get("AGENT_CLEANUP_PURPOSE", "merged") != purpose
+                or assignments.get("AGENT_CLEANUP_EXPECTED_HEAD", "") != request.expected_head):
+            raise ValueError("retirement Make purpose or immutable HEAD does not bind selected owner")
+    elif request.retire_self_improve_evaluation or request.expected_head:
+        raise ValueError("selected evaluation or pinned retirement requires agent-cleanup")
     if (target_count != 1 or makefile.resolve(strict=True) not in {
             source / "Makefile", fragment,
         } or assignments.get(policy_key) != policy_value
@@ -364,20 +375,35 @@ class _RetirementIdentity:
     head: str
     integration_revisions: tuple[str, ...]
     controllers: tuple[_RetirementController, ...]
+    ownership_status: str = ""
 
 
 def retire_merged(
     *, branch: str, worktree: Path, registry_path: Path, validate_only: bool,
+    expected_head: str | None = None,
 ) -> int:
     """Archive and retire one explicitly selected, clean and integrated owner."""
     return _retire_worktree(
         branch=branch, worktree=worktree, registry_path=registry_path,
-        validate_only=validate_only, require_merged=True,
+        validate_only=validate_only, require_merged=True, expected_head=expected_head,
+    )
+
+
+def retire_self_improve_evaluation(
+    *, branch: str, worktree: Path, registry_path: Path, validate_only: bool, expected_head: str,
+) -> int:
+    """Retire only a pinned released self-improve evaluation materialization."""
+    if not branch.startswith("self-improve-codex-") or branch == "self-improve-codex-":
+        raise ValueError("self-improve-evaluation requires its actual self-improve-codex-* branch")
+    return _retire_worktree(
+        branch=branch, worktree=worktree, registry_path=registry_path,
+        validate_only=validate_only, require_merged=False, expected_head=expected_head,
     )
 
 
 def _retire_worktree(
     *, branch: str, worktree: Path, registry_path: Path, validate_only: bool, require_merged: bool,
+    expected_head: str | None = None,
 ) -> int:
     """Share native identity, ownership and archival across both pruning routes."""
     if TYPE_CHECKING:
@@ -391,6 +417,9 @@ def _retire_worktree(
             or ".." in worktree.parts
             or any(character in branch + str(worktree) for character in "\0\r\n")):
         raise ValueError("explicit literal BRANCH and canonical absolute WORKTREE are required")
+    if expected_head is not None and re.fullmatch(r"[0-9a-f]{40}", expected_head) is None:
+        raise ValueError("a full immutable expected HEAD is required")
+    evaluation = not require_merged and expected_head is not None
     root = owned_git_checkpoint.repository_root()
     _git("check-ref-format", f"refs/heads/{branch}", timeout=30)
     registry = WorkstreamRegistry(registry_path)
@@ -410,8 +439,15 @@ def _retire_worktree(
             worktree, (main / ".claude/worktrees", cleanup.DEFAULT_TMP_WORKTREE_ROOT),
         ):
             raise ValueError("WORKTREE is outside the approved namespace")
+        ownership_status = (
+            registry.ownership_status(branch, worktree, expected_head) if expected_head is not None else ""
+        )
         leases = cleanup._active_workstream_leases(registry)
-        if branch in leases or any(lease.worktree == worktree for lease in leases.values()):
+        matching_active = (
+            ownership_status == "active" and branch in leases and leases[branch].worktree == worktree
+        )
+        if (any(key != branch and lease.worktree == worktree for key, lease in leases.items())
+                or (branch in leases and not matching_active)):
             raise ValueError("active logical workstream cannot be retired")
         if record.locked:
             raise ValueError("git worktree lock protects this owner")
@@ -428,7 +464,9 @@ def _retire_worktree(
         if status.stdout:
             raise ValueError("dirty worktree cannot be retired")
         head = bounded_git("-C", str(worktree), "rev-parse", "--verify", "HEAD^{commit}").stdout.strip()
-        points = cleanup._integration_points(records)
+        if expected_head is not None and head != expected_head:
+            raise ValueError("native worktree HEAD differs from the immutable expected owner")
+        points = [] if evaluation else cleanup._integration_points(records)
         integrated = False
         for point in points:
             result = bounded_git(
@@ -442,15 +480,23 @@ def _retire_worktree(
             raise ValueError("unmerged worktree cannot be retired")
         return _RetirementIdentity(
             record, (identity[0][0], identity[0][1]), identity[1], head,
-            tuple(point.revision for point in points), controllers,
+            tuple(point.revision for point in points), controllers, ownership_status,
         )
 
     initial = observe()
-    preflight = cleanup._remove_worktree_materialization(
-        initial.record, True, run_git=bounded_git,
-    )
+    # Keep native dry-run diagnostics visible without changing terminal stdout.
+    with redirect_stdout(sys.stderr):
+        preflight = cleanup._remove_worktree_materialization(
+            initial.record, True, run_git=bounded_git,
+        )
     if not preflight.reclaimable:
         raise ValueError(preflight.reason)
+    if initial.ownership_status == "active":
+        purpose = "self-improve-evaluation" if evaluation else "merged"
+        raise ValueError(
+            f"{purpose} owner is active; exact release required: "
+            f"branch={branch!r} worktree={str(worktree)!r} head={initial.head}"
+        )
     receipt: dict[str, str | bool | int] = {
         "branch": branch, "worktree": str(worktree), "head": initial.head,
         "validate_only": validate_only, "native_ownership_verified": 1,
@@ -468,24 +514,29 @@ def _retire_worktree(
     ) -> subprocess.CompletedProcess[str]:
         nonlocal refusal
         if args[:2] == ("worktree", "remove"):
-            try:
-                if observe() != initial:
-                    raise ValueError("retirement identity or integration input changed")
-                final = cleanup._remove_worktree_materialization(
-                    initial.record, True, run_git=bounded_git,
-                )
-                if not final.reclaimable:
-                    raise ValueError(final.reason)
-                evidence = bounded_git(
-                    "--literal-pathspecs", "-C", str(worktree), "ls-files", "--others",
-                    "--ignored", "--exclude-standard", "-z", "--",
-                    *sorted(cleanup.ARCHIVABLE_PRESERVED_DATA_NAMES),
-                )
-                if evidence.stdout:
-                    raise ValueError("new ignored proof appeared during archival")
-            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
-                refusal = str(exc)
-                return subprocess.CompletedProcess(args, 1, "", refusal)
+            registry.lock_path.parent.mkdir(parents=True, exist_ok=True)
+            with registry.lock_path.open("a+", encoding="utf-8") as lock:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+                try:
+                    if observe() != initial:
+                        raise ValueError("retirement identity or integration input changed")
+                    with redirect_stdout(sys.stderr):
+                        final = cleanup._remove_worktree_materialization(
+                            initial.record, True, run_git=bounded_git,
+                        )
+                    if not final.reclaimable:
+                        raise ValueError(final.reason)
+                    evidence = bounded_git(
+                        "--literal-pathspecs", "-C", str(worktree), "ls-files", "--others",
+                        "--ignored", "--exclude-standard", "-z", "--",
+                        *sorted(cleanup.ARCHIVABLE_PRESERVED_DATA_NAMES),
+                    )
+                    if evidence.stdout:
+                        raise ValueError("new ignored proof appeared during archival")
+                except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+                    refusal = str(exc)
+                    return subprocess.CompletedProcess(args, 1, "", refusal)
+                return bounded_git(*args, check=check, timeout=timeout)
         return bounded_git(*args, check=check, timeout=timeout)
 
     outcome = cleanup._remove_worktree_materialization(
@@ -505,6 +556,8 @@ def _parser() -> argparse.ArgumentParser:
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--retain", action="store_true")
     modes.add_argument("--retire-merged", action="store_true")
+    modes.add_argument("--retire-self-improve-evaluation", action="store_true")
+    parser.add_argument("--expected-head", default="")
     parser.add_argument("--retire-validate-only", choices=("0", "1"), default="1")
     parser.add_argument("--branch", default="")
     parser.add_argument("--worktree", type=Path)
@@ -516,18 +569,27 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     """Run the fail-closed worktree pruning command."""
     args = _parser().parse_args(argv)
-    if args.retire_merged:
+    if args.retire_merged or args.retire_self_improve_evaluation:
         try:
             if args.worktree is None:
                 raise ValueError("WORKTREE is required")
+            if args.retire_self_improve_evaluation:
+                return retire_self_improve_evaluation(
+                    branch=args.branch, worktree=args.worktree,
+                    registry_path=args.registry or default_registry_path(),
+                    validate_only=args.retire_validate_only == "1", expected_head=args.expected_head,
+                )
             return retire_merged(
                 branch=args.branch, worktree=args.worktree,
                 registry_path=args.registry or default_registry_path(),
-                validate_only=args.retire_validate_only == "1",
+                validate_only=args.retire_validate_only == "1", expected_head=args.expected_head or None,
             )
         except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
             print(f"wt-prune-safe: retirement refused: {exc}")
             return 2
+    if args.expected_head:
+        print("wt-prune-safe: expected HEAD requires a selected retirement mode")
+        return 2
     if args.retain:
         try:
             if args.worktree is None:

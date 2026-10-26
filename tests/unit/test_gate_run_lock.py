@@ -11,6 +11,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from scripts.check_make_target_contract import _stanzas
 from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -225,7 +226,7 @@ def test_history_mutation_targets_depend_on_active_gate_guard() -> None:
     guarded_headers = (
         "_commit-lock-acquire:",
         "_merge-strategy-guard:",
-        "agent-merge:",
+        "development-fast-forward:",
         "gated-merge:",
         "git-checkout:",
         "git-cherry-pick:",
@@ -234,6 +235,13 @@ def test_history_mutation_targets_depend_on_active_gate_guard() -> None:
     for target in guarded_headers:
         header = next(line for line in text.splitlines() if line.startswith(target))
         assert "_gate-mutation-guard" in header, target
+
+    rules = _stanzas(text)
+    for target in ("agent-merge", "agent-merge-dev"):
+        rule = rules[target]
+        assert rule.splitlines()[0] == f"{target}:"
+        assert "outcome=retired" in rule and "native_status=2" in rule and "exit 2" in rule
+        assert "git checkout" not in rule and "git merge" not in rule
 
 
 def test_pid_and_owner_helpers_fail_closed(

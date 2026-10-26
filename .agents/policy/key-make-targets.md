@@ -460,6 +460,29 @@ output ordering, native exit codes and controls, and the
 ignored checkpoints and configuration refusal. Never convert a prompt, count,
 plan, structural pass or focused test into full-gate/exact-SHA authority.
 
+The observed-status and observed-tail readers execute the existing `PYTHON`
+directly. Select an installed Python>=3.11; use its absolute executable when
+reading evidence from a selected runtime. These readers create or synchronize
+no project environment and never acquire an interpreter. Missing/incompatible
+Python or evidence retains the native failure. Existing global Make precedence
+remains: ordinary environment PYTHON loses to the file binding, -e selects it,
+and an explicit command-line PYTHON wins.
+
+~~~console
+make observed-status PYTHON=python3 OBSERVED_LABEL=run-watched RUN_ID=contract-run-watched OBSERVED_ROOT=.gate-logs/observed OBSERVED_STALE_SECS=90
+make observed-tail PYTHON=python3 OBSERVED_LABEL=run-watched RUN_ID=contract-run-watched OBSERVED_ROOT=.gate-logs/observed OBSERVED_TAIL_LINES=80
+~~~
+
+These registered examples require an existing compatible python3 on PATH.
+An absent exact receipt returns the expected native missing-file refusal;
+never create or adopt observation JSON to make the example pass. For actual
+evidence, retain its exact label/run/root and selected installed PYTHON.
+Reader0 can describe a failed producer; inspect state and exit_code. Native
+stale/orphaned3 becomes Make2/Error3. JSON/raw tail output and producer bytes
+remain authoritative; a read supplies no new test, gate, CI or release proof.
+The [reader record](../../docs/features/MAKE_RESULT_GUIDANCE.md#dependency-free-observed-readers-s9842026-10-23-utc)
+retains the real boundary and controls.
+
 Use a single guarded public Make target per invocation. For example,
 lint-markdown treats additional target names as stray unquoted goals; batch
 separate invocations in the transport and drain every yielded process. The
@@ -1080,6 +1103,39 @@ retains the actual native REDs, corrected dispatch and independent proof limits.
 gate. Keep each small tested change in its own commit.
 Before a push, `make verify-state` must identify the intended current branch.
 
+The compatibility routes worktree-merge-all (including its Python CLI),
+development-merge-to-master, agent-merge-dev and agent-merge all return native2
+before Git, cleanup or publication and emit AGENT_NEXT outcome=retired.
+Their refusal cannot certify a plan, integration or successful cleanup.
+The [integration record](../../docs/features/LEGACY_INTEGRATION_ENTRYPOINTS.md)
+retains native Git preservation controls and each packet's proof limits.
+
+Self-improvement carries the actual canonical candidate path and committed full
+SHA. Its existing owner requires native candidate acceptance and a real clean
+development receiver, uses the canonical pinned development-fast-forward
+plan/apply route and verifies its exact endpoint. Missing proof or divergence
+preserves the candidate and names the immutable merge-forward plan; do not
+checkout another worker's branch. Existing markers are re-read, never reused from
+successful-read cache, and are verified before cleanup/durable completion.
+A marker alone, a zero plan or unchanged ancestry supplies no new gate or merge.
+
+Cleanup uses exact BRANCH, canonical WORKTREE, explicit purpose/expected full HEAD
+and native plan mode1 first. Existing invocation cleanup intent permits apply
+only for that known owner after fully checked native eligibility, exact matching
+CAS release, a fresh plan and actual status=removed in mode0. Preserve archive
+progress before the terminal JSON record. The generic active-owner refusal,
+branch-only stale context, missing owner or plan0 never authorizes release or
+removal. Preserve refs, index, locks, checkpoints and evidence; reconcile the
+actual native refusal. Readiness diagnostics without a verified full tuple
+defer to the original owner instead of inventing unregister/apply commands.
+
+self-improve-promotion-marker mode1 validates digest grammar only. Mode0 returns
+one exact PROMOTION_COMMIT on verified identity, or exact PROMOTION_ABSENT with
+recipe3/GNU Make2 when no marker exists. Every other nonzero/mixed output remains
+failure; never translate generic Make2 into absence. Native log/show failures
+remain failures. Success still requires separate actual acceptance and all
+exact-SHA hosted/deployment/release proofs.
+
 From a clean development checkout, plan integration of the reviewed source:
 
 ```bash
@@ -1346,11 +1402,31 @@ milestone, publication and exact-SHA release obligations remain recorded
 separately; the unchanged native cleanup owner supplies checkout eligibility:
 
 ~~~text
-make workstream-unregister BRANCH=actual-completed-branch ACTIVE_WORKSTREAM_REGISTRY=''
+make workstream-unregister BRANCH=actual-completed-branch WORKTREE=/canonical/measured/worktree WORKSTREAM_EXPECTED_HEAD=full-native-40-character-sha ACTIVE_WORKSTREAM_REGISTRY=''
 ~~~
 
-Replace the branch with its measured completed identity; an empty registry input
-selects the existing native default. Never fabricate completion or discard a Git lock.
+Replace all three identity placeholders with the measured native branch, canonical
+absolute path and full 40-character lowercase commit SHA; empty registry input selects
+the existing default. Missing/wrong/unknown context refuses without changing ownership.
+The same version1 row retains status=released and its verified head; absence supplies
+no release proof. Repeating an exact released tuple is idempotent without rewriting it.
+Logical release establishes no OS-user idleness or physical cleanup eligibility.
+Never fabricate completion or discard a Git lock.
+
+agent-cleanup keeps AGENT_CLEANUP_PURPOSE=merged and optional
+AGENT_CLEANUP_EXPECTED_HEAD='' as its default. Its narrow self-improve-evaluation
+purpose requires an actual self-improve-codex-* branch, canonical WORKTREE, full
+AGENT_CLEANUP_EXPECTED_HEAD and independently retained matching released row.
+It selects only that materialization, with no peer lifecycle/ancestry sweep.
+An explicitly pinned merged owner still requires actual integration. For a matching
+active pinned owner, status2 may emit the qualified purpose-specific
+"owner is active; exact release required" marker only after every other guard and
+archival preflight succeeds. That refusal releases/removes nothing; generic early
+active-owner refusal is insufficient. After actual exact CAS release, re-plan and
+apply repeat all native checks. Reactivation or HEAD movement invalidates apply.
+Preserve archive progress before the terminal JSON removed result.
+The [owning retirement record](../../docs/features/OWNED_MATERIALIZATION_RETIREMENT.md)
+retains native failures, interfaces and proof limits.
 
 Run selected-owner plan1 with that same BRANCH, WORKTREE and existing registry.
 It must preserve the target, ignored evidence, refs and registry. Literal0 applies

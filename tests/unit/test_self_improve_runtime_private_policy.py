@@ -41,6 +41,7 @@ from general_ludd.self_improve.runtime import (
     build_managed_self_improve_runner,
     prepare_managed_self_improve_plan,
 )
+from tests.self_improve_native_fixtures import controlled_retirement_result, controlled_revision_result
 
 PRIVATE_CANARY = "PROJECT_PRICE_FORMULA_CANARY_91f1"
 PRIVATE_PATH = "src/private/price_formula.py"
@@ -162,6 +163,7 @@ class _PreparationRunner:
         self.include_test = include_test
         self.alias_public_to_private = alias_public_to_private
         self.calls: list[str] = []
+        self.branch, self.head = "", ""
 
     def run(
         self,
@@ -171,8 +173,15 @@ class _PreparationRunner:
         timeout: int = 120,
         read_only: bool = False,
     ) -> MakeResult:
-        del variables, timeout, read_only
+        del timeout, read_only
+        values = dict(variables or {})
         self.calls.append(target)
+        if target in {"agent-cleanup", "workstream-unregister"}:
+            return controlled_retirement_result(
+                target, values, branch=self.branch, worktree=self.context_root, head=self.head,
+            )
+        if target == "git-show-commit":
+            return controlled_revision_result(values["C"], self.head)
         output = ""
         if target == "git-show-name-only":
             output = f"{self.changed_path}\n"
@@ -183,6 +192,7 @@ class _PreparationRunner:
         elif target == "git-show-full":
             output = f"-old\n+{PRIVATE_CANARY}\n"
         elif target == "agent-worktree-base":
+            self.branch, self.head = values["BRANCH"], values["BASE"]
             source = self.context_root / self.changed_path
             if self.alias_public_to_private:
                 private_source = self.context_root / "src/private/api.py"
@@ -211,7 +221,7 @@ class _PreparationRunner:
         target: str,
         variables: dict[str, str],
         *,
-        timeout: int,
+        timeout: float,
     ) -> MakeResult:
         del target, variables, timeout
         raise AssertionError("plan preparation invoked a provider")
@@ -391,8 +401,8 @@ def test_public_lexical_path_cannot_follow_baseline_symlink_before_prompt(
     assert runner.calls == [
         "git-show-name-only",
         "git-show-full",
-        "agent-worktree-base",
-        "agent-cleanup",
+        "agent-worktree-base", "agent-cleanup", "workstream-unregister",
+        "agent-cleanup", "agent-cleanup", "git-show-commit",
     ]
     assert any("reason=private_path" in event for event in events)
     assert PRIVATE_CANARY not in json.dumps(events)
@@ -425,8 +435,8 @@ def test_missing_policy_keeps_public_preparation_compatible_and_observable(
     assert runner.calls == [
         "git-show-name-only",
         "git-show-full",
-        "agent-worktree-base",
-        "agent-cleanup",
+        "agent-worktree-base", "agent-cleanup", "workstream-unregister",
+        "agent-cleanup", "agent-cleanup", "git-show-commit",
     ]
     policy_events = [
         event for event in events if event.startswith("SELF_IMPROVE_POLICY_LOADED ")

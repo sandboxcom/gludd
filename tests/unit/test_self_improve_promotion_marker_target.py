@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from scripts.check_make_target_contract import _stanzas
 from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -12,10 +13,11 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def test_marker_target_is_development_only_and_has_no_target_branch_input() -> None:
     makefile = compose_makefile(ROOT / "Makefile")
-    start = makefile.index("self-improve-promotion-marker:")
-    block = makefile[start : makefile.find("\n\n", start)]
+    block = _stanzas(makefile)["self-improve-promotion-marker"]
+    log_line = next(line for line in block.splitlines() if "COMMIT=$$(git log " in line)
 
-    assert "git log development" in block
+    assert " refs/heads/development --)" in log_line
+    assert log_line.count("refs/heads/development") == 1
     assert "SELF_IMPROVE_PROMOTION_ARTIFACT_DIGEST" in block
     assert "SELF_IMPROVE_PROMOTION_PLAN_DIGEST" in block
     assert "SELF_IMPROVE_PROMOTION_ATTEMPT_DIGEST" in block

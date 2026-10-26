@@ -822,7 +822,12 @@ git-patch-equivalence:
 git-show-commit:
 	@[ -n "$(C)" ] || { echo "Usage: make git-show-commit C=<sha>"; exit 1; }
 	@echo "--- $(C) summary ---"; git log -1 --format='%H%nparent: %P%ncommitter_unix: %ct%n%s' $(C)
-	@echo "--- files touched ---"; git show --stat --oneline $(C) | tail -n +2
+	@echo "--- files touched ---"; \
+	GIT_SHOW_FILES=$$(git show --stat --oneline $(C)) || { GIT_SHOW_STATUS=$$?; \
+		printf '%s\n' "AGENT_NEXT target=git-show-commit outcome=failed native_status=2 child_status=$$GIT_SHOW_STATUS phase=git-show gate_evidence=false release_ready=false; retain the native failure and repair requested C before claiming revision proof" >&2; exit "$$GIT_SHOW_STATUS"; }; \
+	printf '%s\n' "$$GIT_SHOW_FILES" | tail -n +2 || { GIT_SHOW_STATUS=$$?; \
+		printf '%s\n' "AGENT_NEXT target=git-show-commit outcome=failed native_status=2 child_status=$$GIT_SHOW_STATUS phase=display gate_evidence=false release_ready=false; retain the native failure and repair the display child before claiming revision proof" >&2; exit "$$GIT_SHOW_STATUS"; }; \
+	printf '%s\n' 'AGENT_NEXT target=git-show-commit outcome=passed native_status=0 gate_evidence=false release_ready=false next_owner=worktree-state; requested revision metadata and every display child finished; verify branch/clean ownership and required native acceptance before integration or release' >&2
 
 # Recreate a branch at BASE by cherry-picking a commit RANGE onto it. Used to
 # re-root mis-branched work onto its intended base WITHOUT touching the source

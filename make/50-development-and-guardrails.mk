@@ -10,15 +10,12 @@ agent-worktree-dev:
 	@[ -n '$(subst ','"'"',$(BRANCH))' ] || { echo "Usage: make agent-worktree-dev BRANCH=agent-<name>"; echo "AGENT_NEXT target=$@ outcome=refused native_status=1 next_action=supply-BRANCH gate_evidence=false release_ready=false" >&2; exit 1; }
 	$(call _agent-worktree-create,development,development,$(ACTIVE_WORKSTREAM_REGISTRY))
 
-# Merge a subagent's worktree branch back to `development` (--no-ff).
-# Checks out development, merges the feature branch, then returns to the
-# previous branch. Usage: make agent-merge-dev BRANCH=agent-fix-slurm
+# Retired: a caller may not select another worker's development checkout.
+.PHONY: agent-merge-dev
 agent-merge-dev:
-	@[ -n "$(BRANCH)" ] || { echo "Usage: make agent-merge-dev BRANCH=agent-<name>"; exit 1; }
-	@git checkout development && \
-	git merge --no-ff "$(BRANCH)" -m "merge: $(BRANCH) worktree work into development" && \
-	git checkout - && \
-	echo "Merged $(BRANCH) into development"
+	@printf '%s\n' 'RETIRED: agent-merge-dev cannot establish a pinned, accepted development receiver.' >&2; \
+	printf '%s\n' 'AGENT_NEXT target=agent-merge-dev outcome=retired native_status=2 gate_evidence=false release_ready=false; preserve candidate/index/refs/checkpoints; independently review immutable SOURCE and use development-merge-forward MODE=content APPLY=0 from the actual clean development receiver; a plan or unchanged ancestry proves no new merge/gate; an already accepted exact integration commit may use guarded development-fast-forward with full expected-before/after SHAs; obtain required native acceptance and exact-SHA proof before sign-off' >&2; \
+	exit 2
 
 # Complete an in-progress merge commit after conflicts are resolved.
 # Usage: make merge-commit-nv MSG='merge: ...'
@@ -189,16 +186,12 @@ development-merge-forward-batch:
 	MERGE_STARTED=0; trap - EXIT HUP INT TERM; \
 	echo "MERGE_FORWARD_BATCH_APPLIED sources=$$SOURCE_COUNT mode=ancestry-only shas=$$SOURCE_SHAS"
 
-# Merge development into master for release prep.
-# Requires CI-green on the development tip before allowing the merge.
-development-merge-to-master: merge-ready
-	@echo "Checking CI green on development tip..."
-	@$(MAKE) require-ci-green SHA=$$(git rev-parse development) || { echo "CI not green on development tip. Aborting."; exit 1; }
-	@echo "CI green confirmed. Merging development into master..."
-	@git checkout master && \
-	git merge --no-ff development -m "merge: development into master for release" && \
-	git checkout - && \
-	echo "Merged development into master"
+# Retired: only release-promote owns exact-source development-to-master promotion.
+.PHONY: development-merge-to-master
+development-merge-to-master:
+	@printf '%s\n' 'RETIRED: development-merge-to-master bypassed the canonical release owner.' >&2; \
+	printf '%s\n' 'AGENT_NEXT target=development-merge-to-master outcome=retired native_status=2 gate_evidence=false release_ready=false; use make release-promote TAG=v0.1.2 MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=1 RELEASE_PROMOTE_PUBLISH=0 REVIEWED_HEAD_INTEGRATION_RECEIPT= for a policy/topology plan only; real promotion still requires the genuine reviewed-head receipt, exact development SHA, complete local gate, hosted/deployment evidence and canonical main fast-forward guards; no Git or publication was attempted' >&2; \
+	exit 2
 
 # Create the development branch from current master if it doesn't exist.
 development-start:

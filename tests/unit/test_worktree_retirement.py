@@ -8,6 +8,7 @@ import select
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
     import owned_git_checkpoint
     import prune_worktrees_safe
     import start_gate_background
+    import workstream_registry
     from workstream_registry import WorkstreamRegistry
 else:
     from scripts import (
@@ -28,6 +30,7 @@ else:
         owned_git_checkpoint,
         prune_worktrees_safe,
         start_gate_background,
+        workstream_registry,
     )
     from scripts.workstream_registry import WorkstreamRegistry
 
@@ -97,6 +100,357 @@ def assert_preserved(root: Path, target: Path, before_refs: str) -> None:
     assert (target / ".gate-logs" / "failed-proof.log").read_bytes() == b"FAILED original proof\n"
     assert (target / ".gludd" / "historical.json").read_bytes() == b'{"state":"failed"}\n'
     assert git(root, "show-ref") == before_refs
+
+
+EVALUATION_BRANCH = "self-improve-codex-native-evaluation"
+
+
+@pytest.fixture
+def evaluation_checkout(checkout: tuple[Path, Path, Path]) -> tuple[Path, Path, Path, str]:
+    """Create one clean unique evaluation commit and an actual logical lease."""
+    root, target, registry = checkout
+    git(target, "branch", "-m", EVALUATION_BRANCH)
+    (target / "owned.txt").write_text("unmerged evaluation result\n", encoding="utf-8")
+    git(target, "commit", "-am", "owned evaluation result")
+    head = git(target, "rev-parse", "HEAD").strip()
+    WorkstreamRegistry(registry).register(EVALUATION_BRANCH, target)
+    return root, target, registry, head
+
+
+def _release_evaluation(root: Path, target: Path, registry: Path, head: str) -> None:
+    """Use the existing native registry action, not manufactured released JSON."""
+    assert Path.cwd() == root
+    assert workstream_registry.main([
+        "unregister", "--branch", EVALUATION_BRANCH, "--worktree", str(target),
+        "--expected-head", head, "--registry", str(registry),
+    ]) == 0
+
+
+def evaluation_make(
+    root: Path, target: Path, registry: Path, head: str, *, plan: bool = True,
+    purpose: str = "self-improve-evaluation",
+) -> subprocess.CompletedProcess[str]:
+    """Run the actual selected-owner Make entrypoint with a pinned context."""
+    environment = dict(os.environ)
+    for name in ("MAKEFLAGS", "MAKEOVERRIDES", "MFLAGS", "MAKELEVEL", "GNUMAKEFLAGS", "MAKEFILES"):
+        environment.pop(name, None)
+    environment["PYTHONPATH"] = os.pathsep.join((str(PROJECT_ROOT), str(PROJECT_ROOT / "src")))
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    values = {
+        "UV": os.environ.get("UV", "uv"), "UV_PROJECT_ENVIRONMENT": sys.prefix,
+        "UV_PYTHON": sys.executable, "UV_NO_SYNC": "1", "UV_PYTHON_DOWNLOADS": "never",
+        "PYTHONPATH": environment["PYTHONPATH"], "BRANCH": EVALUATION_BRANCH,
+        "WORKTREE": str(target), "ACTIVE_WORKSTREAM_REGISTRY": str(registry),
+        "AGENT_CLEANUP_PURPOSE": purpose,
+        "AGENT_CLEANUP_EXPECTED_HEAD": head,
+        "AGENT_CLEANUP_VALIDATE_ONLY": "1" if plan else "0",
+    }
+    return subprocess.run(
+        [
+            "make", "--no-print-directory", "-f",
+            str(PROJECT_ROOT / "make/40-cross-version-and-worktrees.mk"), "agent-cleanup",
+            *(f"{key}={value}" for key, value in values.items()),
+        ],
+        cwd=root, env=environment, check=False, capture_output=True, text=True, timeout=60,
+    )
+
+
+def test_owned_evaluation_plan_uses_native_clean_unmerged_retirement(
+    evaluation_checkout: tuple[Path, Path, Path, str],
+) -> None:
+    """A verified released evaluation can plan without claiming integration."""
+    root, target, registry, head = evaluation_checkout
+    _release_evaluation(root, target, registry, head)
+    refs = git(root, "show-ref")
+    before_registry = registry.read_bytes()
+    result = evaluation_make(root, target, registry, head)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "phase=cleanup action=remove-worktree status=dry-run" in result.stderr
+    receipt = json.loads(result.stdout)
+    assert receipt == {
+        "branch": EVALUATION_BRANCH, "worktree": str(target), "head": head,
+        "validate_only": True, "native_ownership_verified": 1, "status": "planned",
+    }
+    assert registry.read_bytes() == before_registry
+    assert_preserved(root, target, refs)
+    assert not archive(root).exists()
+
+
+def test_owned_evaluation_apply_archives_evidence_and_keeps_the_branch(
+    evaluation_checkout: tuple[Path, Path, Path, str],
+) -> None:
+    """Only the materialization disappears after the real native archive/remove."""
+    root, target, registry, head = evaluation_checkout
+    _release_evaluation(root, target, registry, head)
+    refs = git(root, "show-ref")
+    released = registry.read_bytes()
+    result = evaluation_make(root, target, registry, head, plan=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "phase=cleanup action=archive-evidence status=starting" in result.stdout
+    receipt = json.loads(result.stdout.splitlines()[-1])
+    assert receipt["status"] == "removed" and receipt["validate_only"] is False
+    assert (receipt["branch"], receipt["worktree"], receipt["head"]) == (EVALUATION_BRANCH, str(target), head)
+    assert receipt["native_ownership_verified"] == 1
+    assert not target.exists() and registry.read_bytes() == released
+    assert git(root, "show-ref") == refs
+    assert git(root, "show", f"{head}:owned.txt") == "unmerged evaluation result\n"
+    manifests = list(archive(root).glob("*/manifest.json"))
+    assert len(manifests) == 1
+    manifest = json.loads(manifests[0].read_text(encoding="utf-8"))
+    assert manifest["branch"] == EVALUATION_BRANCH and manifest["head"] == head
+    assert (manifests[0].parent / ".gate-logs/failed-proof.log").read_bytes() == b"FAILED original proof\n"
+
+
+@pytest.mark.parametrize("pinned_head", ("matching", "wrong"))
+def test_owned_evaluation_active_plan_never_releases_or_hides_wrong_head(
+    evaluation_checkout: tuple[Path, Path, Path, str], pinned_head: str,
+) -> None:
+    """The explicit-release marker follows native identity and all preflight."""
+    root, target, registry, head = evaluation_checkout
+    before = registry.read_bytes()
+    refs = git(root, "show-ref")
+    result = evaluation_make(root, target, registry, head if pinned_head == "matching" else "0" * 40)
+    assert result.returncode != 0
+    marker = "self-improve-evaluation owner is active; exact release required"
+    assert (marker in result.stdout + result.stderr) is (pinned_head == "matching")
+    assert registry.read_bytes() == before and WorkstreamRegistry(registry).active_branches() == {EVALUATION_BRANCH}
+    assert_preserved(root, target, refs)
+    assert not archive(root).exists()
+
+
+def evaluation_invoke(target: Path, registry: Path, head: str, *, plan: bool = True) -> int:
+    """Use the native selected-purpose CLI for internal observation controls."""
+    try:
+        return prune_worktrees_safe.main([
+            "--retire-self-improve-evaluation", "--branch", EVALUATION_BRANCH,
+            "--worktree", str(target), "--expected-head", head, "--registry", str(registry),
+            "--retire-validate-only", "1" if plan else "0",
+        ])
+    except SystemExit as exc:
+        return int(exc.code) if isinstance(exc.code, int) else 1
+
+
+@pytest.mark.parametrize(
+    "reason", ("dirty", "untracked", "unknown", "lock", "checkpoint", "alias", "live", "inspection"),
+)
+def test_owned_evaluation_active_release_marker_follows_every_other_guard(
+    evaluation_checkout: tuple[Path, Path, Path, str], monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str], reason: str,
+) -> None:
+    root, target, registry, head = evaluation_checkout
+    if reason == "dirty":
+        (target / "owned.txt").write_text("unfinished evaluation\n", encoding="utf-8")
+    elif reason == "untracked":
+        (target / "untracked.txt").write_text("unowned result\n", encoding="utf-8")
+    elif reason == "unknown":
+        (target / "private.secret").write_text("unowned ignored result\n", encoding="utf-8")
+    elif reason == "lock":
+        git(root, "worktree", "lock", "--reason", "owned retained evaluation", str(target))
+    elif reason == "checkpoint":
+        (target / "owned.txt").write_text("retained checkpoint\n", encoding="utf-8")
+        owned_git_checkpoint.push(target, ["owned.txt"], "owned-evaluation-checkpoint", validate=False)
+    elif reason == "alias":
+        WorkstreamRegistry(registry).register("feature/other-logical-owner", target)
+    elif reason == "live":
+        monkeypatch.setattr(clean_ci_shard_scratch, "_active_process_pids", lambda _path: [4242])
+    else:
+        def failed_inspection(_path: Path) -> NoReturn:
+            raise automatic_disk_cleanup.ProcessInspectionError("owned evaluation census unavailable")
+        monkeypatch.setattr(clean_ci_shard_scratch, "_active_process_pids", failed_inspection)
+    before = registry.read_bytes()
+    refs = git(root, "show-ref")
+    assert evaluation_invoke(target, registry, head, plan=False) == 2
+    assert "self-improve-evaluation owner is active; exact release required" not in capsys.readouterr().out
+    assert registry.read_bytes() == before
+    assert_preserved(root, target, refs)
+    assert not archive(root).exists()
+
+
+def test_owned_evaluation_inspects_only_selected_owner_without_peer_ancestry(
+    evaluation_checkout: tuple[Path, Path, Path, str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, target, registry, head = evaluation_checkout
+    _release_evaluation(root, target, registry, head)
+    peer = target.parent / "active-peer"
+    git(root, "worktree", "add", "-b", "feature/active-peer", str(peer))
+    (peer / "owned.txt").write_text("peer unfinished bytes\n", encoding="utf-8")
+    WorkstreamRegistry(registry).register("feature/active-peer", peer)
+    before = registry.read_bytes()
+    refs = git(root, "show-ref")
+    inspected: list[Path] = []
+
+    def only_selected(path: Path) -> list[int]:
+        inspected.append(path)
+        assert path == target
+        return []
+
+    def forbidden_ancestry(_records: object) -> NoReturn:
+        pytest.fail("evaluation retirement must not inspect peer integration ancestry")
+
+    monkeypatch.setattr(clean_ci_shard_scratch, "_active_process_pids", only_selected)
+    monkeypatch.setattr(automatic_disk_cleanup, "_integration_points", forbidden_ancestry)
+    assert evaluation_invoke(target, registry, head) == 0
+    assert inspected == [target]
+    assert registry.read_bytes() == before
+    assert_preserved(root, target, refs)
+    assert (peer / "owned.txt").read_text(encoding="utf-8") == "peer unfinished bytes\n"
+    assert not archive(root).exists()
+
+
+def test_owned_evaluation_missing_registry_is_not_release_evidence(
+    evaluation_checkout: tuple[Path, Path, Path, str], capsys: pytest.CaptureFixture[str],
+) -> None:
+    root, target, registry, head = evaluation_checkout
+    missing = registry.with_name("no-native-owner.json")
+    before = registry.read_bytes()
+    refs = git(root, "show-ref")
+    assert evaluation_invoke(target, missing, head) == 2
+    assert "exact release required" not in capsys.readouterr().out
+    assert not missing.exists()
+    assert registry.read_bytes() == before
+    assert_preserved(root, target, refs)
+    assert not archive(root).exists()
+
+
+def test_owned_evaluation_reactivation_after_plan_invalidates_apply(
+    evaluation_checkout: tuple[Path, Path, Path, str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, target, registry, head = evaluation_checkout
+    _release_evaluation(root, target, registry, head)
+    native_remove = automatic_disk_cleanup._remove_worktree_materialization
+    reactivated: list[bytes] = []
+
+    def reactivating_remove(
+        record: prune_worktrees_safe.WorktreeRecord, validate_only: bool, *,
+        evidence_archive_root: Path | None = None,
+        run_git: Callable[..., subprocess.CompletedProcess[str]] = prune_worktrees_safe._git,
+    ) -> automatic_disk_cleanup.LifecycleDecision:
+        outcome = native_remove(
+            record, validate_only, evidence_archive_root=evidence_archive_root, run_git=run_git,
+        )
+        if validate_only and not reactivated:
+            WorkstreamRegistry(registry).register(EVALUATION_BRANCH, target)
+            reactivated.append(registry.read_bytes())
+        return outcome
+
+    monkeypatch.setattr(automatic_disk_cleanup, "_remove_worktree_materialization", reactivating_remove)
+    refs = git(root, "show-ref")
+    assert evaluation_invoke(target, registry, head, plan=False) == 2
+    assert len(reactivated) == 1 and registry.read_bytes() == reactivated[0]
+    assert WorkstreamRegistry(registry).active_branches() == {EVALUATION_BRANCH}
+    assert_preserved(root, target, refs)
+    assert not archive(root).exists()
+
+
+def test_owned_evaluation_native_remove_failure_rolls_back_without_clearing_release(
+    evaluation_checkout: tuple[Path, Path, Path, str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, target, registry, head = evaluation_checkout
+    _release_evaluation(root, target, registry, head)
+    native = prune_worktrees_safe._git
+    removals: list[tuple[str, ...]] = []
+
+    def refusing_git(
+        *args: str, check: bool = True, timeout: float | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        if args[:2] == ("worktree", "remove"):
+            removals.append(args)
+            return subprocess.CompletedProcess(args, 1, "", "owned native removal refusal")
+        return native(*args, check=check, timeout=timeout)
+
+    monkeypatch.setattr(prune_worktrees_safe, "_git", refusing_git)
+    before = registry.read_bytes()
+    refs = git(root, "show-ref")
+    assert evaluation_invoke(target, registry, head, plan=False) == 2
+    assert len(removals) == 1 and registry.read_bytes() == before
+    assert_preserved(root, target, refs)
+    assert not list(archive(root).glob("*/manifest.json"))
+
+
+@pytest.mark.parametrize("guard", ("eligible", "wrong-head", "dirty", "unmerged", "unpinned"))
+def test_pinned_merged_active_release_marker_requires_complete_native_preflight(
+    checkout: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str], guard: str,
+) -> None:
+    root, target, registry = checkout
+    WorkstreamRegistry(registry).register(BRANCH, target)
+    head = git(target, "rev-parse", "HEAD").strip()
+    if guard == "dirty":
+        (target / "owned.txt").write_text("unfinished merged owner\n", encoding="utf-8")
+    elif guard == "unmerged":
+        (target / "owned.txt").write_text("new unmerged result\n", encoding="utf-8")
+        git(target, "commit", "-am", "unfinished merged owner")
+        head = git(target, "rev-parse", "HEAD").strip()
+    before = registry.read_bytes()
+    refs = git(root, "show-ref")
+    arguments = [
+        "--retire-merged", "--branch", BRANCH, "--worktree", str(target),
+        "--registry", str(registry), "--retire-validate-only", "1",
+    ]
+    if guard != "unpinned":
+        arguments += ["--expected-head", "0" * 40 if guard == "wrong-head" else head]
+    assert prune_worktrees_safe.main(arguments) == 2
+    output = capsys.readouterr().out
+    marker = "merged owner is active; exact release required"
+    assert (marker in output) is (guard == "eligible")
+    if guard == "eligible":
+        assert BRANCH in output and str(target) in output and head in output
+    assert registry.read_bytes() == before
+    assert_preserved(root, target, refs)
+    assert not archive(root).exists()
+
+
+@pytest.mark.parametrize(("purpose", "pin"), (
+    ("", "native"), ("force", "native"), ("merged self-improve-evaluation", "native"),
+    ("self-improve-evaluation", ""), ("self-improve-evaluation", "HEAD"),
+    ("self-improve-evaluation", "a" * 39), ("self-improve-evaluation", "A" * 40),
+))
+def test_owned_evaluation_invalid_literal_policy_never_falls_back_to_pruning(
+    evaluation_checkout: tuple[Path, Path, Path, str], purpose: str, pin: str,
+) -> None:
+    root, target, registry, head = evaluation_checkout
+    _release_evaluation(root, target, registry, head)
+    before = registry.read_bytes()
+    refs = git(root, "show-ref")
+    result = evaluation_make(root, target, registry, head if pin == "native" else pin, plan=False, purpose=purpose)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "exact release required" not in result.stdout + result.stderr
+    assert registry.read_bytes() == before
+    assert_preserved(root, target, refs)
+    assert not archive(root).exists()
+
+
+def test_owned_evaluation_cannot_select_an_unrelated_branch_family(
+    checkout: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str],
+) -> None:
+    root, target, registry = checkout
+    WorkstreamRegistry(registry).register(BRANCH, target)
+    head = git(target, "rev-parse", "HEAD").strip()
+    before = registry.read_bytes()
+    refs = git(root, "show-ref")
+    assert prune_worktrees_safe.main([
+        "--retire-self-improve-evaluation", "--branch", BRANCH, "--worktree", str(target),
+        "--expected-head", head, "--registry", str(registry), "--retire-validate-only", "0",
+    ]) == 2
+    assert "requires its actual self-improve-codex-*" in capsys.readouterr().out
+    assert registry.read_bytes() == before
+    assert_preserved(root, target, refs)
+
+
+@pytest.mark.parametrize("pin", ("saved", "current"))
+def test_owned_evaluation_head_movement_invalidates_released_authority(
+    evaluation_checkout: tuple[Path, Path, Path, str], pin: str,
+) -> None:
+    root, target, registry, head = evaluation_checkout
+    _release_evaluation(root, target, registry, head)
+    before = registry.read_bytes()
+    git(target, "commit", "--allow-empty", "-m", "changed evaluation after release")
+    current = git(target, "rev-parse", "HEAD").strip()
+    assert current != head
+    refs = git(root, "show-ref")
+    assert evaluation_invoke(target, registry, head if pin == "saved" else current, plan=False) == 2
+    assert registry.read_bytes() == before
+    assert_preserved(root, target, refs)
+    assert not archive(root).exists()
 
 
 def test_retirement_default_plan_verifies_without_writing_or_unregistering(
@@ -493,6 +847,58 @@ def test_controller_exemption_requires_exact_argv_cwd_start_identity_and_ancestr
             )
 
 
+@pytest.mark.parametrize("fault", ("none", "purpose", "head", "target"))
+def test_evaluation_controller_exemption_binds_literal_purpose_and_head(
+    evaluation_checkout: tuple[Path, Path, Path, str], fault: str,
+) -> None:
+    root, target, registry, head = evaluation_checkout
+    records = list(controller_fixture((root, target, registry)))
+    request = (
+        sys.executable, "-m", "scripts.prune_worktrees_safe", "--retire-self-improve-evaluation",
+        "--branch", EVALUATION_BRANCH, "--worktree", str(target), "--registry", str(registry),
+        "--expected-head", head, "--retire-validate-only", "1",
+    )
+    records[0] = replace(records[0], argv=request)
+    records[1] = replace(records[1], argv=(str(records[1].executable), "run", "python", *request[1:]))
+    arguments = [
+        str(records[2].executable), "--no-print-directory", "-f",
+        str(PROJECT_ROOT / "make/40-cross-version-and-worktrees.mk"), "agent-cleanup",
+        f"BRANCH={EVALUATION_BRANCH}", f"WORKTREE={target}", "AGENT_CLEANUP_VALIDATE_ONLY=1",
+        f"AGENT_CLEANUP_PURPOSE={'merged' if fault == 'purpose' else 'self-improve-evaluation'}",
+        f"AGENT_CLEANUP_EXPECTED_HEAD={'0' * 40 if fault == 'head' else head}",
+    ]
+    if fault == "target":
+        arguments[4] = "wt-prune-safe"
+        arguments.append("WT_PRUNE_RETIRE_MERGED=1")
+    records[2] = replace(records[2], argv=tuple(arguments))
+    if fault == "none":
+        assert prune_worktrees_safe._validate_retirement_controllers(
+            tuple(records), root=root, worktree=target, branch=EVALUATION_BRANCH,
+        ) == tuple(records)
+    else:
+        with pytest.raises(ValueError):
+            prune_worktrees_safe._validate_retirement_controllers(
+                tuple(records), root=root, worktree=target, branch=EVALUATION_BRANCH,
+            )
+
+
+def test_pinned_head_without_selected_mode_never_invokes_broad_prune(
+    checkout: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, target, registry = checkout
+
+    def forbidden_prune(**_kwargs: object) -> NoReturn:
+        pytest.fail("an immutable selected-owner pin must not select broad pruning")
+
+    monkeypatch.setattr(prune_worktrees_safe, "prune", forbidden_prune)
+    refs = git(root, "show-ref")
+    assert prune_worktrees_safe.main([
+        "--expected-head", git(target, "rev-parse", "HEAD").strip(), "--registry", str(registry),
+    ]) == 2
+    assert not registry.exists()
+    assert_preserved(root, target, refs)
+
+
 @pytest.mark.parametrize("change", ["started", "ppid"])
 def test_retirement_rechecks_controller_identity_before_any_archive(
     checkout: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch, change: str,
@@ -572,6 +978,141 @@ def test_full_make_retirement_apply_uses_native_archive_and_ref_preservation(
     manifests = list(archive(root).glob("*/manifest.json"))
     assert len(manifests) == 1
     assert (manifests[0].parent / ".gate-logs" / "failed-proof.log").read_bytes() == b"FAILED original proof\n"
+
+
+def _final_fence_registration_writer(
+    root: Path, target: Path, registry: Path, branch: str,
+) -> subprocess.Popen[str]:
+    """Start the real registry writer with a bounded native lock-attempt pipe."""
+    payload = (
+        "import fcntl,sys\n"
+        "from scripts.workstream_registry import main\n"
+        "native_flock=fcntl.flock\n"
+        "def observed_flock(fd,operation):\n"
+        "    if operation == fcntl.LOCK_EX:\n"
+        "        try:\n"
+        "            native_flock(fd,operation | fcntl.LOCK_NB)\n"
+        "        except BlockingIOError:\n"
+        "            print('blocked',flush=True)\n"
+        "            native_flock(fd,operation)\n"
+        "        else:\n"
+        "            print('acquired',flush=True)\n"
+        "    else:\n"
+        "        native_flock(fd,operation)\n"
+        "fcntl.flock=observed_flock\n"
+        "raise SystemExit(main(['register','--branch',sys.argv[1],"
+        "'--worktree',sys.argv[2],'--registry',sys.argv[3]]))\n"
+    )
+    environment = dict(os.environ)
+    environment.update(
+        PYTHONPATH=os.pathsep.join((str(PROJECT_ROOT), str(PROJECT_ROOT / "src"))),
+        PYTHONDONTWRITEBYTECODE="1", UV_PROJECT_ENVIRONMENT=sys.prefix, VIRTUAL_ENV=sys.prefix,
+        UV_PYTHON=sys.executable, UV_NO_SYNC="1", UV_PYTHON_DOWNLOADS="never",
+    )
+    return subprocess.Popen(
+        [sys.executable, "-u", "-c", payload, branch, str(target), str(registry),
+         "gludd-retirement-final-writer"],
+        cwd=root, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+
+
+def _drain_final_fence_writer(
+    writer: subprocess.Popen[str], first_line: str,
+) -> subprocess.CompletedProcess[str]:
+    """Consume the actual writer result after the owner can release its lock."""
+    try:
+        returncode = writer.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        writer.kill()
+        writer.communicate(timeout=5)
+        raise
+    assert writer.stdout is not None and writer.stderr is not None
+    stdout, stderr = first_line + writer.stdout.read(), writer.stderr.read()
+    writer.stdout.close()
+    writer.stderr.close()
+    return subprocess.CompletedProcess(writer.args, returncode, stdout, stderr)
+
+
+@pytest.mark.parametrize("retirement_mode", ("evaluation", "pinned-merged", "merged"))
+def test_retirement_final_remove_serializes_real_native_reactivation(
+    checkout: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str], retirement_mode: str,
+) -> None:
+    """A real late writer cannot commit an active lease before actual deletion."""
+    root, target, registry = checkout
+    branch = BRANCH
+    if retirement_mode == "evaluation":
+        branch = EVALUATION_BRANCH
+        git(target, "branch", "-m", branch)
+        (target / "owned.txt").write_text("unmerged final-fence evaluation\n", encoding="utf-8")
+        git(target, "commit", "-am", "final-fence evaluation")
+    head = git(target, "rev-parse", "HEAD").strip()
+    owner = WorkstreamRegistry(registry)
+    owner.register(branch, target)
+    assert owner.unregister(branch, target, head)["status"] == "released"
+    released = registry.read_bytes()
+    refs = git(root, "show-ref")
+    native_git = prune_worktrees_safe._git
+    writer: subprocess.Popen[str] | None = None
+    writer_result: subprocess.CompletedProcess[str] | None = None
+    protocol = ""
+    row_at_remove: dict[str, object] = {}
+    native_remove_codes: list[int] = []
+
+    def final_boundary(
+        *args: str, check: bool = True, timeout: float | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        nonlocal writer, writer_result, protocol
+        if args[:2] == ("worktree", "remove"):
+            assert writer is None
+            writer = _final_fence_registration_writer(root, target, registry, branch)
+            assert writer.stdout is not None
+            assert select.select([writer.stdout], [], [], 5)[0], "native lock-attempt pipe timed out"
+            protocol = writer.stdout.readline()
+            assert protocol in {"acquired\n", "blocked\n"}, protocol
+            if protocol == "acquired\n":
+                writer_result = _drain_final_fence_writer(writer, protocol)
+                assert writer_result.returncode == 0, writer_result.stdout + writer_result.stderr
+            # Never await a blocked writer while this owner may hold the lock.
+            row_at_remove.update(json.loads(registry.read_text(encoding="utf-8"))["workstreams"][branch])
+            removed = native_git(*args, check=check, timeout=timeout)
+            native_remove_codes.append(removed.returncode)
+            return removed
+        return native_git(*args, check=check, timeout=timeout)
+
+    monkeypatch.setattr(prune_worktrees_safe, "_git", final_boundary)
+    arguments = [
+        "--retire-self-improve-evaluation" if retirement_mode == "evaluation" else "--retire-merged",
+        "--branch", branch, "--worktree", str(target), "--registry", str(registry),
+        "--retire-validate-only", "0",
+    ]
+    if retirement_mode != "merged":
+        arguments.extend(("--expected-head", head))
+    try:
+        status = prune_worktrees_safe.main(arguments)
+    finally:
+        if writer is not None and writer_result is None:
+            writer_result = _drain_final_fence_writer(writer, protocol)
+    assert writer_result is not None
+    output = capsys.readouterr()
+    diagnostic = json.dumps({
+        "retirement_status": status, "native_remove_codes": native_remove_codes,
+        "row_at_remove": row_at_remove, "writer_status": writer_result.returncode,
+        "writer_stdout": writer_result.stdout, "writer_stderr": writer_result.stderr,
+        "retirement_stdout": output.out, "retirement_stderr": output.err,
+    }, sort_keys=True)
+    assert status == 0 and native_remove_codes == [0], diagnostic
+    assert row_at_remove.get("status") == "released", diagnostic
+    assert protocol == "blocked\n", diagnostic
+    assert writer_result.returncode != 0 and writer_result.stderr, diagnostic
+    assert registry.read_bytes() == released and owner.active_branches() == frozenset()
+    assert not target.exists() and git(root, "show-ref") == refs
+    assert git(root, "rev-parse", f"refs/heads/{branch}").strip() == head
+    manifests = list(archive(root).glob("*/manifest.json"))
+    assert len(manifests) == 1
+    assert json.loads(manifests[0].read_text(encoding="utf-8"))["head"] == head
+    assert (manifests[0].parent / ".gate-logs" / "failed-proof.log").read_bytes() == b"FAILED original proof\n"
+    assert (manifests[0].parent / ".gludd" / "historical.json").read_bytes() == b'{"state":"failed"}\n'
 
 
 @pytest.mark.parametrize("change", ["active", "lock", "live", "head", "checkpoint", "ignored"])

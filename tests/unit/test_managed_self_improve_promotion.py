@@ -31,6 +31,7 @@ from general_ludd.self_improve.promotion import (
 )
 from general_ludd.self_improve.result_artifact import ManagedSelfImproveResultArtifact
 from general_ludd.self_improve.runtime import MakeResult
+from tests.self_improve_native_fixtures import controlled_revision_result
 
 
 def _plan(
@@ -192,38 +193,79 @@ class _Repository:
 
 
 class _RootRunner:
+    """Controlled native-shaped owners; actual native proof lives in the safety cohort."""
+
     def __init__(self, worktree: Path, *, marker_present: bool = False) -> None:
         self.worktree = worktree
         self.marker_present = marker_present
+        self.branch = ""
+        self.development_head = ("c" if marker_present else "a") * 40
         self.calls: list[tuple[str, dict[str, str]]] = []
 
     def run(
-        self,
-        target: str,
-        variables: dict[str, str] | None = None,
-        *,
-        timeout: int = 120,
-        read_only: bool = False,
+        self, target: str, variables: dict[str, str] | None = None, *,
+        timeout: int = 120, read_only: bool = False,
     ) -> MakeResult:
+        del timeout, read_only
         values = dict(variables or {})
         self.calls.append((target, values))
         if target == "self-improve-promotion-marker":
             if self.marker_present:
-                return _result(0, "PROMOTION_COMMIT=" + "c" * 40 + "\n")
-            return _result(3, "PROMOTION_ABSENT\n")
-        if target == "agent-cleanup":
+                return _result(0, "PROMOTION_COMMIT=" + self.development_head + "\n")
+            return _result(2, "PROMOTION_ABSENT\n")
+        if target == "worktree-state":
+            return _result(0, json.dumps({
+                "branch": "development", "head": self.development_head,
+                "path": str(self.worktree.parent), "is_clean": True,
+            }))
+        if target == "_gate-fresh-check":
             return _result(0)
+        if target == "development-fast-forward":
+            assert set(values) == {"SOURCE", "EXPECTED_BEFORE_SHA", "EXPECTED_AFTER_SHA", "APPLY"}
+            head, before = values["SOURCE"], self.development_head
+            assert values["EXPECTED_BEFORE_SHA"] == before
+            assert values["EXPECTED_AFTER_SHA"] == head
+            if values["APPLY"] == "0":
+                return _result(0, f"DEVELOPMENT-FAST-FORWARD-VALIDATED source={head} "
+                               f"before={before} after={head} apply=0\n")
+            assert values["APPLY"] == "1"
+            self.development_head, self.marker_present = head, True
+            return _result(0, f"DEVELOPMENT-FAST-FORWARDED source={head} before={before} after={head} mode=ff-only\n")
         if target == "agent-worktree-base":
+            self.branch = values["BRANCH"]
             return _result(0, f"WORKTREE_PATH={self.worktree}\n")
-        if target == "agent-merge-dev":
-            self.marker_present = True
-            return _result(0, "Merged into development\n")
+        if target == "git-show-commit":
+            return controlled_revision_result(values["C"], self.development_head)
+        if target in {"agent-cleanup", "workstream-unregister"}:
+            assert values["BRANCH"] == self.branch
+            assert values["WORKTREE"] == str(self.worktree)
+            expected = ("WORKSTREAM_EXPECTED_HEAD" if target == "workstream-unregister"
+                        else "AGENT_CLEANUP_EXPECTED_HEAD")
+            assert values[expected] == "c" * 40
+            payload: dict[str, object] = {
+                "branch": self.branch, "worktree": str(self.worktree), "head": "c" * 40,
+                "native_ownership_verified": 1,
+            }
+            if target == "workstream-unregister":
+                return _result(0, json.dumps({**payload, "status": "released"}))
+            assert values["AGENT_CLEANUP_PURPOSE"] == "merged"
+            plan = values["AGENT_CLEANUP_VALIDATE_ONLY"] == "1"
+            if not plan:
+                assert values["AGENT_CLEANUP_VALIDATE_ONLY"] == "0"
+                self.worktree.rename(self.worktree.with_name(self.worktree.name + "-retired"))
+            progress = "" if plan else "owned native archive progress\n"
+            return _result(0, progress + json.dumps({
+                **payload, "status": "planned" if plan else "removed", "validate_only": plan,
+            }))
         raise AssertionError(f"unexpected root target {target}")
 
 
 class _WorktreeRunner:
+    """Controlled accepted candidate; never supplies actual gate/release evidence."""
+
     def __init__(self, repo_root: Path) -> None:
         self.repo_root = repo_root
+        self.branch = ""
         self.commands: list[str] = []
         self.targets: list[tuple[str, dict[str, str]]] = []
 
@@ -232,26 +274,30 @@ class _WorktreeRunner:
         return _result(0, "TOTAL 10 0 100%\n")
 
     def run(
-        self,
-        target: str,
-        variables: dict[str, str] | None = None,
-        *,
-        timeout: int = 120,
-        read_only: bool = False,
+        self, target: str, variables: dict[str, str] | None = None, *,
+        timeout: int = 120, read_only: bool = False,
     ) -> MakeResult:
         self.targets.append((target, dict(variables or {})))
         if target == "repo-status":
             return _result(0, "")
+        if target == "git-show-commit":
+            return controlled_revision_result((variables or {})["C"], "c" * 40)
+        if target == "worktree-state":
+            return _result(0, json.dumps({
+                "branch": self.branch, "path": str(self.repo_root), "head": "c" * 40, "is_clean": True,
+            }))
         return _result(0)
 
 
-def _claim(artifact: ManagedSelfImproveResultArtifact) -> ManagedPromotionLease:
+def _claim(
+    artifact: ManagedSelfImproveResultArtifact, *, stale_worktree_branch: str | None = None,
+) -> ManagedPromotionLease:
     return ManagedPromotionLease(
         artifact_digest=artifact.artifact_digest,
         owner="event-loop-promotion",
         fencing_token=3,
         expires_at=datetime(2030, 1, 1, tzinfo=UTC),
-        stale_worktree_branch="self-improve-promote-stale-2",
+        stale_worktree_branch=stale_worktree_branch,
     )
 
 
@@ -271,6 +317,7 @@ async def test_promotes_exact_proposal_once_to_hard_coded_development(
 
     def runner_factory(path: Path) -> _WorktreeRunner:
         runner = _WorktreeRunner(path)
+        runner.branch = root_runner.branch
         made.append(runner)
         return runner
 
@@ -294,15 +341,22 @@ async def test_promotes_exact_proposal_once_to_hard_coded_development(
     assert receipt.development_commit == "c" * 40
     assert receipt.artifact_digest == artifact.artifact_digest
     assert [target for target, _ in root_runner.calls] == [
-        "self-improve-promotion-marker",
-        "agent-cleanup",
-        "agent-worktree-base",
-        "agent-merge-dev",
-        "agent-cleanup",
-        "self-improve-promotion-marker",
+        "self-improve-promotion-marker", "agent-worktree-base", "worktree-state",
+        "development-fast-forward", "development-fast-forward", "git-show-commit",
+        "self-improve-promotion-marker", "agent-cleanup", "workstream-unregister",
+        "agent-cleanup", "agent-cleanup", "git-show-commit",
     ]
-    merge_values = next(values for target, values in root_runner.calls if target == "agent-merge-dev")
-    assert set(merge_values) == {"BRANCH"}
+    merge_values = [values for target, values in root_runner.calls if target == "development-fast-forward"]
+    assert merge_values == [
+        {"SOURCE": "c" * 40, "EXPECTED_BEFORE_SHA": "a" * 40, "EXPECTED_AFTER_SHA": "c" * 40, "APPLY": mode}
+        for mode in ("0", "1")
+    ]
+    cleanup_values = [values for target, values in root_runner.calls if target == "agent-cleanup"]
+    assert [values["AGENT_CLEANUP_VALIDATE_ONLY"] for values in cleanup_values] == ["1", "1", "0"]
+    assert all(values["WORKTREE"] == str(worktree) for values in cleanup_values)
+    assert all(values["AGENT_CLEANUP_EXPECTED_HEAD"] == "c" * 40 for values in cleanup_values)
+    assert not worktree.exists()
+    assert worktree.with_name("worktree-retired").is_dir()
     assert made[0].commands == [
         plan.task.canonical_make_commands[0],
         artifact.proposal.make_commands[0],
@@ -312,7 +366,9 @@ async def test_promotes_exact_proposal_once_to_hard_coded_development(
         "git-add",
         "repo-commit",
         "repo-status",
+        "git-show-commit",
     ]
+    assert [target for target, _ in made[1].targets] == ["worktree-state", "_gate-fresh-check"]
     commit_message = made[0].targets[1][1]["MSG"]
     assert f"Gludd-Self-Improve-Artifact={artifact.artifact_digest}" in commit_message
     assert repository.completed
@@ -346,9 +402,12 @@ async def test_retry_after_merge_uses_verified_marker_without_second_merge(
 
     assert receipt.development_commit == "c" * 40
     assert [target for target, _ in root_runner.calls] == [
-        "self-improve-promotion-marker",
-        "agent-cleanup",
+        "self-improve-promotion-marker", "worktree-state", "development-fast-forward",
+        "_gate-fresh-check", "git-show-commit",
     ]
+    assert all(values["APPLY"] == "0" for target, values in root_runner.calls if target == "development-fast-forward")
+    assert not any(target in {"agent-worktree-base", "agent-cleanup", "workstream-unregister"}
+                   for target, _ in root_runner.calls)
     assert len(repository.completed) == 1
 
 
@@ -660,8 +719,11 @@ async def test_completed_receipt_is_reverified_without_mutating_git(
 
     assert receipt.development_commit == "c" * 40
     assert [target for target, _ in root_runner.calls] == [
-        "self-improve-promotion-marker"
+        "self-improve-promotion-marker", "worktree-state", "development-fast-forward",
+        "_gate-fresh-check", "git-show-commit",
     ]
+    assert not repository.completed
+    assert not repository.abandoned
 
 
 @pytest.mark.parametrize("marker_present", [False, True])
@@ -701,7 +763,7 @@ class _FailingWorktreeRunner(_WorktreeRunner):
         return _result(1, stderr="canonical check failed")
 
 
-async def test_failed_candidate_is_cleaned_and_durable_claim_is_abandoned(
+async def test_failed_candidate_preserves_materialization_and_durable_binding(
     tmp_path: Path,
 ) -> None:
     repo_root = tmp_path / "repo"
@@ -732,8 +794,13 @@ async def test_failed_candidate_is_cleaned_and_durable_claim_is_abandoned(
             return_id="RETURN-PROMOTION",
         )
 
-    assert repository.abandoned
-    assert [target for target, _ in root_runner.calls][-1] == "agent-cleanup"
+    assert not repository.abandoned
+    assert not repository.completed
+    assert repository.bound, "the preserved candidate must retain its durable owner binding"
+    assert worktree.exists()
+    assert [target for target, _ in root_runner.calls] == [
+        "self-improve-promotion-marker", "agent-worktree-base",
+    ]
 
 
 def test_installed_coordinator_uses_database_and_make_composition_root(

@@ -6,6 +6,105 @@ check-gate-failure-promotions, git-merge-nc, development-merge-forward and
 release-proof-admission, human-todo-module, run-watched, work-item and guarded-target parse refusals. Existing native owners, statuses and artifacts remain
 authoritative; no second observer, runner, cache or proof schema is introduced.
 
+## Dependency-free observed readers (S98.4,2026-10-23 UTC)
+
+The Build audit omitted explicit runtime selection on four status/tail reads;
+one UV invocation created an unwanted isolated Python3.14 environment. Its real
+test receipts used explicit311/312. That environment is retained; this source
+repair grants no cleanup authority. Global UV_NO_SYNC prevents package sync,
+but it does not make invoking UV an environment-free read.
+
+The existing observed-status and observed-tail recipes now invoke `$(PYTHON)`
+directly. Only those two prefixes change; stream_command.py, its reader flags,
+label/run selection, current/retained identity, JSON/raw text and native errors
+remain. The existing global PYTHON binding and ordinary/-e/CLI precedence stay.
+Help, the two target contracts and the mandatory guide name this selector.
+Choose an existing compatible Python>=3.11, preferably the selected runtime's
+absolute executable. No resolver, bootstrap, observer, cache or profile is added.
+
+Both CLI reader branches return before lazy producer filelock, psutil and
+item-progress imports. Their actual call graph uses standard-library JSON,
+Path/deque, datetime and PID-liveness observation. The existing datetime.UTC
+import refuses a missing required stdlib capability before main runs; a missing
+executable fails natively. Neither refusal downloads an interpreter. Native
+producer failure7 remains reader0 with state=failed/exit_code7; stale/orphaned3
+remains Make2/Error3. Missing/malformed evidence stays failed and unread state
+is never refreshed.
+
+### Native failing-first controls and private fixture boundary
+
+The isolated source starts at3779b7b8d58762400b4336c40f0cf06f290cac13.
+Four native old-source cases fail because the actual UV sentinel is called and
+returns79. Initial4FAIL2.58s is retained at status-reader-red/
+v012-status-reader-red311-3779. Its new fixture dataclass initially exposed
+environment carriers in failure repr; keep that failed receipt private.
+Marking only that field repr=False and asserting private repr corrects the
+actual fixture input before the safe replay. Safe4FAIL2.74s/native3.6s remains
+at .gate-logs/observed/status-reader-safe-red/
+v012-status-reader-safe-red311-3779.json. The same four cases pass1.56s/
+native2.379s after the two-prefix repair:
+.gate-logs/observed/status-reader-green/v012-status-reader-green311-3779.json.
+Raw/XML artifacts are /tmp/gludd-v012-status-reader-{safe-red311,green311}.
+These are real omitted-UV regressions, not collection errors or acquisition.
+
+The existing native Make owner gains26 additive controls and preserves all23
+predecessors. A small owned workspace uses complete literal native recipes,
+the existing PYTHON/UV defaults and actual stream source. Two additional
+complete Makefile/include-graph witnesses retain real startup under ordinary
+and -e modes. No whole checkout, Main state or real UV/package sync is used.
+Actual producer0/7 receipts supply current/exact log evidence; selected
+sys.executable -S proves the reader's dependency-free import path. Controls
+retain leased environment/lock markers, bytes/modes/mtime, raw failures,
+global precedence, missing Python, prerequisite/dry-run scope and copied
+environment carriers. A confined missing-UTC capability witness executes the
+actual reader but certifies no installed legacy CPython version.
+
+The registered behavioral examples add PYTHON=python3. An absent exact example
+receipt must retain native missing-file refusal. Real success uses the genuine
+new run's label/root/ID and selected installed interpreter. Do not write JSON
+or run a producer merely to relabel a missing actual observation.
+
+### Practitioner context and proof limits
+
+Existing retained practitioner reviews describe related environment-selection
+hazards: [uv13319](https://github.com/astral-sh/uv/issues/13319) reports a
+non-default group removed by a later UV operation, while
+[uv14645](https://github.com/astral-sh/uv/issues/14645), opened2025-07-16,
+reports optional dependencies absent without explicit extra selection. Their
+earlier findings remain in the [presentation guide](../presentation/DESIGN_revealjs_deck.md)
+and [packaging record](RELEASE_PACKAGING_CONTRACT.md). They motivate explicit
+environment ownership; they do not establish our reader's creation cause,
+no-sync semantics or a fresh upstream resolution. No duplicate HTTP retrieval
+is claimed here.
+
+The unchanged eleven-owner acceptance union passes298 with no skips on each
+installed runtime:31162.40s/native63.822s and31259.68s/native61.041s. Native
+receipts are .gate-logs/observed/status-reader-union/
+v012-status-reader-union{311,312}-3779.json; raw logs and XML are
+/tmp/gludd-v012-status-reader-union{311,312}.{log,xml}. Both exact exec owners
+are drained and native status is inactive/passed. The union keeps complete
+MakeUV, readonly-version, observed-command, observability, target-contract,
+layout/deep/help, fixture-collision, Markdown and oversized-document owners.
+Source/tests/Make/config stayed fixed between these runs; only this receipt
+paragraph follows. No timing improvement is inferred from their durations.
+
+Ruff, separate strict test-owner typing, environment-write admission, native
+Make validation and289 target contracts pass at this isolated source. Adding
+the documented PYTHON variables first exposed a2501-line contract refusal;
+dependent checks stopped. Compacting only the two owned arrays, without
+changing values, restores2499 and the unchanged<2500 policy. Both registered
+behavioral commands retain expected missing-receipt Make2 with the existing311
+bin selected on PATH; the actual new receipt supplies native JSON and bounded
+tail success with explicit installed PYTHON. No observation JSON was created
+to make a read pass. Main receiving must preserve newer independent contract
+entries; this source changes only its two entries.
+
+No production Python or coverage profile changes; retain the existing complete
+config/coverage_observed_command.ini and85aggregate/75each LINE AND BRANCH.
+Root owns receiving, installed Markdown lint, normal collection, the separate
+source commit and review. Full gate, exact-SHA GHA, deployment and release
+proofs remain missing. A source regression or reader0 supplies none of them.
+
 ## Candidate hosted validation requires an exact push run
 
 Root owns this S98.4 enhancement on

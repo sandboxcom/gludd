@@ -614,7 +614,7 @@
       ],
       "behavior": "make check-release-failure-ledger RELEASE_FAILURE_LEDGER=docs/releases/beta-release-failures.json"
     },
-    {
+    {"name": "agent-merge-dev", "make_variables": [], "behavior": "make agent-merge-dev", "expected_status": 2}, {"name": "agent-merge", "make_variables": [], "behavior": "make agent-merge", "expected_status": 2}, {"name": "worktree-merge-all", "make_variables": [], "behavior": "make worktree-merge-all", "expected_status": 2}, {"name": "development-merge-to-master", "make_variables": [], "behavior": "make development-merge-to-master", "expected_status": 2}, {
       "name": "release-promote",
       "make_variables": [
         "TAG",
@@ -1793,22 +1793,22 @@
     {
       "name": "observed-status",
       "make_variables": [
-        "OBSERVED_LABEL",
+        "PYTHON", "OBSERVED_LABEL",
         "RUN_ID",
         "OBSERVED_ROOT",
         "OBSERVED_STALE_SECS"
       ],
-      "behavior": "make observed-status OBSERVED_LABEL=run-watched RUN_ID=contract-run-watched OBSERVED_ROOT=.gate-logs/observed OBSERVED_STALE_SECS=90"
+      "behavior": "make observed-status PYTHON=python3 OBSERVED_LABEL=run-watched RUN_ID=contract-run-watched OBSERVED_ROOT=.gate-logs/observed OBSERVED_STALE_SECS=90"
     },
     {
       "name": "observed-tail",
       "make_variables": [
-        "OBSERVED_LABEL",
+        "PYTHON", "OBSERVED_LABEL",
         "RUN_ID",
         "OBSERVED_ROOT",
         "OBSERVED_TAIL_LINES"
       ],
-      "behavior": "make observed-tail OBSERVED_LABEL=run-watched RUN_ID=contract-run-watched OBSERVED_ROOT=.gate-logs/observed OBSERVED_TAIL_LINES=80"
+      "behavior": "make observed-tail PYTHON=python3 OBSERVED_LABEL=run-watched RUN_ID=contract-run-watched OBSERVED_ROOT=.gate-logs/observed OBSERVED_TAIL_LINES=80"
     },
     {
       "name": "run-watched",
@@ -2106,16 +2106,13 @@
     },
     {
       "name": "workstream-unregister",
-      "make_variables": [
-        "BRANCH",
-        "ACTIVE_WORKSTREAM_REGISTRY"
-      ],
-      "behavior": "make workstream-unregister BRANCH=contract/workstream ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json"
+      "make_variables": ["BRANCH", "WORKTREE", "WORKSTREAM_EXPECTED_HEAD", "ACTIVE_WORKSTREAM_REGISTRY"],
+      "behavior": "make workstream-unregister BRANCH=contract/workstream WORKTREE=/tmp/gludd-workstream-contract WORKSTREAM_EXPECTED_HEAD=0000000000000000000000000000000000000000 ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json # Expected nonzero: absent native owner; no ownership is released"
     },
     {
       "name": "agent-cleanup",
-      "make_variables": ["BRANCH", "WORKTREE", "ACTIVE_WORKSTREAM_REGISTRY", "AGENT_CLEANUP_VALIDATE_ONLY"],
-      "behavior": "make agent-cleanup BRANCH=contract/retirement WORKTREE=/tmp/gludd-worktrees/contract-retirement ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json AGENT_CLEANUP_VALIDATE_ONLY=1"
+      "make_variables": ["BRANCH", "WORKTREE", "ACTIVE_WORKSTREAM_REGISTRY", "AGENT_CLEANUP_VALIDATE_ONLY", "AGENT_CLEANUP_PURPOSE", "AGENT_CLEANUP_EXPECTED_HEAD"],
+      "behavior": "make agent-cleanup BRANCH=contract/retirement WORKTREE=/tmp/gludd-worktrees/contract-retirement ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json AGENT_CLEANUP_VALIDATE_ONLY=1 AGENT_CLEANUP_PURPOSE=merged AGENT_CLEANUP_EXPECTED_HEAD='' # Expected nonzero: absent native owner; no retirement"
     },
     {
       "name": "clean-stale-worktrees",

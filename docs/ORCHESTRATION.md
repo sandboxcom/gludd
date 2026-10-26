@@ -164,9 +164,14 @@ develop and commit locally; check CI before the next push, not before the next f
 
 ## 7. Development Branch Reconciliation (beta4)
 
-Work lands on `development` first; only `development` is merge-forwarded into
-`master` (see `development-merge-to-master`). The three targets below classify,
-merge, and recover branch state against `development`.
+Work lands on `development` first; only its exact validated SHA reaches
+`master` through canonical `release-promote` with the genuine reviewed-head
+receipt and required local/hosted proofs. The legacy `development-merge-to-master`
+alias is retired and returns2 without Git; follow the
+[current release runbook](RELEASE_RUNBOOK.md) and the
+[retirement record](features/LEGACY_INTEGRATION_ENTRYPOINTS.md).
+The three targets below classify, merge, and recover branch state against
+`development`.
 
 **a) Classify a branch with `git-patch-equivalence`.**
 Run `make git-patch-equivalence PATCH_UPSTREAM=development PATCH_HEAD=<branch>
