@@ -12,6 +12,13 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 MAKE = shutil.which("make") or "make"
+GIT_SHOW_PASSED_GUIDANCE = (
+    "AGENT_NEXT target=git-show-commit outcome=passed native_status=0 "
+    "gate_evidence=false release_ready=false next_owner=worktree-state; "
+    "requested revision metadata and every display child finished; "
+    "verify branch/clean ownership and required native acceptance before "
+    "integration or release\n"
+)
 
 
 def _environment() -> dict[str, str]:
@@ -128,7 +135,7 @@ def test_actual_git_helper_is_silent_without_environment_and_keeps_runtime_check
     metadata_before = (tmp_path / "pyproject.toml").read_bytes()
     diagnostic = _make(tmp_path, "git-show-commit", "C=HEAD", runtime_path=runtime.parent)
     assert diagnostic.returncode == 0, diagnostic.stdout + diagnostic.stderr
-    assert diagnostic.stderr == ""
+    assert diagnostic.stderr == GIT_SHOW_PASSED_GUIDANCE
     assert "--- HEAD summary ---" in diagnostic.stdout
     assert not (tmp_path / ".venv").exists()
     assert not (tmp_path / "uv.lock").exists()
@@ -154,7 +161,7 @@ def test_actual_git_helper_is_silent_without_source_metadata_or_environment(
 
     diagnostic = _make(tmp_path, "git-show-commit", "C=HEAD")
     assert diagnostic.returncode == 0, diagnostic.stdout + diagnostic.stderr
-    assert diagnostic.stderr == ""
+    assert diagnostic.stderr == GIT_SHOW_PASSED_GUIDANCE
     assert "--- HEAD summary ---" in diagnostic.stdout
     assert not (tmp_path / "pyproject.toml").exists()
     assert not (tmp_path / ".venv").exists()

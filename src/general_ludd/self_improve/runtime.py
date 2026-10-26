@@ -224,6 +224,10 @@ from general_ludd.self_improve.runtime_validation import (
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
 from general_ludd.small_models.recommender import map_task_to_capabilities
 
+_FRESH_READ_TARGETS: Final = frozenset({
+    "_gate-fresh-check", "repo-status",
+    "self-improve-promotion-marker", "worktree-state",
+})
 _MAX_CAPTURE_BYTES: Final = 2_097_152
 _MAX_REFERENCE_FILES: Final = 128
 _MAX_PROMPT_PATHS: Final = 32
@@ -357,11 +361,13 @@ class MakeRunner:
         timeout: int = 120,
         read_only: bool = False,
     ) -> MakeResult:
-        """Run one short Make target; optionally cache an exact read-only call."""
+        """Cache immutable exact reads; current-state owners always execute fresh."""
         values = variables or {}
         _validate_target_and_variables(target, values)
         cache_key = (target, tuple(sorted(values.items())))
-        if read_only and cache_key in self._read_cache:
+        mutable_revision = target == "git-show-commit" and re.fullmatch(r"[0-9a-f]{40}", values.get("C", "")) is None
+        cacheable = read_only and target not in _FRESH_READ_TARGETS and not mutable_revision
+        if cacheable and cache_key in self._read_cache:
             return self._read_cache[cache_key]
         argv = ["make", target, *[f"{key}={value}" for key, value in values.items()]]
         started = time.monotonic()
@@ -383,7 +389,7 @@ class MakeRunner:
             elapsed_seconds=time.monotonic() - started,
         )
         self.operations.append(result)
-        if read_only and result.returncode == 0:
+        if cacheable and result.returncode == 0:
             self._read_cache[cache_key] = result
         return result
 
@@ -1324,8 +1330,10 @@ class _AttemptState:
     results: list[MakeResult]
     events: list[_EvaluationLifecycleEvent]
     patch_identity: str = ""
+    expected_head: str = ""
     cleanup_passed: bool = False
     cleanup_attempted: bool = False
+    candidate_preserved: bool = False
     commit_count: int = 0
     worktree_clean: bool = False
     changed_lines: int = 0
@@ -1540,9 +1548,10 @@ def _inspect_committed_candidate(
         elapsed_seconds=status.elapsed_seconds,
         failure_class="clean_failed",
     )
+    _validate_sha("candidate_head", state.expected_head)
     variables = {
         "PATCH_UPSTREAM": reference.reference_sha,
-        "PATCH_HEAD": branch,
+        "PATCH_HEAD": state.expected_head,
         "PATCH_LIMIT": "1",
     }
     patch = _run_evaluation_operation(
@@ -1598,6 +1607,8 @@ def _commit_candidate(
     progress_sink: Callable[[str], None] | None,
 ) -> None:
     """Stage, commit, and inspect one command-green proposal."""
+    from general_ludd.self_improve.promotion import self_improve_revision
+
     stage_variables = {"FILES": " ".join(edit.path for edit in proposal.edits)}
     staged = _run_evaluation_operation(
         lambda: runner.run("git-add", stage_variables),
@@ -1623,6 +1634,7 @@ def _commit_candidate(
     state.commit_diagnostic_category = _commit_failure_category(committed)
     if staged.returncode == 0 and committed.returncode == 0:
         state.commit_count = 1
+        state.expected_head = self_improve_revision(runner, "HEAD")
         _inspect_committed_candidate(runner, reference, branch, state, progress_sink)
 
 
@@ -1661,52 +1673,54 @@ def _derive_attempt_quality(
 
 
 def _cleanup_candidate(
-    root_runner: _TargetRunner,
-    branch: str,
-    state: _AttemptState,
-    progress_sink: Callable[[str], None] | None,
+    root_runner: _TargetRunner, branch: str, state: _AttemptState,
+    progress_sink: Callable[[str], None] | None, *,
+    worktree: Path, head: str, purpose: str = "self-improve-evaluation",
 ) -> MakeResult:
-    """Release one candidate worktree and record its terminal event."""
+    """Record success only after exact owned native release and actual removal."""
+    from general_ludd.self_improve.promotion import retire_owned_self_improve_worktree
+
     state.cleanup_attempted = True
-    variables = {"BRANCH": branch}
     cleanup = _run_evaluation_operation(
-        lambda: root_runner.run("agent-cleanup", variables, timeout=180),
-        state.events,
-        progress_sink,
-        phase="cleanup",
-        command_kind="worktree_cleanup",
-        command_identity=_evaluation_target_identity("agent-cleanup", variables),
+        lambda: retire_owned_self_improve_worktree(
+            root_runner, branch=branch, worktree=worktree, head=head, purpose=purpose, apply=True,
+        ), state.events, progress_sink,
+        phase="cleanup", command_kind="worktree_cleanup",
+        command_identity=_evaluation_target_identity("agent-cleanup", {"BRANCH": branch}),
         failure_class="cleanup_failed",
     )
-    state.cleanup_passed = cleanup.returncode == 0
-    return cleanup
+    state.cleanup_passed = cleanup.confirmed
+    state.results.extend(cleanup.steps)
+    return cleanup.result
 
 
 def _finish_candidate_worktree(
-    root_runner: _TargetRunner,
-    branch: str,
-    state: _AttemptState,
-    progress_sink: Callable[[str], None] | None,
-    *,
-    merge: bool,
-    commands_green: bool,
+    root_runner: _TargetRunner, branch: str, state: _AttemptState,
+    progress_sink: Callable[[str], None] | None, *,
+    merge: bool, commands_green: bool, worktree: Path, runner: _TargetRunner,
 ) -> None:
-    """Optionally merge an eligible candidate, then always release its worktree."""
-    if not (merge and commands_green and state.commit_count == 1 and state.worktree_clean):
-        _cleanup_candidate(root_runner, branch, state, progress_sink)
-        return
-    variables = {"BRANCH": branch}
-    merged = _run_evaluation_operation(
-        lambda: root_runner.run("agent-merge-dev", variables, timeout=300),
-        state.events,
-        progress_sink,
-        phase="merge",
-        command_kind="repository_merge",
-        command_identity=_evaluation_target_identity("agent-merge-dev", variables),
-        failure_class="merge_failed",
+    """Preserve an unproved integration; retire only the exact eligible owner."""
+    from general_ludd.self_improve.promotion import integrate_owned_self_improve_worktree
+
+    eligible = merge and commands_green and state.commit_count == 1 and state.worktree_clean
+    if eligible:
+        integrated = _run_evaluation_operation(
+            lambda: integrate_owned_self_improve_worktree(
+                root_runner, runner, branch=branch, worktree=worktree, head=state.expected_head,
+            ), state.events, progress_sink,
+            phase="merge", command_kind="repository_merge",
+            command_identity=_evaluation_target_identity(
+                "development-fast-forward", {"SOURCE": state.expected_head},
+            ), failure_class="merge_failed",
+        )
+        state.results.extend(integrated.steps)
+        if not integrated.confirmed:
+            state.candidate_preserved = True
+            return
+    _cleanup_candidate(
+        root_runner, branch, state, progress_sink, worktree=worktree,
+        head=state.expected_head, purpose="merged" if eligible else "self-improve-evaluation",
     )
-    cleanup = _cleanup_candidate(root_runner, branch, state, progress_sink)
-    state.cleanup_passed = merged.returncode == 0 and cleanup.returncode == 0
 
 
 def _build_attempt_result(
@@ -1805,48 +1819,30 @@ def evaluate_attempt(
     if not proposal_scope_matches(proposal, reference.changed_files):
         return _scope_rejected_attempt(proposal, reference, expected_identity)
     worktree, branch = create_worktree(root_runner, reference.baseline_sha, attempt)
-    state = _AttemptState(time.monotonic(), [], [])
+    state = _AttemptState(time.monotonic(), [], [], expected_head=reference.baseline_sha)
     runner_factory = make_runner_factory or MakeRunner
     try:
         runner = runner_factory(worktree)
         _apply_and_preflight_candidate(worktree, proposal, state, progress_sink)
         commands_green = _run_approved_candidate_commands(
-            runner,
-            task,
-            proposal,
-            state,
-            progress_sink,
+            runner, task, proposal, state, progress_sink,
         )
         if commands_green:
-            _commit_candidate(
-                runner,
-                proposal,
-                reference,
-                branch,
-                state,
-                progress_sink,
-            )
+            _commit_candidate(runner, proposal, reference, branch, state, progress_sink)
         quality = _derive_attempt_quality(proposal, state)
         _finish_candidate_worktree(
-            root_runner,
-            branch,
-            state,
-            progress_sink,
-            merge=merge,
-            commands_green=commands_green,
+            root_runner, branch, state, progress_sink, merge=merge,
+            commands_green=commands_green, worktree=worktree, runner=runner,
         )
         return _build_attempt_result(
-            proposal,
-            reference,
-            expected_identity,
-            state,
-            quality,
-            commands_green,
-            progress_sink,
+            proposal, reference, expected_identity, state, quality, commands_green, progress_sink,
         )
     except BaseException:
-        if not state.cleanup_attempted:
-            _cleanup_candidate(root_runner, branch, state, progress_sink)
+        if not state.cleanup_attempted and not state.candidate_preserved:
+            with contextlib.suppress(Exception):
+                _cleanup_candidate(
+                    root_runner, branch, state, progress_sink, worktree=worktree, head=state.expected_head,
+                )
         raise
 
 
@@ -2158,10 +2154,14 @@ def _prepare_policy_bound_context(
     runtime_paths: tuple[str, ...],
 ) -> tuple[PromptPlan, ProposalManifest | None, tuple[str, ...]]:
     """Build baseline context while guarding every observation and output path."""
+    from general_ludd.self_improve.promotion import owned_self_improve_evaluation
+
     context_root, context_branch = create_worktree(
         operation_runner, reference.baseline_sha, 0
     )
-    try:
+    with owned_self_improve_evaluation(
+        operation_runner, branch=context_branch, worktree=context_root, head=reference.baseline_sha,
+    ):
         policy_guard.require(runtime_paths, path_root=context_root)
         prompt = build_prompt(task, reference, context_root)
         mechanical_proposal = generate_mechanical_proposal(
@@ -2170,15 +2170,7 @@ def _prepare_policy_bound_context(
         all_paths = tuple(sorted({*runtime_paths, *_manifest_paths(mechanical_proposal)}))
         policy_guard.require(all_paths, path_root=context_root)
         return prompt, mechanical_proposal, all_paths
-    finally:
-        context_cleanup = operation_runner.run(
-            "agent-cleanup", {"BRANCH": context_branch}, timeout=180
-        )
-        if context_cleanup.returncode != 0:
-            raise RuntimeError(
-                "baseline context worktree cleanup failed: "
-                + (context_cleanup.stderr or context_cleanup.stdout)
-            )
+
 
 
 def prepare_managed_self_improve_plan(

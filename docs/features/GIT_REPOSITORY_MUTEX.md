@@ -1,6 +1,72 @@
 # Git Repository Mutex Process Contract
 
+## Combined native intake and retained warning repairs (2026-10-26 UTC)
+
+Normal native packaging reconciliation17e20e5e37a965a089c073ac54e3e738ca49eae6
+has verified parents cf7fd28590f695b9149430761ed174fac36661f2 and
+e9fa5cdf93acf8824d083f46d92f78577b0165b8; e9fa's direct parent is published265f.
+Its fresh normal collection is130959/130983,24 deselected/0 errors,
+49.26s/native54.968s. Mutation receipt commit-transaction/
+20261026T191907Z-5931-c7cffcfa.json passes59.769s; the original source-copy
+and conflict/abort evidence below remains historical.
+
+At that clean17e source, existing ci-failure-repair owns two real executions of
+the unchanged retained-artifact audit. Family6fcd57a80f2c1453d8982ea85d10d09290065f6b34f8b5e3b52662848ba3c013
+is locally repaired by v012-package-main-ci-repair/
+v012-package-main-ci-repair-17e20e5-20261026.json (0.699s).
+Old family12d4361eeccf0f4ac0e40ec86ed79f72cf466c2fd60c44229d3163f547bf30d1
+is locally repaired by v012-original-warning-main-ci-repair/
+v012-original-warning-main-ci-repair-17e20e5-20261026.json (0.698s).
+Both audit the actual retained40340580626 raw graph with22 reviewed missing,
+915 pinned transitive,21 spec-excluded and3 runtime edges. They create no new
+binary, compiled import proof, hosted success or deployment result.
+
+Exact native40118134466/job120943656124 context corrects the failure boundary:
+EXE build succeeded, then the strict audit rejected
+missing stream_command <- general_ludd.git_automation.locking.
+The FileNotFoundError lookup returned native1/outer2 with no match,1.825s.
+Corrected literal stream_command context passes1.941s at
+v012-original-observer-failure-context/
+v012-original-observer-stream-context-40118134466-20261026.json.
+The separate source/archive fixture FileNotFound RED is not a hosted bootloader
+failure. Preserve both actual failed workflows and their successful artifact
+verification/upload steps.
+
+Recovered Source55 is normally committed at b4ea72bfa151b718cc6f99ad8c25d79e7b951997,
+with131040/131064 collection,24 deselected/0 errors,100.17s/native106.658s,
+and native mutation125.579s. Its original49/12 profiles pass BOTH runtimes,
+exact peer sets at95.0% line/89.8% branch and94.9%/90.0%, respectively.
+The [owning integration feature](LEGACY_INTEGRATION_ENTRYPOINTS.md) retains all
+four audits, minima, unchanged controls, partial-trace limits and earlier failures.
+
+The actual Main merge retains HEAD17e/MERGE_HEADb4ea and53 original staged paths.
+Its sole guidance conflict preserves both79 Main/99 donor additions. Before the
+new handoff edits, the read-only native retention owner passes1.601s at
+v012-source55-merged-retention/v012-source55-merged-retention-b4ea72b-20261026.json:
+48 code/index paths and32 protected Main paths match the independent preview;
+seven prose paths retain separate source review, with zero unmerged/unstaged/
+untracked paths and exact checkpoint59e9 retained. That verifier supplies only
+source-preservation evidence. Combined Main static checks now pass full-package
+1516/configured 1 and 54 strict scopes EACH, quality/contracts and all eight pins.
+The128 complete test owners pass BOTH runtimes: 311 has 6202 PASS/13 existing SKIP;
+312 has 6201 PASS/14 existing SKIP. Independent interaction review approves source
+only. The [release inventory](../releases/v0.1.2-implementation-status.md) retains
+all four receipts, native durations and partial-trace limits. Next use normal
+native merge collection/commit, verify actual parents, then independent mode0
+release-proof-admission. These local checks grant no final gate or release proof.
+
+The native Main ledger has4 open Node entries,7 repaired/50 resolved/166 runs.
+Node/TOML preference and explicit shared-account workflow consent remain pending.
+The six unfinished edits stay in owned59e9c4292b8685076d98f2b4398c230ffd83cbe7;
+all four native checkpoints verify as retained with zero unowned entries.
+Full gate/global85/75 BOTH, exact-SHA push CI, reviewed development/master
+promotion, fresh built bytes/warning graph/outside-checkout smoke, ZDD,
+complete functional assets and signed release/provenance remain unproved.
+
 ## Main receiving continuation (2026-10-26 UTC)
+
+Retained pre-Source55 snapshot; the combined intake section above supersedes its
+pending source-profile/checkpoint statements without changing their evidence.
 
 The frozen Main input078d409366e8cb1a38d34f0c56d88dcf302e3b2d received the exact
 five committed peer packets through independently reviewed private manifests

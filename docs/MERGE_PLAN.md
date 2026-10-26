@@ -1,8 +1,15 @@
-# Development → master merge plan
+# Historical plan for development to master
 
-Condensed copy-paste plan for promoting `development` → `master` and cutting
-`v0.1.1` once CI goes green. Canonical reference:
-`docs/RELEASE_RUNBOOK.md` (this file is a quick-reference, not a replacement).
+The preserved v0.1.1 quick reference below is historical and does not authorize
+current promotion or release. Its legacy development-merge-to-master alias is
+retired and returns2 without Git. For v0.1.2, follow the
+[current release runbook](RELEASE_RUNBOOK.md) and canonical release-promote with
+exact-source, reviewed-head, local/hosted and deployment proof. Never use the
+commands below as a fallback after a native refusal. The
+[retirement record](features/LEGACY_INTEGRATION_ENTRYPOINTS.md) retains the repair.
+
+Historical procedure: promote development to master and cut v0.1.1 after its
+then-required checks. Preserve this record without inferring current authority.
 
 ## Preconditions
 

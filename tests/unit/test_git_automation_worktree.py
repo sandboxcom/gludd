@@ -80,13 +80,13 @@ detached
 class TestWorktreeCreate:
     """worktree_create(repo_path, branch, base_branch=None, worktree_root=...) → WorktreeResult"""
 
-    def test_creates_worktree_with_branch(self):
+    def test_creates_worktree_with_branch(self) -> None:
         result = WorktreeResult(path="/tmp/gludd-worktrees/agent-x", branch="agent-x", success=True)
         assert result.success is True
         assert "agent-x" in result.path
         assert result.branch == "agent-x"
 
-    def test_reuses_existing_branch_worktree(self):
+    def test_reuses_existing_branch_worktree(self) -> None:
         result = WorktreeResult(
             path="/tmp/gludd-worktrees/agent-x",
             branch="agent-x",
@@ -96,18 +96,18 @@ class TestWorktreeCreate:
         assert result.success is True
         assert "attached" in result.message.lower()
 
-    def test_rejects_invalid_branch_names(self):
+    def test_rejects_invalid_branch_names(self) -> None:
         result = WorktreeResult(
             path="", branch="-bad", success=False, message="refusing branch name that begins with '-'"
         )
         assert result.success is False
         assert "-" in result.message
 
-    def test_returns_worktree_path(self):
+    def test_returns_worktree_path(self) -> None:
         result = WorktreeResult(path="/tmp/gludd-worktrees/agent-y", branch="agent-y", success=True)
         assert result.path == "/tmp/gludd-worktrees/agent-y"
 
-    def test_creates_with_explicit_base_branch(self):
+    def test_creates_with_explicit_base_branch(self) -> None:
         result = WorktreeResult(
             path="/tmp/gludd-worktrees/agent-z",
             branch="agent-z",
@@ -117,13 +117,13 @@ class TestWorktreeCreate:
         assert result.success is True
         assert "development" in result.message.lower()
 
-    def test_rejects_leading_dash_in_path(self):
+    def test_rejects_leading_dash_in_path(self) -> None:
         result = WorktreeResult(
             path="", branch="agent-ok", success=False, message="refusing worktree path that begins with '-'"
         )
         assert result.success is False
 
-    def test_rejects_leading_dash_branch_via_fn(self):
+    def test_rejects_leading_dash_branch_via_fn(self) -> None:
         result = worktree_create("/tmp/gludd-worktrees", "-evil", base_branch=None)
         assert result.success is False
         assert "-" in result.message
@@ -137,7 +137,7 @@ class TestWorktreeCreate:
         mock_secure_directory.assert_not_called()
 
     @patch("general_ludd.git_automation.worktree._run_git")
-    def test_creates_worktree_via_git(self, mock_run: MagicMock):
+    def test_creates_worktree_via_git(self, mock_run: MagicMock) -> None:
         mock_run.side_effect = [_git_success()]
         result = worktree_create(_REPO, "agent-real-test")
         assert result.success is True
@@ -145,7 +145,7 @@ class TestWorktreeCreate:
         assert "agent-real-test" in result.path
 
     @patch("general_ludd.git_automation.worktree._run_git")
-    def test_fallback_to_existing_branch(self, mock_run: MagicMock):
+    def test_fallback_to_existing_branch(self, mock_run: MagicMock) -> None:
         mock_run.side_effect = [
             _git_fail(rc=128, stderr="fatal: already exists"),
             _git_success(),
@@ -157,7 +157,7 @@ class TestWorktreeCreate:
 class TestWorktreeMerge:
     """worktree_merge(repo_path, branch, target_branch="development") → MergeResult"""
 
-    def test_no_ff_merge_into_target_branch(self):
+    def test_no_ff_merge_into_target_branch(self) -> None:
         result = MergeResult(
             success=True,
             strategy="no-ff",
@@ -166,11 +166,11 @@ class TestWorktreeMerge:
         assert result.success is True
         assert result.strategy == "no-ff"
 
-    def test_merges_worktree_branch(self):
+    def test_merges_worktree_branch(self) -> None:
         result = MergeResult(success=True, strategy="no-ff")
         assert result.success is True
 
-    def test_reports_conflicts_clearly(self):
+    def test_reports_conflicts_clearly(self) -> None:
         result = MergeResult(
             success=False,
             strategy="no-ff",
@@ -181,7 +181,7 @@ class TestWorktreeMerge:
         assert result.conflicts == ["agent-conflict"]
         assert "CONFLICT" in result.message
 
-    def test_errors_on_missing_branch(self):
+    def test_errors_on_missing_branch(self) -> None:
         result = MergeResult(
             success=False,
             strategy="no-ff",
@@ -189,7 +189,7 @@ class TestWorktreeMerge:
         )
         assert result.success is False
 
-    def test_rejects_leading_dash_branch(self):
+    def test_rejects_leading_dash_branch(self) -> None:
         result = worktree_merge("/tmp/test", "-bad")
         assert result.success is False
         assert "-" in result.message
@@ -199,7 +199,7 @@ class TestWorktreeCleanup:
     """worktree_cleanup(repo_path, branch, worktree_root="...") → dict"""
 
     @patch("general_ludd.git_automation.worktree._run_git")
-    def test_removes_worktree_directory(self, mock_run: MagicMock):
+    def test_removes_worktree_directory(self, mock_run: MagicMock) -> None:
         mock_run.side_effect = [
             _git_success(),  # worktree remove
             _git_success(),  # worktree prune
@@ -211,7 +211,7 @@ class TestWorktreeCleanup:
         assert result["cleaned"] is True
 
     @patch("general_ludd.git_automation.worktree._run_git")
-    def test_deletes_branch_after_merge(self, mock_run: MagicMock):
+    def test_deletes_branch_after_merge(self, mock_run: MagicMock) -> None:
         mock_run.side_effect = [
             _git_success(),  # worktree remove
             _git_success(),  # worktree prune
@@ -221,7 +221,7 @@ class TestWorktreeCleanup:
         assert result["branch_removed"] is True
 
     @patch("general_ludd.git_automation.worktree._run_git")
-    def test_handles_already_removed_worktree(self, mock_run: MagicMock):
+    def test_handles_already_removed_worktree(self, mock_run: MagicMock) -> None:
         mock_run.side_effect = [
             _git_fail(rc=128, stderr="not a working tree"),
             _git_success(),  # prune succeeds
@@ -230,7 +230,7 @@ class TestWorktreeCleanup:
         result = worktree_cleanup(_REPO, "agent-gone")
         assert result["success"] is True
 
-    def test_rejects_leading_dash(self):
+    def test_rejects_leading_dash(self) -> None:
         result = worktree_cleanup("/tmp/test", "-bad")
         assert result["success"] is False
         assert "-" in result.get("error", "")
@@ -245,14 +245,14 @@ class TestWorktreeCleanup:
 class TestWorktreeList:
     """worktree_list(repo_path) → list[WorktreeInfo]"""
 
-    def test_lists_all_worktrees(self):
+    def test_lists_all_worktrees(self) -> None:
         info = [
             WorktreeInfo(path="/main", branch="development", is_main=True, commit="abc123"),
             WorktreeInfo(path="/tmp/gludd-worktrees/agent-1", branch="agent-1", commit="def456"),
         ]
         assert len(info) == 2
 
-    def test_excludes_main_checkout_from_count(self):
+    def test_excludes_main_checkout_from_count(self) -> None:
         info = [
             WorktreeInfo(path="/main", branch="development", is_main=True, commit="abc123"),
             WorktreeInfo(path="/tmp/gludd-worktrees/agent-1", branch="agent-1", commit="def456"),
@@ -260,7 +260,7 @@ class TestWorktreeList:
         non_main = [w for w in info if not w.is_main]
         assert len(non_main) == 1
 
-    def test_empty_list_when_no_agent_worktrees(self):
+    def test_empty_list_when_no_agent_worktrees(self) -> None:
         info: list[WorktreeInfo] = [
             WorktreeInfo(path=_REPO, branch="development", is_main=True, commit="abc123"),
         ]
@@ -268,14 +268,14 @@ class TestWorktreeList:
         assert len(non_main) == 0
 
     @patch("general_ludd.git_automation.worktree._run_git")
-    def test_parses_porcelain_output_main_only(self, mock_run: MagicMock):
+    def test_parses_porcelain_output_main_only(self, mock_run: MagicMock) -> None:
         mock_run.return_value = _git_success(_WT_PORCELAIN_MAIN_ONLY)
         result = worktree_list(_REPO)
         assert len(result) == 1
         assert result[0].is_main is True
 
     @patch("general_ludd.git_automation.worktree._run_git")
-    def test_parses_porcelain_with_agent_worktree(self, mock_run: MagicMock):
+    def test_parses_porcelain_with_agent_worktree(self, mock_run: MagicMock) -> None:
         mock_run.return_value = _git_success(_WT_PORCELAIN_WITH_AGENT)
         result = worktree_list(_REPO)
         assert len(result) == 2
@@ -287,14 +287,18 @@ class TestWorktreeList:
 class TestWorktreeHealth:
     """worktree_health_check(repo_path, max_age_hours=24, ...) → list[WorktreeHealthViolation]"""
 
-    def test_violation_repr(self):
+    def test_violation_repr(self) -> None:
         v = WorktreeHealthViolation("/tmp/wt", "agent-x", "Stale >24h", "error")
         assert "Stale" in repr(v)
         assert "agent-x" in repr(v)
 
-    def test_healthy_with_no_agent_worktrees(self):
+    @patch("general_ludd.git_automation.worktree._run_git")
+    def test_healthy_with_no_agent_worktrees(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = _git_success(_WT_PORCELAIN_MAIN_ONLY)
         violations = worktree_health_check(repo_path=_REPO)
         assert isinstance(violations, list)
+        assert violations == []
+        mock_run.assert_called_once_with("worktree", "list", "--porcelain", cwd=_REPO)
 
     @patch("general_ludd.git_automation.worktree.os.path.isdir", return_value=False)
     @patch("general_ludd.git_automation.worktree._run_git")
@@ -317,7 +321,7 @@ class TestWorktreeHealth:
         assert "prune" in violations[0].reason.lower()
 
     @patch("general_ludd.git_automation.worktree._run_git")
-    def test_flags_stale_unmerged_worktree(self, mock_run: MagicMock):
+    def test_flags_stale_unmerged_worktree(self, mock_run: MagicMock) -> None:
         two_days_age = 48 * 3600
         mock_run.side_effect = [
             _git_success(_WT_PORCELAIN_WITH_AGENT),  # worktree list
@@ -333,7 +337,7 @@ class TestWorktreeHealth:
         assert len(violations) >= 1
 
     @patch("general_ludd.git_automation.worktree._run_git")
-    def test_flags_healthy_when_merged(self, mock_run: MagicMock):
+    def test_flags_healthy_when_merged(self, mock_run: MagicMock) -> None:
         one_hour_age = 3600
         mock_run.side_effect = [
             _git_success(_WT_PORCELAIN_WITH_AGENT),  # worktree list
@@ -405,7 +409,7 @@ class TestWorktreeHealth:
 class TestWorktreeMergeAll:
     """worktree_merge_all(repo_path, target_branch="development", ...) → dict"""
 
-    def test_returns_merge_summary_shape(self):
+    def test_returns_merge_summary_shape(self) -> None:
         result = {
             "total": 0,
             "merged": 0,
@@ -419,13 +423,13 @@ class TestWorktreeMergeAll:
         assert "conflicts" in result
 
     @patch("general_ludd.git_automation.worktree._run_git")
-    def test_zero_total_when_no_agent_worktrees(self, mock_run: MagicMock):
+    def test_zero_total_when_no_agent_worktrees(self, mock_run: MagicMock) -> None:
         mock_run.return_value = _git_success(_WT_PORCELAIN_MAIN_ONLY)
         result = worktree_merge_all(repo_path=_REPO)
         assert result["total"] == 0
 
     @patch("general_ludd.git_automation.worktree._run_git")
-    def test_merges_and_cleans_worktrees(self, mock_run: MagicMock):
+    def test_merges_and_cleans_worktrees(self, mock_run: MagicMock) -> None:
         mock_run.side_effect = [
             _git_success(_WT_PORCELAIN_WITH_AGENT),  # worktree list
             _git_fail(rc=1),  # merge-base --is-ancestor (not merged)
@@ -443,7 +447,7 @@ class TestWorktreeMergeAll:
         assert result["conflicts"] == 0
 
     @patch("general_ludd.git_automation.worktree._run_git")
-    def test_skips_already_merged(self, mock_run: MagicMock):
+    def test_skips_already_merged(self, mock_run: MagicMock) -> None:
         mock_run.side_effect = [
             _git_success(_WT_PORCELAIN_WITH_AGENT),  # worktree list
             _git_success(),  # merge-base --is-ancestor returns 0 (already merged)
@@ -457,7 +461,7 @@ class TestWorktreeMergeAll:
         assert result["total"] == 1
 
     @patch("general_ludd.git_automation.worktree._run_git")
-    def test_handles_merge_conflict(self, mock_run: MagicMock):
+    def test_handles_merge_conflict(self, mock_run: MagicMock) -> None:
         mock_run.side_effect = [
             _git_success(_WT_PORCELAIN_WITH_AGENT),  # worktree list
             _git_fail(rc=1),  # merge-base --is-ancestor (not merged)

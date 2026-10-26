@@ -7,52 +7,68 @@ Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection 
 
 ## Current receiving record (2026-10-26 UTC)
 
-Fixed Main input is078d409366e8cb1a38d34f0c56d88dcf302e3b2d on
-feature/v012-certification-repairs-20261026. Native worktree-state owns later
-HEAD/index state. The original82ec5170c173cfb52bb8bf3c6bbf7944cf3375e4 candidate
-and the leading714 collection remain fixed; all seven S98 tasks stay unchecked.
+Fixed inputs are Main17e20e5e37a965a089c073ac54e3e738ca49eae6 and recovered
+feature b4ea72bfa151b718cc6f99ad8c25d79e7b951997. The current branch is
+feature/v012-certification-repairs-20261026; native worktree-state owns later
+HEAD/index state. The leading714 collection and older publication header remain
+historical evidence. All seven S98 tasks remain unchecked.
 
-Normally guarded tracking/help baa7d6ad6e24ebbd3896afd3f071d64c5a9c3aa0 and
-workflow budget078d409 follow native18ec and earlier checkpoints. Their actual
-649/648+1 and517 EACH receiving and fresh collections remain scoped evidence.
-Five separate committed peer packets are now semantically received into Main:
-summary/history, enforcement, debounce and packaged observer/graph. Private
-manifests93e2ea4f and717d5249 preserve exact exports/preimages, assertions,
-Main controller additions and0644 modes.31 selected paths yield30 staged changes;
-the accepted controller Make30 bytes were already present. Copying source grants
-no donor ancestry, clean exact-SHA test execution or promotion authority.
+The earlier31-path intake has four normal checkpoints: CI/history34bb8a37,
+enforcement1ceab547, debounce790dcb9d and packagingcf7fd285. The owning features
+retain their complete2,926/1 existing skip EACH-runtime receiving and fresh
+130959/130983 collection receipts. Packaging's real native merge17e20e5e has
+parents cf7fd28590f695b9149430761ed174fac36661f2 and
+e9fa5cdf93acf8824d083f46d92f78577b0165b8, with fresh normal collection
+130959/130983,24 deselected/0 errors,49.26s/native54.968s.
 
-Complete63-owner receiving passes2,926/1 existing skip EACH runtime after the
-logical-Make AST and all eight native admission pins. Observed receipts:
-v012-five-family-receiving/v012-five-family-receiving311-078d409-20261026.json
-(native980.619s) and the312 counterpart (native1017.364s), under .gate-logs/observed.
-Each5957-event trace has2961 pairs/0 issues/0 unfinished; two reports belong to
-the intentional nested fatal-warning control, whose parent passes. Package1516
-plus configured1 and all16 changed Python files typecheck on BOTH runtimes;
-source, secrets, line, duplicate, environment,299 contracts and265 resources pass.
-Normal scoped intake commits still require their own fresh collection.
+Recovered Source55 is now normally committed at b4ea72bfa151b718cc6f99ad8c25d79e7b951997:
+55 paths,131040/131064 collected,24 deselected/0 errors,100.17s/native106.658s.
+Its peer mutation receipt is commit-transaction/20261026T201536Z-86299-14158ad0.json,
+native125.579s. All four original coverage profiles pass with exact peer file
+sets, no foreign rows and unchanged85/75 LINE AND BRANCH floors:49 sources
+95.0%/89.8% BOTH;12 sources94.9%/90.0% BOTH. The12 profile retains its two original
+deselections. Complete24-owner consumers pass1,006 EACH and final documentation
+readers141 EACH. Full profile traces retain14 expected nested failure reports;
+the earlier ten-owner trace remains partial, with no timing claim.
+The feature LEGACY_INTEGRATION_ENTRYPOINTS.md owns every exact receipt and the
+preserved Source53 mixed61% failure, focused23% origin refusal and earlier errors.
 
-Source53 readiness3 coverage now passes BOTH with exactly three peer files,
-96.5/93.5 line/branch on311 and96.3/93.3 on312. The broader original49 run then
-fails native coverage61% after7,972 passes/5 skips/1 xfail:42 Main rows appear
-beside49 peer rows; no JSON/audit is produced. Preserve native855.285s receipt
-coverage-files/20261026T173239Z-50742-823e1757.json in that peer. One original
-daemon child independently proves Main imports at the physical peer CWD.
-The actual coverage-files producer now has a bounded physical PYTHONPATH repair
-and10 GREEN controls EACH; Source55 remains unaccepted pending exact guard,
-independent review, complete consumers and original49/12 profiles. No filtering,
-floor, warning, selector, deadline or assertion waiver follows either failure.
+The actual native Main merge currently retains HEAD17e20e5e/MERGE_HEADb4ea72bf.
+Its sole guidance overlap preserves all79 Main and99 donor additions. Before
+these handoff edits, the native read-only verifier passed1.601s at
+v012-source55-merged-retention/v012-source55-merged-retention-b4ea72b-20261026.json:
+48 working/index code paths and32 protected Main paths exact, seven prose paths,
+zero unmerged/unstaged/untracked paths and retained checkpoint59e9. Independent
+source review approves those code/prose scopes; no merge commit or new combined
+Main acceptance follows from that reader.
 
-Actual hosted Build40339437973 and Molecule40340580626 remain failed at published
-265f8b6add9e5dda459d8df056e17c732e77ea2c, workflow_dispatch/attempt1. Local clean
-e9fa5cdf93acf8824d083f46d92f78577b0165b8 repairs only the retained-artifact
-Molecule graph family. Its normal feature publisher REFUSES native2/0.856s on
-two open Node families before transport/new Actions. Node/TOML behavior preference
-and shared-account workflow consent remain pending. No canonical full gate,
-global85/75 BOTH, exact-SHA push CI, development/master promotion, ZDD deployment
-or complete28-category/30-asset stable release is certified. Three owned
-checkpoints remain verified. Earlier bounded handoff is retained at
-baa7d6ad6e24ebbd3896afd3f071d64c5a9c3aa0:SESSION.md.
+At clean17e20e5e, native repair-owned retained-artifact audits locally repair
+both warning families12d4361e and6fcd57a8, native0.698s/0.699s. Actual old run
+40118134466/job120943656124 failed the missing stream_command edge audit after
+successful EXE build; no hosted FileNotFound/bootloader failure is inferred.
+Main's native ledger now has4 open Node entries,7 repaired/50 resolved/166 runs.
+Published265f Build40339437973 and Molecule40340580626 remain failed dispatches;
+they supply no canonical push or deployment proof.
+
+Node/TOML behavior preference and shared-account workflow consent remain pending.
+The six unfinished Node/auditor edits are retained in owned checkpoint
+59e9c4292b8685076d98f2b4398c230ffd83cbe7; all four checkpoints verify as retained
+with zero unowned entries. Combined static receiving now passes full production
+package typing (1516 sources plus configured 1), all 54 separate strict scopes on
+EACH runtime, Ruff/docstrings, file bounds, target/resource/task contracts and all
+eight original promotion pins. The128 complete-owner union passes BOTH runtimes:
+311 has 6202 PASS/13 existing SKIP;312 has 6201 PASS/14 existing SKIP. Exact four
+v012-combined-receiving receipts, native durations and the retained partial trace
+limits are in the release inventory. Independent interaction review approves
+source only; no gate or deployment result follows. The release-page preview also
+validates byte-exact at v012-release-page-preview/
+v012-release-page-preview-17e-b4ea-20261026.json (0.629s).
+Next normal native merge collection/commit, verify the actual two parents, then
+run independent release-proof-admission mode0 with native S98.4 ownership. Before sealing/final proof, clear actual prerequisites and run
+release-proof-admission mode0. Full canonical21600 gate/global85/75 BOTH, exact-SHA
+push CI, reviewed development/master promotion, fresh built-byte smoke, ZDD and
+the complete signed stable artifact release remain unproved. The release inventory
+owns current native commands and separate proof scopes.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 

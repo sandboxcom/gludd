@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import re
+import shlex
+import shutil
 import subprocess
 import sys
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from scripts.makefile_layout import compose_makefile
+from scripts.makefile_layout import compose_makefile, makefile_sources
 
 from general_ludd.review.release_forecast import Blocker, RunObservation
 
@@ -29,6 +33,238 @@ def _completed(
     returncode: int = 0,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess(list(argv), returncode, stdout, stderr)
+
+
+
+_READINESS_SOURCE_BINDING = (
+    '\t\tPYTHONPATH="$$gludd_readiness_source_root/src:$$gludd_readiness_source_root/scripts:'
+    '$$gludd_readiness_source_root$${PYTHONPATH:+:$$PYTHONPATH}" \\\n'
+)
+
+_READINESS_SOURCE_PROBE = """\
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+from general_ludd import readiness_source_probe
+import owned_readiness_script_probe
+import owned_readiness_root_probe
+import retained_readiness_probe
+
+parser = argparse.ArgumentParser()
+for name in ("root", "tag", "completed-stages", "observations",
+             "reviewed-head-integration-receipt", "expected-head-sha", "ci-branch"):
+    parser.add_argument("--" + name)
+parser.add_argument("--validate-only", action="store_true")
+arguments = parser.parse_args()
+print(json.dumps({
+    "source": readiness_source_probe.SOURCE,
+    "source_file": str(Path(readiness_source_probe.__file__).resolve()),
+    "script_source": owned_readiness_script_probe.SOURCE,
+    "root_source": owned_readiness_root_probe.SOURCE,
+    "retained": retained_readiness_probe.SOURCE,
+    "pythonpath": os.environ.get("PYTHONPATH", ""),
+    "sentinel": os.environ.get("OWNED_READINESS_SENTINEL"),
+    "curdir_origin": os.environ.get("OWNED_READINESS_CURDIR_ORIGIN"),
+    "curdir_value": os.environ.get("OWNED_READINESS_CURDIR_VALUE"),
+    "cwd": str(Path.cwd().resolve()),
+    "python": sys.executable,
+    "prefix": sys.prefix,
+    "data_root": arguments.root,
+    "validate_only": arguments.validate_only,
+}, sort_keys=True))
+raise SystemExit(int(os.environ.get("OWNED_READINESS_NATIVE_EXIT", "0")))
+"""
+
+
+@dataclass
+class ReadinessSourceFixture:
+    root: Path
+    decoy: Path
+    carrier: Path
+    marker: Path
+    uv: str
+    make: str
+    environment: dict[str, str] = field(repr=False)
+    original_environment: dict[str, str] = field(repr=False)
+    producer_source: str = field(repr=False)
+
+    @property
+    def producer(self) -> Path:
+        return self.root / "make/30-ci-and-release.mk"
+
+    def invoke(self, origin: str) -> subprocess.CompletedProcess[str]:
+        environment = dict(self.environment)
+        environment["CURDIR"] = str(self.decoy)
+        command = [self.make, "--no-print-directory"]
+        if origin == "early-environment":
+            command.append("-e")
+        command.extend((
+            "-f", str(self.root / "Makefile"), "release-readiness",
+            "UV=" + shlex.quote(self.uv), "PYTHON=" + shlex.quote(sys.executable),
+            "SYSTEM_PYTHON=" + shlex.quote(sys.executable),
+            "TAG=v0.1.0-beta.4", "RELEASE_READINESS_VALIDATE_ONLY=1",
+            "RELEASE_COMPLETED_STAGES=", "RELEASE_OBSERVATIONS=",
+            "REVIEWED_HEAD_INTEGRATION_RECEIPT=", "RELEASE_CANDIDATE_SHA=",
+            "RELEASE_READINESS_CI_BRANCH=",
+        ))
+        if origin == "command-line":
+            command.extend(("CURDIR=" + str(self.decoy), "PYTHONPATH=" + environment["PYTHONPATH"]))
+        return subprocess.run(
+            command, cwd=self.root, env=environment, capture_output=True,
+            text=True, check=False, timeout=30,
+        )
+
+    def unguard(self) -> None:
+        source = self.producer_source
+        if _READINESS_SOURCE_BINDING in source:
+            assert source.count(_READINESS_SOURCE_BINDING) == 1
+            source = source.replace(_READINESS_SOURCE_BINDING, "", 1)
+        else:
+            assert "gludd_readiness_source_root" not in source
+        self.producer.write_text(source, encoding="utf-8")
+
+    def restore(self) -> None:
+        self.producer.write_text(self.producer_source, encoding="utf-8")
+
+    def parent_carriers_unchanged(self) -> bool:
+        return self.environment == self.original_environment
+
+
+@pytest.fixture
+def readiness_source_fixture(tmp_path: Path) -> ReadinessSourceFixture:
+    root = (tmp_path / "current readiness checkout").resolve()
+    root.mkdir()
+    for source in makefile_sources(ROOT / "Makefile"):
+        destination = root / source.relative_to(ROOT)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+    with (root / "Makefile").open("a", encoding="utf-8") as makefile:
+        makefile.write(
+            "\nexport OWNED_READINESS_CURDIR_ORIGIN = $(origin CURDIR)\n"
+            "export OWNED_READINESS_CURDIR_VALUE = $(CURDIR)\n"
+        )
+    decoy = (tmp_path / "outside opposite checkout").resolve()
+    carrier = (tmp_path / "retained unrelated carrier").resolve()
+    marker = tmp_path / "owned readiness import witness"
+    carrier.mkdir()
+    files = {
+        root / "pyproject.toml": (
+            '[project]\nname="gludd-owned-readiness-source"\nversion="0.0.0"\n'
+            'requires-python=">=3.11"\n'
+        ),
+        root / "owned_readiness_probe_program.py": _READINESS_SOURCE_PROBE,
+        root / "src/general_ludd/__init__.py": "",
+        root / "src/general_ludd/readiness_source_probe.py": 'SOURCE = "current-src"\n',
+        root / "scripts/owned_readiness_script_probe.py": 'SOURCE = "current-scripts"\n',
+        root / "owned_readiness_root_probe.py": 'SOURCE = "current-root"\n',
+        decoy / "src/general_ludd/__init__.py": "",
+        decoy / "src/general_ludd/readiness_source_probe.py": (
+            f"from pathlib import Path\nPath({str(marker)!r}).write_text('active outside import\\n')\n"
+            'SOURCE = "opposite-src"\n'
+        ),
+        decoy / "scripts/owned_readiness_script_probe.py": 'SOURCE = "opposite-scripts"\n',
+        decoy / "owned_readiness_root_probe.py": 'SOURCE = "opposite-root"\n',
+        carrier / "retained_readiness_probe.py": 'SOURCE = "retained-carrier"\n',
+    }
+    for destination, content in files.items():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(content, encoding="utf-8")
+    # Keep the native entrypoint while giving generated probe code its own filename.
+    (root / "scripts/release_readiness.py").symlink_to(root / "owned_readiness_probe_program.py")
+    real_uv, real_make = shutil.which("uv"), shutil.which("make")
+    assert real_uv is not None and real_make is not None
+    environment = dict(os.environ)
+    for name in ("MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "MAKELEVEL", "GNUMAKEFLAGS", "MAKEFILES", "PYTEST_ARGS"):
+        environment.pop(name, None)
+    environment.update({
+        "PYTHONPATH": os.pathsep.join(str(path) for path in (
+            decoy / "src", decoy / "scripts", decoy, carrier,
+        )),
+        "UV_PROJECT_ENVIRONMENT": sys.prefix, "VIRTUAL_ENV": sys.prefix,
+        "UV_NO_SYNC": "1", "UV_PYTHON": sys.executable, "UV_PYTHON_DOWNLOADS": "never",
+        "OWNED_READINESS_SENTINEL": "owned-unrelated-carrier",
+        "OWNED_READINESS_NATIVE_EXIT": "0",
+    })
+    assert not decoy.is_relative_to(root) and not carrier.is_relative_to(root)
+    return ReadinessSourceFixture(
+        root, decoy, carrier, marker, real_uv, real_make, environment, dict(environment),
+        (root / "make/30-ci-and-release.mk").read_text(encoding="utf-8"),
+    )
+
+
+@pytest.mark.parametrize("readiness_curdir_origin", ("command-line", "environment", "early-environment"))
+def test_native_readiness_binds_physical_source_and_preserves_explicit_carriers(
+    readiness_source_fixture: ReadinessSourceFixture, readiness_curdir_origin: str,
+) -> None:
+    fixture = readiness_source_fixture
+    fixture.unguard()
+    witness = fixture.invoke(readiness_curdir_origin)
+    assert witness.returncode == 0, witness.stdout + witness.stderr
+    assert json.loads(witness.stdout)["source"] == "opposite-src"
+    assert fixture.marker.read_text(encoding="utf-8") == "active outside import\n"
+    fixture.restore()
+    fixture.marker.unlink()
+    result = fixture.invoke(readiness_curdir_origin)
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["source"] == "current-src"
+    assert payload["source_file"] == str(fixture.root / "src/general_ludd/readiness_source_probe.py")
+    assert payload["script_source"] == "current-scripts"
+    assert payload["root_source"] == "current-root"
+    assert payload["retained"] == "retained-carrier"
+    expected_origin = {
+        "command-line": "command line", "environment": "file",
+        "early-environment": "environment override",
+    }[readiness_curdir_origin]
+    expected_data_root = fixture.root if readiness_curdir_origin == "environment" else fixture.decoy
+    assert payload["curdir_origin"] == expected_origin
+    assert payload["curdir_value"] == payload["data_root"] == str(expected_data_root)
+    assert payload["cwd"] == str(fixture.root)
+    assert payload["sentinel"] == "owned-unrelated-carrier"
+    assert Path(payload["python"]).resolve() == Path(sys.executable).resolve()
+    assert payload["prefix"] == sys.prefix
+    assert payload["pythonpath"].split(os.pathsep)[:3] == [
+        str(fixture.root / "src"), str(fixture.root / "scripts"), str(fixture.root),
+    ]
+    assert payload["pythonpath"].endswith(str(fixture.carrier))
+    assert not fixture.marker.exists()
+    assert fixture.parent_carriers_unchanged()
+
+
+@pytest.mark.parametrize("readiness_curdir_origin", ("command-line", "early-environment"))
+def test_native_readiness_opposite_binding_mutation_selects_owned_decoy(
+    readiness_source_fixture: ReadinessSourceFixture, readiness_curdir_origin: str,
+) -> None:
+    fixture = readiness_source_fixture
+    capture = "gludd_readiness_source_root=$$(pwd -P)"
+    assert fixture.producer_source.count(capture) == 1
+    fixture.producer.write_text(
+        fixture.producer_source.replace(capture, 'gludd_readiness_source_root="$(CURDIR)"', 1),
+        encoding="utf-8",
+    )
+    result = fixture.invoke(readiness_curdir_origin)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout)["source"] == "opposite-src"
+    assert fixture.marker.read_text(encoding="utf-8") == "active outside import\n"
+    assert fixture.parent_carriers_unchanged()
+
+
+@pytest.mark.parametrize("readiness_curdir_origin", ("environment", "early-environment"))
+def test_native_readiness_source_binding_retains_native_child_failure(
+    readiness_source_fixture: ReadinessSourceFixture, readiness_curdir_origin: str,
+) -> None:
+    fixture = readiness_source_fixture
+    fixture.environment["OWNED_READINESS_NATIVE_EXIT"] = "23"
+    result = fixture.invoke(readiness_curdir_origin)
+    assert result.returncode == 2
+    assert "Error 23" in result.stderr
+    assert json.loads(result.stdout)["source"] == "current-src"
+    assert not fixture.marker.exists()
+    fixture.environment["OWNED_READINESS_NATIVE_EXIT"] = "0"
+    assert fixture.parent_carriers_unchanged()
 
 
 def test_exit_codes_are_stable_and_prioritized() -> None:
@@ -725,6 +961,34 @@ def test_assess_stops_before_external_evidence_when_task_ticks_invalid(
     assert any("checked TASKS.md completion evidence is invalid" in error for error in result.errors)
 
 
+@pytest.mark.parametrize("extra", [
+    {},
+    {"head": "a" * 40, "native_ownership_verified": 1, "status": "released"},
+])
+def test_prunable_diagnostic_never_invents_native_owner_release(
+    extra: dict[str, object],
+) -> None:
+    """Diagnostic fields are not a native verified ownership release tuple."""
+    result = rr.Readiness(unintegrated_worktrees=[{
+        "branch": "stale-feature", "path": "/tmp/gludd-worktrees/stale-feature",
+        "reasons": ["prunable_registration"], **extra,
+    }])
+
+    plan = rr.build_remediation_plan(result, tag=rr.DEFAULT_RELEASE_TAG)
+
+    assert len(plan.steps) == 1
+    step = plan.steps[0]
+    assert step.owner_release_argv == (), "branch-only or caller-asserted ownership is insufficient"
+    assert step.apply_argv is None, "unknown owned context must never authorize bulk cleanup"
+    assert step.validate_argv[-1] == "WT_PRUNE_VALIDATE_ONLY=1"
+    assert "ACTIVE_WORKSTREAM_REGISTRY=" not in step.validate_argv
+    assert step.requires_owner_confirmation is True
+    assert "canonical WORKTREE" in step.resolution
+    assert "EXPECTED_HEAD" in step.resolution
+    assert "deferred" in step.resolution
+    assert result.ready is False
+
+
 def test_prunable_registration_remediation_is_owner_gated_and_validate_first() -> None:
     result = rr.Readiness(
         unintegrated_worktrees=[
@@ -750,12 +1014,13 @@ def test_prunable_registration_remediation_is_owner_gated_and_validate_first() -
     assert step.validate_argv == (
         "make",
         "wt-prune-safe",
-        "ACTIVE_WORKSTREAM_REGISTRY=",
         "WT_PRUNE_VALIDATE_ONLY=1",
     )
-    assert step.owner_release_argv == (("make", "workstream-unregister", "BRANCH=stale-feature"),)
-    assert step.apply_argv is not None
-    assert step.apply_argv[-1] == "WT_PRUNE_VALIDATE_ONLY=0"
+    assert step.owner_release_argv == ()
+    assert step.apply_argv is None
+    assert "deferred" in step.resolution
+    assert "canonical WORKTREE" in step.resolution
+    assert "EXPECTED_HEAD" in step.resolution
     assert step.requires_owner_confirmation is True
     assert result.ready is False
 

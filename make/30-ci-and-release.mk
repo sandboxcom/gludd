@@ -652,7 +652,9 @@ release-proof-admission:
 
 release-readiness:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-readiness TAG=v0.1.2 RELEASE_READINESS_VALIDATE_ONLY=0|1 RELEASE_COMPLETED_STAGES=stage,... RELEASE_OBSERVATIONS=stage=minutes,... REVIEWED_HEAD_INTEGRATION_RECEIPT=path RELEASE_CANDIDATE_SHA=full-sha RELEASE_READINESS_CI_BRANCH=source-branch-or-empty"; exit 2; }
-	@RELEASE_READINESS_VALIDATE_ONLY="$(RELEASE_READINESS_VALIDATE_ONLY)" \
+	@gludd_readiness_source_root=$$(pwd -P) || exit $$?; \
+		PYTHONPATH="$$gludd_readiness_source_root/src:$$gludd_readiness_source_root/scripts:$$gludd_readiness_source_root$${PYTHONPATH:+:$$PYTHONPATH}" \
+		RELEASE_READINESS_VALIDATE_ONLY="$(RELEASE_READINESS_VALIDATE_ONLY)" \
 		$(UV) run python scripts/release_readiness.py --root "$(CURDIR)" --tag "$(TAG)" \
 		--completed-stages "$(RELEASE_COMPLETED_STAGES)" \
 		--observations "$(RELEASE_OBSERVATIONS)" \

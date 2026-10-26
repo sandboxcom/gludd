@@ -22,6 +22,7 @@ from general_ludd.self_improve.codex_comparison import (
     ProposalManifest,
     build_retry_prompt,
 )
+from general_ludd.self_improve.codex_gateway import _decode_compact_span_proposal
 from general_ludd.self_improve.managed_runner import ManagedRunResult
 from general_ludd.self_improve.result_artifact import ManagedSelfImproveResultArtifact
 from general_ludd.self_improve.runtime import (
@@ -31,6 +32,7 @@ from general_ludd.self_improve.runtime import (
     generate_mechanical_proposal,
     proposal_from_mechanical_changes,
 )
+from tests.self_improve_native_fixtures import controlled_retirement_result, controlled_revision_result
 from tests.unit.test_self_improve_codex_runner import (
     _benchmark_args,
     _benchmark_task_file,
@@ -455,7 +457,7 @@ def test_generate_local_proposal_rejects_missing_and_invalid_worker_output(
             target: str,
             variables: dict[str, str],
             *,
-            timeout: int,
+            timeout: float,
         ) -> MakeResult:
             del target, variables, timeout
             return MakeResult(("make", "worker"), 0, "", "", 0.1)
@@ -485,7 +487,7 @@ def test_local_worker_validation_failure_is_typed_without_raw_output(
             target: str,
             variables: dict[str, str],
             *,
-            timeout: int,
+            timeout: float,
         ) -> MakeResult:
             del target, variables, timeout
             return MakeResult(
@@ -533,7 +535,7 @@ def test_local_exchange_cleans_after_compact_parent_aggregate_rejection(
             target: str,
             variables: dict[str, str],
             *,
-            timeout: int,
+            timeout: float,
         ) -> MakeResult:
             del target, timeout
             exchange = Path(variables["SELF_IMPROVE_PROMPT_FILE"]).parent
@@ -547,7 +549,7 @@ def test_local_exchange_cleans_after_compact_parent_aggregate_rejection(
                     ]
                 }
             )
-            comparison_module._decode_compact_span_proposal(
+            _decode_compact_span_proposal(
                 raw,
                 focus_path="src/general_ludd/example.py",
             )
@@ -660,7 +662,7 @@ def test_live_qwen_three_b_score_sixty_emits_safe_typed_evaluation_diagnosis(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Turn the exact two-file/five-line fast failure into actionable safe evidence."""
+    """Keep the exact fast-failure diagnosis with controlled eligible cleanup."""
     source_path = "src/general_ludd/catalog_truth.py"
     test_path = "tests/unit/test_catalog_truth.py"
     source = tmp_path / source_path
@@ -748,15 +750,18 @@ def test_live_qwen_three_b_score_sixty_emits_safe_typed_evaluation_diagnosis(
             timeout: int = 120,
             read_only: bool = False,
         ) -> MakeResult:
-            del variables, timeout, read_only
+            del timeout, read_only
             self.targets.append(target_name)
-            return MakeResult(
-                ("make", target_name),
-                0,
-                leaked_path,
-                leaked_secret,
-                0.1,
-            )
+            values = dict(variables or {})
+            if target_name == "git-show-commit":
+                assert values == {"C": "refs/heads/candidate"}
+                native = controlled_revision_result(values["C"], "a" * 40)
+            else:
+                native = controlled_retirement_result(
+                    target_name, values, branch="candidate", worktree=tmp_path,
+                    head="a" * 40,
+                )
+            return replace(native, stderr=leaked_secret)
 
     root = RootRunner()
     progress: list[str] = []
@@ -780,6 +785,8 @@ def test_live_qwen_three_b_score_sixty_emits_safe_typed_evaluation_diagnosis(
 
     diagnosis = json.loads(result.diagnostics)
     assert result.comparison.score == 60.0
+    assert result.evidence.cleanup_passed is True
+    assert not tmp_path.exists()
     assert result.evidence.changed_lines == 5
     assert diagnosis == {
         "category": "none",
@@ -822,7 +829,10 @@ def test_live_qwen_three_b_score_sixty_emits_safe_typed_evaluation_diagnosis(
     assert "phase=approved_make" in events
     assert "phase=cleanup" in events
     assert "duration_ms=1000" in events
-    assert root.targets == ["agent-cleanup"]
+    assert root.targets == [
+        "agent-cleanup", "workstream-unregister", "agent-cleanup", "agent-cleanup",
+        "git-show-commit",
+    ]
     retry = build_retry_prompt(
         "Repair catalog truth.",
         result.comparison,

@@ -14,6 +14,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from scripts.check_make_target_contract import _stanzas
 from scripts.makefile_layout import compose_makefile
 
 from tests.unit.test_worktree_retirement import git as native_git
@@ -21,18 +22,15 @@ from tests.unit.test_worktree_retirement import git as native_git
 pytest_plugins = ("tests.unit.test_worktree_retirement",)
 ROOT = Path(__file__).resolve().parents[2]
 
-_TARGET_RE = r"^(?P<name>%s):\n(?P<recipe>(?:\t.*(?:\n|$))+)"
-
 
 def _makefile() -> str:
     return compose_makefile(ROOT / "Makefile")
 
 
 def _recipe(target: str) -> str:
-    makefile = _makefile()
-    match = re.search(_TARGET_RE % re.escape(target), makefile, re.MULTILINE)
-    assert match, f"{target} target is missing"
-    return match.group("recipe")
+    rule = _stanzas(_makefile()).get(target)
+    assert rule, f"{target} target is missing"
+    return rule
 
 
 def test_development_merge_forward_target_exists() -> None:
@@ -100,12 +98,16 @@ def test_branches_unmerged_target_exists() -> None:
     assert re.search(r"^branches-unmerged:\n", _makefile(), re.MULTILINE), "branches-unmerged target is missing"
 
 
-def test_agent_merge_dev_exists_and_uses_no_ff() -> None:
+def test_agent_merge_dev_refuses_before_git_and_names_selected_receiver() -> None:
     recipe = _recipe("agent-merge-dev")
 
-    assert "git checkout development" in recipe
-    assert "git merge --no-ff" in recipe
-    assert "into development" in recipe
+    assert "outcome=retired" in recipe and "native_status=2" in recipe
+    assert "exit 2" in recipe and "git checkout" not in recipe and "git merge" not in recipe
+    assert "development-merge-forward" in recipe and "immutable SOURCE" in recipe
+    canonical = _recipe("development-fast-forward")
+    assert "merge --ff-only" in canonical
+    assert "EXPECTED_BEFORE_SHA" in canonical and "EXPECTED_AFTER_SHA" in canonical
+    assert "_gate-mutation-guard" in canonical and "main-worktree-guard" in canonical
 
 
 def _ancestry_make(

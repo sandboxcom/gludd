@@ -624,11 +624,11 @@ gate-all-background:
 worktree-health-check:
 	@python3 scripts/check_worktree_health.py
 
-# Bulk merge: iterate all worktrees, attempt to merge each branch into
-# development via --no-ff, report conflicts, clean up successful merges.
-# Usage: make worktree-merge-all
+# Retired: bulk discovery cannot select reviewed source or authorize retirement.
+# Compatibility invocation always refuses with native status 2 and migration guidance.
+.PHONY: worktree-merge-all
 worktree-merge-all:
-	@$(UV) run python scripts/worktree_merge_all.py
+	@$(PYTHON) scripts/worktree_merge_all.py
 
 # Retired bulk compatibility entry: no inventory, tools or mutation children.
 # Usage: make worktree-cleanup-merged (expected native status 2)
