@@ -16,6 +16,7 @@ All plugin logic is re-implemented in pure Python from the TypeScript source
 (no import from the .ts files — the extract-translate-assert pattern from
 test_verified_claims_plugin.py).
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -23,7 +24,9 @@ import json
 import os
 import re
 import time
+from collections.abc import Iterator
 from pathlib import Path
+from typing import NotRequired, TypedDict
 
 import pytest
 
@@ -67,6 +70,23 @@ NAG_PATTERNS = [
     "MAIN-THREAD GRINDING DETECTED",
 ]
 
+class _ToolStreak(TypedDict):
+    streak: int
+    lastDispatchTs: int
+    readStreak: int
+    editStreak: int
+    lastUpdateTs: int
+    lastWriter: object
+
+
+class _GateStatus(TypedDict):
+    exists: bool
+    is_green: bool
+    is_fresh: bool
+    mtime: NotRequired[float]
+    content: NotRequired[str]
+
+
 _GATE_STATUS_ROOT: Path | None = None  # autouse fixture overrides to tmp_path
 
 
@@ -76,7 +96,7 @@ def _gate_status_path() -> Path:
 
 
 @pytest.fixture(autouse=True)
-def _isolate_gate_status(tmp_path):
+def _isolate_gate_status(tmp_path: Path) -> Iterator[Path]:
     """Redirect .gate-status reads/writes to tmp_path so tests never pollute
     the repo working tree. A stale green .gate-status in the repo root can
     mask a real red gate (see test-isolation bug)."""
@@ -141,7 +161,7 @@ def _reset_mainthread_streak() -> None:
     _write_mainthread_streak(0)
 
 
-def _read_tool_streak() -> dict:
+def _read_tool_streak() -> _ToolStreak:
     """Read shared streak state from /tmp/gludd-tool-streak.json."""
     try:
         p = state_path("gludd-tool-streak.json")
@@ -160,7 +180,7 @@ def _read_tool_streak() -> dict:
     return {"streak": 0, "lastDispatchTs": 0, "readStreak": 0, "editStreak": 0, "lastUpdateTs": 0, "lastWriter": ""}
 
 
-def _write_tool_streak(state: dict) -> None:
+def _write_tool_streak(state: _ToolStreak) -> None:
     """Write shared streak state."""
     p = state_path("gludd-tool-streak.json")
     p.write_text(json.dumps(state))
@@ -227,21 +247,27 @@ def _read_floor_override(fallback: int = 0) -> int:
 def _write_multitask_state(dispatches: int, zero_streak: int = 0) -> None:
     """Write /tmp/gludd-multitask-state.json."""
     p = state_path("gludd-multitask-state.json")
-    p.write_text(json.dumps({
-        "thisMessageDispatches": dispatches,
-        "prevMessageDispatches": 0,
-        "zeroStreak": zero_streak,
-        "estimatedInFlight": dispatches,
-        "lastTs": int(time.time() * 1000),
-    }))
+    p.write_text(
+        json.dumps(
+            {
+                "thisMessageDispatches": dispatches,
+                "prevMessageDispatches": 0,
+                "zeroStreak": zero_streak,
+                "estimatedInFlight": dispatches,
+                "lastTs": int(time.time() * 1000),
+            }
+        )
+    )
 
 
-def _read_multitask_state() -> dict:
+def _read_multitask_state() -> dict[str, object]:
     """Read /tmp/gludd-multitask-state.json."""
     try:
         p = state_path("gludd-multitask-state.json")
         if p.exists():
-            return json.loads(p.read_text())
+            decoded: object = json.loads(p.read_text())
+            assert isinstance(decoded, dict), "state payload must be a JSON object"
+            return decoded
     except (FileNotFoundError, ValueError, json.JSONDecodeError):
         pass
     return {
@@ -256,18 +282,24 @@ def _read_multitask_state() -> dict:
 def _write_session_start_state(dispatch_count: int) -> None:
     """Write /tmp/gludd-session-start.json."""
     p = state_path("gludd-session-start.json")
-    p.write_text(json.dumps({
-        "dispatches_in_session": dispatch_count,
-        "session_start_ts": int(time.time() * 1000),
-        "first_tool_call_ts": int(time.time() * 1000) - 5000,
-    }))
+    p.write_text(
+        json.dumps(
+            {
+                "dispatches_in_session": dispatch_count,
+                "session_start_ts": int(time.time() * 1000),
+                "first_tool_call_ts": int(time.time() * 1000) - 5000,
+            }
+        )
+    )
 
 
-def _read_session_start_state() -> dict:
+def _read_session_start_state() -> dict[str, object]:
     try:
         p = state_path("gludd-session-start.json")
         if p.exists():
-            return json.loads(p.read_text())
+            decoded: object = json.loads(p.read_text())
+            assert isinstance(decoded, dict), "state payload must be a JSON object"
+            return decoded
     except (FileNotFoundError, ValueError, json.JSONDecodeError):
         pass
     return {}
@@ -275,9 +307,7 @@ def _read_session_start_state() -> dict:
 
 def _write_disengage(until_epoch: int) -> None:
     """Write /tmp/gludd-watchdog-disengage.json."""
-    state_path("gludd-watchdog-disengage.json").write_text(
-        json.dumps({"disengage_until": until_epoch})
-    )
+    state_path("gludd-watchdog-disengage.json").write_text(json.dumps({"disengage_until": until_epoch}))
 
 
 def _remove_disengage() -> None:
@@ -305,7 +335,7 @@ def _has_nag_patterns(text: str) -> list[str]:
     return [p for p in NAG_PATTERNS if p in text]
 
 
-def _check_gate_status() -> dict:
+def _check_gate_status() -> _GateStatus:
     """Read .gate-status and return parsed content."""
     gs = _gate_status_path()
     if not gs.exists():
@@ -356,40 +386,38 @@ def _remove_gate_status() -> None:
 class TestCleanSlate:
     """Scenario 1: Verify state files can be cleanly initialized."""
 
-    def test_state_files_missing_after_cleanup(self):
+    def test_state_files_missing_after_cleanup(self) -> None:
         _clean_state_files()
         remaining = _count_remaining_state_files()
         assert remaining == 0, f"Expected 0 state files after cleanup, got {remaining}"
 
-    def test_all_state_paths_are_under_configured_root(self):
+    def test_all_state_paths_are_under_configured_root(self) -> None:
         for f in STATE_FILES:
-            assert f.parent == state_root(), (
-                f"State file {f} must be confined under {state_root()}"
-            )
+            assert f.parent == state_root(), f"State file {f} must be confined under {state_root()}"
 
-    def test_streak_starts_at_zero_after_cleanup(self):
+    def test_streak_starts_at_zero_after_cleanup(self) -> None:
         _clean_state_files()
         assert _read_mainthread_streak() == 0, "Mainthread streak should start at 0"
         s = _read_tool_streak()
         assert s["streak"] == 0, "Tool streak should start at 0"
 
-    def test_session_start_starts_clean(self):
+    def test_session_start_starts_clean(self) -> None:
         _clean_state_files()
         s = _read_session_start_state()
         assert s.get("dispatches_in_session", 0) == 0
 
-    def test_multitask_starts_clean(self):
+    def test_multitask_starts_clean(self) -> None:
         _clean_state_files()
         s = _read_multitask_state()
         assert s["zeroStreak"] == 0
         assert s["thisMessageDispatches"] == 0
 
-    def test_floor_override_defaults_when_missing(self):
+    def test_floor_override_defaults_when_missing(self) -> None:
         _remove_floor_override()
         floor = _read_floor_override(fallback=0)
         assert floor == 0, f"Default floor should be opt-in, got {floor}"
 
-    def test_disengaged_is_false_when_clean(self):
+    def test_disengaged_is_false_when_clean(self) -> None:
         _remove_disengage()
         assert not _is_disengaged()
 
@@ -397,35 +425,35 @@ class TestCleanSlate:
 class TestDispatchStreakSimulation:
     """Scenario 2: Verify mainthread streak counter increments and resets."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         _clean_state_files()
 
-    def test_streak_increments_on_non_dispatch_call(self):
+    def test_streak_increments_on_non_dispatch_call(self) -> None:
         _simulate_non_dispatch_call("edit")
         assert _read_mainthread_streak() == 1, "Streak should be 1 after 1 edit"
 
-    def test_streak_increments_across_multiple_calls(self):
+    def test_streak_increments_across_multiple_calls(self) -> None:
         for _ in range(5):
             _simulate_non_dispatch_call("write")
         assert _read_mainthread_streak() == 5, "Streak should be 5 after 5 writes"
 
-    def test_streak_resets_on_dispatch(self):
+    def test_streak_resets_on_dispatch(self) -> None:
         for _ in range(4):
             _simulate_non_dispatch_call("edit")
         assert _read_mainthread_streak() == 4
         _simulate_dispatch_reset()
         assert _read_mainthread_streak() == 0, "Streak should reset to 0 after dispatch"
 
-    def test_read_tools_dont_increment_mainthread_streak(self):
+    def test_read_tools_dont_increment_mainthread_streak(self) -> None:
         _simulate_non_dispatch_call("read")
         assert _read_mainthread_streak() == 0, "Read tools should not affect mainthread streak"
 
-    def test_read_tools_do_increment_tool_streak(self):
+    def test_read_tools_do_increment_tool_streak(self) -> None:
         _simulate_non_dispatch_call("read")
         s = _read_tool_streak()
         assert s["readStreak"] >= 1, "Read tools should increment readStreak"
 
-    def test_tool_streak_read_vs_edit_separation(self):
+    def test_tool_streak_read_vs_edit_separation(self) -> None:
         _simulate_non_dispatch_call("read")
         _simulate_non_dispatch_call("read")
         _simulate_non_dispatch_call("edit")
@@ -434,12 +462,12 @@ class TestDispatchStreakSimulation:
         assert s["editStreak"] >= 1
         assert s["streak"] >= 3
 
-    def test_streak_healthy_below_threshold(self):
+    def test_streak_healthy_below_threshold(self) -> None:
         for _ in range(3):
             _simulate_non_dispatch_call("edit")
         assert _is_streak_healthy(), "Streak=3 should be healthy (<8)"
 
-    def test_streak_unhealthy_above_threshold(self):
+    def test_streak_unhealthy_above_threshold(self) -> None:
         for _ in range(10):
             _simulate_non_dispatch_call("edit")
         assert not _is_streak_healthy(), "Streak=10 should be unhealthy (>8)"
@@ -457,38 +485,30 @@ class TestGateStatusIsolation:
 
     REPO_ROOT_GATE = Path(os.getcwd()) / ".gate-status"
 
-    def test_helpers_target_isolated_root(self):
-        assert _GATE_STATUS_ROOT is not None, (
-            "autouse fixture must set _GATE_STATUS_ROOT before tests run"
-        )
-        assert _gate_status_path() != self.REPO_ROOT_GATE, (
-            "helpers must target tmp_path, not the repo working tree"
-        )
+    def test_helpers_target_isolated_root(self) -> None:
+        assert _GATE_STATUS_ROOT is not None, "autouse fixture must set _GATE_STATUS_ROOT before tests run"
+        assert _gate_status_path() != self.REPO_ROOT_GATE, "helpers must target tmp_path, not the repo working tree"
 
-    def test_write_does_not_create_repo_root_gate_status(self):
+    def test_write_does_not_create_repo_root_gate_status(self) -> None:
         existed_before = self.REPO_ROOT_GATE.exists()
         mtime_before = self.REPO_ROOT_GATE.stat().st_mtime if existed_before else None
         _write_gate_status_passing()
         assert _gate_status_path().exists(), "isolated .gate-status should be written"
         if not existed_before:
-            assert not self.REPO_ROOT_GATE.exists(), (
-                "Test created .gate-status at repo root - isolation broken"
-            )
+            assert not self.REPO_ROOT_GATE.exists(), "Test created .gate-status at repo root - isolation broken"
         else:
             assert self.REPO_ROOT_GATE.stat().st_mtime == mtime_before, (
                 "Test modified existing repo-root .gate-status - isolation broken"
             )
 
-    def test_remove_does_not_touch_repo_root_gate_status(self):
+    def test_remove_does_not_touch_repo_root_gate_status(self) -> None:
         existed_before = self.REPO_ROOT_GATE.exists()
         mtime_before = self.REPO_ROOT_GATE.stat().st_mtime if existed_before else None
         _write_gate_status_passing()
         _remove_gate_status()
         assert not _gate_status_path().exists()
         if existed_before:
-            assert self.REPO_ROOT_GATE.exists(), (
-                "Test deleted repo-root .gate-status - isolation broken"
-            )
+            assert self.REPO_ROOT_GATE.exists(), "Test deleted repo-root .gate-status - isolation broken"
             assert self.REPO_ROOT_GATE.stat().st_mtime == mtime_before, (
                 "Test modified repo-root .gate-status mtime - isolation broken"
             )
@@ -497,18 +517,18 @@ class TestGateStatusIsolation:
 class TestGateRefreshAndCommit:
     """Scenario 3: .gate-status presence + freshness supports commit flow."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         _clean_state_files()
         _remove_gate_status()
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         _remove_gate_status()
 
-    def test_gate_status_absent_initially(self):
+    def test_gate_status_absent_initially(self) -> None:
         gs = _check_gate_status()
         assert not gs["exists"], ".gate-status should not exist before gate runs"
 
-    def test_write_and_verify_gate_status_passing(self):
+    def test_write_and_verify_gate_status_passing(self) -> None:
         _write_gate_status_passing()
         gs = _check_gate_status()
         assert gs["exists"], ".gate-status should exist after write"
@@ -516,12 +536,12 @@ class TestGateRefreshAndCommit:
         assert gs["is_fresh"], ".gate-status should be fresh"
         assert "=== GATE: PASSED ===" in gs["content"]
 
-    def test_stale_gate_status_detected(self, monkeypatch):
+    def test_stale_gate_status_detected(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _write_gate_status_passing()
         gs = _check_gate_status()
         assert gs["is_fresh"]
 
-    def test_gate_status_passing_allows_commit_simulation(self):
+    def test_gate_status_passing_allows_commit_simulation(self) -> None:
         """A fresh green .gate-status allows plugin commit gates to pass."""
         _write_gate_status_passing()
         gs = _check_gate_status()
@@ -532,7 +552,7 @@ class TestGateRefreshAndCommit:
         assert _read_multitask_state()["thisMessageDispatches"] == 3
         assert _read_session_start_state().get("dispatches_in_session", 0) == 3
 
-    def test_clean_state_with_gate_passing_avoids_nags(self):
+    def test_clean_state_with_gate_passing_avoids_nags(self) -> None:
         _write_gate_status_passing()
         _write_multitask_state(dispatches=3)
         _write_session_start_state(dispatch_count=3)
@@ -546,27 +566,27 @@ class TestGateRefreshAndCommit:
 class TestDisengageEngageCycle:
     """Scenario 4+5: bounded floor configuration and disengage lifecycle."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         _clean_state_files()
 
-    def test_write_floor_override_and_read_back(self):
+    def test_write_floor_override_and_read_back(self) -> None:
         _write_floor_override(3)
         floor = _read_floor_override(fallback=0)
         assert floor == 3, f"Floor override should be 3, got {floor}"
 
-    def test_floor_override_enables_a_bounded_explicit_floor(self):
+    def test_floor_override_enables_a_bounded_explicit_floor(self) -> None:
         _write_floor_override(3)
         floor = _read_floor_override(fallback=0)
         assert floor == 3
         assert floor > 0, "Override should opt into a positive floor"
 
-    def test_remove_floor_override_restores_default(self):
+    def test_remove_floor_override_restores_default(self) -> None:
         _write_floor_override(3)
         assert _read_floor_override(fallback=0) == 3
         _remove_floor_override()
         assert _read_floor_override(fallback=0) == 0
 
-    def test_disengage_allows_work_with_high_streak(self):
+    def test_disengage_allows_work_with_high_streak(self) -> None:
         """With disengage active, high streak should not prevent dispatch."""
         for _ in range(12):
             _simulate_non_dispatch_call("edit")
@@ -577,12 +597,12 @@ class TestDisengageEngageCycle:
         _simulate_dispatch_reset()
         assert _is_streak_healthy()
 
-    def test_disengage_expired_does_not_help(self):
+    def test_disengage_expired_does_not_help(self) -> None:
         past = int(time.time() * 1000) - 600_000  # 10 min ago
         _write_disengage(past)
         assert not _is_disengaged()
 
-    def test_remove_disengage_resumes_enforcement(self):
+    def test_remove_disengage_resumes_enforcement(self) -> None:
         for _ in range(12):
             _simulate_non_dispatch_call("edit")
         assert not _is_streak_healthy()
@@ -593,16 +613,14 @@ class TestDisengageEngageCycle:
         assert not _is_disengaged()
         assert not _is_streak_healthy()
 
-    def test_floor_override_alone_does_not_count_as_disengage(self):
+    def test_floor_override_alone_does_not_count_as_disengage(self) -> None:
         """floor-override changes the floor number but does NOT bypass the
         watchdog-disengage mechanism used by enforce-stop / enforce-delegate."""
         _write_floor_override(3)
         assert _read_floor_override(fallback=0) == 3
-        assert not _is_disengaged(), (
-            "floor-override is a tunable, not a disengage bypass"
-        )
+        assert not _is_disengaged(), "floor-override is a tunable, not a disengage bypass"
 
-    def test_both_disengage_mechanisms_work_independently(self):
+    def test_both_disengage_mechanisms_work_independently(self) -> None:
         _write_floor_override(3)
         future = int(time.time() * 1000) + 600_000
         _write_disengage(future)
@@ -618,28 +636,26 @@ class TestNagDetection:
     """Scenario 6: Verify DELEGATE-FIRST and MUST DISPATCH patterns are absent
     when state is healthy."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         _clean_state_files()
 
-    def test_healthy_fresh_session_has_no_nags(self):
+    def test_healthy_fresh_session_has_no_nags(self) -> None:
         _simulate_dispatch_reset()
         _write_gate_status_passing()
         _write_multitask_state(dispatches=3)
         _write_session_start_state(dispatch_count=3)
         result = "Working on feature X. Running tests..."
         found = _has_nag_patterns(result)
-        assert len(found) == 0, (
-            f"Fresh healthy session should have no nags, found: {found}"
-        )
+        assert len(found) == 0, f"Fresh healthy session should have no nags, found: {found}"
 
-    def test_nag_patterns_definitions_are_precise(self):
+    def test_nag_patterns_definitions_are_precise(self) -> None:
         """DELEGATE-FIRST and MUST DISPATCH must be exact literals to avoid
         false positives in unrelated text."""
         for p in NAG_PATTERNS:
             assert p, "Nag pattern must not be empty"
             assert len(p) > 3, f"Nag pattern {p!r} too short (risk of FP)"
 
-    def test_text_without_nags_passes_detection(self):
+    def test_text_without_nags_passes_detection(self) -> None:
         texts = [
             "=== GATE: PASSED ===\n100 passed\ncommit abc1234",
             "Working on the fix for the delegate issue",
@@ -650,7 +666,7 @@ class TestNagDetection:
             found = _has_nag_patterns(t)
             assert len(found) == 0, f"Text should not trigger nags: {t[:60]}... found: {found}"
 
-    def test_text_with_nags_is_detected(self):
+    def test_text_with_nags_is_detected(self) -> None:
         texts = [
             ("DELEGATE-FIRST: 9 consecutive non-dispatch calls", ["DELEGATE-FIRST"]),
             ("MUST DISPATCH 3 SUBAGENTS NOW", ["MUST DISPATCH"]),
@@ -661,7 +677,7 @@ class TestNagDetection:
             for p in expected:
                 assert p in found, f"Expected {p!r} in nags for: {t[:60]}... got: {found}"
 
-    def test_streak_8_does_not_nag(self):
+    def test_streak_8_does_not_nag(self) -> None:
         """DELEGATE_FIRST_THRESHOLD is 8, so streak <= 8 should NOT trigger
         DELEGATE-FIRST. The check is `streak > 8`."""
         s = _read_tool_streak()
@@ -669,13 +685,13 @@ class TestNagDetection:
         _write_tool_streak(s)
         assert _is_streak_healthy(), "Streak=8 should be healthy (not > threshold)"
 
-    def test_streak_9_does_nag(self):
+    def test_streak_9_does_nag(self) -> None:
         s = _read_tool_streak()
         s["streak"] = 9
         _write_tool_streak(s)
         assert not _is_streak_healthy(), "Streak=9 should be unhealthy (above threshold)"
 
-    def test_full_session_cycle_no_nags(self):
+    def test_full_session_cycle_no_nags(self) -> None:
         """Simulate session start -> work -> dispatch -> commit -> end."""
         _clean_state_files()
         _write_gate_status_passing()
@@ -692,11 +708,11 @@ class TestNagDetection:
         assert _check_gate_status()["is_green"]
         assert _is_streak_healthy()
 
-    def test_multitask_zero_streak_starts_clean(self):
+    def test_multitask_zero_streak_starts_clean(self) -> None:
         s = _read_multitask_state()
         assert s["zeroStreak"] == 0, "Multitask zeroStreak should start at 0"
 
-    def test_multitask_state_writes_dispatch_count(self):
+    def test_multitask_state_writes_dispatch_count(self) -> None:
         _write_multitask_state(dispatches=3, zero_streak=0)
         s = _read_multitask_state()
         assert s["thisMessageDispatches"] == 3
@@ -709,16 +725,16 @@ class TestNagDetection:
 class TestStateFileJSONIntegrity:
     """Verify state files use valid JSON that matches the TypeScript types."""
 
-    def test_mainthread_streak_json_roundtrip(self):
+    def test_mainthread_streak_json_roundtrip(self) -> None:
         _write_mainthread_streak(3)
         assert _read_mainthread_streak() == 3
 
-    def test_mainthread_streak_zero_roundtrip(self):
+    def test_mainthread_streak_zero_roundtrip(self) -> None:
         _write_mainthread_streak(0)
         assert _read_mainthread_streak() == 0
 
-    def test_tool_streak_json_roundtrip(self):
-        s = {
+    def test_tool_streak_json_roundtrip(self) -> None:
+        s: _ToolStreak = {
             "streak": 4,
             "lastDispatchTs": int(time.time() * 1000),
             "readStreak": 2,
@@ -732,14 +748,14 @@ class TestStateFileJSONIntegrity:
         assert s2["readStreak"] == 2
         assert s2["editStreak"] == 2
 
-    def test_multitask_state_json_roundtrip(self):
+    def test_multitask_state_json_roundtrip(self) -> None:
         _write_multitask_state(dispatches=3, zero_streak=1)
         s = _read_multitask_state()
         assert s["thisMessageDispatches"] == 3
         assert s["zeroStreak"] == 1
         assert isinstance(s["lastTs"], (int, float))
 
-    def test_session_start_json_roundtrip(self):
+    def test_session_start_json_roundtrip(self) -> None:
         _write_session_start_state(dispatch_count=3)
         s = _read_session_start_state()
         assert s.get("dispatches_in_session") == 3
@@ -749,35 +765,35 @@ class TestStateFileJSONIntegrity:
 class TestPluginSourceContract:
     """Verify the TypeScript plugin source files define the state paths we test."""
 
-    def test_mainthread_streak_file_in_delegate_source(self):
+    def test_mainthread_streak_file_in_delegate_source(self) -> None:
         src = (ROOT / ".opencode/plugin/enforce-delegate.ts").read_text()
         assert "gludd-mainthread-streak.json" in src
 
-    def test_floor_override_in_floor_source(self):
+    def test_floor_override_in_floor_source(self) -> None:
         src = (ROOT / ".opencode/plugin/enforce-floor.ts").read_text()
         assert "gludd-floor-override" in src
 
-    def test_tool_streak_file_in_floor_source(self):
+    def test_tool_streak_file_in_floor_source(self) -> None:
         src = (ROOT / ".opencode/plugin/enforce-floor.ts").read_text()
         shared = (ROOT / ".opencode/lib/shared.ts").read_text()
-        assert "updateSharedStreak" in src
+        assert "updateSharedStreak(" in src, "enforce-floor must call updateSharedStreak from shared.ts"
         assert "gludd-tool-streak.json" in shared
 
-    def test_multitask_state_file_in_multitask_source(self):
+    def test_multitask_state_file_in_multitask_source(self) -> None:
         src = (ROOT / ".opencode/plugin/enforce-multitask.ts").read_text()
         assert "gludd-multitask-state.json" in src
 
-    def test_session_start_state_in_source(self):
+    def test_session_start_state_in_source(self) -> None:
         src = (ROOT / ".opencode/plugin/enforce-session-start.ts").read_text()
         assert "gludd-session-start.json" in src
 
-    def test_disengage_file_in_floor_source(self):
+    def test_disengage_file_in_floor_source(self) -> None:
         src = (ROOT / ".opencode/plugin/enforce-floor.ts").read_text()
         shared = (ROOT / ".opencode/lib/shared.ts").read_text()
-        assert "isDisengaged" in src
+        assert "isDisengaged(" in src, "enforce-floor must call isDisengaged from shared.ts"
         assert "gludd-watchdog-disengage.json" in shared
 
-    def test_delegate_first_threshold_correct(self):
+    def test_delegate_first_threshold_correct(self) -> None:
         src = (ROOT / ".opencode/plugin/enforce-stop.ts").read_text()
         m = re.search(r"const\s+DELEGATE_FIRST_THRESHOLD\s*=\s*(\d+)", src)
         assert m, "DELEGATE_FIRST_THRESHOLD not found"
@@ -787,11 +803,11 @@ class TestPluginSourceContract:
 class TestEndToEndCycle:
     """Full session lifecycle simulation at the state-file level."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         _clean_state_files()
         _remove_gate_status()
 
-    def test_init_work_dispatch_commit_cycle(self):
+    def test_init_work_dispatch_commit_cycle(self) -> None:
         _write_gate_status_passing()
         _write_multitask_state(dispatches=3)
         _write_session_start_state(dispatch_count=3)
@@ -807,7 +823,7 @@ class TestEndToEndCycle:
         assert _read_session_start_state().get("dispatches_in_session", 0) == 3
         assert _is_streak_healthy()
 
-    def test_disengage_mid_cycle(self):
+    def test_disengage_mid_cycle(self) -> None:
         _write_gate_status_passing()
         for _ in range(10):
             _simulate_non_dispatch_call("edit")
@@ -822,7 +838,7 @@ class TestEndToEndCycle:
             _simulate_non_dispatch_call("edit")
         assert not _is_streak_healthy()
 
-    def test_cleanup_at_end_drops_all_state(self):
+    def test_cleanup_at_end_drops_all_state(self) -> None:
         _write_gate_status_passing()
         _write_mainthread_streak(5)
         _write_multitask_state(dispatches=3)

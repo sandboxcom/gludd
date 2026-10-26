@@ -13,6 +13,7 @@ Verified surface:
   - Guardrails: enforce-no-suppressions.ts plugin exists, opencode.json
     enforces workspace-scoped path permissions.
 """
+
 from __future__ import annotations
 
 import json
@@ -48,15 +49,11 @@ def _makefile_targets() -> set[str]:
 def _assert_target_recipe_runs(target: str, tool: str) -> None:
     """Confirm the target's recipe actually invokes the named tool."""
     src = compose_makefile(MAKEFILE_PATH)
-    pattern = re.compile(
-        rf"^{re.escape(target)}:\s*\n((?:\t[^\n]*\n)+)", re.MULTILINE
-    )
+    pattern = re.compile(rf"^{re.escape(target)}:\s*\n((?:\t[^\n]*\n)+)", re.MULTILINE)
     m = pattern.search(src)
     assert m, f"target {target!r} recipe not found"
     recipe = m.group(1)
-    assert tool in recipe, (
-        f"target {target!r} recipe does not invoke {tool!r}; recipe was:\n{recipe}"
-    )
+    assert tool in recipe, f"target {target!r} recipe does not invoke {tool!r}; recipe was:\n{recipe}"
 
 
 # --- Make target existence ------------------------------------------------
@@ -81,7 +78,7 @@ def test_security_make_target_exists(target: str) -> None:
     targets = _makefile_targets()
     assert target in targets, (
         f"make target {target!r} missing — Phase SEC surface regressed. "
-        f"Present targets sample: {sorted(t for t in targets if 'sec' in t or 'sast' in t or 'sbom' in t) [:10]}"
+        f"Present targets sample: {sorted(t for t in targets if 'sec' in t or 'sast' in t or 'sbom' in t)[:10]}"
     )
 
 
@@ -89,8 +86,15 @@ def test_security_make_target_exists(target: str) -> None:
 
 
 def test_secrets_scan_uses_detect_secrets() -> None:
-    """SEC.14: secrets-scan must invoke detect-secrets against the baseline."""
-    _assert_target_recipe_runs("secrets-scan", "detect-secrets")
+    """SEC.14: secrets-scan runs the readonly baseline owner with full-scan inputs."""
+    source = compose_makefile(MAKEFILE_PATH)
+    pattern = re.compile(r"^secrets-scan:\s*\n((?:\t[^\n]*\n)+)", re.MULTILINE)
+    match = pattern.search(source)
+    assert match, "target 'secrets-scan' recipe not found"
+    recipe = match.group(1)
+    assert "scripts/detect_secrets_readonly.py" in recipe
+    assert "--scan-cores" in recipe
+    assert "--baseline" in recipe
 
 
 def test_secrets_scrub_invokes_audit() -> None:
@@ -100,9 +104,7 @@ def test_secrets_scrub_invokes_audit() -> None:
 
 def test_secrets_baseline_uses_canonical_manager() -> None:
     """SEC.14: baseline refreshes flow through the canonical manager."""
-    _assert_target_recipe_runs(
-        "secrets-baseline", "scripts/manage_secrets_baseline.py"
-    )
+    _assert_target_recipe_runs("secrets-baseline", "scripts/manage_secrets_baseline.py")
 
 
 def test_sast_uses_bandit() -> None:
@@ -127,9 +129,7 @@ def test_security_target_aggregates_pipeline() -> None:
     assert m, "no `security:` aggregate line found"
     deps = m.group(1).strip()
     for expected in ("sast", "sbom", "pip-audit"):
-        assert expected in deps, (
-            f"`security` target does not depend on {expected!r}; deps were: {deps}"
-        )
+        assert expected in deps, f"`security` target does not depend on {expected!r}; deps were: {deps}"
 
 
 # --- .secrets.baseline ----------------------------------------------------
@@ -137,9 +137,7 @@ def test_security_target_aggregates_pipeline() -> None:
 
 def test_secrets_baseline_file_exists() -> None:
     """SEC.14: .secrets.baseline must ship at repo root."""
-    assert SECRETS_BASELINE_PATH.exists(), (
-        f".secrets.baseline missing at {SECRETS_BASELINE_PATH}"
-    )
+    assert SECRETS_BASELINE_PATH.exists(), f".secrets.baseline missing at {SECRETS_BASELINE_PATH}"
 
 
 def test_secrets_baseline_is_valid_json() -> None:
@@ -150,9 +148,7 @@ def test_secrets_baseline_is_valid_json() -> None:
     except json.JSONDecodeError as exc:
         pytest.fail(f".secrets.baseline is not valid JSON: {exc}")
     assert isinstance(data, dict), ".secrets.baseline root must be a JSON object"
-    assert "results" in data, (
-        ".secrets.baseline missing `results` key (detect-secrets shape)"
-    )
+    assert "results" in data, ".secrets.baseline missing `results` key (detect-secrets shape)"
 
 
 # --- pre-commit hook wiring -----------------------------------------------
@@ -162,20 +158,14 @@ def test_pre_commit_detect_secrets_hook() -> None:
     """SEC.14: detect-secrets must be wired into .pre-commit-config.yaml."""
     assert PRECOMMIT_PATH.exists(), ".pre-commit-config.yaml missing"
     cfg = PRECOMMIT_PATH.read_text()
-    assert "detect-secrets" in cfg, (
-        "detect-secrets pre-commit hook not configured in .pre-commit-config.yaml"
-    )
-    assert ".secrets.baseline" in cfg, (
-        "detect-secrets hook must reference .secrets.baseline (--baseline arg)"
-    )
+    assert "detect-secrets" in cfg, "detect-secrets pre-commit hook not configured in .pre-commit-config.yaml"
+    assert ".secrets.baseline" in cfg, "detect-secrets hook must reference .secrets.baseline (--baseline arg)"
 
 
 def test_pre_commit_detect_private_key_hook() -> None:
     """Defense-in-depth: pre-commit hooks include detect-private-key guard."""
     cfg = PRECOMMIT_PATH.read_text()
-    assert "detect-private-key" in cfg, (
-        "detect-private-key hook missing from .pre-commit-config.yaml"
-    )
+    assert "detect-private-key" in cfg, "detect-private-key hook missing from .pre-commit-config.yaml"
 
 
 # --- No-suppression guardrail --------------------------------------------
@@ -183,18 +173,16 @@ def test_pre_commit_detect_private_key_hook() -> None:
 
 def test_enforce_no_suppressions_plugin_exists() -> None:
     """AGENTS.md no-suppression policy: the editor gate plugin must be on disk."""
-    assert NO_SUPPRESSIONS_PLUGIN_PATH.exists(), (
-        f"enforce-no-suppressions.ts missing at {NO_SUPPRESSIONS_PLUGIN_PATH}"
-    )
+    assert NO_SUPPRESSIONS_PLUGIN_PATH.exists(), f"enforce-no-suppressions.ts missing at {NO_SUPPRESSIONS_PLUGIN_PATH}"
 
 
 def test_enforce_no_suppressions_registered_in_opencode() -> None:
     """The plugin must be wired into opencode.json's plugin array."""
     cfg = json.loads(OPENCODE_JSON_PATH.read_text())
     plugins = cfg.get("plugin", [])
-    assert any(
-        "enforce-no-suppressions" in p for p in plugins
-    ), f"enforce-no-suppressions not registered in opencode.json plugin list: {plugins}"
+    assert any("enforce-no-suppressions" in p for p in plugins), (
+        f"enforce-no-suppressions not registered in opencode.json plugin list: {plugins}"
+    )
 
 
 def test_enforce_no_suppressions_patterns_present() -> None:
@@ -206,16 +194,12 @@ def test_enforce_no_suppressions_patterns_present() -> None:
     """
     candidates = [
         NO_SUPPRESSIONS_PLUGIN_PATH.read_text(),
-        NO_SUPPRESSIONS_LIB_PATH.read_text()
-        if NO_SUPPRESSIONS_LIB_PATH.exists()
-        else "",
+        NO_SUPPRESSIONS_LIB_PATH.read_text() if NO_SUPPRESSIONS_LIB_PATH.exists() else "",
     ]
     combined = "\n".join(candidates)
     # Each pattern AGENTS.md "No Lint-Suppression Comments" names.
     for needle in ("noqa", "type: ignore", "pylint", "fmt:", "isort"):
-        assert needle in combined, (
-            f"suppression pattern {needle!r} not referenced in plugin or lib source"
-        )
+        assert needle in combined, f"suppression pattern {needle!r} not referenced in plugin or lib source"
 
 
 # --- opencode.json path restriction --------------------------------------
@@ -247,9 +231,5 @@ def test_bash_restricted_to_make() -> None:
     """The bash tool must be locked to `make *` (AGENTS.md Bash Command Policy)."""
     cfg = json.loads(OPENCODE_JSON_PATH.read_text())
     bash = cfg.get("permission", {}).get("bash", {})
-    assert bash.get("*") == "deny", (
-        f"bash must deny `*` by default; was: {bash.get('*')}"
-    )
-    assert bash.get("make *") == "allow", (
-        "bash must allow `make *` (the only sanctioned command shape)"
-    )
+    assert bash.get("*") == "deny", f"bash must deny `*` by default; was: {bash.get('*')}"
+    assert bash.get("make *") == "allow", "bash must allow `make *` (the only sanctioned command shape)"

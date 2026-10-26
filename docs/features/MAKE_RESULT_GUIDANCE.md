@@ -6,6 +6,85 @@ check-gate-failure-promotions, git-merge-nc, development-merge-forward and
 release-proof-admission, human-todo-module, run-watched, work-item and guarded-target parse refusals. Existing native owners, statuses and artifacts remain
 authoritative; no second observer, runner, cache or proof schema is introduced.
 
+## Main contract acceptance, 2026-10-26 UTC
+
+These results measure the five frozen Main paths based on
+da86949df467666b42971812cb70eeb7a4cd9e7b:
+scripts/check_gate_failure_promotions.py, tests/unit/test_run_watched_make_recipe.py,
+tests/unit/test_security_verification.py,
+tests/e2e/test_enforcement_plugin_e2e.py and
+tests/unit/test_xdist_trace_diagnostics.py. The parser has an explicit program
+name. The watcher test accepts exactly one native passed/native_status=0 prompt and
+rejects other stderr; the scanner test checks the readonly wrapper, baseline and
+--scan-cores inputs. Enforcement source checks require call syntax. Trace changes
+are formatting only; no warning filter is added.
+
+Cheap admission first retains Ruff D103 for main's missing docstring, then
+70 strict typing errors in the complete E2E owner. An accurate main docstring,
+precise fixture/helper/test annotations, typed payloads and two explicit JSON
+object narrowings repair those inputs. The other assertions remain. All five
+individual strict owners pass on both installed runtimes; Ruff, explicit script
+docstrings, test-environment guard and tracked-file line limits pass. The logical
+Makefile AST node passes one case in 18.01s/native19.19s. The native promotion
+owner validates 180 families and finishes all eight pins in 1.68s/native3.563s
+before broad acceptance.
+
+The nine complete receiving owners pass 480 tests each, with fatal warnings and
+no skips: Python3.11 takes 23.86s/native25.337s and Python3.12 takes
+24.43s/native26.026s. Their exact command
+receipts are .gate-logs/observed/main-wip-receiving/
+main-wip-receiving{311,312}-20261026.json. Both native trace summaries remain
+partial:961 events,344 accepted pairs,133 timing issues, one unfinished interval
+and zero failure reports. These are not complete timing or performance proofs.
+
+The unchanged config/coverage_gate_failure_promotions.ini retains both complete
+production checkers, branch=True, parallel=True, patch=subprocess and physical
+GLUDD_COVERAGE_SOURCE_ROOT includes. Both line AND branch floors remain 85% aggregate
+and 75% per-file. The historical 209-test raw receipt
+coverage-files/20261022T103756Z-14806-70941393.json is unavailable in this checkout;
+its old six-owner argv is not reconstructed or reused.
+
+The fresh current profile uses these ten complete owners under tests/unit:
+test_gate_failure_promotion.py, test_make_checker_guidance.py,
+test_make_target_contract.py, test_check_make_target_contract.py,
+test_make_help_throughput.py, test_development_fast_forward_target.py,
+test_release_promote_target.py, test_disk_alias_admission.py,
+test_runtime_publish_admission.py and test_backlog_audit_target.py.
+Native coverage-files keeps n0/maxprocesses1, literal ID=, fatal warnings and a
+diagnostic 600-second total/180-second quiet bound. Both runtimes pass 444 tests
+plus 37 subtests: Python3.11 takes 219.57s/native221.799s and Python3.12 takes
+234.11s/native236.781s. These scopes overlap the
+480-case receiving group; they are not additional distinct-case totals.
+
+Both raw reports have identical measured totals, with zero below-threshold files:
+
+| Measured source | Line coverage | Branch coverage |
+| --- | --- | --- |
+| Both files |307/312,98.4% |126/132,95.5% |
+| scripts/check_gate_failure_promotions.py |201/205,98.0% |78/82,95.1% |
+| scripts/check_make_target_contract.py |106/107,99.1% |48/50,96.0% |
+
+Raw reports are .gate-logs/coverage-main-native-contract-profile{311,312}-20261026.json.
+Native receipts under .gate-logs/observed/coverage-files are
+20261026T152817Z-472-123c47c4.json and 20261026T153316Z-23549-2014614f.json;
+both exact sessions are drained and observed-status verifies inactive/passed0.
+The native BOTH audits are .gate-logs/coverage-20261026T153159Z.json and
+.gate-logs/coverage-20261026T153713Z.json. Each report retains four default excluded
+lines in the companion checker; this intake adds no source/config exclusion.
+
+An immutable da86949 export runs the three unchanged native CLI controls against
+the original parser in both native-module and canonical imported entrypoints:
+3PASS on each runtime at .gate-logs/observed/main-wip-prog-before/
+main-wip-prog-original{311,312}-20261026.json. These controls establish no
+failing-before evidence for the explicit program name; the D103 and 70-error
+failures above are separate static admission diagnostics.
+
+This control-plane/test intake restarts no serving process. Root owns the final
+six-path source commit, normal collection and exact-source review. The local
+receiving/profile receipts do not supply the canonical full gate/global coverage,
+exact-SHA hosted/deployment, artifact publication or release-completion proofs.
+Their original runtime bounds, ZDD, cleanup and promotion gates remain required.
+
 ## Candidate hosted validation requires an exact push run
 
 Root owns this S98.4 enhancement on

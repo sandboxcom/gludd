@@ -29,10 +29,7 @@ def test_trace_worker_identity_uses_native_context_and_preserves_carriers(
     monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw-inherited")
     monkeypatch.setenv("PYTEST_XDIST_WORKER_COUNT", "73")
     monkeypatch.setenv("PYTEST_XDIST_TESTRUNUID", "inherited-run")
-    config = (
-        None if trace_role_context is None
-        else SimpleNamespace(workerinput=trace_role_context or None)
-    )
+    config = None if trace_role_context is None else SimpleNamespace(workerinput=trace_role_context or None)
     monkeypatch.setattr(trace, "_ACTIVE_TRACE_CONFIG", config)
     assert trace._worker_id() == trace_role_expected
     assert os.environ["PYTEST_XDIST_WORKER"] == "gw-inherited"
@@ -42,7 +39,8 @@ def test_trace_worker_identity_uses_native_context_and_preserves_carriers(
 
 @pytest.mark.parametrize("trace_invalid_worker", ["", None, 7, True])
 def test_trace_native_worker_refuses_invalid_identity_without_environment_fallback(
-    monkeypatch: pytest.MonkeyPatch, trace_invalid_worker: object,
+    monkeypatch: pytest.MonkeyPatch,
+    trace_invalid_worker: object,
 ) -> None:
     from scripts import xdist_trace_plugin as trace
 
@@ -54,14 +52,17 @@ def test_trace_native_worker_refuses_invalid_identity_without_environment_fallba
 
 
 def test_ordinary_trace_config_unconfigure_releases_only_matching_owner(
-    native_profile_config: pytest.Config, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    native_profile_config: pytest.Config,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from scripts import xdist_trace_plugin as trace
 
     monkeypatch.setattr(trace, "_ACTIVE_TRACE_CONFIG", None)
     monkeypatch.setattr(trace, "_ACTIVE_TRACE_PATH", tmp_path / "ordinary.jsonl")
     other = pytest.Config.fromdictargs(
-        {"basetemp": str(tmp_path / "other-base")}, [str(tmp_path / "checkout")],
+        {"basetemp": str(tmp_path / "other-base")},
+        [str(tmp_path / "checkout")],
     )
     try:
         trace._pin_profile_trace(native_profile_config)
@@ -78,14 +79,17 @@ def test_ordinary_trace_config_unconfigure_releases_only_matching_owner(
 
 
 def test_profile_cleanup_restores_previous_ordinary_config_until_its_own_teardown(
-    native_profile_config: pytest.Config, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    native_profile_config: pytest.Config,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from scripts import xdist_trace_plugin as trace
 
     monkeypatch.setattr(trace, "_ACTIVE_TRACE_CONFIG", None)
     monkeypatch.setattr(trace, "_ACTIVE_TRACE_PATH", tmp_path / "previous.jsonl")
     previous = pytest.Config.fromdictargs(
-        {"basetemp": str(tmp_path / "previous-base")}, [str(tmp_path / "checkout")],
+        {"basetemp": str(tmp_path / "previous-base")},
+        [str(tmp_path / "checkout")],
     )
     try:
         trace._pin_profile_trace(previous)
@@ -106,9 +110,7 @@ def test_profile_cleanup_restores_previous_ordinary_config_until_its_own_teardow
         previous._ensure_unconfigure()
 
 
-def test_trace_event_writes_jsonl_with_resource_fields(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_trace_event_writes_jsonl_with_resource_fields(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from scripts import xdist_trace_plugin as trace
 
     log_path = tmp_path / "trace.jsonl"
@@ -118,7 +120,8 @@ def test_trace_event_writes_jsonl_with_resource_fields(
     monkeypatch.setenv("GLUDD_XDIST_TRACE_RUN_ID", "observed-run-7")
     monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw7")
     monkeypatch.setattr(
-        trace, "_ACTIVE_TRACE_CONFIG",
+        trace,
+        "_ACTIVE_TRACE_CONFIG",
         cast(pytest.Config, SimpleNamespace(workerinput={"workerid": "gw7"})),
     )
 
@@ -136,9 +139,7 @@ def test_trace_event_writes_jsonl_with_resource_fields(
     assert "rss_kb" in payload
 
 
-def test_collection_finish_records_only_the_bounded_count(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_collection_finish_records_only_the_bounded_count(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from scripts import xdist_trace_plugin as trace
 
     log_path = tmp_path / "trace.jsonl"
@@ -189,24 +190,16 @@ def test_trace_protocol_records_exception_and_ignores_passing_report(
 
     next(protocol)
     with pytest.raises(StopIteration):
-        protocol.send(
-            SimpleNamespace(excinfo=(ValueError, ValueError("broken protocol"), None))
-        )
-    trace.pytest_runtest_logreport(
-        cast(pytest.TestReport, SimpleNamespace(failed=False))
-    )
+        protocol.send(SimpleNamespace(excinfo=(ValueError, ValueError("broken protocol"), None)))
+    trace.pytest_runtest_logreport(cast(pytest.TestReport, SimpleNamespace(failed=False)))
 
-    events = [
-        json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()
-    ]
+    events = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
     assert [event["event"] for event in events] == ["START", "FINISH"]
     assert events[1]["outcome"] == "exception"
     assert events[1]["exc_type"] == "ValueError"
 
 
-def test_controller_sessionstart_truncates_trace_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_controller_sessionstart_truncates_trace_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from scripts import xdist_trace_plugin as trace
 
     log_path = tmp_path / "trace.jsonl"
@@ -280,14 +273,10 @@ def test_summary_filters_an_append_only_trace_by_run_id(tmp_path: Path) -> None:
     assert summary["run_id"] == "current-run"
     assert summary["events"] == 1
     assert summary["started"] == 1
-    assert summary["last_by_worker"] == {
-        "gw1": "tests/current.py::test_current"
-    }
+    assert summary["last_by_worker"] == {"gw1": "tests/current.py::test_current"}
 
 
-def test_summary_cli_accepts_run_id_filter(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_summary_cli_accepts_run_id_filter(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     from scripts.summarize_xdist_trace import main
 
     log_path = tmp_path / "trace.jsonl"
@@ -337,9 +326,7 @@ def test_compact_summary_keeps_every_unique_failure_without_tracebacks(tmp_path:
 
     assert summary["failure_report_count"] == 120
     assert summary["failure_nodeid_count"] == 60
-    assert compact["failure_nodeids"] == [
-        f"tests/failures/test_{index}.py::test_failure" for index in range(60)
-    ]
+    assert compact["failure_nodeids"] == [f"tests/failures/test_{index}.py::test_failure" for index in range(60)]
     assert "failures" not in compact
     assert "longrepr" not in json.dumps(compact)
 
@@ -416,9 +403,7 @@ def test_summary_cli_defaults_compact_and_retains_verbose_mode(
     assert verbose["failures"][0]["longrepr"] == "secret traceback detail"
 
 
-def test_summary_cli_has_concise_failures_only_mode(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_summary_cli_has_concise_failures_only_mode(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     from scripts.summarize_xdist_trace import main
 
     log_path = tmp_path / "trace.jsonl"
@@ -457,9 +442,7 @@ def test_summary_cli_has_concise_failures_only_mode(
         "failure_nodeids": ["tests/demo.py::test_worker_exit"],
         "failure_report_count": 1,
         "path": str(log_path),
-        "unfinished": [
-            {"nodeid": "tests/demo.py::test_worker_exit", "worker": "gw1"}
-        ],
+        "unfinished": [{"nodeid": "tests/demo.py::test_worker_exit", "worker": "gw1"}],
     }
 
 
@@ -585,16 +568,13 @@ def test_make_targets_run_traced_full_suite() -> None:
     assert "-p scripts.xdist_trace_plugin" in makefile
     assert "GLUDD_XDIST_TRACE_RUN_ID" in makefile
     assert chr(10) + "test-xdist-trace-summary:" in makefile
-    summary_recipe = makefile.split(chr(10) + "test-xdist-trace-summary:" + chr(10), 1)[1].split(
-        chr(10) + chr(10), 1
-    )[0]
+    summary_recipe = makefile.split(chr(10) + "test-xdist-trace-summary:" + chr(10), 1)[1].split(chr(10) + chr(10), 1)[
+        0
+    ]
     assert '--run-id "$$GLUDD_TRACE_SUMMARY_RUN_ID"' in summary_recipe
     assert 'scripts/summarize_xdist_trace.py "$$@" -- ' in summary_recipe
     assert '"$${GLUDD_TRACE_SUMMARY_LOG:-/tmp/gludd-xdist-progress.log}"' in summary_recipe
-    assert (
-        "test-xdist-trace-summary: override GLUDD_TRACE_SUMMARY_RUN_ID = $(value RUN_ID)"
-        in makefile
-    )
+    assert "test-xdist-trace-summary: override GLUDD_TRACE_SUMMARY_RUN_ID = $(value RUN_ID)" in makefile
 
 
 def test_runner_exports_repo_root_for_plugin_import(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -615,9 +595,7 @@ def test_runner_exports_repo_root_for_plugin_import(monkeypatch: pytest.MonkeyPa
     assert os.environ["GLUDD_XDIST_TRACE_LOG"] == "/tmp/gludd-xdist-test.jsonl"
 
 
-def test_trace_path_is_stable_after_session_start(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_trace_path_is_stable_after_session_start(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from scripts import xdist_trace_plugin as trace
 
     first_log = tmp_path / "first.jsonl"
@@ -641,7 +619,8 @@ def test_trace_path_is_stable_after_session_start(
 
 @pytest.fixture
 def native_profile_config(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[pytest.Config]:
     """Use a real Config with an isolated checkout and native descriptor state."""
     from scripts import xdist_trace_plugin as trace
@@ -675,7 +654,8 @@ def _begin_native_profile(config: pytest.Config, monkeypatch: pytest.MonkeyPatch
 
 
 def test_native_cprofile_off_does_not_import_or_create_profile(
-    native_profile_config: pytest.Config, monkeypatch: pytest.MonkeyPatch,
+    native_profile_config: pytest.Config,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import builtins
 
@@ -684,8 +664,11 @@ def test_native_cprofile_off_does_not_import_or_create_profile(
     original = builtins.__import__
 
     def guarded_import(
-        name: str, globals: Mapping[str, object] | None = None,
-        locals: Mapping[str, object] | None = None, fromlist: Sequence[str] = (), level: int = 0,
+        name: str,
+        globals: Mapping[str, object] | None = None,
+        locals: Mapping[str, object] | None = None,
+        fromlist: Sequence[str] = (),
+        level: int = 0,
     ) -> ModuleType:
         assert name not in {"cProfile", "pstats", "tempfile", "secrets"}
         return original(name, globals, locals, fromlist, level)
@@ -700,7 +683,10 @@ def test_native_cprofile_off_does_not_import_or_create_profile(
 
 @pytest.mark.parametrize("kind", ["directory-link", "dangling-link", "file", "world-writable"])
 def test_native_cprofile_refuses_unsafe_artifact_route_without_writing_outside(
-    native_profile_config: pytest.Config, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str,
+    native_profile_config: pytest.Config,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
 ) -> None:
     from scripts import xdist_trace_plugin as trace
 
@@ -728,7 +714,9 @@ def test_native_cprofile_refuses_unsafe_artifact_route_without_writing_outside(
 
 @pytest.mark.parametrize("artifact", ["pytest.pstats", "report.txt"])
 def test_native_cprofile_exclusive_artifacts_never_overwrite(
-    native_profile_config: pytest.Config, monkeypatch: pytest.MonkeyPatch, artifact: str,
+    native_profile_config: pytest.Config,
+    monkeypatch: pytest.MonkeyPatch,
+    artifact: str,
 ) -> None:
     from scripts import xdist_trace_plugin as trace
 
@@ -745,7 +733,9 @@ def test_native_cprofile_exclusive_artifacts_never_overwrite(
 
 @pytest.mark.parametrize("limit", ["_PROFILE_RAW_LIMIT", "_PROFILE_REPORT_LIMIT"])
 def test_native_cprofile_rejects_oversize_without_publishing(
-    native_profile_config: pytest.Config, monkeypatch: pytest.MonkeyPatch, limit: str,
+    native_profile_config: pytest.Config,
+    monkeypatch: pytest.MonkeyPatch,
+    limit: str,
 ) -> None:
     from scripts import xdist_trace_plugin as trace
 
@@ -760,7 +750,8 @@ def test_native_cprofile_rejects_oversize_without_publishing(
 
 
 def test_native_cprofile_refuses_changed_leaf_and_keeps_outside_data(
-    native_profile_config: pytest.Config, monkeypatch: pytest.MonkeyPatch,
+    native_profile_config: pytest.Config,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from scripts import xdist_trace_plugin as trace
 
@@ -779,7 +770,8 @@ def test_native_cprofile_refuses_changed_leaf_and_keeps_outside_data(
 
 
 def test_native_cprofile_preserves_active_profiler_and_refuses_foreign_pid(
-    native_profile_config: pytest.Config, monkeypatch: pytest.MonkeyPatch,
+    native_profile_config: pytest.Config,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import sys
 
@@ -809,7 +801,8 @@ def test_native_cprofile_preserves_active_profiler_and_refuses_foreign_pid(
 
 
 def test_native_cprofile_unconfigure_finalizes_once_and_closes_descriptors(
-    native_profile_config: pytest.Config, monkeypatch: pytest.MonkeyPatch,
+    native_profile_config: pytest.Config,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import os
 
@@ -833,7 +826,9 @@ def test_native_cprofile_unconfigure_finalizes_once_and_closes_descriptors(
 
 @pytest.mark.parametrize("exitstatus", [0, 1])
 def test_native_cprofile_publication_error_never_turns_failure_green(
-    native_profile_config: pytest.Config, monkeypatch: pytest.MonkeyPatch, exitstatus: int,
+    native_profile_config: pytest.Config,
+    monkeypatch: pytest.MonkeyPatch,
+    exitstatus: int,
 ) -> None:
     from scripts import xdist_trace_plugin as trace
 
@@ -856,7 +851,9 @@ def test_native_cprofile_publication_error_never_turns_failure_green(
 
 @pytest.mark.parametrize("raw_request", ["0", "unexpected"])
 def test_native_cprofile_invalid_request_is_consumed_without_artifacts(
-    native_profile_config: pytest.Config, monkeypatch: pytest.MonkeyPatch, raw_request: str,
+    native_profile_config: pytest.Config,
+    monkeypatch: pytest.MonkeyPatch,
+    raw_request: str,
 ) -> None:
     import os
 
@@ -870,7 +867,9 @@ def test_native_cprofile_invalid_request_is_consumed_without_artifacts(
 
 
 def test_native_cprofile_refuses_non_owning_checkout_and_closes_opened_descriptors(
-    native_profile_config: pytest.Config, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    native_profile_config: pytest.Config,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import os
 
@@ -882,8 +881,13 @@ def test_native_cprofile_refuses_non_owning_checkout_and_closes_opened_descripto
     original = os.open
     descriptors: list[int] = []
 
-    def opened(path: str | bytes | os.PathLike[str] | os.PathLike[bytes], flags: int, mode: int = 0o777,
-               *, dir_fd: int | None = None) -> int:
+    def opened(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
         descriptor = original(path, flags, mode, dir_fd=dir_fd)
         descriptors.append(descriptor)
         return descriptor
@@ -899,7 +903,8 @@ def test_native_cprofile_refuses_non_owning_checkout_and_closes_opened_descripto
 
 
 def test_native_cprofile_root_swap_refuses_publication(
-    native_profile_config: pytest.Config, monkeypatch: pytest.MonkeyPatch,
+    native_profile_config: pytest.Config,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from scripts import xdist_trace_plugin as trace
 
@@ -921,7 +926,8 @@ def test_native_cprofile_root_swap_refuses_publication(
 
 
 def test_native_cprofile_allocation_failure_closes_every_descriptor(
-    native_profile_config: pytest.Config, monkeypatch: pytest.MonkeyPatch,
+    native_profile_config: pytest.Config,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import os
 
@@ -930,8 +936,13 @@ def test_native_cprofile_allocation_failure_closes_every_descriptor(
     original = os.open
     descriptors: list[int] = []
 
-    def opened(path: str | bytes | os.PathLike[str] | os.PathLike[bytes], flags: int, mode: int = 0o777,
-               *, dir_fd: int | None = None) -> int:
+    def opened(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
         descriptor = original(path, flags, mode, dir_fd=dir_fd)
         descriptors.append(descriptor)
         return descriptor
@@ -953,8 +964,10 @@ def test_native_cprofile_allocation_failure_closes_every_descriptor(
 
 @pytest.mark.parametrize("replacement", ["leaf-link", "parent-link", "trace-link", "trace-hardlink", "trace-directory"])
 def test_profile_trace_replacement_never_changes_outside_bytes(
-    native_profile_config: pytest.Config, tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch, replacement: str,
+    native_profile_config: pytest.Config,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    replacement: str,
 ) -> None:
     from scripts import xdist_trace_plugin as trace
 
@@ -1002,7 +1015,9 @@ def test_profile_trace_replacement_never_changes_outside_bytes(
 
 
 def test_profile_trace_initial_run_start_refuses_replaced_leaf(
-    native_profile_config: pytest.Config, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    native_profile_config: pytest.Config,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from scripts import xdist_trace_plugin as trace
 
@@ -1096,8 +1111,12 @@ def test_profile_trace_no_writer_fifo_refuses_with_bounded_native_drain(tmp_path
     environment["PYTHONPATH"] = str(root) + os.pathsep + environment.get("PYTHONPATH", "")
     process = subprocess.Popen(
         [sys.executable, "-B", "-W", "error", "-c", _PROFILE_TRACE_FIFO_FIXTURE, str(tmp_path / "checkout")],
-        cwd=root, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, start_new_session=True,
+        cwd=root,
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
     )
     timed_out = False
     try:
@@ -1119,8 +1138,10 @@ def test_profile_trace_no_writer_fifo_refuses_with_bounded_native_drain(tmp_path
 
 @pytest.mark.parametrize("replacement", ["trace-link", "trace-hardlink"])
 def test_profile_trace_inherited_worker_refuses_outside_file(
-    native_profile_config: pytest.Config, tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch, replacement: str,
+    native_profile_config: pytest.Config,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    replacement: str,
 ) -> None:
     from scripts import xdist_trace_plugin as trace
 
@@ -1155,11 +1176,17 @@ def test_profile_trace_inherited_worker_refuses_outside_file(
     assert refused
 
 
-@pytest.mark.parametrize("member", [
-    "other.jsonl", "nested/trace.jsonl", "../trace.jsonl",
-])
+@pytest.mark.parametrize(
+    "member",
+    [
+        "other.jsonl",
+        "nested/trace.jsonl",
+        "../trace.jsonl",
+    ],
+)
 def test_profile_trace_reserved_namespace_refuses_noncanonical_members(
-    native_profile_config: pytest.Config, member: str,
+    native_profile_config: pytest.Config,
+    member: str,
 ) -> None:
     from scripts import xdist_trace_plugin as trace
 
@@ -1170,7 +1197,8 @@ def test_profile_trace_reserved_namespace_refuses_noncanonical_members(
 
 
 def test_profile_trace_pins_regular_file_identity_and_refuses_truncation(
-    native_profile_config: pytest.Config, monkeypatch: pytest.MonkeyPatch,
+    native_profile_config: pytest.Config,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from scripts import xdist_trace_plugin as trace
 
@@ -1198,10 +1226,17 @@ def test_profile_trace_pins_regular_file_identity_and_refuses_truncation(
 
 
 def _guidance_event(kind: str, timestamp: float, **values: object) -> str:
-    return json.dumps({
-        "event": kind, "run_id": "selected-run", "worker": "gw0", "pid": 101,
-        "nodeid": "tests/example.py::test_example", "timestamp": timestamp, **values,
-    })
+    return json.dumps(
+        {
+            "event": kind,
+            "run_id": "selected-run",
+            "worker": "gw0",
+            "pid": 101,
+            "nodeid": "tests/example.py::test_example",
+            "timestamp": timestamp,
+            **values,
+        }
+    )
 
 
 _GUIDANCE_PAIRED = (
@@ -1212,27 +1247,64 @@ _GUIDANCE_CASES = [
     pytest.param(None, True, "empty", 0, 0, 0, 0, 0, id="missing"),
     pytest.param((), True, "empty", 0, 0, 0, 0, 0, id="empty"),
     pytest.param(
-        (_guidance_event("START", 10, run_id="other-run"),), True,
-        "empty", 0, 0, 0, 0, 0, id="filtered-empty",
+        (_guidance_event("START", 10, run_id="other-run"),),
+        True,
+        "empty",
+        0,
+        0,
+        0,
+        0,
+        0,
+        id="filtered-empty",
     ),
     pytest.param(
-        (_guidance_event("RUN_START", 10),), True,
-        "no-paired-timings", 1, 0, 0, 0, 0, id="events-without-protocol",
+        (_guidance_event("RUN_START", 10),),
+        True,
+        "no-paired-timings",
+        1,
+        0,
+        0,
+        0,
+        0,
+        id="events-without-protocol",
     ),
     pytest.param(
-        (_guidance_event("START", 10),), True,
-        "partial", 1, 0, 1, 1, 0, id="unfinished",
+        (_guidance_event("START", 10),),
+        True,
+        "partial",
+        1,
+        0,
+        1,
+        1,
+        0,
+        id="unfinished",
     ),
     pytest.param(("not-json",), False, "partial", 1, 0, 1, 0, 0, id="parse-error"),
     pytest.param(
-        (*_GUIDANCE_PAIRED, _guidance_event("FINISH", 13)), True,
-        "partial", 3, 1, 1, 0, 0, id="paired-plus-unmatched",
+        (*_GUIDANCE_PAIRED, _guidance_event("FINISH", 13)),
+        True,
+        "partial",
+        3,
+        1,
+        1,
+        0,
+        0,
+        id="paired-plus-unmatched",
     ),
     pytest.param(
-        (_guidance_event("START", 10),
-         _guidance_event("REPORT", 11, outcome="failed", when="call"),
-         _guidance_event("FINISH", 12)),
-        True, "populated-with-failures", 3, 1, 0, 0, 1, id="failed-paired",
+        (
+            _guidance_event("START", 10),
+            _guidance_event("REPORT", 11, outcome="failed", when="call"),
+            _guidance_event("FINISH", 12),
+        ),
+        True,
+        "populated-with-failures",
+        3,
+        1,
+        0,
+        0,
+        1,
+        id="failed-paired",
     ),
     pytest.param(_GUIDANCE_PAIRED, True, "populated", 2, 1, 0, 0, 0, id="paired"),
 ]
@@ -1240,17 +1312,30 @@ _GUIDANCE_CASES = [
 
 @pytest.mark.parametrize("trace_guidance_mode", [[], ["--failures-only"], ["--verbose"]])
 @pytest.mark.parametrize(
-    ("trace_guidance_rows", "trace_guidance_filter", "trace_guidance_outcome",
-     "trace_guidance_events", "trace_guidance_pairs", "trace_guidance_issues",
-     "trace_guidance_unfinished", "trace_guidance_failures"),
+    (
+        "trace_guidance_rows",
+        "trace_guidance_filter",
+        "trace_guidance_outcome",
+        "trace_guidance_events",
+        "trace_guidance_pairs",
+        "trace_guidance_issues",
+        "trace_guidance_unfinished",
+        "trace_guidance_failures",
+    ),
     _GUIDANCE_CASES,
 )
 def test_summary_cli_guidance_uses_actual_selected_evidence_without_json_changes(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
-    trace_guidance_mode: list[str], trace_guidance_rows: tuple[str, ...] | None,
-    trace_guidance_filter: bool, trace_guidance_outcome: str,
-    trace_guidance_events: int, trace_guidance_pairs: int, trace_guidance_issues: int,
-    trace_guidance_unfinished: int, trace_guidance_failures: int,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    trace_guidance_mode: list[str],
+    trace_guidance_rows: tuple[str, ...] | None,
+    trace_guidance_filter: bool,
+    trace_guidance_outcome: str,
+    trace_guidance_events: int,
+    trace_guidance_pairs: int,
+    trace_guidance_issues: int,
+    trace_guidance_unfinished: int,
+    trace_guidance_failures: int,
 ) -> None:
     from scripts import summarize_xdist_trace as summary_module
 
@@ -1279,14 +1364,16 @@ def test_summary_cli_guidance_uses_actual_selected_evidence_without_json_changes
     assert summary["timings"]["issue_count"] == trace_guidance_issues
     assert len(summary["unfinished"]) == trace_guidance_unfinished
     assert summary["failure_report_count"] == trace_guidance_failures
-    assert captured.err.startswith(
-        "AGENT_NEXT target=test-xdist-trace-summary outcome=" + trace_guidance_outcome + " "
-    )
+    assert captured.err.startswith("AGENT_NEXT target=test-xdist-trace-summary outcome=" + trace_guidance_outcome + " ")
     for expected_field in (
-        f"events={trace_guidance_events}", f"paired_count={trace_guidance_pairs}",
-        f"issue_count={trace_guidance_issues}", f"unfinished={trace_guidance_unfinished}",
-        f"failure_reports={trace_guidance_failures}", "gate_evidence=false",
-        "release_ready=false", "Exit 0 means summary generation",
+        f"events={trace_guidance_events}",
+        f"paired_count={trace_guidance_pairs}",
+        f"issue_count={trace_guidance_issues}",
+        f"unfinished={trace_guidance_unfinished}",
+        f"failure_reports={trace_guidance_failures}",
+        "gate_evidence=false",
+        "release_ready=false",
+        "Exit 0 means summary generation",
     ):
         assert expected_field in captured.err
     if trace_guidance_outcome == "empty":
@@ -1305,7 +1392,8 @@ def test_summary_cli_guidance_uses_actual_selected_evidence_without_json_changes
 
 @pytest.mark.parametrize("trace_guidance_library_rows", [(), _GUIDANCE_PAIRED])
 def test_summary_library_projection_remains_silent(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
     trace_guidance_library_rows: tuple[str, ...],
 ) -> None:
     from scripts import summarize_xdist_trace as summary_module
@@ -1327,7 +1415,8 @@ def test_summary_library_projection_remains_silent(
     ],
 )
 def test_native_summary_cli_keeps_json_status_and_emits_guidance(
-    tmp_path: Path, trace_guidance_native_rows: tuple[str, ...],
+    tmp_path: Path,
+    trace_guidance_native_rows: tuple[str, ...],
     trace_guidance_native_outcome: str,
 ) -> None:
     from scripts import summarize_xdist_trace as summary_module
@@ -1336,13 +1425,25 @@ def test_native_summary_cli_keeps_json_status_and_emits_guidance(
     path.write_text("".join(row + chr(10) for row in trace_guidance_native_rows), encoding="utf-8")
     before = path.read_bytes()
     result = subprocess.run(
-        [sys.executable, str(Path(summary_module.__file__).resolve()), "--include-timings",
-         "--run-id", "selected-run", "--", str(path)],
-        cwd=tmp_path, capture_output=True, text=True, check=False, timeout=5,
+        [
+            sys.executable,
+            str(Path(summary_module.__file__).resolve()),
+            "--include-timings",
+            "--run-id",
+            "selected-run",
+            "--",
+            str(path),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert json.loads(result.stdout) == summary_module.compact_summary(
-        summary_module.summarize_log(path, run_id="selected-run"), include_timings=True,
+        summary_module.summarize_log(path, run_id="selected-run"),
+        include_timings=True,
     )
     assert "outcome=" + trace_guidance_native_outcome + " " in result.stderr
     assert "gate_evidence=false release_ready=false" in result.stderr
@@ -1351,19 +1452,24 @@ def test_native_summary_cli_keeps_json_status_and_emits_guidance(
 
 @pytest.mark.parametrize(
     ("trace_guidance_failure", "trace_guidance_status", "trace_guidance_error"),
-    [("invalid-run-id", 2, "run ID must be a safe path component"),
-     ("unreadable-input", 1, "IsADirectoryError")],
+    [("invalid-run-id", 2, "run ID must be a safe path component"), ("unreadable-input", 1, "IsADirectoryError")],
 )
 def test_native_summary_cli_preserves_parse_and_io_failure_status(
-    tmp_path: Path, trace_guidance_failure: str,
-    trace_guidance_status: int, trace_guidance_error: str,
+    tmp_path: Path,
+    trace_guidance_failure: str,
+    trace_guidance_status: int,
+    trace_guidance_error: str,
 ) -> None:
     from scripts import summarize_xdist_trace as summary_module
 
     arguments = ["--run-id", "../unsafe"] if trace_guidance_failure == "invalid-run-id" else []
     result = subprocess.run(
         [sys.executable, str(Path(summary_module.__file__).resolve()), *arguments, str(tmp_path)],
-        cwd=tmp_path, capture_output=True, text=True, check=False, timeout=5,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
     )
     assert result.returncode == trace_guidance_status
     assert result.stdout == ""
@@ -1373,7 +1479,8 @@ def test_native_summary_cli_preserves_parse_and_io_failure_status(
 
 @pytest.mark.parametrize("trace_guidance_make_e", [False, True])
 def test_summary_recipe_retains_native_quoted_run_and_log_arguments(
-    tmp_path: Path, trace_guidance_make_e: bool,
+    tmp_path: Path,
+    trace_guidance_make_e: bool,
 ) -> None:
     from tests.unit.test_trace_summary_make_inputs import _assert_call, _run, _values
 

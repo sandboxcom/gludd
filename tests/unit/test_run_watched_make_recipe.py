@@ -35,13 +35,11 @@ def _recipe_fixture(tmp_path: Path) -> Path:
     )
     child_makefile = tmp_path / "child.mk"
     child_makefile.write_text(
-        "child:\n\t@" + shlex.quote(sys.executable)
-        + ' child.py "$(TESTFILES)" "$(PYTEST_ARGS)"\n'
+        "child:\n\t@" + shlex.quote(sys.executable) + ' child.py "$(TESTFILES)" "$(PYTEST_ARGS)"\n'
     )
     recipe_file = tmp_path / "recipe.mk"
     recipe_file.write_text(
-        "UV := " + shlex.quote(sys.executable) + " " + shlex.quote(str(shim))
-        + "\nrun-watched:" + recipe + "\n"
+        "UV := " + shlex.quote(sys.executable) + " " + shlex.quote(str(shim)) + "\nrun-watched:" + recipe + "\n"
     )
     return recipe_file
 
@@ -54,25 +52,38 @@ def _run_recipe(tmp_path: Path, command: str, *, child_exit: int = 0) -> subproc
     environment["FIXTURE_CHILD_EXIT"] = str(child_exit)
     return subprocess.run(
         [
-            MAKE, "--no-print-directory", "-f", str(recipe_file), "run-watched",
-            f"CMD={command}", "OBSERVED_LABEL=make-helper", "RUN_ID=fixture",
-            "STALL_SECS=30", "MAX_SECS=60", f"LOG={tmp_path / 'child.log'}",
-            f"OBSERVED_ROOT={tmp_path / 'observed'}", "OBSERVED_HEARTBEAT_SECS=1",
+            MAKE,
+            "--no-print-directory",
+            "-f",
+            str(recipe_file),
+            "run-watched",
+            f"CMD={command}",
+            "OBSERVED_LABEL=make-helper",
+            "RUN_ID=fixture",
+            "STALL_SECS=30",
+            "MAX_SECS=60",
+            f"LOG={tmp_path / 'child.log'}",
+            f"OBSERVED_ROOT={tmp_path / 'observed'}",
+            "OBSERVED_HEARTBEAT_SECS=1",
             "OBSERVED_RETAIN_RUNS=2",
         ],
-        cwd=tmp_path, env=environment, capture_output=True, text=True, check=False, timeout=90,
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=90,
     )
 
 
 def _status(tmp_path: Path) -> dict[str, object]:
-    return cast(dict[str, object], json.loads(
-        (tmp_path / "observed/make-helper/fixture.json").read_text()
-    ))
+    return cast(dict[str, object], json.loads((tmp_path / "observed/make-helper/fixture.json").read_text()))
 
 
 @pytest.mark.parametrize("quote", ["'", '"'])
 def test_real_recipe_preserves_quoted_make_arguments_without_shell_diagnostics(
-    tmp_path: Path, quote: str,
+    tmp_path: Path,
+    quote: str,
 ) -> None:
     command = (
         f"{shlex.quote(MAKE)} --no-print-directory -f child.mk child "
@@ -82,9 +93,13 @@ def test_real_recipe_preserves_quoted_make_arguments_without_shell_diagnostics(
     result = _run_recipe(tmp_path, command)
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert result.stderr == ""
+    prompts = [line for line in result.stderr.splitlines() if line.startswith("AGENT_NEXT target=run-watched ")]
+    assert len(prompts) == 1, result.stdout + result.stderr
+    assert "outcome=passed " in prompts[0] and "native_status=0 " in prompts[0]
+    assert [line for line in result.stderr.splitlines() if line not in prompts] == [], result.stderr
     assert json.loads((tmp_path / "arguments.json").read_text()) == [
-        "tests/unit/first.py tests/unit/second.py", "-W error -q --tb=short",
+        "tests/unit/first.py tests/unit/second.py",
+        "-W error -q --tb=short",
     ]
     assert _status(tmp_path)["state"] == "passed"
     assert _status(tmp_path)["exit_code"] == 0
@@ -92,7 +107,8 @@ def test_real_recipe_preserves_quoted_make_arguments_without_shell_diagnostics(
 
 @pytest.mark.parametrize("command", ["", " ", "\t"])
 def test_real_recipe_rejects_empty_commands_before_starting_observer(
-    tmp_path: Path, command: str,
+    tmp_path: Path,
+    command: str,
 ) -> None:
     result = _run_recipe(tmp_path, command)
     assert result.returncode != 0
@@ -103,7 +119,8 @@ def test_real_recipe_rejects_empty_commands_before_starting_observer(
 
 @pytest.mark.parametrize("child_exit", [7, 143])
 def test_real_recipe_preserves_failed_child_exit_in_observed_receipt(
-    tmp_path: Path, child_exit: int,
+    tmp_path: Path,
+    child_exit: int,
 ) -> None:
     result = _run_recipe(tmp_path, f"{shlex.quote(sys.executable)} child.py", child_exit=child_exit)
     # GNU Make reports recipe failure as 2; the observer retains the real child code.

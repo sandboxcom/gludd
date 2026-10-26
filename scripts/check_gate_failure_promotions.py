@@ -85,9 +85,7 @@ MANIFEST_SCHEMA: dict[str, Any] = {
                                 "type": "string",
                                 "pattern": "^_?[A-Za-z0-9]+(?:[A-Za-z0-9_.-]*[A-Za-z0-9])?$",
                             },
-                            "budget_class": {
-                                "enum": ["fast", "standard", "slow"]
-                            },
+                            "budget_class": {"enum": ["fast", "standard", "slow"]},
                             "max_seconds": {
                                 "type": "integer",
                                 "minimum": 1,
@@ -152,9 +150,7 @@ def _target_stanzas(makefile: str) -> dict[str, str]:
     matches = list(TARGET_RE.finditer(makefile))
     return {
         match.group(1): makefile[
-            match.start() : matches[index + 1].start()
-            if index + 1 < len(matches)
-            else len(makefile)
+            match.start() : matches[index + 1].start() if index + 1 < len(matches) else len(makefile)
         ]
         for index, match in enumerate(matches)
     }
@@ -210,9 +206,7 @@ def _pytest_node_exists(node: str, repository_root: Path) -> bool:
     return unparameterized in _pytest_nodes(repository_root / relative)
 
 
-def _runtime_contract_errors(
-    runtime: dict[str, Any], *, admission: str, stanzas: dict[str, str]
-) -> list[str]:
+def _runtime_contract_errors(runtime: dict[str, Any], *, admission: str, stanzas: dict[str, str]) -> list[str]:
     """Return deterministic observer, budget, and phase-wiring violations."""
     errors: list[str] = []
     normalized_admission = " ".join(admission.replace("\\\n", " ").split())
@@ -267,9 +261,7 @@ def _runtime_contract_errors(
         )
         position = normalized_admission.find(marker)
         if position < 0:
-            errors.append(
-                f"{label}: runtime phase is not wired with its exact budget: {name}"
-            )
+            errors.append(f"{label}: runtime phase is not wired with its exact budget: {name}")
         else:
             phase_positions.append(position)
     if not has_slow_phase:
@@ -308,9 +300,7 @@ def validate_manifest(payload: object, *, repository_root: Path) -> list[str]:
         errors.append("integration admission must not invoke the full gate")
 
     runtime = cast(dict[str, Any], manifest["runtime_contract"])
-    errors.extend(
-        _runtime_contract_errors(runtime, admission=admission, stanzas=stanzas)
-    )
+    errors.extend(_runtime_contract_errors(runtime, admission=admission, stanzas=stanzas))
 
     preflights = _preflight_targets(makefile)
     seen_ids: set[str] = set()
@@ -334,10 +324,7 @@ def validate_manifest(payload: object, *, repository_root: Path) -> list[str]:
         if not owner:
             errors.append(f"{label}: owner target is not defined: {owner_target}")
         if f"$(MAKE) --no-print-directory {owner_target}" not in admission:
-            errors.append(
-                f"{label}: owner target is not wired into {admission_target}: "
-                f"{owner_target}"
-            )
+            errors.append(f"{label}: owner target is not wired into {admission_target}: {owner_target}")
         marker = f"=== GATE PHASE: {full_gate_phase} ==="
         if marker not in full_gate:
             errors.append(f"{label}: full gate phase is not defined: {full_gate_phase}")
@@ -364,7 +351,8 @@ def _load_manifest(path: Path) -> object:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    """Validate the promoted-failure manifest and retain native CLI status."""
+    parser = argparse.ArgumentParser(prog="check_gate_failure_promotions", description=__doc__)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--repository-root", type=Path, default=ROOT)
     try:
