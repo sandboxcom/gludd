@@ -1,5 +1,53 @@
 # Code Intelligence Import Boundary
 
+## Canonical parent coverage repair (2026-10-26 UTC)
+
+The cold gate on the working candidate based at
+82ec5170c173cfb52bb8bf3c6bbf7944cf3375e4 failed in
+.gate-logs/gate-20261025114409-e53ab751.log. Coverage reset passed and all133
+batches executed with zero resumed, disproving the earlier stale-fragment
+explanation. The missing branch is the unknown-name AttributeError at line42;
+TYPE_CHECKING was already excluded. Preserve that failed gate as failed evidence.
+
+The seven original fresh-process controls exercised this behavior in children.
+Their focused profile enables subprocess measurement; canonical
+.coveragerc-greenlet does not. An additive in-process API control now measures
+lazy resolution, cached canonical identity, discoverability and unknown-name
+errors in the ordinary caller, restoring the original cache state afterward.
+No production exclusion, coverage profile, assertion or floor changed.
+
+Actual native reproduction ran all85 original cases successfully, then
+make coverage-json THRESHOLD=85 SOURCE=src/general_ludd/code_intelligence/__init__.py
+refused64.7058823529percent line and0percent branch. The retained numeric report
+is .gate-logs/coverage-20261026T122738Z.json. After the additional control, all86
+cases pass on both installed runtimes using the unchanged canonical profile.
+The same native audit reports100percent line and100percent branch for this file:
+
+- Python3.12 execution receipt:
+  .gate-logs/observed/v012-native-export-coverage/v012-native-export-green312-20261026.json;
+  numeric audit .gate-logs/coverage-20261026T123318Z.json.
+- Python3.11 execution receipt:
+  .gate-logs/observed/v012-native-export-coverage/v012-native-export-green311-20261026.json;
+  numeric audit .gate-logs/coverage-20261026T123600Z.json.
+
+The exact native child selects the complete import-boundary, init-files-deep and
+package-reexports owners with -n0 and fatal warnings, --cov and
+--cov-config=.coveragerc-greenlet, writing coverage.json. Its measurement-only
+--cov-fail-under=0 precedes the separate unchanged85aggregate/75each-file LINE
+and BRANCH audit above; the first child's exit0 alone is no admission.
+An earlier dotted-module selector produced no report and is failed diagnostic
+input, retained in v012-import-boundary-red-20261026; it supplies no coverage proof.
+
+Independent delta review approved source only. The complete canonical gate,
+global85/75 coverage, exact-SHA hosted CI, ZDD deployment and stable-release
+artifact proofs remain required; no S98 task is closed by this focused repair.
+
+The [firsthand Python forum discussion](https://discuss.python.org/t/module-getattr-invoked-twice-importlib-bug/25600)
+was reread on2026-10-26: the original2023 report and2025 follow-up both describe
+repeated from-import resolution. This supports retaining the cache-identity
+assertions. It does not establish the cause of Gludd's measured coverage gap,
+which comes from the native parent/child evidence above.
+
 ## Decision and release trigger (2026-10-21 UTC)
 
 Importing the AST extractor no longer imports the codebase introspector and its
