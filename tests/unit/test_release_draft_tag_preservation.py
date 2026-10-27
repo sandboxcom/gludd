@@ -8,7 +8,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
@@ -58,7 +58,7 @@ class _OwnedRelease:
     root: Path
     git: str
     bash: str
-    environment: dict[str, str]
+    environment: dict[str, str] = field(repr=False)
     gh_log: Path
 
     def command(self, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -249,3 +249,23 @@ def test_native_cleanup_tag_witness_deletes_only_owned_tag(
     assert owned_release.calls() == [
         ["release", "delete", tag, "--yes", "--cleanup-tag"]
     ]
+
+
+def test_owned_release_repr_omits_only_its_copied_child_environment(
+    tmp_path: Path,
+) -> None:
+    private_name = "GLUDD_OWNED_FAKE_CARRIER"
+    private_value = "fixture-only-private-repr-witness"
+    owned = _OwnedRelease(
+        root=tmp_path, git="git", bash="bash",
+        environment={private_name: private_value},
+        gh_log=tmp_path / "owned-gh.jsonl",
+    )
+
+    rendered = repr(owned)
+
+    assert private_name not in rendered
+    assert private_value not in rendered
+    assert owned.environment == {private_name: private_value}
+    assert str(owned.root) in rendered
+    assert str(owned.gh_log) in rendered

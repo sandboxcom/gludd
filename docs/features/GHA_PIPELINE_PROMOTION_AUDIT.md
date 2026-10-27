@@ -1,5 +1,30 @@
 # GHA pipeline and agentic promotion audit
 
+## Draft-release fixture environment privacy (2026-10-27 UTC)
+
+Original-source review of a403ed858bb561f7bbc8353c54ad057be4020f89 found that
+the copied environment in tests/unit/test_release_draft_tag_preservation.py
+was included in the fixture dataclass repr. The environment field now uses
+field(repr=False), retaining its required constructor argument and copied-child
+environment behavior. An additive one-key owned-canary regression requires
+the repr to retain ordinary root/Git/Bash/log fields while omitting the
+environment field, key and value; all original tag/status assertions remain.
+
+The tests-only combined browser/repr RED is5FAIL/7.96s/native2/9.632s:
+.gate-logs/observed/v012-review-apt-repr-red/v012-review-apt-repr-red311-a403-20261026.json.
+The repr case is one of those five; it is not five independent repr failures.
+The deduplicated19 whole-owner browser/privacy receiving passes554 EACH:
+3.11 in106.76s/native108.332s and3.12 in115.86s/native117.729s, at
+v012-review-root-receiving/v012-review-root-receiving{311,312}-corrected-a403-20261027.json
+under .gate-logs/observed in feature/v012-original-review-repairs-20261026.
+Both exact sessions are drained, inactive/passed0, with1111events/554complete
+protocols EACH and zero issues/failures/unfinished nodes. Ruff, strict typing,
+environment-write and line checks pass. Independent source review confirms
+all original function ASTs/assertions remain and approves source only.
+This fixture privacy change supplies no new tag, hosted run, promotion,
+deployment or release proof; normal collection/commit and all final gates stay
+required. No copied environment or credential value is recorded here.
+
 ## Hosted prerequisite budget receiving (2026-10-26 UTC)
 
 At Main18ec1ee55fca0433e4206e439ad2952a7724e3af, the prepared literal runtime
