@@ -6,9 +6,11 @@ Makefile targets, guard scripts, plugin files, and their wiring.
 
 import re
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from scripts.check_make_target_contract import _stanzas
 from scripts.makefile_layout import compose_makefile
 
 from tests.unit.test_ci_interaction_discipline import _verdict_source
@@ -92,7 +94,7 @@ class TestCIBusyOnAllPushTargets:
         text = makefile_text()
         idx = text.find("batch-push:")
         assert idx != -1
-        block = text[idx : idx + 300]
+        block = _stanzas(text)["batch-push"]
         has_guard = "_stash-before-push-guard" in block or "_push-rate-guard" in block or "_ci-restart-cap" in block
         assert has_guard, "P02: batch-push lacks CI-related guards"
 
@@ -107,14 +109,14 @@ class TestNoCommitThreshold1:
         text = makefile_text()
         idx = text.find("batch-push:")
         assert idx != -1
-        block = text[idx : idx + 500]
+        block = _stanzas(text)["batch-push"]
         assert "COMMIT_THRESHOLD=1" in block and "BLOCKED" in block, "P03: batch-push does not block COMMIT_THRESHOLD=1"
 
     def test_batch_push_default_threshold_is_5(self) -> None:
         text = makefile_text()
         idx = text.find("batch-push:")
         assert idx != -1
-        block = text[idx : idx + 500]
+        block = _stanzas(text)["batch-push"]
         assert "COMMIT_THRESHOLD:-5}" in block or "THRESHOLD=5" in block, "P03: batch-push default threshold is not 5"
 
     def test_agents_md_mentions_no_commit_threshold_1(self) -> None:
@@ -394,7 +396,7 @@ class TestBatchLocalPushOnce:
         text = makefile_text()
         idx = text.find("batch-push:")
         assert idx != -1
-        block = text[idx : idx + 600]
+        block = _stanzas(text)["batch-push"]
         assert "THRESHOLD" in block and "unpushed" in block.lower(), "P15: batch-push does not enforce commit threshold"
 
     def test_ship_commit_does_not_push_by_default(self) -> None:
@@ -446,3 +448,41 @@ class TestNoPushWithDirtyTree:
         for target in ["git-push-sandboxcom", "batch-push", "development-push"]:
             uses_check = target_uses_guard(target, "check-clean-tree")
             assert uses_check, f"P17: {target} does not use check-clean-tree guard"
+
+@pytest.mark.parametrize("check", (
+    TestNoCommitThreshold1().test_commit_threshold_1_is_blocked_in_makefile,
+    TestNoCommitThreshold1().test_batch_push_default_threshold_is_5,
+    TestBatchLocalPushOnce().test_batch_push_requires_threshold,
+))
+def test_batch_policy_checks_accept_complete_padded_native_rule(
+    monkeypatch: pytest.MonkeyPatch, check: Callable[[], None],
+) -> None:
+    text = makefile_text()
+    block = _stanzas(text)["batch-push"]
+    header, _, recipe = block.partition("\n")
+    padded = header + "\n" + "\t@:\n" * 600 + recipe
+    assert text.count(block) == 1
+    monkeypatch.setattr(sys.modules[__name__], "makefile_text", lambda: text.replace(block, padded, 1))
+    check()
+
+
+@pytest.mark.parametrize("check", (
+    TestNoCommitThreshold1().test_commit_threshold_1_is_blocked_in_makefile,
+    TestNoCommitThreshold1().test_batch_push_default_threshold_is_5,
+    TestBatchLocalPushOnce().test_batch_push_requires_threshold,
+))
+@pytest.mark.parametrize("neighbor", (False, True), ids=("missing-policy", "neighbor-only-policy"))
+def test_batch_policy_checks_refuse_missing_or_neighboring_commands(
+    monkeypatch: pytest.MonkeyPatch, check: Callable[[], None], neighbor: bool,
+) -> None:
+    text = "batch-push:\n\t@true\n"
+    if neighbor:
+        text += (
+            "\nowned-neighbor:\n"
+            "\t@THRESHOLD=$${COMMIT_THRESHOLD:-5}; "
+            "if [ \"$$THRESHOLD\" = \"1\" ]; then echo 'BLOCKED: COMMIT_THRESHOLD=1'; exit 1; fi; "
+            "echo \"$$THRESHOLD unpushed commits\"\n"
+        )
+    monkeypatch.setattr(sys.modules[__name__], "makefile_text", lambda: text)
+    with pytest.raises(AssertionError):
+        check()

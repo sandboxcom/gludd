@@ -1513,12 +1513,25 @@ local acceptance before dispatch. Preserve the exact branch/SHA while observing
 that run, then promote feature to development to master through existing gates.
 
 The default canonical purpose retains all existing EE/promotion/runtime90/60
-admission and promotion proof. Explicit feature-ci retains all eight guards,
-transport-aware auth, real Git hooks, saved-SHA transport, upstream setup,
-saved-SHA verdict recording and exact verification, then invokes the existing
-ci-trigger-committed-head sequentially. It starts no canonical all-required-push
-waiter. An actual returned run URL supplies diagnostic visibility; use its RUN
-with ci-run-summary and native failure/status owners for terminal evidence.
+admission and promotion proof. Both canonical and explicit feature-ci retain all
+eight guards, transport-aware auth, real Git hooks, saved-SHA transport, upstream
+setup, saved-SHA verdict recording and exact verification. Both then require the
+existing ci-trigger-committed-head to return an accepted or reused exact-SHA Build
+run before publication reports success. Feature-ci keeps its separate published
+workflow provenance checks and starts no canonical all-required-push waiter.
+A signaling failure after transport remains nonzero: reconcile the saved identity
+and actual run through that existing dispatcher; do not repush unchanged source
+merely to request CI. An actual returned run URL supplies operational visibility;
+use its RUN with ci-run-summary and native failure/status owners for terminal
+evidence. It supplies no terminal CI, canonical push, deployment or release proof.
+The recommended batch-push keeps its default5 threshold, explicit threshold1
+refusal, below-threshold no-op, force semantics and original eight outer guards.
+Its direct native Git path admits runtime exactly once, binds the saved fullSHA,
+restores the native named-branch upstream, records/verifies that identity, then
+requires the same existing Build dispatcher.
+It performs no nested git-push-sandboxcom call or duplicate guard replay. Partial
+transport keeps its original native status/auth-repair guidance; later failures
+retain their actual phase and potentially applied remote/history state.
 Feature to development to master still requires unchanged promotion gates.
 Feature diagnostics require no final full-gate/all-local-tests-green receipt
 through this graph. Keep ordinary commit/hooks and selected focused evidence.

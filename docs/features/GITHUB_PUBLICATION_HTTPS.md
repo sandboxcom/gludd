@@ -1163,3 +1163,279 @@ substantive seven-path commit, followed by native integration and required
 candidate review/combined acceptance/full-gate/exact-SHA hosted, artifact,
 deployment, ZDD and promotion proofs. This local receiving does not approve the
 immutable original a403 source or close a release task.
+
+## Required hosted signaling after normal publication (2026-10-27 UTC)
+
+On immutable peer baseecae499858bae90fde97f0e9dd63bb8709e56930, canonical
+git-push-sandboxcom ran its normal admission, hook, saved-SHA transport, verdict
+and remote verification, then reported success without requesting Build.
+Feature-ci already used the existing exact-SHA dispatcher. The actual bounded
+311 regression plus logical-Makefile prerequisite produced1FAIL/1PASS
+(pytest21.29s, native22.695s, exit2):
+.gate-logs/observed/v012-publisher-ci-red/v012-publisher-ci-red311-ecae499-20261027.json.
+The sole failure was the absent real dispatcher run URL after successful full-SHA
+verification. Its trace retained8events/2pairs/0issues/unfinished and1failed
+report. This is an owned local Git/GH fixture, with no public request.
+
+Both purposes now share the existing dispatcher after exact remote verification,
+passing the saved branch/fullSHA, actual purpose and baseline inputs. Canonical
+retains its EE/prerequisite/runtime90/60 admission and canonical verdict history;
+feature-ci retains its distinct authorization, workflow provenance and diagnostic
+result. All original guards, hooks and dispatcher discovery/idempotence remain.
+A posttransport signaling refusal preserves nonzero native status and its actual
+reason, with transport-may-have-applied guidance to reconcile the saved identity
+and request/reuse its Build run through the existing dispatcher. Unchanged repush
+is not a missing-CI repair. Returned accepted/reused runs permit hosted work to
+continue while local work proceeds; they supply no terminal, canonical push,
+deployment or release proof.
+
+Transport-only legacy fixtures keep their native signal seam; complete feature
+fixtures replace it with the real dispatcher and owned fake GH boundary.
+The new canonical controls exercise actual dispatch/reuse, no dispatch after
+admission/auth/transport/verification failures, signaling refusal after applied
+transport, and source drift after saved-SHA publication. Existing assertions,
+admission deadlines, branch promotion and coverage floors remain.
+Ruff, test-environment writes,303-target contract and tracked line checks passed;
+typing, repaired native acceptance, full affected receiving and independent
+source review are pending. Existing primary/practitioner references above remain
+historical context; this local failure establishes no upstream GitHub defect.
+The separate direct batch-push owner reproduced the same missing-run result
+before its repair: native5 unpushed commits,1 admission/hook/transport/verdict,
+then success0 without the Build URL. The actual AST plus batch regression was
+1FAIL/1PASS, pytest21.08s/native22.544s2, at
+.gate-logs/observed/v012-publisher-batch-red/v012-publisher-batch-red311-ecae499-20261027.json;
+8trace events/2pairs/0issues/unfinished and1failed report remain. The earlier
+canonical repaired input separately passed23,69.96pytest seconds/native71.590,
+at v012-publisher-ci-green/v012-publisher-ci-green311-ecae499-20261027.json,
+with49events/23pairs/0issues/unfinished/failures. That receipt predates batch
+delegation and its additional controls.
+
+The first combined50-case input retained45PASS/5FAIL,117.43pytest seconds and
+native119.311s2, at
+v012-publisher-batch-green/v012-publisher-batch-green311-ecae499-20261027.json.
+Its108events/50pairs had0issues/unfinished and5failed reports. Four failures
+exposed incorrect Make-dollar escaping in the then-proposed advisory marker;
+the original native43/1 assertions caught the missing guidance. The other was
+an owned zero-ahead fixture trying to update a bare ref before its object existed.
+The fixture now supplies that object through an owned native push before counting.
+These failures remain historical and are not a combined green receipt.
+
+The authoritative repair retains AA023's original direct batch owner, eight
+prerequisites, default5 threshold, explicit threshold1 refusal, below-threshold
+no-op, force semantics and key/transport-failure guidance. No nested publisher,
+duplicate guards or advisory marker remains; CONFIG_REFERENCE was restored.
+The direct recipe captures the native branch/fullSHA, validates an optional
+explicit expected pair and rechecks identity after its single canonical runtime
+admission. It pushes that fullSHA, preserves the original Pushed-then-verdict
+order, records the explicit saved SHA, verifies it remotely and requires the
+existing dispatcher with canonical purpose, empty diagnostic baseline, fixed
+Build/repository, live EXAMPLE0 and saved identity before terminal success.
+Native transport43/1 and auth-recovery text remain; later failures retain their
+actual phase and potentially applied state. Source drift cannot request a run
+for a different SHA. Both unchanged direct-body source-contract owners remain
+required complete consumers, without oracle amendments.
+
+The earlier delegated recipe's303-target contract refusal and repaired SSH_KEY
+reference describe only that discarded intermediate input. Current source uses
+the original direct SSH/key boundary. New controls cover native counts, exactly
+eight guards/one runtime, optional pair/refusal/identity drift and partial writes.
+Complete receiving and both installed runtimes remain pending for this final
+input. Full gate, exact-SHA hosted and deployment proof remain separate; this
+isolated implementation made no public request.
+
+The direct final input passed all48 narrow controls on installed3.11:
+108.31pytest seconds/native110.154s0, exact session98515 drained and
+observed-status verified inactive/passed at
+.gate-logs/observed/v012-publisher-direct-green/v012-publisher-direct-green311-ecae499-20261027.json.
+The99events/48pairs had0issues/unfinished/failure reports. This includes both
+unchanged AA023 direct-body source contracts, the original runtime false/true
+cases and native43/workflow-auth failures, plus new canonical and batch
+saved-identity/dispatch/reuse/refusal controls. Exactly eight batch guards and
+one runtime were observed; no duplicate publisher delegation is present.
+Ruff, both changed single-file strict mypy scopes, test-environment writes,
+tracked line limits and the303-target contract passed. The private complete
+17-owner receiving roster is
+/tmp/gludd-v012-publisher-affected-owners-20261027.txt; it is a plan, not execution.
+Final staged-content guard, independent source approval, complete owners on
+both installed runtimes, normal collection/commit/intake and fresh exact-SHA
+proof remain required. The original90/60 admission, coverage and promotion
+policies are unchanged; this focus supplies no runtime-speed or release claim.
+
+Independent source review then held the direct input for native upstream
+association: raw-SHA push -u can preserve an absent or different upstream.
+Actual owned controls established3FAIL/1ASTPASS on the pre-fix recipe,
+26.17pytest seconds/native27.593s2, at
+.gate-logs/observed/v012-publisher-tracking-red/v012-publisher-tracking-red311-ecae499-20261027.json.
+Missing upstream retained native128; a different upstream remained development;
+the deliberately faulted native tracking owner was never called and publication
+incorrectly returned0. The14events/4pairs had0issues/unfinished and3failures.
+
+The narrow repair explicitly sets the saved branch's sandboxcom upstream after
+successful transport and before the original Pushed-then-verdict sequence, using
+the same native Git operation as git-push-sandboxcom. Tracking failure retains
+native79 with transport-may-have-applied=true and starts no verdict, verification,
+lookup, dispatch or terminal success. The unchanged controls then passed4,
+25.12pytest seconds/native26.488s0, exact session95711 drained and observed-status
+verified at
+.gate-logs/observed/v012-publisher-tracking-green/v012-publisher-tracking-green311-ecae499-20261027.json;
+11events/4pairs/0issues/unfinished/failures. The earlier48 pass remains the
+pre-tracking source input, not final combined acceptance. Six current source paths
+are frozen for renewed content guard/source review and complete17-owner receiving
+on both installed runtimes. Earlier Main Rumdl checked the guide/feature before
+this final receipt update; final exact prose still needs that native check.
+No public request, hosted terminal, full gate or release proof is supplied.
+
+### Final receiving and portable query status (2026-10-27 UTC)
+
+The six-path pending statements above describe the earlier tracking input.
+The completed implementation scope is eight paths: the mandatory Make guide,
+TASKS, the existing target contract, this feature, Make20, and the complete
+development-publication, runtime-publication and push-discipline test owners.
+Earlier failures remain separate from the accepted subjects below.
+
+The first complete17-owner311 attempt retained785PASS/4FAIL,
+459.09pytest seconds/native463.906s2, at
+.gate-logs/observed/v012-publisher-receiving/v012-publisher-receiving311-ecae499-20261027.json.
+The four original runtime policy cases still expected their old ordered prefix
+to end at verdict. Appending verification/signaling preserved that full prefix.
+Its1594events/789pairs had0issues/unfinished and8reports for4failed nodes.
+312 was not run on that input.
+
+Forced-eligible batch inspection then established actual owned remote mutation
+under ordinary/-e native -n/-t, despite complete Foundation .PHONY/provider
+context. The bounded input retained4FAIL/5PASS,34.57pytest seconds/native35.803s2,
+at v012-publisher-inspection-red/v012-publisher-inspection-red311-ecae499-20261027.json;
+25events/9pairs had0issues/unfinished and4reports. The existing native-mode guard
+now returns planned0 before COUNT or any new batch operation. Its corrected
+controls passed31,50.99pytest seconds/native52.643s0, at
+v012-publisher-inspection-green/v012-publisher-inspection-green311-ecae499-20261027.json;
+65events/31pairs had0issues/unfinished/failures. No live repository or API was used.
+
+The next complete17-owner311 input retained790PASS/3FAIL,
+460.44pytest seconds/native465.400s2, at
+v012-publisher-final-receiving/v012-publisher-final-receiving311-ecae499-20261027.json;
+1600events/793pairs had0issues/unfinished and6reports for3failed nodes.
+Three P03/P15 fixed windows truncated the unchanged threshold body after the new
+entry guard. Four batch readers now use the existing complete-rule _stanzas
+owner; original policy predicates remain, with padded current-source positives
+and missing/neighbor-only negatives.
+
+Separately, Root's actual D Build40448994419 unit-3a job122011474825 exposed two
+manifest diagnostic-format assertions. The manifest child remained native81,
+outer Make2, with neither runtime nor transport started. The hosted diagnostic
+included a complete file:line target field. The exact-target/status oracle now
+accepts that native form and the original legacy form, rejecting foreign targets,
+inexact status, ignored status and incomplete messages. Native conformance
+retained14FAIL/13PASS,20.55pytest seconds/native22.100s2, then27PASS,
+19.90pytest seconds/native21.056s0, at respectively
+v012-publisher-conformance-red/v012-publisher-conformance-red311-ecae499-20261027.json
+and v012-publisher-conformance-green/v012-publisher-conformance-green311-ecae499-20261027.json.
+The RED71events/27pairs retained14failed reports; GREEN57events/27pairs had none.
+Both had0issues/unfinished. These owned diagnostic strings are not a local GNU4 run.
+
+The resulting eight-path subject passed the complete17-owner union on both
+installed runtimes under label v012-publisher-conformance-final:
+
+| Runtime | Run ID | Result | Pytest seconds | Native seconds/status |
+| --- | --- | --- | --- | --- |
+| 3.11 | v012-publisher-conformance-final311-ecae499-20261027 | 814PASS | 463.55 | 468.837/0 |
+| 3.12 | v012-publisher-conformance-final312-ecae499-20261027 | 814PASS | 485.48 | 490.890/0 |
+
+Both exact sessions73138/70702 were drained and observed-status verified
+inactive/passed0. Each trace retained1636events/814pairs with0issues,
+unfinished protocols, failure reports or skips. These are the original eight-path
+postimages before the later query-only test correction, not that correction's
+receiving. The complete literal roster is:
+
+```text
+tests/unit/test_development_push_publication.py
+tests/unit/test_runtime_publish_admission.py
+tests/unit/test_ci_signal_exact_sha.py
+tests/unit/test_ci_remote_head_guard.py
+tests/unit/test_workflow_failure_class_guards.py
+tests/unit/test_anti_stop_behavior.py
+tests/unit/test_push_discipline_checks.py
+tests/unit/test_push_discipline_checks_p2.py
+tests/unit/test_push_guard_coverage.py
+tests/unit/test_batch_push_enforce.py
+tests/unit/test_sandboxcom_ssh_key_guard.py
+tests/unit/test_make_target_contract.py
+tests/unit/test_makefile_layout.py
+tests/unit/test_markdown_docs_deep.py
+tests/unit/test_guardrails.py
+tests/unit/test_oversized_document_splits.py
+tests/unit/test_make_result_guidance.py
+```
+
+Root's later actual D unit-1d job122011474901 exposed two direct-dispatcher
+query assertions: hosted Make returned0 with outcome=planned mode=query,
+while the local GNU3.81 returned1. Neither executed remote/auth/dispatch work.
+The dispatcher is a no-prerequisite .PHONY rule with one continued recipe
+literally marked recursive by $(MAKE); its inspection branch exits0. Production
+was unchanged. Only this goal's -q expected status now equals an independent
+inert control through the exact selected REAL_MAKE and full fixture context.
+Ordinary/-e native controls retain the planned marker, accept only oracle0or1,
+require nonrecursive .PHONY query1/no execution, and actively execute native7
+to establish Make2 and rejection. No + prefix, version guess or blanket
+acceptance of an actual dispatcher2 was added. All original no-row/no-touch/
+no-history/no-signal assertions and other goals' exact statuses remain; absence
+of a returned run URL is also required.
+
+The logical-Makefile prerequisite, original18 inspection cases and two new oracle
+cases passed21,31.50pytest seconds/native33.049s0, at
+.gate-logs/observed/v012-publisher-query-oracle/v012-publisher-query-oracle311-ecae499-20261027.json;
+45events/21pairs had0issues/unfinished/failures. The complete changed publication
+owner then passed separately on both runtimes under label
+v012-publisher-query-owner:
+
+| Runtime | Run ID | Result | Pytest seconds | Native seconds/status |
+| --- | --- | --- | --- | --- |
+| 3.11 | v012-publisher-query-owner311-ecae499-20261027 | 294PASS | 324.26 | 328.820/0 |
+| 3.12 | v012-publisher-query-owner312-ecae499-20261027 | 294PASS | 340.70 | 345.488/0 |
+
+Exact sessions34839/14736 were drained and observed-status verified
+inactive/passed0. Each trace retained591events/294pairs with0issues,
+unfinished protocols, failure reports or skips. The native reader verified every
+original292 publication case remained, with exactly the two new oracle cases.
+
+Before this receipt-only append, the private22-path byte comparison found only
+the publication test changed; the other21 files, including Make20, contract and
+all other16 complete test owners, remained exact. No test-module imports depend
+on the changed helper. Native per-file START/FINISH counts directly established
+the original814 as292 publication cases plus522 cases in those unchanged16
+owners, on each runtime. Replacing only the former owner's evidence with294
+gives a deduplicated17-owner scope of816 cases per runtime across these receipts.
+There was no new combined816-case command, cumulative Main replay or repeated
+full17 run. The bounded provenance is retained at
+/tmp/gludd-v012-publisher-query-final-provenance-20261027.json.
+
+All receiving used explicit installed3.11/3.12 and pinned UV0.13.1 in watcher
+and CMD, checkout-owned ledger/observations, literal ID=, enabled plugins,
+fatal warnings and actual traces. The17-owner runs used at most2 workers;
+the later complete publication owners ran serial -n0. All retained900total/
+180quiet diagnostic bounds. Ruff, strict single-file typing on both runtimes,
+test-environment writes,303-target contract and tracked line checks passed for
+their actual source subjects.
+
+Root's initial six-path content hook failed only on the feature EOF fixer;
+the corrected input passed7.768s. The native registration refusal then identified
+two missing path references. Only131bytes were added to the existing S98.4
+continuation, preserving2499lines, all328 checkbox texts/states/order and line8.
+Main must receive those two literal references while preserving its newer text.
+The final conformance eight-path staged guard passed8.974s; the refreshed
+query-only eight-path guard passed9.518s, both native0 with exact sessions drained,
+all8working=index/0untracked, three secret hooks, line checks and0new clones.
+Their label is v012-publisher-staged-content, with respective run IDs
+v012-publisher-staged-content311-ecae499-conformance-eight-20261027 and
+v012-publisher-staged-content311-ecae499-query-oracle-20261027.
+Independent SOURCE ONLY approvals cover the earlier eight-path bytes and the
+later exact query-test delta. Root must complete the final receipt-only prose
+Markdown/source review and normal staged hooks/fresh collection before commit.
+
+Existing primary/practitioner findings above remain retained. This lane made no
+public request and supplies no new GNU4 execution, runtime-speed, full-gate,
+canonical push, hosted terminal, integration, deployment or release proof.
+The original90/60 publication admission, full21600 gate,85aggregate/75per-file
+line and branch coverage on both runtimes, ZDD and all promotion guards remain.
+Normal collection/commit, exact Main intake and fresh exact-SHA hosted/deployment
+proofs plus the complete signed v0.1.2 artifact set remain separate required work.

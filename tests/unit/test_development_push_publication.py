@@ -8,7 +8,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import NotRequired, TypedDict, cast
 
@@ -244,6 +244,10 @@ def development_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Develop
         "    print('native-fixture-head-75', file=sys.stderr); raise SystemExit(75)\n"
         "if args == ['branch', '--set-upstream-to=sandboxcom/development', 'development'] and fault == 'tracking':\n"
         "    print('native-fixture-tracking-76', file=sys.stderr); raise SystemExit(76)\n"
+        "owned_feature = os.environ.get('FEATURE_BRANCH', '')\n"
+        "if args == ['branch', '--set-upstream-to=sandboxcom/' + owned_feature, owned_feature] "
+        "and fault == 'batch-tracking':\n"
+        "    print('native-fixture-batch-tracking-79', file=sys.stderr); raise SystemExit(79)\n"
         "if args[0] == 'push':\n"
         "    with path.open('a') as output:\n"
         "        output.write(json.dumps({'kind': 'transport', 'args': args}) + '\\n')\n"
@@ -306,7 +310,10 @@ def development_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Develop
     recovery = RECOVERY.read_text(encoding="utf-8")
     guardrails = GUARDRAILS.read_text(encoding="utf-8")
     release = RELEASE.read_text(encoding="utf-8")
-    native = [_target(recovery, "git-push-sandboxcom"), _target(guardrails, "development-push")]
+    native = [
+        _target(recovery, "git-push-sandboxcom"), _target(recovery, "batch-push"),
+        _target(guardrails, "development-push"),
+    ]
     guards = sorted(
         {name for block in native for name in block.splitlines()[0].partition(":")[2].split()}
         - {"_require-sandboxcom-git-auth"}
@@ -319,7 +326,7 @@ def development_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Develop
         + f"SYSTEM_PYTHON := {sys.executable}\nSSH_KEY := {key}\n"
         + ".PHONY: "
         + " ".join(guards)
-        + " _runtime-publish-admission _record-push-verdict\n"
+        + " _runtime-publish-admission _record-push-verdict ci-trigger-committed-head\n"
         + "".join(f"{name}:\n\t@{runner} guard {name}\n\n" for name in guards)
         + "\n\n".join(
             _definition(release, name)
@@ -341,7 +348,10 @@ def development_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Develop
         + "\n\n"
         + "\n\n".join(native)
         + f"\n\n_runtime-publish-admission:\n\t@{runner} runtime\n"
-        + f"\n_record-push-verdict:\n\t@{runner} verdict\n",
+        + f"\n_record-push-verdict:\n\t@{runner} verdict\n"
+        # Transport-only fixtures replace this boundary; feature_repo uses the real dispatcher.
+        + f'\nci-trigger-committed-head:\n\t@{runner} signal "$$GLUDD_PUBLISH_EXPECTED_BRANCH" '
+        + '"$$GLUDD_PUBLISH_EXPECTED_SHA" "$$GLUDD_PUBLISH_PURPOSE"\n',
         encoding="utf-8",
     )
     return fixture
@@ -438,6 +448,12 @@ def feature_repo(development_repo: DevelopmentFixture) -> DevelopmentFixture:
     stub = f"_record-push-verdict:\n\t@{runner} verdict"
     assert source.count(stub) == 1
     source = source.replace(stub, _target(GUARDRAILS.read_text(encoding="utf-8"), "_record-push-verdict"))
+    signal_stub = (
+        f'ci-trigger-committed-head:\n\t@{runner} signal "$$GLUDD_PUBLISH_EXPECTED_BRANCH" '
+        '"$$GLUDD_PUBLISH_EXPECTED_SHA" "$$GLUDD_PUBLISH_PURPOSE"'
+    )
+    assert source.count(signal_stub) == 1
+    source = source.replace(signal_stub, "")
     pipelines = (ROOT / "make/95-collections-and-pipelines.mk").read_text(encoding="utf-8")
     fixture.makefile.write_text(
         source
@@ -584,6 +600,405 @@ def test_feature_ci_uses_native_hooks_saved_record_verify_and_existing_signal(
     kinds = [row["kind"] for row in fixture.rows()]
     assert kinds.index("transport") < kinds.index("hook") < kinds.index("dispatch")
     assert not (fixture.root.parent / "forbidden-external-command").exists()
+
+
+def test_canonical_publish_requires_visible_exact_sha_build_after_verification(
+    feature_repo: DevelopmentFixture,
+) -> None:
+    """Successful canonical transport must return the real native dispatcher's run."""
+    fixture = feature_repo
+    result = fixture.invoke(
+        "git-push-sandboxcom",
+        *_feature_arguments(
+            fixture, PUBLISH_PURPOSE="canonical", PUBLISH_BASELINE_REF="",
+            PUBLISH_BASELINE_SHA="", EXAMPLE="1", WORKFLOW="unselected-workflow",
+        ),
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _feature_remote_sha(fixture) == fixture.sha
+    assert len(fixture.rows("runtime")) == 1
+    assert len(fixture.rows("transport")) == len(fixture.rows("hook")) == 1
+    assert {row["args"][0] for row in fixture.rows("guard")} >= set(ORIGINAL_GUARDS)
+    verified = "VERIFIED " + fixture.environment["FEATURE_BRANCH"] + "@" + fixture.sha
+    assert verified in result.stdout
+    assert "GHA_RUN_URL=https://github.com/sandboxcom/gludd/actions/runs/41" in result.stdout
+    assert result.stdout.index(verified) < result.stdout.index("GHA_RUN_URL=")
+    assert "GHA-SIGNAL-EXAMPLE" not in result.stdout + result.stderr
+    assert len(fixture.rows("dispatch")) == 1
+    assert all(
+        row["args"][row["args"].index("--commit") + 1] == fixture.sha
+        for row in fixture.rows("lookup")
+    )
+    assert "outcome=published" in result.stderr
+    assert "gate_evidence=false release_ready=false" in result.stderr
+
+
+def _prepare_native_batch(fixture: DevelopmentFixture, unpushed: int) -> None:
+    """Create the exact owned upstream/count used by the real batch threshold."""
+    branch = fixture.environment["FEATURE_BRANCH"]
+    baseline = fixture.sha if unpushed == 0 else fixture.environment["FEATURE_BASELINE_SHA"]
+    if unpushed == 0:
+        fixture.git("push", "--quiet", str(fixture.remote), baseline + ":refs/heads/" + branch)
+    fixture.git("update-ref", "refs/heads/" + branch, baseline, bare=True)
+    fixture.git("update-ref", "refs/remotes/sandboxcom/" + branch, baseline)
+    fixture.git("branch", "--set-upstream-to=sandboxcom/" + branch, branch)
+    for number in range(max(0, unpushed - 1)):
+        fixture.git("-c", "commit.gpgSign=false", "commit", "--allow-empty", "--quiet", "-m", f"owned batch {number}")
+    fixture.sha = fixture.git("rev-parse", "HEAD").stdout.strip()
+    assert len(fixture.git("log", "--oneline", "@{u}..HEAD").stdout.splitlines()) == unpushed
+    fixture.calls.unlink(missing_ok=True)
+
+
+@pytest.mark.parametrize("mode", ("-n", "-t"))
+@pytest.mark.parametrize("early_environment", (False, True))
+def test_native_forced_batch_inspection_preserves_owned_publication_state(
+    feature_repo: DevelopmentFixture, mode: str, early_environment: bool,
+) -> None:
+    fixture = feature_repo
+    _prepare_native_batch(fixture, 5)
+    fixture.git("branch", "--set-upstream-to=sandboxcom/development")
+    source = fixture.makefile.read_text(encoding="utf-8")
+    assert _inspection_inputs(RECOVERY.read_text(encoding="utf-8")) in source
+    assert _target(FOUNDATION.read_text(encoding="utf-8"), ".PHONY") in source
+    refs_before = fixture.git("for-each-ref", "--format=%(refname) %(objectname)", bare=True).stdout
+    config = fixture.root / ".git/config"
+    index = fixture.root / ".git/index"
+    config_before, index_before = config.read_bytes(), index.read_bytes()
+    state_keys = (
+        "GLUDD_CI_HISTORY_FILE", "GLUDD_CI_STATE_FILE", "GLUDD_CI_RESTART_COUNT_FILE",
+        "GLUDD_PUSH_STATE_FILE", "GLUDD_GHA_SIGNAL_STATE_DIR",
+    )
+    assert all(not Path(fixture.environment[key]).exists() for key in state_keys)
+    environment_before = replace(fixture, environment=dict(fixture.environment))
+    result = fixture.invoke(
+        "batch-push",
+        *_feature_arguments(fixture, PUBLISH_PURPOSE="canonical", PUBLISH_BASELINE_REF="", PUBLISH_BASELINE_SHA=""),
+        "GLUDD_FORCE_PUSH=1", "FORCE=1",
+        mode=mode, early_environment=early_environment,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert fixture.git("for-each-ref", "--format=%(refname) %(objectname)", bare=True).stdout == refs_before
+    assert config.read_bytes() == config_before
+    assert index.read_bytes() == index_before
+    assert fixture.git("rev-parse", "HEAD").stdout.strip() == fixture.sha
+    assert all(not Path(fixture.environment[key]).exists() for key in state_keys)
+    assert fixture.rows() == []
+    assert not (fixture.root / "batch-push").exists()
+    assert not (fixture.root.parent / "forbidden-external-command").exists()
+    assert "AGENT_NEXT target=batch-push outcome=published native_status=0 branch=" not in result.stderr
+    expected_mode = "dry-run" if mode == "-n" else "touch"
+    assert "AGENT_NEXT target=batch-push outcome=planned mode=" + expected_mode in result.stderr
+    environment_preserved = fixture.environment == environment_before.environment
+    assert environment_preserved
+
+
+@pytest.mark.parametrize("upstream", ("missing", "different"))
+def test_native_batch_saved_sha_restores_its_own_upstream_before_reporting_success(
+    feature_repo: DevelopmentFixture, upstream: str,
+) -> None:
+    fixture = feature_repo
+    _prepare_native_batch(fixture, 5)
+    if upstream == "missing":
+        fixture.git("branch", "--unset-upstream")
+    else:
+        fixture.git("branch", "--set-upstream-to=sandboxcom/development")
+    before = fixture.git("rev-parse", "--symbolic-full-name", "@{u}", check=False)
+    assert (before.returncode != 0) if upstream == "missing" else (
+        before.stdout.strip() == "refs/remotes/sandboxcom/development"
+    )
+    result = fixture.invoke(
+        "batch-push",
+        *_feature_arguments(fixture, PUBLISH_PURPOSE="canonical", PUBLISH_BASELINE_REF="", PUBLISH_BASELINE_SHA=""),
+        "GLUDD_FORCE_PUSH=1", "FORCE=1",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _feature_remote_sha(fixture) == fixture.sha
+    actual = fixture.git("rev-parse", "--symbolic-full-name", "@{u}", check=False)
+    assert actual.returncode == 0, actual.stderr
+    assert actual.stdout.strip() == "refs/remotes/sandboxcom/" + fixture.environment["FEATURE_BRANCH"]
+    assert len(fixture.rows("runtime")) == len(fixture.rows("transport")) == len(fixture.rows("dispatch")) == 1
+
+
+def test_native_batch_tracking_failure_retains_transport_and_starts_no_later_owner(
+    feature_repo: DevelopmentFixture,
+) -> None:
+    fixture = feature_repo
+    _prepare_native_batch(fixture, 5)
+    fixture.git("branch", "--set-upstream-to=sandboxcom/development")
+    fixture.environment["DEVELOPMENT_GIT_FAULT"] = "batch-tracking"
+    result = fixture.invoke(
+        "batch-push",
+        *_feature_arguments(fixture, PUBLISH_PURPOSE="canonical", PUBLISH_BASELINE_REF="", PUBLISH_BASELINE_SHA=""),
+    )
+    assert result.returncode != 0
+    assert "native-fixture-batch-tracking-79" in result.stderr
+    assert "phase=tracking native_status=79" in result.stderr
+    assert "transport_may_have_applied=true" in result.stderr
+    assert _feature_remote_sha(fixture) == fixture.sha
+    assert len(fixture.rows("runtime")) == len(fixture.rows("transport")) == len(fixture.rows("hook")) == 1
+    assert not Path(fixture.environment["GLUDD_CI_HISTORY_FILE"]).exists()
+    assert not any(row["args"][0] == "ls-remote" for row in fixture.rows("git"))
+    _not_started(fixture, "lookup", "dispatch")
+    assert "Pushed " not in result.stdout
+    assert "VERIFIED " not in result.stdout
+    assert "outcome=published" not in result.stderr
+
+
+@pytest.mark.parametrize("expected", ("absent", "matching", "upper-case"))
+def test_native_batch_requires_verified_saved_sha_and_an_actual_build_run(
+    feature_repo: DevelopmentFixture,
+    expected: str,
+) -> None:
+    fixture = feature_repo
+    _prepare_native_batch(fixture, 5)
+    result = fixture.invoke(
+        "batch-push",
+        *_feature_arguments(
+            fixture, PUBLISH_PURPOSE="canonical", PUBLISH_BASELINE_REF="", PUBLISH_BASELINE_SHA="",
+            PUBLISH_EXPECTED_BRANCH="" if expected == "absent" else fixture.environment["FEATURE_BRANCH"],
+            PUBLISH_EXPECTED_SHA=(
+                "" if expected == "absent" else fixture.sha.upper() if expected == "upper-case" else fixture.sha
+            ),
+        ),
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _feature_remote_sha(fixture) == fixture.sha
+    assert len(fixture.rows("runtime")) == len(fixture.rows("transport")) == len(fixture.rows("hook")) == 1
+    assert [row["args"][0] for row in fixture.rows("guard")] == [
+        "check-clean-tree", "_no-bypass-guard", "_stash-before-push-guard", "_pull-before-push-guard",
+        "_ci-verdict-history-guard", "_pre-commit-stash-audit", "_ci-restart-cap", "_push-rate-guard",
+    ]
+    assert "GHA_RUN_URL=https://github.com/sandboxcom/gludd/actions/runs/41" in result.stdout
+    assert "VERIFIED " + fixture.environment["FEATURE_BRANCH"] + "@" + fixture.sha in result.stdout
+    assert fixture.rows("transport")[0]["args"] == [
+        "push", "-u", "sandboxcom", fixture.sha + ":refs/heads/" + fixture.environment["FEATURE_BRANCH"],
+    ]
+    history = json.loads(Path(fixture.environment["GLUDD_CI_HISTORY_FILE"]).read_text(encoding="utf-8"))
+    assert history["last_push_sha"] == fixture.sha
+    assert len(fixture.rows("dispatch")) == 1
+    assert all(row["args"][row["args"].index("--commit") + 1] == fixture.sha for row in fixture.rows("lookup"))
+    assert "outcome=published" in result.stderr
+
+
+@pytest.mark.parametrize("unpushed", (0, 4))
+def test_native_batch_below_default_threshold_starts_no_publication_or_signal(
+    feature_repo: DevelopmentFixture, unpushed: int,
+) -> None:
+    fixture = feature_repo
+    _prepare_native_batch(fixture, unpushed)
+    result = fixture.invoke("batch-push", "GLUDD_FORCE_PUSH=0")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"NOT PUSHING: only {unpushed}" in result.stdout
+    _not_started(fixture, "runtime", "transport", "hook", "lookup", "dispatch")
+    assert "outcome=published" not in result.stderr
+
+
+def test_native_batch_threshold_one_refuses_even_when_forced(feature_repo: DevelopmentFixture) -> None:
+    fixture = feature_repo
+    _prepare_native_batch(fixture, 5)
+    result = fixture.invoke("batch-push", "COMMIT_THRESHOLD=1", "GLUDD_FORCE_PUSH=1", "FORCE=1")
+    assert result.returncode != 0
+    assert "COMMIT_THRESHOLD=1 bypass is disabled" in result.stdout
+    _not_started(fixture, "runtime", "transport", "hook", "lookup", "dispatch")
+
+
+def test_native_forced_batch_keeps_canonical_admission_despite_diagnostic_caller_purpose(
+    feature_repo: DevelopmentFixture,
+) -> None:
+    fixture = feature_repo
+    _prepare_native_batch(fixture, 1)
+    result = fixture.invoke("batch-push", "GLUDD_FORCE_PUSH=1", "FORCE=1", *_feature_arguments(fixture))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert len(fixture.rows("runtime")) == len(fixture.rows("transport")) == len(fixture.rows("dispatch")) == 1
+    assert "GHA_RUN_URL=https://github.com/sandboxcom/gludd/actions/runs/41" in result.stdout
+    assert "outcome=diagnostic-signaled" not in result.stderr
+    assert "outcome=published" in result.stderr
+    assert _feature_remote_sha(fixture) == fixture.sha
+
+
+@pytest.mark.parametrize("phase", ("guard", "runtime", "transport", "verify", "signal"))
+def test_native_batch_retains_real_failure_phase_and_transport_state(
+    feature_repo: DevelopmentFixture, phase: str,
+) -> None:
+    fixture = feature_repo
+    _prepare_native_batch(fixture, 5)
+    if phase in {"guard", "runtime"}:
+        fixture.environment.update({
+            "DEVELOPMENT_FAIL_PHASE": "guard:_no-bypass-guard" if phase == "guard" else "runtime",
+            "DEVELOPMENT_FAIL_STATUS": "83",
+        })
+    else:
+        key = {"auth": "DEVELOPMENT_AUTH_STATUS", "transport": "DEVELOPMENT_PUSH_STATUS",
+               "verify": "DEVELOPMENT_VERIFY_STATUS", "signal": "FEATURE_GH_STATUS"}[phase]
+        fixture.environment[key] = "83"
+    result = fixture.invoke(
+        "batch-push",
+        *_feature_arguments(fixture, PUBLISH_PURPOSE="canonical", PUBLISH_BASELINE_REF="", PUBLISH_BASELINE_SHA=""),
+    )
+    assert result.returncode != 0
+    assert "83" in result.stderr
+    assert "outcome=published" not in result.stderr
+    assert "Pushed and signaled" not in result.stdout
+    assert len(fixture.rows("transport")) == (1 if phase in {"transport", "verify", "signal"} else 0)
+    assert len(fixture.rows("dispatch")) == (1 if phase == "signal" else 0)
+    if phase != "signal":
+        assert fixture.rows("lookup") == []
+    if phase != "transport":
+        assert "phase=transport" not in result.stderr
+    if phase in {"verify", "signal"}:
+        assert _feature_remote_sha(fixture) == fixture.sha
+        assert "transport_may_have_applied=true" in result.stderr
+    if phase == "signal":
+        assert "phase=hosted-signal" in result.stderr
+        assert "target=batch-push outcome=failed phase=hosted-signal" in result.stderr
+        assert "do not repush unchanged source" in result.stderr
+    elif phase == "transport":
+        assert "target=batch-push outcome=failed phase=transport native_status=83" in result.stderr
+        assert "target=git-push-sandboxcom outcome=failed" not in result.stderr
+
+
+@pytest.mark.parametrize("mutation", ("runtime", "transport"))
+def test_native_batch_source_shift_retains_saved_sha_and_refuses_different_dispatch(
+    feature_repo: DevelopmentFixture, mutation: str,
+) -> None:
+    fixture = feature_repo
+    _prepare_native_batch(fixture, 5)
+    if mutation == "runtime":
+        fixture.environment.update({"DEVELOPMENT_MUTATE_PHASE": "runtime", "DEVELOPMENT_MUTATION": "head"})
+    else:
+        fixture.environment["DEVELOPMENT_MUTATE_TRANSPORT"] = "1"
+    result = fixture.invoke(
+        "batch-push",
+        *_feature_arguments(fixture, PUBLISH_PURPOSE="canonical", PUBLISH_BASELINE_REF="", PUBLISH_BASELINE_SHA=""),
+    )
+    assert result.returncode != 0
+    assert fixture.git("rev-parse", "HEAD").stdout.strip() != fixture.sha
+    _not_started(fixture, "lookup", "dispatch")
+    assert "outcome=published" not in result.stderr
+    if mutation == "runtime":
+        _not_started(fixture, "transport", "hook")
+        assert "phase=identity" in result.stderr
+    else:
+        assert _feature_remote_sha(fixture) == fixture.sha
+        history = json.loads(Path(fixture.environment["GLUDD_CI_HISTORY_FILE"]).read_text(encoding="utf-8"))
+        assert history["last_push_sha"] == fixture.sha
+        assert "phase=hosted-signal" in result.stderr
+        assert "transport_may_have_applied=true" in result.stderr
+
+
+@pytest.mark.parametrize("expected", ("partial-branch", "partial-sha", "malformed", "wrong-branch", "wrong-sha"))
+def test_native_batch_expected_pair_refuses_before_admission_or_transport(
+    feature_repo: DevelopmentFixture, expected: str,
+) -> None:
+    fixture = feature_repo
+    _prepare_native_batch(fixture, 5)
+    branch = {
+        "partial-sha": "", "wrong-branch": "feature/different",
+    }.get(expected, fixture.environment["FEATURE_BRANCH"])
+    sha = {"partial-branch": "", "malformed": "bad", "wrong-sha": "a" * 40}.get(expected, fixture.sha)
+    result = fixture.invoke(
+        "batch-push",
+        *_feature_arguments(
+            fixture, PUBLISH_PURPOSE="canonical", PUBLISH_BASELINE_REF="", PUBLISH_BASELINE_SHA="",
+            PUBLISH_EXPECTED_BRANCH=branch, PUBLISH_EXPECTED_SHA=sha,
+        ),
+    )
+    assert result.returncode != 0
+    assert "phase=expected-" in result.stderr
+    _not_started(fixture, "runtime", "transport", "hook", "lookup", "dispatch")
+
+
+@pytest.mark.parametrize("phase", ("lookup", "dispatch"))
+def test_canonical_signal_failure_retains_applied_transport_and_native_reason(
+    feature_repo: DevelopmentFixture,
+    phase: str,
+) -> None:
+    fixture = feature_repo
+    fixture.environment.update({"FEATURE_GH_STATUS": "87", "FEATURE_GH_FAILURE_PHASE": phase})
+    result = fixture.invoke(
+        "git-push-sandboxcom",
+        *_feature_arguments(fixture, PUBLISH_PURPOSE="canonical", PUBLISH_BASELINE_REF="", PUBLISH_BASELINE_SHA=""),
+    )
+    assert result.returncode == 2
+    assert "owned-gh-failure-87" in result.stderr
+    assert "phase=hosted-signal native_status=2" in result.stderr
+    assert "transport_may_have_applied=true" in result.stderr
+    assert "ci-trigger-committed-head" in result.stderr
+    assert "do not repush unchanged source" in result.stderr
+    assert "outcome=published" not in result.stderr
+    assert _feature_remote_sha(fixture) == fixture.sha
+    assert "VERIFIED " + fixture.environment["FEATURE_BRANCH"] + "@" + fixture.sha in result.stdout
+    history = json.loads(Path(fixture.environment["GLUDD_CI_HISTORY_FILE"]).read_text(encoding="utf-8"))
+    assert history["last_push_sha"] == fixture.sha
+    assert len(fixture.rows("transport")) == len(fixture.rows("hook")) == 1
+    assert len(fixture.rows("dispatch")) == (1 if phase == "dispatch" else 0)
+
+
+@pytest.mark.parametrize("phase", ("guard", "auth", "runtime", "transport", "verify"))
+def test_canonical_failure_before_signal_starts_no_build_lookup_or_dispatch(
+    feature_repo: DevelopmentFixture,
+    phase: str,
+) -> None:
+    fixture = feature_repo
+    if phase == "guard":
+        fixture.environment.update(
+            {"DEVELOPMENT_FAIL_PHASE": "guard:check-clean-tree", "DEVELOPMENT_FAIL_STATUS": "83"}
+        )
+    elif phase == "runtime":
+        fixture.environment.update({"DEVELOPMENT_FAIL_PHASE": "runtime", "DEVELOPMENT_FAIL_STATUS": "83"})
+    else:
+        key = {"auth": "DEVELOPMENT_AUTH_STATUS", "transport": "DEVELOPMENT_PUSH_STATUS",
+               "verify": "DEVELOPMENT_VERIFY_STATUS"}[phase]
+        fixture.environment[key] = "83"
+    result = fixture.invoke(
+        "git-push-sandboxcom",
+        *_feature_arguments(fixture, PUBLISH_PURPOSE="canonical", PUBLISH_BASELINE_REF="", PUBLISH_BASELINE_SHA=""),
+    )
+    assert result.returncode != 0
+    assert "83" in result.stderr
+    assert fixture.rows("lookup") == fixture.rows("dispatch") == []
+    assert "outcome=published" not in result.stderr
+    assert len(fixture.rows("transport")) == (1 if phase in {"transport", "verify"} else 0)
+
+
+def test_canonical_optional_expected_pair_still_reuses_only_the_saved_sha_run(
+    feature_repo: DevelopmentFixture,
+) -> None:
+    fixture = feature_repo
+    fixture.environment["FEATURE_EXISTING_RUN"] = "1"
+    result = fixture.invoke(
+        "git-push-sandboxcom",
+        *_feature_arguments(
+            fixture, PUBLISH_PURPOSE="canonical", PUBLISH_EXPECTED_BRANCH="",
+            PUBLISH_EXPECTED_SHA="", PUBLISH_BASELINE_REF="", PUBLISH_BASELINE_SHA="",
+        ),
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "GHA_RUN_URL=https://github.com/sandboxcom/gludd/actions/runs/41" in result.stdout
+    assert fixture.rows("dispatch") == []
+    assert fixture.rows("lookup")
+    assert all(row["args"][row["args"].index("--commit") + 1] == fixture.sha for row in fixture.rows("lookup"))
+    assert _feature_remote_sha(fixture) == fixture.sha
+    assert len(fixture.rows("runtime")) == len(fixture.rows("transport")) == 1
+
+
+def test_canonical_transport_head_shift_retains_saved_source_and_refuses_dispatch(
+    feature_repo: DevelopmentFixture,
+) -> None:
+    fixture = feature_repo
+    fixture.environment["DEVELOPMENT_MUTATE_TRANSPORT"] = "1"
+    result = fixture.invoke(
+        "git-push-sandboxcom",
+        *_feature_arguments(fixture, PUBLISH_PURPOSE="canonical", PUBLISH_BASELINE_REF="", PUBLISH_BASELINE_SHA=""),
+    )
+    assert result.returncode != 0
+    assert "phase=hosted-signal" in result.stderr
+    assert "transport_may_have_applied=true" in result.stderr
+    assert "outcome=published" not in result.stderr
+    assert _feature_remote_sha(fixture) == fixture.sha
+    history = json.loads(Path(fixture.environment["GLUDD_CI_HISTORY_FILE"]).read_text(encoding="utf-8"))
+    assert history["last_push_sha"] == fixture.sha
+    assert fixture.rows("dispatch") == []
 
 
 @pytest.mark.parametrize(
@@ -803,6 +1218,59 @@ def test_feature_inputs_remain_literal_with_same_origin_native_witness(
     _not_started(fixture, "runtime", "transport", "hook", "dispatch")
 
 
+def _native_query_control(
+    fixture: DevelopmentFixture,
+    early_environment: bool,
+    *,
+    recursive: bool = True,
+    exit_status: int = 0,
+) -> subprocess.CompletedProcess[str]:
+    control = fixture.root.parent / "owned-native-query-control.mk"
+    control.write_text(
+        fixture.makefile.read_text(encoding="utf-8")
+        + "\n.PHONY: owned-native-query-control\nowned-native-query-control:\n"
+        + "\t@printf '%s\\n' owned-native-query-control >&2; "
+        + f"exit {exit_status}; \\\n"
+        + ("\t$(MAKE) --no-print-directory owned-never-reached\n" if recursive else "\t:\n"),
+        encoding="utf-8",
+    )
+    return fixture.invoke(
+        "owned-native-query-control",
+        mode="-q",
+        early_environment=early_environment,
+        makefile=control,
+    )
+
+
+def _accepted_native_query_status(result: subprocess.CompletedProcess[str]) -> int:
+    assert result.returncode in {0, 1}, "native query status must be 0 or 1: " + result.stdout + result.stderr
+    assert result.stdout == ""
+    assert result.stderr == "owned-native-query-control\n"
+    return result.returncode
+
+
+@pytest.mark.parametrize("early_environment", (False, True))
+def test_native_query_oracle_retains_phony_recursion_and_active_error_status(
+    feature_repo: DevelopmentFixture,
+    early_environment: bool,
+) -> None:
+    fixture = feature_repo
+    _accepted_native_query_status(_native_query_control(fixture, early_environment))
+    ordinary = _native_query_control(fixture, early_environment, recursive=False)
+    assert ordinary.returncode == 1, ordinary.stdout + ordinary.stderr
+    assert ordinary.stdout == ordinary.stderr == ""
+    error = _native_query_control(fixture, early_environment, exit_status=7)
+    assert error.returncode == 2, error.stdout + error.stderr
+    assert "owned-native-query-control\n" in error.stderr
+    assert "Error 7" in error.stderr
+    with pytest.raises(AssertionError, match="native query status must be 0 or 1"):
+        _accepted_native_query_status(error)
+    assert fixture.rows() == []
+    assert not (fixture.root / "owned-native-query-control").exists()
+    assert not Path(fixture.environment["GLUDD_CI_HISTORY_FILE"]).exists()
+    assert not Path(fixture.environment["GLUDD_GHA_SIGNAL_STATE_DIR"]).exists()
+
+
 @pytest.mark.parametrize("goal", ("git-push-sandboxcom", "ci-trigger-committed-head", "ci-trigger"))
 @pytest.mark.parametrize("mode", ("-n", "-q", "-t"))
 @pytest.mark.parametrize("early_environment", (False, True))
@@ -820,11 +1288,16 @@ def test_feature_native_inspection_runs_no_auth_git_hook_dispatch_or_touch(
         mode=mode,
         early_environment=early_environment,
     )
-    assert result.returncode == (1 if mode == "-q" else 0), result.stdout + result.stderr
+    expected_status = 1 if mode == "-q" else 0
+    if mode == "-q" and goal == "ci-trigger-committed-head":
+        expected_status = _accepted_native_query_status(_native_query_control(fixture, early_environment))
+        assert "outcome=planned mode=query" in result.stderr
+    assert result.returncode == expected_status, result.stdout + result.stderr
     assert fixture.rows() == []
     assert not (fixture.root / goal).exists()
     assert not Path(fixture.environment["GLUDD_CI_HISTORY_FILE"]).exists()
     assert not Path(fixture.environment["GLUDD_GHA_SIGNAL_STATE_DIR"]).exists()
+    assert "GHA_RUN_URL=" not in result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("origin", ("argv", "environment", "environment-e"))

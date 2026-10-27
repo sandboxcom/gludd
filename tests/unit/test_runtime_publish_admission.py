@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -103,6 +104,7 @@ def _publish(
         f"    raise SystemExit({pins_status} if phase == 'pins' else (1 if phase == {failure!r} else 0))\n"
         "elif args[0] == 'record-verdict': record('verdict', **context())\n"
         "elif args[0] == 'verify-remote': record('verify-remote')\n"
+        "elif args[0] == 'hosted-signal': record('hosted-signal', args=args[1:])\n"
         "else: raise AssertionError(args)\n",
         encoding="utf-8",
     )
@@ -187,6 +189,7 @@ def _publish(
         + "\n"
         + _publication_inspection_inputs(recovery)
         + f".PHONY: batch-push run-watched {OWNER} {PUBLISH_OWNER} test-files _record-push-verdict "
+        "ci-trigger-committed-head "
         f"{' '.join(prerequisites)}\n"
         + "".join(f"{name}:\n\t@true\n\n" for name in prerequisites)
         + "\n\n".join(publication)
@@ -204,7 +207,9 @@ def _publish(
         + f'test-files:\n\t@{quoted_runner} test-files "$(TESTFILES)" "$(NPROC)" '
         + '"$(GLUDD_XDIST_WORKERS)" "$(PYTEST_ARGS)"\n\n'
         + f"_record-push-verdict:\n\t@{quoted_runner} record-verdict\n\n"
-        + f"verify-remote:\n\t@{quoted_runner} verify-remote\n",
+        + f"verify-remote:\n\t@{quoted_runner} verify-remote\n"
+        + f'ci-trigger-committed-head:\n\t@{quoted_runner} hosted-signal "$$GLUDD_PUBLISH_EXPECTED_BRANCH" '
+        + '"$$GLUDD_PUBLISH_EXPECTED_SHA" "$$GLUDD_PUBLISH_PURPOSE"\n',
         encoding="utf-8",
     )
     environment = {
@@ -345,12 +350,74 @@ def test_green_runtime_owner_runs_once_before_normal_transport(tmp_path: Path, f
         "runtime",
         "transport",
         "verdict",
+        "verify-remote",
+        "hosted-signal",
     ]
     transport = next(row for row in rows if row["kind"] == "transport")
     transport_args = transport["args"]
     assert isinstance(transport_args, list)
     assert "--no-verify" not in transport_args
     assert list(observed.rglob("*.json")), "existing observer must retain success evidence"
+
+
+def test_canonical_normal_publisher_signals_only_after_admission_transport_and_verification(tmp_path: Path) -> None:
+    result, rows, _ = _publish(tmp_path, goal="git-push-sandboxcom")
+    assert result.returncode == 0, result.stdout + result.stderr
+    _assert_owned_once(rows, [("full", "2"), ("help", "1"), ("full", "1")])
+    kinds = [row["kind"] for row in rows]
+    assert kinds.index("runtime") < kinds.index("transport") < kinds.index("verdict")
+    assert kinds.index("verdict") < kinds.index("verify-remote") < kinds.index("hosted-signal")
+    signals = [row for row in rows if row["kind"] == "hosted-signal"]
+    assert len(signals) == 1
+    assert signals[0]["args"] == ["gludd-test-runtime-publish", "a" * 40, "canonical"]
+
+
+@pytest.mark.parametrize("failure", ("manifest", "promotion", "pins", "full"))
+def test_canonical_admission_failure_starts_no_hosted_signal(tmp_path: Path, failure: str) -> None:
+    result, rows, _ = _publish(
+        tmp_path, goal="git-push-sandboxcom",
+        manifest_status=81 if failure == "manifest" else 0,
+        promotion_status=82 if failure == "promotion" else 0,
+        pins_status=83 if failure == "pins" else 0,
+        failure="full" if failure == "full" else "",
+    )
+    assert result.returncode != 0
+    assert not any(row["kind"] in {"transport", "verdict", "verify-remote", "hosted-signal"} for row in rows)
+
+
+def _assert_native_make_target_failure(stderr: str, target: str, code: int) -> None:
+    """Assert the exact failed target/status in legacy or file:line GNU output."""
+    pattern = (
+        r"(?m)^[^\r\n]*?:[ \t]+\*\*\*[ \t]+\[(?:[^\]\r\n]+:\d+:[ \t]*)?"
+        + re.escape(target) + r"\][ \t]+Error[ \t]+" + str(code) + r"[ \t]*\r?$"
+    )
+    assert re.search(pattern, stderr) is not None
+
+
+@pytest.mark.parametrize("diagnostic", (
+    "make[2]: *** [check-ansible-base-image] Error 81\n",
+    "make: *** [check-ansible-base-image] Error 81\n",
+    "make[2]: *** [/tmp/owned workspace/Makefile:320: check-ansible-base-image] Error 81\n",
+    "make: *** [Makefile:320: check-ansible-base-image] Error 81\n",
+))
+def test_manifest_native_make_failure_accepts_complete_legacy_and_hosted_fields(diagnostic: str) -> None:
+    """File/line forms reproduce the actual D unit-3a GNU diagnostic field."""
+    _assert_native_make_target_failure(diagnostic, "check-ansible-base-image", 81)
+
+
+@pytest.mark.parametrize("diagnostic", (
+    "make: *** [owned-neighbor] Error 81\n",
+    "make: *** [pre-check-ansible-base-image] Error 81\n",
+    "make: *** [check-ansible-base-image-extra] Error 81\n",
+    "make: *** [check-ansible-base-image] Error 810\n",
+    "make: *** [check-ansible-base-image] Error 80\n",
+    "make: *** [check-ansible-base-image] Error 81 (ignored)\n",
+    "check-ansible-base-image exited 81\n",
+    "[check-ansible-base-image] Error 81\n",
+))
+def test_manifest_native_make_failure_rejects_foreign_or_inexact_fields(diagnostic: str) -> None:
+    with pytest.raises(AssertionError):
+        _assert_native_make_target_failure(diagnostic, "check-ansible-base-image", 81)
 
 
 @pytest.mark.parametrize("forced", (False, True))
@@ -365,9 +432,10 @@ def test_canonical_normal_publisher_keeps_manifest_failure_before_runtime_and_tr
         forced=forced,
     )
     assert result.returncode != 0
+    assert result.returncode == 2
     assert [row["kind"] for row in rows] == ["runtime-identity", "manifest"]
     assert "Pinned Ansible base manifest admission failed" in result.stdout + result.stderr
-    assert "[check-ansible-base-image] Error 81" in result.stderr
+    _assert_native_make_target_failure(result.stderr, "check-ansible-base-image", 81)
     assert not any(row["kind"] in {"observer", "runtime", "transport", "verdict"} for row in rows)
 
 
@@ -768,6 +836,8 @@ def test_canonical_prerequisite_owns_environment_policy_and_stage_identity(
         "runtime",
         "transport",
         "verdict",
+        "verify-remote",
+        "hosted-signal",
     ]
 
 
