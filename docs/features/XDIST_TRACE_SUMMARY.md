@@ -1,5 +1,76 @@
 # Durable xdist Trace Summaries
 
+## Fixture trace isolation and ordinary entrypoint
+
+Fixed working-source snapshot,2026-10-27 UTC, before T's source commit.
+The two changed test owners retain all110 original functions/519 assertion
+ASTs, the original eight-node promotion payload and30s child timeout.
+Production trace/summary behavior,90/60 admission and cleanup stay unchanged.
+
+The two direct session-start controls restored environment/config but leaked
+the active path/run ID. On both S765-pass runs,13 outer start/finish pairs
+were absent from the parent file. A separate real eight-pin Make child
+inherited the outer trace/run ID. The retained raw files contain752 outer
+starts plus8 nested starts; the strict reader correctly reports441 accepted
+pairs/320 issues/1 unfinished. These are separate routing/ownership defects;
+the retained parent trace was not truncated. Original failed/partial receipts
+remain under v012-S-complete-diagnostic-receiving.
+
+The additive controls invoke the actual original bodies and real Make child.
+Traced RED is3FAIL/1PASS21.76s/native23.117s at
+.gate-logs/observed/v012-T-trace-isolation/
+v012-T-trace-isolation-red311-b6530af-20261027.json.
+Its parent retains4 protocol pairs/0 issues but only2 failure reports; native
+pytest's3 failures remain authoritative. InitialGREEN7 passes24.73s/native26.032s.
+The two original controls now register all three module latches with monkeypatch;
+the child receives copied environment with only its three owned trace inputs.
+
+InitialGREEN complete14+AST passes768 EACH:
+311216.10s/native218.045s and312220.58s/native222.680s, with1539events/
+768pairs/0 issues/unfinished/failures EACH. Exact receipts are
+.gate-logs/observed/v012-T-complete-trace-receiving/
+v012-T-complete-trace-receiving311-b6530af-20261027.json and the312 counterpart.
+These results retain their prior two-file bytes.
+
+Independent review then catches the ordinary optional-plugin boundary.
+Actual ordinary RED is3FAIL/1PASS18.41s/native19.776s at
+.gate-logs/observed/v012-T-ordinary-entrypoint/
+v012-T-ordinary-entrypoint-red311-b6530af-20261027.json.
+The corrected setup consults actual native plugin registration: registered
+tracing requires request.config; ordinary unregistered pytest requires None.
+The same original restoration and real-child witnesses follow, without skips.
+
+Final corrected complete two owners+AST pass228 EACH through ordinary test-files:
+31130.71s/native32.102s and31234.74s/native36.239s at
+.gate-logs/observed/v012-T-final-changed-owner-receiving/
+v012-T-final-changed-owner-receiving311-b6530af-20261027.json and312.
+Final traced controls+three originals+AST pass7 EACH:
+31124.35s/native25.720s and31226.00s/native27.367s at
+.gate-logs/observed/v012-T-trace-isolation/
+v012-T-trace-isolation-final311-b6530af-20261027.json and312.
+Each final trace has17events/7pairs/0 issues/unfinished/failures.
+All exact sessions are drained and native terminal status verified.
+
+Independent actual-byte source approval is retained at
+/tmp/gludd-v012-T-trace-isolation-independent-review-20261027/
+ACTUAL-TWO-FILE-APPROVAL.md. Current SHA256s are
+578b4ad435c4a0402f9ba4d869a9d12dc5fc966468eeb18ae2014eaa9230f8bb and
+2d4655cbd7f19a6dda24b76859c2ce13406d870e0d9e218dd26103c3fb9fcbf0
+for diagnostics and gate-promotion respectively. Ruff, canonical strict typing,
+environment-write and native file-line checks pass. The unchanged other12
+owners retain their initialGREEN scope; no full14/current immutable-SHA claim
+follows. This fixture repair establishes no hosted timeout cause or speed gain.
+
+Published S Build40498498468 independently fails311 runtime124/90.5 and archive2
+with strict terminal log-size/count mismatch;312 and its diagnostic upload pass.
+The original producer LF-count contract and archive comparison require separate
+native failing-first repair. Final focus128 remains HOLD; current required
+combined333 is unexecuted. Normal collection, exact-SHA runtime/hosted/full gate,
+global85/75 line AND branch BOTH, genuine promotion, ZDD and fresh signed
+complete artifacts remain required. All seven S98 tasks stay open.
+
+## Retained diagnostic feature record
+
 Status: implemented for the beta4 diagnostic workflow. Last reviewed:
 2026-10-22.
 

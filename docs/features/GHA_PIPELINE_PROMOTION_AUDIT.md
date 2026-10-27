@@ -1,5 +1,50 @@
 # GHA pipeline and agentic promotion audit
 
+## Fixed S hosted result and T fixture repair
+
+Published/remote-verified S b6530afbd41af2df9a3bcbdfa2c6b6511c8c647d has
+independent original-source approval for253 paths:246 unchanged R identities,
+six replacements and one newly changed original-scope workflow test.
+Normal publication requires accepted Build40498498468 before success and passes
+192.772s at .gate-logs/observed/v012-S-normal-source-publication/
+v012-S-normal-source-b6530af-20261027.json. Separate prerequisite/runtime
+owners pass3.521s/81.904s; the repair-owned90/60 passes81.981s with2542 pairs.
+
+[Build40498498468](https://github.com/sandboxcom/gludd/actions/runs/40498498468)
+attempt1 ends1FAIL/5PASS/13SKIP. Native311 job122169983377 passes pinned EE and
+promotion, then runtime returns124/90.5s. The following archive independently
+fails2: startup log size/count differs from its terminal status. Summary/upload
+are skipped. Native312 job122169983214 passes the entire gate, runtime80.496s
+and all three new diagnostic steps. The only live run artifact is its312
+runtime-admission archive; no failed311 raw envelope was uploaded. Exact failed
+step context is retained by ci-job-failure-context; no earlier-phase attribution
+or runtime-cause claim follows. All eight downstream shard intervals are unknown.
+Native ci-view records OPEN family
+d5b8783d8fa968c3eec9b4efff1a5ec84f632e5fb575e3d448ed3134ec349de4.
+The older955 local REPAIRED entry is not S-hosted resolution.
+
+[Molecule40498817189](https://github.com/sandboxcom/gludd/actions/runs/40498817189)
+and [Pages40498943860](https://github.com/sandboxcom/gludd/actions/runs/40498943860)
+are exact-S dispatches last observed pending. Root owns one bounded Pages
+observer. Its initial sandbox-denied reader was stopped through native
+project-namespace cleanup and drained143; the network-enabled replacement has
+working native lookup. The initial artifact download125 is also retained;
+native exact-run download succeeds11.019s after network/process permission
+changes. Neither lookup nor diagnostic archive supplies deployment proof.
+
+The [T fixture record](XDIST_TRACE_SUMMARY.md#fixture-trace-isolation-and-ordinary-entrypoint)
+retains both genuine REDs, original assertions, prior full14 trace qualification
+and final corrected complete two-owner ordinary228 EACH/traced7 EACH receiving.
+No production trace parser or90/60 bound changes. The strict archive contract
+mismatch is separate pending source work; no unchanged hosted rerun is justified.
+
+The former332 R-only combined count omitted S's workflow test. Current required
+union is329+3R+1S=333, unexecuted. Focus128 remains HOLD; a private prerequisite
+integration proposal supplies no E/M object, admission, gate or capacity waiver.
+Canonical21600/global85aggregate75every-file LINE AND BRANCH BOTH, canonical
+push CI, genuine development/master ZDD promotion, downloaded built-byte smokes
+and fresh complete signed artifact release remain required.
+
 ## Hosted runtime trace and terminal archive wiring (2026-10-27 UTC)
 
 Published, remote-verified R3b4a12ae59680ed9116d840d0fc567712b655024 has

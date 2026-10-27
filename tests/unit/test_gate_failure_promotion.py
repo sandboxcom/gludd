@@ -2186,18 +2186,17 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     assert "GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json" in admission_contract["behavior"]
 
 
-def test_target_and_feature_document_preserve_full_gate_boundary() -> None:
+def test_target_and_feature_document_preserve_full_gate_boundary(tmp_path: Path) -> None:
     result = subprocess.run(
         [
             "make",
             "check-gate-failure-promotions",
             "GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json",
         ],
-        cwd=ROOT,
-        capture_output=True,
-        check=False,
-        text=True,
-        timeout=30,
+        cwd=ROOT, capture_output=True, check=False, text=True, timeout=30,
+        env={**os.environ, "GLUDD_XDIST_TRACE_TRUNCATE": "1",
+             "GLUDD_XDIST_TRACE_LOG": str(tmp_path / "promotion-trace.jsonl"),
+             "GLUDD_XDIST_TRACE_RUN_ID": "promotion-probe"},
     )
     content = FEATURE_DOC.read_text(encoding="utf-8")
 
