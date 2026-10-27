@@ -1,5 +1,55 @@
 # Import-Time Measurement Integrity
 
+## Native archive replay security coverage
+
+At fixed parent V1 76f5245edf43f5ad43b02578467df9689780c23c, V2 appends only one
+parameterized function/two cases to the existing startup owner. Every original
+1135-line byte prefix,61 functions and107 assertions remains exact. Reviewed
+postimage4daf054a784c39cf76ed5bf35a3aae8e0efcc2d848b5fcd527bc9f06e73f6fb6
+has1191 lines; no production source, coverage setting or runtime limit changes.
+
+Both original complete12-owner profiles passed574 tests but failed aggregate
+branch85:311726/856 and312727/856. Their native failed audits remain
+`.gate-logs/coverage-20261027T134053Z.json` and
+`.gate-logs/coverage-20261027T134103Z.json`. Existing archive path/missing-file
+controls stopped at earlier canonical-status/file-list guards. New controls
+retain valid canonical status and three exact file entries. One changes only
+the log path to an owned outside witness with the exact native bytes; another
+renames the log role without removing its regular file or digest metadata.
+Each first creates an actual native124 envelope/archive and successful replay,
+then requires the intended public refusal without launching another command.
+Original source/archive/witness bytes remain exact after the negative replay.
+
+Two-case native acceptance passed2 in1.92/native3.280 seconds, label
+`v012-V-archive-replay`, ID
+`v012-V-archive-replay-two311-76f5245-20261027`; trace7events/2pairs/zero issues,
+failures or unfinished. The existing original twelve complete owners and four
+complete production sources were then received on BOTH installed runtimes,
+retaining300/60,85 aggregate and75 EVERY-file LINE AND BRANCH requirements.
+311 passes576 in105.47/native108.173 seconds, native coverage-files ID
+`20261027T140850Z-9401-08022942`;312 passes576 in115.20/native118.393 seconds,
+ID `20261027T140850Z-9402-482572c5`. Both traces retain1155events/576pairs and
+zero issues/failures/unfinished. Both exact sessions were drained and terminal
+statuses verified. Reports remain diagnostic component acceptance, not release.
+
+Native passing audits are `.gate-logs/coverage-20261027T141038Z.json` and
+`.gate-logs/coverage-20261027T141048Z.json`. They measure the unchanged four
+providers:311 line89.4% and728/856 branches85.04672897196261%;312 line89.5%
+and729/856 branches85.16355140186917%. All four per-file rows pass both75
+floors; no source is omitted. Missing-arc lists no longer contain1511-to1512
+or1517-to1518 in stream_command. The earlier failed audits stay failed; no
+rounding, guard mutation, new runner/cache or threshold exception is used.
+
+Independent source review approves the exact append; Ruff, configured strict
+typing, test-environment writes,10896-file line guard and265-resource ownership
+checks pass. Normal source checkpoint, fresh exact-SHA diagnostic publication,
+complete25-owner receiving and separate native child-trace fixture controls
+remain next required actions. Current four-source coverage is not global
+project coverage, canonical full gate, exact-SHA CI or deployment acceptance.
+Keep focus132-versus128 HOLD, combined333, genuine development/master ZDD,
+canonical21600/global85/75 LINE AND BRANCH and complete fresh signed artifacts.
+All seven S98 release tasks remain open.
+
 ## Native LF and integer archive contract
 
 Fixed working U snapshot,2026-10-27 UTC, before source commit.

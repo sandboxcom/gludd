@@ -1,5 +1,24 @@
 # GHA pipeline and agentic promotion audit
 
+## V2 received archive replay security controls
+
+The [owning archive record](IMPORT_TIME_MEASUREMENT_INTEGRITY.md#native-archive-replay-security-coverage)
+retains both failed574-test coverage attempts and the two meaningful security
+controls. Exact reviewed test postimage4daf054a784c39cf76ed5bf35a3aae8e0efcc2d848b5fcd527bc9f06e73f6fb6
+keeps every old test byte. Complete original12-owner/four-provider coverage
+passes576 EACH, native108.173/118.393 seconds,1155events/576pairs/zero issues or
+failures. Actual native audits measure728/856 and729/856 branches with every
+file passing both75 floors and aggregate passing both85 floors. All production
+source, coverage settings and300/60 limits remain unchanged.
+
+Normal V2 checkpoint/new exact-SHA diagnostic CI and complete25-owner receiving
+remain pending. Old U ordinary13 retains3FAIL/778PASS EACH; the three count
+failures have V1's separate129-EACH owner proof, while31 mixed child pairs need
+separate fixture-owned trace inputs and actual RED/GREEN. Source approval and
+this component coverage do not grant a canonical full gate, project-wide85/75,
+exact-SHA push, master ZDD, signed artifact or release certificate. Retain the
+132/128 focus HOLD, unexecuted333 combined plan and all seven open S98 tasks.
+
 ## U complete receiving count failure and V conformance
 
 Published U4482072ab960426a91ab198a22ed1504900a28ad retains its normal72.640-second

@@ -1133,3 +1133,59 @@ def test_archive_unit_inputs_require_exact_integer_lf_counters(
         )
     assert not destination.exists()
     assert before == (status.read_bytes(), log.read_bytes())
+
+
+@pytest.mark.parametrize(
+    ("mutation", "reason"),
+    [
+        ("path-escape", "startup archive path escape"),
+        ("hidden-log-role", "startup archive lacks required roles"),
+    ],
+)
+def test_native_archive_replay_refuses_escaped_or_unclaimed_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str, reason: str,
+) -> None:
+    """Reject escaped log bytes and absent mandatory roles after valid earlier gates."""
+    repository, observed, status, log = _native_timeout_archive_inputs(
+        tmp_path, b"retained native archive log\n",
+    )
+    archive = tmp_path / "native-archive"
+    owner.runtime_startup_archive(
+        repository, observed, "partial-output", "native-timeout",
+        destination=archive, validate_only=False,
+    )
+    report = owner.runtime_startup_report(
+        repository, observed, "partial-output", "native-timeout", archive=archive,
+    )
+    assert "state: timed_out; rc: 124" in report
+    manifest_path = archive / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    entries = manifest["files"]
+    assert len(entries) == 3
+    assert {entry["role"] for entry in entries} == {"status", "log", "report"}
+    status_entry = next(entry for entry in entries if entry["role"] == "status")
+    assert status_entry["path"] == "status/partial-output/native-timeout.json"
+    log_entry = next(entry for entry in entries if entry["role"] == "log")
+    outside = tmp_path / "outside-native.log"
+    outside.write_bytes((archive / log_entry["path"]).read_bytes())
+    outside_before = outside.read_bytes()
+    if mutation == "path-escape":
+        log_entry["path"] = "../outside-native.log"
+    else:
+        log_entry["role"] = "unclaimed-log"
+    manifest_path.write_text(json.dumps(manifest) + "\n")
+    preserved = {path: path.read_bytes() for path in archive.rglob("*") if path.is_file()}
+    preserved.update({status: status.read_bytes(), log: log.read_bytes()})
+    with monkeypatch.context() as read_only:
+        read_only.setattr(
+            subprocess, "Popen", lambda *a, **k: pytest.fail("archive replay launched a child"),
+        )
+        read_only.setattr(
+            subprocess, "run", lambda *a, **k: pytest.fail("archive replay ran a command"),
+        )
+        with pytest.raises(ValueError, match=reason):
+            owner.runtime_startup_report(
+                repository, observed, "partial-output", "native-timeout", archive=archive,
+            )
+    assert {path: path.read_bytes() for path in preserved} == preserved
+    assert outside.read_bytes() == outside_before
