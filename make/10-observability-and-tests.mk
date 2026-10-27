@@ -1308,7 +1308,7 @@ gate: gate-admission-config $(if $(filter release,$(GATE_TEST_PROFILE)),_gate-re
 	@$(MAKE) --no-print-directory check-coverage-gaps > /dev/null 2>&1 && echo "PASS" >> .gate-status.next || (echo "FAIL" >> .gate-status.next && touch .gate-failed)
 	@echo "=== GATE PHASE: typecheck ==="
 	@printf "typecheck " >> .gate-status.next
-	@TC_ERRS=$$(MYPYPATH="$$(pwd -P)/src:$$(pwd -P)/scripts" $(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); \
+	@TC_ERRS=$$(MYPYPATH="$$(pwd -P)/src:$$(pwd -P)/scripts$${MYPYPATH:+:$$MYPYPATH}" $(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); \
 	TC_ERRS=$${TC_ERRS:-0}; \
 	if [ "$$TC_ERRS" -le "$(MYPY_MAX)" ]; then echo "PASS $$TC_ERRS" >> .gate-status.next; else echo "FAIL $$TC_ERRS" >> .gate-status.next && touch .gate-failed; fi
 	@echo "=== GATE PHASE: collect ==="
@@ -1394,7 +1394,7 @@ gate-lite: disk-cleanup-preflight _dead-code-baseline-refresh check-opencode-int
 	@$(MAKE) --no-print-directory check-coverage-gaps > /dev/null 2>&1 && echo "PASS" >> .gate-lite-status || (echo "FAIL" >> .gate-lite-status && touch .gate-lite-failed)
 	@echo "=== GATE-LITE PHASE: typecheck ==="
 	@printf "typecheck " >> .gate-lite-status
-	@TC_ERRS=$$(MYPYPATH="$$(pwd -P)/src:$$(pwd -P)/scripts" $(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); \
+	@TC_ERRS=$$(MYPYPATH="$$(pwd -P)/src:$$(pwd -P)/scripts$${MYPYPATH:+:$$MYPYPATH}" $(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); \
 	TC_ERRS=$${TC_ERRS:-0}; \
 	if [ "$$TC_ERRS" -le "$(MYPY_MAX)" ]; then echo "PASS $$TC_ERRS" >> .gate-lite-status; else echo "FAIL $$TC_ERRS" >> .gate-lite-status && touch .gate-lite-failed; fi
 	@echo "=== GATE-LITE PHASE: collect ==="

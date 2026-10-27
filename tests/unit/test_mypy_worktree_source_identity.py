@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -11,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
-from scripts.makefile_layout import makefile_sources
+from scripts.makefile_layout import compose_makefile, makefile_sources
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -90,7 +91,7 @@ def mypy_source_fixture(tmp_path: Path) -> MypySourceFixture:
     carrier.mkdir()
     (carrier / "retained_mypy_carrier.py").write_text("retained_value: int = 17\n", encoding="utf-8")
 
-    real_uv = shutil.which("uv")
+    real_uv = shutil.which(os.environ.get("UV", "uv"))
     real_make = shutil.which("make")
     assert real_uv is not None and real_make is not None
     environment = dict(os.environ)
@@ -236,3 +237,116 @@ def test_physical_mypy_source_ignores_overridden_make_curdir(
     assert f"AGENT_NEXT target={mypy_curdir_goal} outcome=failed" in result.stderr
     assert "native_status=1" in result.stderr and "phase=package" in result.stderr
     assert "outcome=passed" not in result.stderr
+
+
+def _native_mypy_phase_rule(goal: str) -> str:
+    """Read the complete current rule before selecting its real mypy command."""
+    source = compose_makefile(ROOT / "Makefile")
+    matches: list[str] = re.findall(
+        rf"^{re.escape(goal)}:[^\n]*\n(?:\t[^\n]*(?:\n|$))*",
+        source, re.MULTILINE,
+    )
+    assert len(matches) == 1, f"one complete native rule is required: {goal}"
+    return matches[0]
+
+
+@pytest.mark.parametrize(
+    "mypy_phase_goal", ("gate", "gate-lite", "_gate-refresh-body", "validate", "typecheck-all"),
+)
+@pytest.mark.parametrize("mypy_phase_early_environment", (False, True))
+def test_native_compatibility_mypy_phase_keeps_inherited_stub_carrier(
+    mypy_source_fixture: MypySourceFixture, mypy_phase_goal: str,
+    mypy_phase_early_environment: bool,
+) -> None:
+    """Run each actual mypy command with real UV, package, helper, stub and carrier."""
+    fixture = mypy_source_fixture
+    rule = _native_mypy_phase_rule(mypy_phase_goal)
+    lines: list[str] = re.findall(r"^\t[^\n]*\bMYPYPATH=[^\n]*$", rule, re.MULTILINE)
+    assert len(lines) == 1
+    command = lines[0]
+    variable = "TC_ERRS" if "TC_ERRS=" in command else "ERRS" if "ERRS=" in command else None
+    if variable is not None:
+        assert command.endswith("\\")
+        command += (
+            '\n\tprintf \'OWNED_MYPY_PHASE_ERRORS=%s\\n\' "$$' + variable
+            + '"; test "$$' + variable + '" -eq 0\n'
+        )
+    else:
+        command += "\n"
+    probe = fixture.root / "owned-native-mypy-phase.mk"
+    probe.write_text(
+        ".PHONY: owned-native-mypy-phase\nowned-native-mypy-phase:\n" + command,
+        encoding="utf-8",
+    )
+    before = dict(fixture.environment)
+    result = fixture.invoke(
+        "owned-native-mypy-phase", early_environment=mypy_phase_early_environment,
+        extra_makefile=probe,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    if variable is None:
+        assert "Success: no issues found" in output
+    else:
+        assert "OWNED_MYPY_PHASE_ERRORS=0" in output
+    assert "wrong_checkout.py" not in output
+    assert fixture.environment == before
+
+
+@pytest.mark.parametrize("gate_refresh_early_environment", (False, True))
+def test_native_gate_refresh_collect_retains_the_same_shell_and_terminal_status(
+    mypy_source_fixture: MypySourceFixture, gate_refresh_early_environment: bool,
+) -> None:
+    """Execute the complete native body with owned child owners and real Make."""
+    fixture = mypy_source_fixture
+    source = compose_makefile(ROOT / "Makefile")
+    providers = re.search(
+        r"^# Shared native Make inspection grammar\.\n.*?"
+        r"^# End shared native Make inspection grammar\.\n",
+        source, re.MULTILINE | re.DOTALL,
+    )
+    assert providers is not None
+    phony = re.findall(r"^\.PHONY:(?:[^\n]*\\\n)*[^\n]*\n", source, re.MULTILINE)
+    assert phony, "native rule fixtures require the complete PHONY declarations"
+    recipe = _native_mypy_phase_rule("_gate-refresh-body")
+    calls = fixture.root / "owned-refresh-child-calls.txt"
+    child_owner = fixture.root / "owned_refresh_child_owner.py"
+    child_owner.write_text(
+        "import sys\nfrom pathlib import Path\n"
+        f"with Path({str(calls)!r}).open('a', encoding='utf-8') as output:\n"
+        "    output.write(repr(sys.argv[1:]) + '\\n')\n"
+        "raise SystemExit(0)\n",
+        encoding="utf-8",
+    )
+    command = shlex.quote(sys.executable) + " " + shlex.quote(str(child_owner))
+    probe = fixture.root / "owned-native-gate-refresh.mk"
+    probe.write_text(
+        providers.group() + "".join(phony) + "\n" + recipe,
+        encoding="utf-8",
+    )
+    retained = "test PASS owned-prior-test\nsmoke PASS owned-prior-smoke\n"
+    status = fixture.root / ".gate-status"
+    status.write_text(retained, encoding="utf-8")
+    before = dict(fixture.environment)
+    result = subprocess.run(
+        [fixture.make, "--no-print-directory",
+         *(["-e"] if gate_refresh_early_environment else []),
+         "-f", str(probe), "_gate-refresh-body", "UV=" + command,
+         "MAKE=" + command, "MYPY_MAX=0"],
+        cwd=fixture.root, env=dict(fixture.environment),
+        capture_output=True, text=True, check=False, timeout=15,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    recorded = calls.read_text(encoding="utf-8").splitlines()
+    assert recorded.count(repr(["--no-print-directory", "collect-check"])) == 1
+    final = status.read_text(encoding="utf-8")
+    assert "collect PASS 0\n" in final
+    assert "typecheck PASS 0\n" in final
+    assert "test PASS owned-prior-test\n" in final
+    assert "smoke PASS owned-prior-smoke\n" in final
+    assert final.endswith("=== GATE: PASSED ===\n")
+    assert "=== GATE-REFRESH: PASSED ===" in result.stdout
+    assert not (fixture.root / ".gate-status.next").exists()
+    assert not (fixture.root / ".gate-failed").exists()
+    assert fixture.environment == before
