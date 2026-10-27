@@ -111,6 +111,7 @@ class _AsyncGitLockWorker:
 
     def __init__(self, owner_token: tuple[object, str]) -> None:
         self.owner_token = owner_token
+        self.process_id = os.getpid()
         self.executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=1,
             thread_name_prefix="gludd-git-lock",
@@ -362,7 +363,8 @@ def _file_lock(
         try:
             yield
         finally:
-            _file_lock_depth[key] -= 1
+            if os.getpid() == owner[0]:
+                _file_lock_depth[key] -= 1
         return
 
     # Defensive fallback for runtimes that fork outside Python's registered
@@ -413,15 +415,17 @@ def _file_lock(
         try:
             yield
         finally:
-            _file_lock_depth[key] = 0
-            _file_lock_owner.pop(key, None)
-            with contextlib.suppress(OSError):
-                fcntl.flock(fd, fcntl.LOCK_UN)
+            if os.getpid() == owner[0]:
+                _file_lock_depth[key] = 0
+                _file_lock_owner.pop(key, None)
+                with contextlib.suppress(OSError):
+                    fcntl.flock(fd, fcntl.LOCK_UN)
     finally:
-        if _file_lock_fds.get(key) == fd:
-            _file_lock_fds.pop(key, None)
-        with contextlib.suppress(OSError):
-            os.close(fd)
+        if os.getpid() == owner[0]:
+            if _file_lock_fds.get(key) == fd:
+                _file_lock_fds.pop(key, None)
+            with contextlib.suppress(OSError):
+                os.close(fd)
 
 
 # --- public API -----------------------------------------------------------
@@ -464,6 +468,7 @@ def git_repo_lock(
     git_dir = _git_dir(repo_path)
     key = _normalize(git_dir) if git_dir is not None else _normalize(repo_path)
     inproc = _get_inprocess_lock(key)
+    owner_pid = os.getpid()
     deadline = time.monotonic() + timeout
     if not inproc.acquire(timeout=max(0.0, timeout)):
         raise TimeoutError(
@@ -479,7 +484,14 @@ def git_repo_lock(
             with _file_lock(git_dir, key, timeout=remaining, stale_after=stale_after):
                 yield
     finally:
-        inproc.release()
+        if os.getpid() == owner_pid:
+            inproc.release()
+
+
+def _assert_async_worker_process(worker: _AsyncGitLockWorker) -> None:
+    """Refuse a copied worker before touching its inherited executor or locks."""
+    if worker.process_id != os.getpid():
+        raise RuntimeError("async Git lock context belongs to another process")
 
 
 def _reserve_async_worker(repo_path: str) -> _AsyncGitLockWorker:
@@ -501,6 +513,7 @@ def _reserve_async_worker(repo_path: str) -> _AsyncGitLockWorker:
 
 def _adopt_completed_async_worker(worker: _AsyncGitLockWorker) -> None:
     """Fence a live owner and adopt only its sole completed-task result."""
+    _assert_async_worker_process(worker)
     try:
         task = asyncio.current_task()
     except RuntimeError:
@@ -532,6 +545,8 @@ def _adopt_completed_async_worker(worker: _AsyncGitLockWorker) -> None:
 
 def _release_async_worker(worker: _AsyncGitLockWorker) -> None:
     """Release one reservation and stop an idle owner worker."""
+    if worker.process_id != os.getpid():
+        return
     shutdown = False
     with _async_workers_guard:
         if worker.users <= 0:
@@ -542,21 +557,27 @@ def _release_async_worker(worker: _AsyncGitLockWorker) -> None:
                 _async_workers.pop(worker.owner_token)
             shutdown = True
     if shutdown:
+        _assert_async_worker_process(worker)
         worker.executor.shutdown(wait=True)
 
 
 async def _await_native_future(
-    future: concurrent.futures.Future[_NativeResult],
+    future: concurrent.futures.Future[_NativeResult], worker: _AsyncGitLockWorker,
 ) -> _NativeResult:
     """Await native worker completion while deferring repeated cancellation."""
+    _assert_async_worker_process(worker)
     wrapped = asyncio.wrap_future(future)
-    while not future.done():
+    while True:
+        _assert_async_worker_process(worker)
+        if future.done():
+            break
         try:
             await asyncio.shield(wrapped)
         except asyncio.CancelledError:
             # Cleanup owns the mutex until the worker completes. A later
             # cancellation request must not interrupt that ownership handoff.
             continue
+    _assert_async_worker_process(worker)
     return future.result()
 
 
@@ -575,6 +596,7 @@ class _EnteredAsyncGitRepoLock(contextlib.AbstractContextManager[None]):
         self._closed = False
 
     def __enter__(self) -> None:
+        _assert_async_worker_process(self._worker)
         with self._state_guard:
             if self._closed:
                 raise RuntimeError("async Git lock context is already closed")
@@ -590,13 +612,19 @@ class _EnteredAsyncGitRepoLock(contextlib.AbstractContextManager[None]):
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> bool | None:
+        if self._worker.process_id != os.getpid():
+            self._closed = True
+            self._entered = False
+            return None
         with self._state_guard:
             if self._closed:
                 return None
             self._closed = True
             self._entered = False
+        _assert_async_worker_process(self._worker)
         future = self._worker.executor.submit(self._cm.__exit__, exc_type, exc, tb)
         try:
+            _assert_async_worker_process(self._worker)
             return future.result()
         finally:
             _release_async_worker(self._worker)
@@ -629,19 +657,22 @@ async def async_git_repo_lock(
     """
     worker = _reserve_async_worker(repo_path)
     cm = git_repo_lock(repo_path, timeout=timeout, stale_after=stale_after)
+    _assert_async_worker_process(worker)
     enter_future = worker.executor.submit(cm.__enter__)
     try:
+        _assert_async_worker_process(worker)
         await asyncio.shield(asyncio.wrap_future(enter_future))
     except BaseException as original:
         acquired = False
         if isinstance(original, asyncio.CancelledError):
             with contextlib.suppress(BaseException):
-                await _await_native_future(enter_future)
+                await _await_native_future(enter_future, worker)
                 acquired = True
         try:
             if acquired:
+                _assert_async_worker_process(worker)
                 exit_future = worker.executor.submit(cm.__exit__, None, None, None)
-                await _await_native_future(exit_future)
+                await _await_native_future(exit_future, worker)
         finally:
             _release_async_worker(worker)
         raise
