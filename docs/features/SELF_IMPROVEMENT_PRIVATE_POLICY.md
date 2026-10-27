@@ -402,3 +402,125 @@ captured output. Focused failure cases prove malformed policy stops before
 repository access, policy drift after approval stops before provider or
 learning effects, and two repositories can assign opposite policies to the
 same relative path without sharing an authorization or provider call.
+
+## Hosted preparation cleanup fixture contract (2026-10-27 UTC)
+
+Exact source9b01c6296f2a24d39a95e0c6194bd118ac8824f8, Build40448994419,
+completed job122011474885 reports three failures in the preparation E2E owner.
+The raw job context is retained privately at
+/tmp/gludd-v012-D-failed-test-context-other-20261027.log. That completed job
+does not establish a terminal green whole run or a deployment result.
+
+The production context manager correctly rejects an unverified cleanup before
+returning the prepared prompt. The hermetic runner still returns empty stdout
+with status0 for agent-cleanup, without invoking the native owner or removing
+its context. The deferred/native0 guidance comes from the production caller's
+outcome explanation; it is not a native pruner receipt or an environment/
+eligibility refusal. No such native cause is inferred from these three failures.
+
+The smallest repair updates only that existing test double. It records the
+created branch/head, reuses the existing controlled retirement and revision
+helpers, and requires the exact owned revision reference. Those helpers check
+the full tuple and validate-only inputs and physically archive the owned
+temporary directory before returning their modeled removed receipt. The public
+composition case additionally checks actual context absence, no symlink,
+one owned archive with the expected public bytes, and the complete
+plan/release/re-plan/apply/revision sequence. Every original case and policy,
+private-canary, provider, learning and isolation assertion remains.
+
+The helper is explicitly a controlled model: its JSON supplies no native
+ownership, Git-ref, gate or release proof. Production cleanup, policy code and
+the shared helper are unchanged. The complete integration-safety owner separately
+exercises actual registered private Git, MakeRunner, registry and pruner,
+requiring real directory absence and preserved branch HEAD; its plan/refusal
+controls remain mandatory. The existing firsthand policy reports above remain
+background requirements, without attributing this internal fixture drift to an
+upstream provider.
+
+Before any edit, all four original E2E cases run on clean exactD source:
+three fail and one passes in0.93s/native2.184s. Receipt
+v012-preparation-cleanup-red/v012-preparation-cleanup-red311-9b01c62-20261027.json
+is relative to this peer's .gate-logs/observed. The exact session drains;
+observed-status verifies inactive/failed/exit2. Its trace retains14 events/
+4 complete pairs, zero issues or unfinished cases and3 expected failure reports.
+The same three hosted cases reach the same fail-closed promotion error.
+
+Initial repaired-fixture Ruff, strict typing and environment-write checks pass.
+Native registration first refuses the E2E path and then also refuses the feature
+path after its appendix is added. No GREEN follows either failed input.
+The first administrative insertion used protected TASKS line8. Root's receiving
+invariant rejected that location after the path-only static check accepted it;
+dependent positive work stopped. Both registration refusals and the superseded
+private diff remain in the manual evidence file
+/tmp/gludd-v012-preparation-cleanup-line8-correction-evidence-20261027-65301.txt.
+That manual note is not a generated observation or acceptance receipt.
+Line8 is restored byte-for-byte to exactD. Only the two-path support literal is
+appended to existing unchecked S98.4 row623, retaining every earlier row byte,
+including privacy scope, and every other TASKS byte, including resource row624.
+The corrected native diff is exactly one removed/added row623 and old-row-plus-
+literal; a separate native line8 read equals D. All328 IDs/states/order and2499
+lines remain. Root will compose only that literal with the separate Linux
+receipt addition, preserving its current TASKS version.
+Corrected registration passes all3 paths; ledger validation retains188 checked/
+140 unchecked, and working line limits pass. The completed five-case code GREEN
+below remains scoped to unchanged E2E/AST bytes; the corrected Task/prose input
+is checked separately. Production/helper bytes and typing registration stay
+unchanged. The existing locked Markdown owner checks the exact peer documents
+with the unchanged config; the corrected two-file working check passes.
+
+The existing logical-Makefile guard then runs first, followed by all four
+original preparation E2E cases. All5 pass in22.10s/native23.802s:
+v012-preparation-cleanup-green/v012-preparation-cleanup-green311-9b01c62-20261027.json.
+The exact session drains and inactive/passed/exit0 is verified; its trace has
+13 events/5 complete pairs, zero issues, unfinished cases or failure reports.
+These four hermetic cases validate composition and the actual owned fixture
+directory effect, without substituting modeled JSON for native Git/pruner proof.
+
+Complete receiving retains the following five whole owners on each installed
+runtime, serially within one reserved cohort, including the real registered-Git
+retirement/refusal controls. Both exact complete runs pass, with zero skips:
+
+- Installed3.11.14:228 passed in89.91s/native93.257s;
+  v012-preparation-cleanup-receiving/v012-preparation-cleanup-receiving311-9b01c62-20261027.json.
+- Installed3.12.15:228 passed in102.64s/native106.136s;
+  v012-preparation-cleanup-receiving/v012-preparation-cleanup-receiving312-9b01c62-20261027.json.
+
+Each exact session drains and its inactive/passed/exit0 receipt is verified
+before dependent work. Each populated trace has459 events/228 complete pairs,
+zero issues, unfinished tests or failure reports. Both runs retain fatal
+warnings, enabled plugins, a serial outer controller, literal ID=, installed
+UV0.13.1 and explicit selected runtime in both watcher and child CMD, with
+checkout-owned ledger/observations and600/180 receiving bounds. The native
+tests separately verify actual registered-owner removal, preserved refs and
+refusal/rollback behavior; the hermetic preparation result supplies model
+composition proof. The unchanged D-side unit bytes are the actual input here;
+separate Git-fixture repair bytes require their own receiving.
+
+Before those complete runs, Root verifies the mandatory pre-receiving staged
+three-file content guard passed0 in3.472s under labelv012-E3-staged-content,
+runv012-E3-staged-content311-9b01c62-20261027. Independent source-only review
+then approves the corrected three-file snapshot, retaining all4 cases,
+30 functions and32 original assertions, with37 final assertions. Its decision
+is /tmp/gludd-v012-E3-independent-source-review-20261027/DECISION.txt.
+That review precedes this receipt-only prose update. E2E, production/helper
+and Task bytes stay frozen through both complete runs. The one reserved
+pytest slot is released after final3.12 status/trace verification.
+
+Root still owns final receipt-prose review/restaging, normal collection/hooks/
+commit and native integration. Clean-source repair-owned CI-family validation,
+candidate review/focus, canonical gate and exact-SHA hosted, artifact, ZDD,
+deployment/promotion/release proofs remain separate; local receiving does not
+resolve the immutable D hosted failure or close a release task.
+
+```text
+tests/e2e/test_self_improve_private_policy_preparation_e2e.py
+tests/e2e/test_self_improve_private_policy_e2e.py
+tests/unit/test_self_improve_runtime_private_policy.py
+tests/unit/test_self_improve_integration_safety.py
+tests/unit/test_worktree_retirement.py
+```
+
+The original
+eight-E2E roster and128-file focus cap stay unchanged; this owner is already in
+that E2E roster. All85/75 line/branch, cleanup, ZDD, exact-SHA, canonical gate,
+hosted and deployment/release requirements remain, with no task closure.

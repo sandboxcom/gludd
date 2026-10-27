@@ -36,6 +36,10 @@ from general_ludd.self_improve.runtime import (
     build_managed_self_improve_runner,
     prepare_managed_self_improve_plan,
 )
+from tests.self_improve_native_fixtures import (
+    controlled_retirement_result,
+    controlled_revision_result,
+)
 
 pytestmark = pytest.mark.e2e
 
@@ -82,7 +86,7 @@ def _task() -> TaskSpec:
 
 
 class _HermeticMakeRunner:
-    """Materialize one bounded baseline behind the production Make protocol."""
+    """Materialize a bounded baseline and model its owned cleanup protocol."""
 
     def __init__(
         self,
@@ -94,6 +98,7 @@ class _HermeticMakeRunner:
         self.context_root = context_root
         self.changed_paths = changed_paths
         self.source_bytes = source_bytes
+        self.branch, self.head = "", ""
         self.calls: list[tuple[str, dict[str, str]]] = []
 
     def _result(self, target: str, stdout: str = "") -> MakeResult:
@@ -108,12 +113,14 @@ class _HermeticMakeRunner:
         read_only: bool = False,
     ) -> MakeResult:
         del timeout, read_only
-        self.calls.append((target, dict(variables or {})))
+        values = dict(variables or {})
+        self.calls.append((target, values))
         if target == "git-show-name-only":
             return self._result(target, "\n".join(self.changed_paths) + "\n")
         if target == "git-show-full":
             return self._result(target, "-VALUE = 0\n+VALUE = 1\n")
         if target == "agent-worktree-base":
+            self.branch, self.head = values["BRANCH"], values["BASE"]
             self.context_root.mkdir(parents=True, exist_ok=True)
             materialized = {
                 _PUBLIC_PATH: self.source_bytes,
@@ -125,8 +132,13 @@ class _HermeticMakeRunner:
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_bytes(content)
             return self._result(target, f"WORKTREE_PATH={self.context_root}\n")
-        if target == "agent-cleanup":
-            return self._result(target)
+        if target in {"agent-cleanup", "workstream-unregister"}:
+            return controlled_retirement_result(
+                target, values, branch=self.branch, worktree=self.context_root, head=self.head,
+            )
+        if target == "git-show-commit":
+            assert values["C"] == f"refs/heads/{self.branch}"
+            return controlled_revision_result(values["C"], self.head)
         raise AssertionError(f"unexpected Make target: {target}")
 
     def run_command(self, command: str, *, timeout: int = 900) -> MakeResult:
@@ -410,6 +422,15 @@ def test_prepared_allowlisted_public_work_reaches_provider_evaluator_and_learnin
     outcomes = _Outcomes()
 
     plan = _prepare(root, runner, trace.events, project_id="public-composition")
+    assert not runner.context_root.exists() and not runner.context_root.is_symlink()
+    retired = tuple(tmp_path.glob("baseline-retired-*"))
+    assert len(retired) == 1
+    assert (retired[0] / _PUBLIC_PATH).read_bytes() == runner.source_bytes
+    cleanup_targets = {"agent-cleanup", "workstream-unregister", "git-show-commit"}
+    assert [target for target, _values in runner.calls if target in cleanup_targets] == [
+        "agent-cleanup", "workstream-unregister", "agent-cleanup",
+        "agent-cleanup", "git-show-commit",
+    ]
     result = _compose_and_run(root, plan, runner, trace, outcomes, monkeypatch)
     captured = capsys.readouterr()
 
