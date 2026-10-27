@@ -960,3 +960,77 @@ observation is separate from both575-case source receipts and all newer local
 source. Later failure or completion still needs the actual native result.
 The selected flag proof covers direct CLI/environment ordinary/-e inputs;
 prerequisite invocation and later file/target-specific settings are unproved.
+
+
+### Operator-approved unsafe TOML integer rejection (2026-10-27 UTC)
+
+The operator explicitly approved rejection: "i agree, these values should not silently change".
+This supersedes the pending preference in the retained October24 history above.
+The original Effect control parsed9007199254740993 and expected the rounded
+Number9007199254740992. That literal control and its failed receipts remain
+history; only this case now requires clear lossless-number rejection through
+the same real Effect one-argument parser. PREFIX and all six other cases remain
+byte-identical, preserving safe numbers, dates, arrays, schema and plugin APIs.
+The CSS predicate permits only the exact nested parent object; all tool pins stay.
+The security owner remains byte-identical458da84d1876422ce24f74fbfd9d8a3d49461111659ff620d6c397513dfe8c11.
+
+Root's unchanged security-floor owner at fixed f1aa82455ca1f78fc62ca7d09140af712dc37d70
+fails3/passes5, pytest0.66s/native2.235s, at
+v012-node-security-red/v012-node-security-red311-f1aa824-20261026.json:
+TOML4.3.0, Zod4.1.8 and absent scoped overrides. The exact private proposal is
+/tmp/gludd-v012-node-approved-repair-exact-proposal-f1aa824-20261026.json,
+SHA256 f4a22584f56d0ab6af514881937f10f5608df0c61e7e3f6ff243d5e8616bcd6a.
+Root applies only its three blocks. Native relock passes5.357s, sync4.416s at
+v012-node-relock/v012-node-relock-scoped-f1aa824-20261026.json and
+v012-node-sync/v012-node-sync-scoped-f1aa824-20261026.json. Both use the owned
+public cache, /dev/null user config, update-notifier=false and --no-audit.
+The complete generated diff changes only TOML/Zod version/URL/integrity fields;
+all184 lock entries, plugin/SDK1.18.5, Effect4.0.0-beta.83, upstream dependency
+declarations, msgpackr2.1.2, multipasta0.2.9 and all direct tool pins remain.
+No generated lock bytes were edited manually and no older checkpoint was applied.
+
+Ruff, three separate strict scopes, environment-write guard, all10895 file
+bounds,303 target contracts and logical-Make AST pass27.545s at
+v012-node-static/v012-node-static311-f1aa824-20261026.json. Complete23-owner
+receiving passes490 on311 in72.14s/native73.944s and489/1 original skip on312
+in73.45s/native75.307s, at v012-node-receiving/
+v012-node-receiving{311,312}-scoped-f1aa824-20261026.json. The existing312 skip
+is test_local_dual_track_make_example_is_canonical_and_observable; EACH retains
+one default hook_live deselection from test_hook_runtime_verification.py.
+Each trace has983 events/490 completed protocols/no unfinished or failed reports.
+The literal complete owner union is:
+
+- tests/unit/test_node_dependency_compatibility.py
+- tests/unit/test_node_quality_security_floor.py
+- tests/unit/test_css_lint_target.py
+- tests/unit/test_ci_stylelint_workflow.py
+- tests/unit/test_markdown_lint_target.py
+- tests/unit/test_precommit_quality_guards.py
+- tests/unit/test_root_cleanup.py
+- tests/unit/test_presentation_make_targets.py
+- tests/unit/test_presentation_javascript_runner.py
+- tests/unit/test_node_deps_update_notifier.py
+- tests/unit/test_security_audit_observability.py
+- tests/unit/test_local_dual_track_producer.py
+- tests/unit/test_pages_presentation_resilience.py
+- tests/unit/test_duplicate_code_native.py
+- tests/unit/test_enforcement_unbypassable.py
+- tests/unit/test_opencode_node_v26_compat.py
+- tests/unit/test_opencode_plugin_ports.py
+- tests/unit/test_plugin_config_runtime.py
+- tests/unit/test_hook_runtime_verification.py
+- tests/unit/test_check_plugin_liveness.py
+- tests/unit/test_precommit_hooks_deep.py
+- tests/unit/test_integration_admission_target.py
+- tests/unit/test_file_line_limits.py
+
+The actual native test-opencode-e2e owner additionally passes44 EACH, fatal
+warnings, original selectors, separate owned scratch and complete44-protocol
+traces:3116.79s/native8.075s and3126.89s/native8.241s, at
+v012-node-opencode-e2e/v012-node-opencode-e2e{311,312}-f1aa824-20261026.json.
+Root drains all exact sessions and verifies terminal status/command scope.
+Independent review approves source only. Normal fresh collection/source commit
+and the FIRST actual post-fix audit through ci-failure-repair remain next;
+all four native Node families stay OPEN at this fixed receiving snapshot.
+Canonical85/75 LINE AND BRANCH BOTH, ZDD, full gate, exact-SHA hosted/promotion,
+deployment and stable release proof remain separate and unproved.

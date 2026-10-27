@@ -5,40 +5,35 @@ Published/remote-VERIFIED: release-candidate/v012-git-mutex-20261022 eb772a658a0
 Previously recorded development publication: 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
 Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection errors in47.54s/native54.341s during the native guarded714ce2d65e3dbeec9d3dbbadced9f983c13c2a3d source commit preflight. Native receipt: .gate-logs/observed/test-count/20261022T234100Z-13723-e7e319e7.json. This is fixed714 evidence, not a later handoff-commit measurement; lock duration54.257s is distinct. Earlier23b/638/ef41/64 collections keep their actual refs/receipts. Collection is separate from runtime, full gate, hosted and deployment proof. Keep normal fresh collection per commit without repeating accepted source tests for a handoff alone.
 
-## Current receiving record (2026-10-26 UTC)
+## Current receiving record (2026-10-27 UTC)
 
-Normal merge c7c01337e8482927eb74c87fee34059a3d5d45f3 has parents17e20e5e
-and b4ea72bf. Fresh normal collection passes131194 selected/131218 collected,
-24 deselected/0 errors; the retained128-owner/static receipts keep their original
-scope. The release inventory below owns exact receipts and the earlier header.
+Current source checkpoint is f1aa82455ca1f78fc62ca7d09140af712dc37d70,
+with the approved four-path Node repair received but not yet committed.
+The first seven SESSION lines keep their fixed714 collection/source authority.
+Normal f1 hook collection passes131210/131234,24 deselected/0 errors;
+its clean Mac binary/DMG/tar/wheel/sdist builds and outside-checkout smokes pass.
+Those are fixedf1 diagnostic artifacts; the release inventory owns all hashes.
 
-Native admission mode0 still fails the original90/60 runtime boundary:124 at
-90.558s with default UV and90.584s with the verified pinned UV. The first eight
-owners pass81 source cases, HELP1/TAIL14 pass, and MAIN2509 stays unproved with
-null trace. A separate full MAIN diagnostic passes2509 with complete pairs;
-that105.242s native run grants no admission or speed/CPU claim. The two-file
-shift to the existing TAIL now passes1267 complete-owner cases EACH runtime,
-including publication and lifecycle controls. Normal runtime checkpoint
-8d2c97e8ca7887aa68dba27e25a601e176523ad4 has fresh131207/131231 collection,
-24 deselected/0 errors. Its actual release-proof admission passes151.016s;
-the original90/60 runtime passes86.989s with MAIN2390/HELP1/TAIL133.
+The operator approved unsafe TOML integer rejection and shared workflow scope.
+Native account-bound consent now verifies sandboxcom and workflow after the
+retained181.841s timeout. Authentication is not publication or CI evidence.
+The Node lock changes only TOML5.0.1/Zod4.6.7 under the plugin parent scope.
+All other pins, six original consumer cases and security assertions remain.
+Native relock5.357s/sync4.416s perform no audit. Unchanged security-floor RED
+is3FAIL/5PASS; complete23-owner receiving passes311490/312489 with1 original
+312 canonical-runtime skip and1 default hook-live deselection EACH.
+Actual native plugin E2E passes44 EACH. Independent review approves source only.
 
-The c7 macOS build and native/mounted-DMG smokes pass, but the full build still
-warns about bare ntdll through filelock's Windows-only ctypes edge. The narrow
-platform hook now passes211 cases/6 original skips EACH and exact-file coverage;
-normal guarded hook collection/commit and fresh clean-source Mac build/smokes
-remain next. These are macOS/c7 proofs, not all-assets,
-Windows or canonical-gate certification. Feature-ci publication refuses changed
-workflow bytes against the verified82ec5170 baseline before transport/hooks or
-any Actions request; this is not an Actions API refusal.
-
-Node/TOML preference and shared workflow consent remain pending. Four Node
-entries stay open; six unfinished edits remain in checkpoint59e9c4292b8685076d98f2b4398c230ffd83cbe7.
-All seven S98 tasks stay unchecked. Next receive the actual bounded repairs and
-clear publication prerequisites; then retain native admission, canonical21600
+Fixed8d admission remains151.016s/original90-60 runtime86.989s; earlier124/125
+failures remain. The c7 feature-ci refusal is a workflow-baseline mismatch,
+before transport/hooks/Actions. Auth scope does not change that baseline check.
+Next normal Node commit/fresh collection, first repair-owned low-level audit,
+then native verify-state and normal guarded canonical publication/remote/CI.
+Four Node families remain open at this snapshot. All seven S98 tasks remain
+unchecked; checkpoint59e9 retains the six unapproved edits. Canonical21600
 gate/global85/75 BOTH, exact-SHA push CI, reviewed development/master promotion,
-fresh signed all-assets proofs and ZDD. No unchanged failed retry or proposal
-supplies those missing proofs. Details: docs/releases/v0.1.2-implementation-status.md.
+ZDD, deployed-byte acceptance and complete signed stable artifacts stay open.
+Details: docs/releases/v0.1.2-implementation-status.md.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 

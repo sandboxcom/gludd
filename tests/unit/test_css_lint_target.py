@@ -160,7 +160,9 @@ def test_lint_css_dependency_config_and_contract_are_exactly_pinned() -> None:
     assert dependencies["eslint"] == ESLINT_VERSION
     assert "@biomejs/biome" not in dependencies
     assert "stylelint" not in dependencies
-    assert "overrides" not in package
+    assert package.get("overrides") == {
+        "@opencode-ai/plugin": {"zod": "4.6.7", "effect": {"toml": "5.0.1"}},
+    }
     assert lock["packages"]["node_modules/@eslint/css"]["version"] == (
         ESLINT_CSS_VERSION
     )

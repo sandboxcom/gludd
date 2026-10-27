@@ -1,5 +1,43 @@
 # Release Packaging Contract
 
+## Fixedf1 clean builds and local artifact smoke (2026-10-27 UTC)
+
+Normal hook checkpoint f1aa82455ca1f78fc62ca7d09140af712dc37d70 has fresh
+131210 selected/131234 collected,24 deselected/0 errors,47.98s/native53.551s:
+test-count/20261026T232349Z-10864-561f670f.json. Native mutation passes69.338s:
+commit-transaction/20261026T232334Z-9628-da7b6373.json. Its prior focused
+acceptance/coverage and original skips below retain their exact scopes.
+
+At that clean fixed SHA, native macOS build passes62.112s using installed
+Python3.12.14/PyInstaller6.22.3/project UV0.13.1. The real local hook is processed;
+the complete raw build has zero WARNING/ERROR/CRITICAL messages and no ntdll.
+Receipt: v012-macos-clean-hook/v012-macos-clean-hook-f1aa824-20261026.json.
+Native executable outside-checkout version/help passes11.089s; read-only DMG
+checksum/mounted-byte comparison/version/help/unmount passes16.418s, at
+v012-macos-smoke/v012-macos-{native-smoke,dmg-smoke}-f1aa824-20261026.json.
+Mac tar creation/checksum/extracted-byte comparison/outside version/help passes
+14.831s; real wheel/sdist builds, separate fresh virtualenv installs, actual
+installed import origins and outside-checkout version/help pass23.772s on3.11.14,
+at v012-additional-artifacts/v012-{macos-tar,python-distributions}-f1aa824-20261026.json.
+
+| Fixedf1 diagnostic artifact | SHA256 |
+| --- | --- |
+| Mac executable | f9192092cf63e6bbcf0db45e0722ab425ac911b79e173f25232d2732cc4dc699 |
+| Mac ARM64 DMG | cdf1c526b8f2f2f98021d8f648aa08223e86273948b665bea4104aaa3c6a4bc4 |
+| Mac ARM64 tar | 8c1532fe72256015ac165356daeb52ec669e852453ff9bcc0c6a249ec7cba408 |
+| Wheel | a75679232c77d98c69caf0deb5de8ed146181740ddc1e4b5758e5d794dee8d3b |
+| Sdist | 00cade393288f1746159f517998492b5dcfec646bf06709fb1724b87f66e748d |
+
+Binary/DMG remain in ignored dist. The owned tar/Python directory was atomically
+moved into .gate-logs/release-artifacts-f1aa82455; all checksums were independently
+reverified after relocation, without changing bytes or ignore rules. Temporary
+virtualenvs/stages and the mounted DMG were cleaned; source stayed fixedf1 and
+returned clean. The manual REVIEW.txt there is dated history, including its then
+pending operator inputs, not a generated current observation. These local scopes
+are diagnostic artifacts, not final Node-source/Windows/Linux/container/EE,
+canonical hosted/tag publication, provenance or deployed-byte acceptance.
+No85/75 LINE AND BRANCH, cleanup, ZDD or release-matrix requirement changes.
+
 ## Scope
 
 Gludd release inputs are repository-owned build artifacts. The Debian control

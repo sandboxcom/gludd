@@ -1,5 +1,24 @@
 # Repository-local GitHub HTTPS publication
 
+## Authorized workflow consent completed (2026-10-27 UTC)
+
+The operator explicitly authorized adding sandboxcom workflow scope. The first
+native refresh timed out124 after181.841s at v012-workflow-auth/
+v012-workflow-auth-sandboxcom-f1aa824-20261026.json; the client had not saved
+workflow scope. A subsequent native read still showed gist/read:org/repo.
+The changed interactive observer input disables its quiet cutoff, retaining
+900s total. The operator completed the new device confirmation; the same
+account-bound native owner passes150.929s and verifies active sandboxcom/HTTPS
+with gist/read:org/repo/workflow before returning success:
+v012-workflow-auth/v012-workflow-auth-interactive-sandboxcom-f1aa824-20261026.json.
+No token is extracted or account switched. The original publication/runtime
+90/60 limits remain unchanged. Root drains the exact session and verifies its
+terminal command receipt. This clears the actual credential prerequisite only.
+The c7 feature-ci workflow-baseline mismatch remains a distinct retained refusal;
+no unchanged feature-ci retry, push, hosted result or deployment follows.
+Next use native verify-state, normal guarded canonical publication, full-SHA
+verify-remote and the exact-SHA CI owners with checkout-owned ledger inputs.
+
 ## Controller runtime for credential metadata (2026-10-26 UTC)
 
 The credential-helper quoting bootstrap must use the installed SYSTEM_PYTHON,
