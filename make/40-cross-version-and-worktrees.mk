@@ -804,7 +804,7 @@ feature-done:
 # Creation does not require a clean caller: its index and working bytes are owned
 # by the caller and must remain untouched. Partial creation is retained on failure.
 define _agent-worktree-create
-	@branch='$(subst ','"'"',$(BRANCH))'; base_ref='$(subst ','"'"',$(1))'; mode='$(2)'; \
+	$(if $(filter execute,$(_commit-native-mode)),+)@branch='$(subst ','"'"',$(BRANCH))'; base_ref='$(subst ','"'"',$(1))'; mode='$(2)'; \
 	WORKTREE_PATH="/tmp/gludd-worktrees/$$branch"; pinned_base=; phase=branch-name; \
 	fail_creation() { \
 		creation_status="$$1"; \
