@@ -1,5 +1,64 @@
 # Watchdog Secrets Scan Lifecycle
 
+## Owned child PID handoff (2026-10-27 UTC)
+
+MC11adaa4080de17f47be0bd10e54176dddba3eb3d Build40553611733 attempt1
+gate311 job122363699191 passes its prerequisite, then ends runtime admission
+124/90.537s. Its retained trace records the parent-only shutdown test's10s
+TimeoutExpired and a later ledger unraisable ExceptionGroup whose subtype is
+clipped. Gate312 passes; the failed barrier prevents all eight shards.
+The exact hosted signal instant and the later warning's cause remain unproved.
+
+The existing launcher forks before assigning GATE_CHILD_PID. A signal in that
+interval can invoke cleanup with an empty child field. The new control uses an
+owned BASH_ENV/DEBUG hook at that actual assignment, a real child's readiness
+FD, exact PID/group/session/carrier witnesses and parent-only TERM. Production
+stays unchanged for RED. Both controls reach their active witness and fail the
+original communicate(timeout=10):2FAIL/1PASS with logical AST in39.59s,
+native41.133s. The control's finally drains its entire owned session even when
+the wrapper is already reaped. Every existing helper/function/assertion remains.
+
+The same launcher now retains the first pending INT/TERM through fork/PID
+assignment, then invokes original cleanup after the PID is owned. A later INT
+after the launch flag clears preserves queued TERM143. The inherited-signal
+bootstrap, gate command, locks, status/exit behavior, cleanup,90/60 admission
+and coverage/ZDD/promotion policy remain intact. Script
+407a785021219e429321ca914b93598e049b77beaa787d1d7491a25122788caf and test
+6b2f27091101e7ddf0587d750b8418ab887ff3475d646486732fdebe89b971f9 have
+independent source-only approval. All34 original functions/126 assertions and
+the complete original test prefix remain exact.
+
+The3-case focus passes EACH runtime:31119.32s/native20.701s and
+31220.88s/native22.417s,9events/3pairs/0issues/failures/unfinished each.
+Complete18 affected owners plus logical AST pass1465 EACH:311345.60s/
+native349.738s and312360.73s/native364.545s,2933events/1465pairs with zero
+issues, failures or unfinished protocols each. All exact sessions are drained
+and native status/source bytes verified. Receipts under
+.gate-logs/observed/v012-gate-child-handoff/ use IDs
+v012-handoff-red311-11adaa4-20261027,
+v012-handoff-green311-11adaa4-20261027,
+v012-handoff-green312-11adaa4-20261027,
+v012-handoff-whole311-11adaa4-20261027 and
+v012-handoff-whole312-11adaa4-20261027.
+These bind working postimages at fixed parent11adaa, never committed-SHA hosted,
+global coverage, deployment or runtime-speed proof.
+
+The [2019 firsthand trap-race report](https://unix.stackexchange.com/questions/538678/bash-trap-handler-race-condition)
+and [2016 parent/child signal report](https://unix.stackexchange.com/questions/327478/bash-parent-and-child-signal-handling)
+describe surprising signal outcomes in different examples. They support active
+parent-only and repeated-signal controls; they prove neither Gludd's cause nor
+a Bash defect. Root's initial exact forum query returned0; a less restrictive
+changed query found these sources. Raw public evidence remains at
+/tmp/gludd-v012-gate-handoff-forum-research-broad-20261027.json.
+
+Private V1's overescaped control was rejected before execution. Revision2
+corrects embedded-language inputs and first-pending priority. Syntax checks
+alone grant no behavior proof; actual Main RED/GREEN above supplies that scope.
+Normal fresh collection/checkpoint, clean-SHA native family16af repair, guarded
+publication/new exact-SHA CI and all final release proofs remain pending.
+MC Molecule6PASS and Pages3validationPASS/deploySKIP stay scoped to MC; native
+Pages summary2 remains retained. All seven S98 items remain open.
+
 ## Native async-gate inherited-signal boundary (2026-10-27 UTC)
 
 Independent review of published a403ed858bb561f7bbc8353c54ad057be4020f89

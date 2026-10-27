@@ -1,5 +1,54 @@
 # GHA pipeline and agentic promotion audit
 
+## MC terminal hosted evidence and child handoff repair
+
+The three manual diagnostic workflows select feature/v012-count-archive-20261027
+at full SHA11adaa4080de17f47be0bd10e54176dddba3eb3d, attempt1. Accepted
+requests and publication remain separate from terminal results and release proof.
+
+| Native owner | Actual terminal evidence | Missing authority |
+| --- | --- | --- |
+| [Build40553611733](https://github.com/sandboxcom/gludd/actions/runs/40553611733) | Gate311 prerequisite passes, runtime124/90.537s; gate312 whole job passes. Observer670.829s/exit2 is inactive and drained. | All eight downstream shards unknown after failed barrier; no artifact matrix or canonical push proof. |
+| [Molecule40553820102](https://github.com/sandboxcom/gludd/actions/runs/40553820102) | All6 shards pass; exact observer245.521s/exit0 is inactive and drained. | Manual event and MC source only, no new signal-source or final release proof. |
+| [Pages40554132925](https://github.com/sandboxcom/gludd/actions/runs/40554132925) | Both browser validations and JavaScript coverage pass; deploy skips. Exact observer184.446s/exit0 is inactive and drained; native summary2 is preserved. | No master Pages deployment or application ZDD proof. |
+
+Native ci-view ingests all three without manual observation/ledger edits.
+Ledger16af reopens at occurrence2; open1/repaired13/resolved59/runs186 remains
+distinct from local repair history. MC publication199.900s proves its normal
+guards, hooks, exact remote binding and accepted Build signal, not hosted green.
+
+The failed311 archive hashes statusd997d805, log69cfd2b8, tracee8f89d06 and
+report645e9702 to their actual bytes. It contains5051events/2517pairs/0issues/
+0unfinished but FOUR failure REPORTs for TWO nodeIDs. Native parent-only
+shutdown fails communicate(timeout=10); the later ledger unraisable subtype is
+clipped. All four V4 cheap-input controls and three count guards complete on
+TAIL193PASS. MAIN completes2323 of2356;33 reference nodes are unobserved.
+Complete protocol pairs or the312 pass do not turn311 green or prove causality.
+
+The [owning signal record](WATCHDOG_SECRETS_LIFECYCLE.md#owned-child-pid-handoff-2026-10-27-utc)
+retains the real source fork/PID window and active same-entrypoint RED2FAIL/
+1PASS39.59s/native41.133s. The reviewed existing-launcher repair queues first
+INT/TERM until PID ownership, then retains original cleanup and first status
+under a later signal. Unchanged controls pass3EACH/native20.701/22.417s;
+complete18-owner receiving passes1465EACH/native349.738/364.545s,2933events/
+1465pairs and zero issues/failures/unfinished each. Script407a7850/test6b2f2709
+remain working postimages at fixed parentMC, not an exact committed hosted SHA.
+All old34functions/126asserts, original90/60,182families, eight promotion pins,
+three2/1/1 workers and21phases2850 remain. No performance claim follows.
+
+Root reconciles the actual old typing lease eed654, a genuine ancestor of MC,
+through native exact-tuple release after clean/quiescent verification. The
+missing e371 default row refusal is preserved. Existing materialization is now
+registered feature/v012-baseline-inputs-20261027 from development82db without
+another checkout or deleting refs. Its input repair/complete source closure and
+genuine E/M/C/N objects/proofs remain separate. Prospective receiving grows from
+67 to at least73 complete owners after actual source inventory; none is dropped.
+Focus132/128 HOLD,333 combined, canonical21600/global85/75 line AND branch,
+canonical push, reviewed promotion, master deployment and fresh complete signed
+stable artifacts remain open. Next: normal signal checkpoint/fresh collection,
+clean-SHA native16af repair, guarded publication/accepted exact-SHA Build and
+parallel Molecule/Pages diagnostics. All seven S98 tasks remain unchecked.
+
 ## Received native Make carrier context
 
 The [owning input-boundary record](GIT_STATUS_READONLY.md#explicit-native-make-carrier-fixture-context)

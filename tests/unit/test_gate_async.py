@@ -906,3 +906,130 @@ def test_signal_bootstrap_preserves_native_import_boundary_and_arguments(
     assert (tmp_path / "gate-status").read_text(encoding="utf-8").startswith("PASS ")
     assert not (tmp_path / "gate-async.lock").exists()
     assert env["PYTHONPATH"] == os.environ["PYTHONPATH"] == str(carrier)
+
+
+@pytest.mark.parametrize("handoff_second_signal", [False, True])
+def test_parent_term_at_native_child_pid_handoff_drains_owned_pipes(
+    tmp_path: Path,
+    handoff_second_signal: bool,
+) -> None:
+    """Exercise the actual launch and pending-signal handoff without sleeps."""
+    status = tmp_path / "gate-status"
+    lock = tmp_path / "gate-async.lock"
+    witness = tmp_path / "handoff-witness"
+    witness_tmp = tmp_path / "handoff-witness.tmp"
+    second_witness = tmp_path / "second-signal-witness"
+    second_tmp = tmp_path / "second-signal-witness.tmp"
+    startup = tmp_path / "owned-bash-startup"
+    ready_read, ready_write = os.pipe()
+    with (
+        os.fdopen(ready_read, "rb", buffering=0) as ready,
+        os.fdopen(ready_write, "wb", buffering=0) as ready_sender,
+    ):
+        payload = (
+            f"import os, signal; os.close({ready_read}); os.write({ready_write}, "
+            + "(str(os.getpid()) + ' ' + str(os.getpgrp()) + ' ' + str"
+            "(os.getsid(0)) + ' ' + str(int(os.environ.get('GLUDD_SI"
+            "GNAL_TEST_CARRIER') == 'owned unrelated carrier')) + '\\"
+            "n').encode()); " + f"os.close({ready_write}); signal.pause()"
+        )
+        first_probe = (
+            "if [[ \"$BASH_COMMAND\" == 'GATE_CHILD_PID=$!' ]]; then\n"
+            + ("" if handoff_second_signal else "    trap - DEBUG\n")
+            + f"    read -r -t 5 handoff_pid handoff_pgid handoff_sid handoff_kept <&{ready_read}"
+            + " || exit 73\n"
+            + '    printf \'ready %s %s %s %s %s %s %s\\n\' "$$" "$!" "$h'
+            'andoff_pid" "$handoff_pgid" "$handoff_sid" "$handoff_ke'
+            'pt" "$GATE_CHILD_PID" > '
+            + shlex.quote(str(witness_tmp))
+            + "\n"
+            + "    mv -f "
+            + shlex.quote(str(witness_tmp))
+            + " "
+            + shlex.quote(str(witness))
+            + "\n"
+            + '    kill -TERM "$$"\n'
+        )
+        second_probe = (
+            f"elif [[ {int(handoff_second_signal)} == 1 && "
+            + '"${GATE_LAUNCHING:-}" == 0 && -n "${GATE_CHILD_PID:-}" && "${GATE_PENDING_SIGNAL:-}" == TERM ]]; then\n'
+            + "    trap - DEBUG\n"
+            + "    printf 'second\\n' > "
+            + shlex.quote(str(second_tmp))
+            + "\n"
+            + "    mv -f "
+            + shlex.quote(str(second_tmp))
+            + " "
+            + shlex.quote(str(second_witness))
+            + "\n"
+            + '    kill -INT "$$"\n'
+            + "fi"
+        )
+        debug = first_probe + second_probe
+        startup_source = (
+            'if [[ "$0" == '
+            + shlex.quote(str(GATE_ASYNC_SH))
+            + " ]]; then\n"
+            + "    trap "
+            + shlex.quote(debug)
+            + " DEBUG\n"
+            + "fi\n"
+        )
+        startup.write_text(startup_source, encoding="utf-8")
+        env = _isolated_gate_env(
+            shlex.join(["exec", sys.executable, "-P", "-c", payload]),
+            status_file=status,
+            lock_file=lock,
+            extra_env={
+                "GLUDD_GATE_ASYNC_FORCE_PIDFILE": "1",
+                "SYSTEM_PYTHON": sys.executable,
+                "GLUDD_SIGNAL_TEST_CARRIER": "owned unrelated carrier",
+                "BASH_ENV": str(startup),
+            },
+        )
+        process = subprocess.Popen(
+            ["bash", str(GATE_ASYNC_SH)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+            start_new_session=True,
+            pass_fds=(ready.fileno(), ready_sender.fileno()),
+        )
+        ready_sender.close()
+        ready.close()
+        try:
+            acknowledgement = _wait_for_status(witness, "ready ", timeout=5)
+            fields = acknowledgement.rstrip("\n").split(" ")
+            assert len(fields) == 8, "native handoff probe did not preserve its owned fields"
+            assert fields[0] == "ready"
+            assert int(fields[1]) == process.pid
+            assert int(fields[2]) == int(fields[3]) > 0
+            assert int(fields[4]) == int(fields[5]) == process.pid
+            assert fields[6] == "1", "native child lost the unrelated owned carrier"
+            assert fields[7] == "", "probe did not run before the original PID assignment"
+            stdout, stderr = process.communicate(timeout=10)
+            assert process.returncode == 143, f"stdout: {stdout}\nstderr: {stderr}"
+            terminal = status.read_text(encoding="utf-8").splitlines()
+            assert len(terminal) == 2 and terminal[1] == "=== GATE: ABORTED ==="
+            parts = terminal[0].split()
+            assert parts[0] == "ABORTED" and int(parts[1]) > 1_700_000_000
+            assert parts[2:] == ["signal=TERM", "rc=143", "cleanup_rc=0"]
+            assert not lock.exists(), "native handoff cancellation retained its owned lock"
+            assert not list(tmp_path.glob("gate-status.*.tmp"))
+            if handoff_second_signal:
+                assert second_witness.read_text(encoding="utf-8") == "second\n"
+            else:
+                assert not second_witness.exists()
+        finally:
+            # Own the entire new session, including a child holding pipes after
+            # its wrapper has exited. Never leave this RED fixture running.
+            with suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
+            try:
+                process.communicate(timeout=5)
+            finally:
+                if process.stdout is not None:
+                    process.stdout.close()
+                if process.stderr is not None:
+                    process.stderr.close()

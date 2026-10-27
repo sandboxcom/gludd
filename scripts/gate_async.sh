@@ -84,6 +84,9 @@ LOCK_ACQUIRED=0
 RUNNING_PUBLISHED=0
 TERMINAL_PUBLISHED=0
 GATE_CHILD_PID=""
+GATE_LAUNCHING=0
+GATE_PENDING_SIGNAL=""
+GATE_PENDING_RC=0
 
 # A PID in a portable lock file is only an owner claim, not proof that the
 # process is still this gate.  PID reuse is common enough that kill -0 alone is
@@ -249,6 +252,19 @@ _terminate_owned_gate() {
 
 _handle_signal() {
     local signal_name="$1" signal_rc="$2" finish_epoch cleanup_rc=0
+    # Keep the first signal until the just-forked child's PID is owned.
+    if [ "$GATE_LAUNCHING" -eq 1 ]; then
+        if [ -z "$GATE_PENDING_SIGNAL" ]; then
+            GATE_PENDING_SIGNAL="$signal_name"
+            GATE_PENDING_RC="$signal_rc"
+        fi
+        return 0
+    fi
+    # A second signal after the launch flag clears cannot replace the first.
+    if [ -n "$GATE_PENDING_SIGNAL" ]; then
+        signal_name="$GATE_PENDING_SIGNAL"
+        signal_rc="$GATE_PENDING_RC"
+    fi
     # Repeated Ctrl-C/TERM must not interrupt the atomic terminal publication.
     trap '' INT TERM
     trap - EXIT
@@ -315,8 +331,13 @@ echo "[gate_async] started at epoch=${EPOCH} pid=$$ ref='${REF}' cmd='${GATE_CMD
 # value produced by `bash -c` (including 128-plus-signal values).
 # ---------------------------------------------------------------------------
 EXIT=0
+GATE_LAUNCHING=1
 GLUDD_GATE_AUTHORIZED=1 bash -c "${GATE_CMD}" &
 GATE_CHILD_PID=$!
+GATE_LAUNCHING=0
+if [ -n "$GATE_PENDING_SIGNAL" ]; then
+    _handle_signal "$GATE_PENDING_SIGNAL" "$GATE_PENDING_RC"
+fi
 wait "${GATE_CHILD_PID}" || EXIT=$?
 GATE_CHILD_PID=""
 
