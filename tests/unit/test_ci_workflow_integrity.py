@@ -100,6 +100,80 @@ class TestVersionIsRootJob:
         assert version["timeout-minutes"] > 0
 
 
+def test_hosted_runtime_enables_native_trace_with_unchanged_command_and_limits() -> None:
+    steps = _load_workflow()["jobs"]["gate"]["steps"]
+    runtime = next(step for step in steps if step.get("name") == "Known runtime and handoff regression admission")
+    words = shlex.split(runtime["run"])
+    assert "RUN_WATCHED_PYTEST_TRACE=1" in words
+    assert "CMD=make _pytest-runtime-compatibility-admission" in words
+    assert "STALL_SECS=60" in words and "MAX_SECS=90" in words
+    assert "OBSERVED_LABEL=ci-runtime-regression-admission" in words
+    identity = "RUN_ID=runtime-admission-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}"
+    assert identity in words
+
+
+def test_hosted_runtime_archives_only_its_terminal_native_evidence() -> None:
+    steps = _load_workflow()["jobs"]["gate"]["steps"]
+    runtime_index = next(
+        index for index, step in enumerate(steps)
+        if step.get("name") == "Known runtime and handoff regression admission"
+    )
+    runtime = steps[runtime_index]
+    assert runtime.get("id") == "runtime_regression_admission"
+    archive = steps[runtime_index + 1]
+    assert archive.get("id") == "runtime_diagnostic_archive"
+    archive_words = shlex.split(archive["run"], comments=True)
+    assert archive_words[:3] == ["make", "--no-print-directory", "runtime-startup-archive"]
+    assert "PYTHON=$GITHUB_WORKSPACE/.venv/bin/python3" in archive_words
+    assert "SYSTEM_PYTHON=$GITHUB_WORKSPACE/.venv/bin/python3" in archive_words
+    assert archive["if"] == (
+        "${{ always() && (steps.runtime_regression_admission.outcome == 'success' || "
+        "steps.runtime_regression_admission.outcome == 'failure') }}"
+    )
+    environment = archive["env"]
+    assert environment["RUNTIME_DIAGNOSTIC_VALIDATE_ONLY"] == "0"
+    assert environment["OBSERVED_ROOT"] == ".gate-logs/observed"
+    assert environment["OBSERVED_LABEL"] == "ci-runtime-regression-admission"
+    assert environment["RUN_ID"] == (
+        "runtime-admission-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}"
+    )
+    assert environment["RUNTIME_DIAGNOSTIC_SOURCE_SHA"] == "${{ github.sha }}"
+    assert environment["RUNTIME_DIAGNOSTIC_ARCHIVE"] == (
+        "/tmp/gludd-ci-runtime-admission-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}"
+    )
+    assert not archive.get("continue-on-error", False)
+
+
+def test_hosted_runtime_upload_requires_the_successful_native_archive() -> None:
+    steps = _load_workflow()["jobs"]["gate"]["steps"]
+    archive = next((step for step in steps if step.get("id") == "runtime_diagnostic_archive"), None)
+    assert archive is not None, "the native archive must own evidence before any upload"
+    position = steps.index(archive)
+    summary, upload = steps[position + 1:position + 3]
+    condition = "${{ always() && steps.runtime_diagnostic_archive.outcome == 'success' }}"
+    assert summary["if"] == upload["if"] == condition
+    words = shlex.split(summary["run"], comments=True)
+    assert words[:3] == ["make", "--no-print-directory", "test-xdist-trace-summary"]
+    assert "PYTHON=$GITHUB_WORKSPACE/.venv/bin/python3" in words
+    assert "SYSTEM_PYTHON=$GITHUB_WORKSPACE/.venv/bin/python3" in words
+    path = archive["env"]["RUNTIME_DIAGNOSTIC_ARCHIVE"]
+    assert summary["env"]["LOG"] == f"{path}/trace.raw"
+    assert summary["env"]["RUN_ID"] == archive["env"]["RUN_ID"]
+    assert summary["env"]["TRACE_SUMMARY_TIMINGS"] == summary["env"]["TRACE_SUMMARY_MEMORY"] == "1"
+    assert upload["uses"] == "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f"
+    options = upload["with"]
+    assert options["path"] == path
+    assert options["if-no-files-found"] == "error"
+    assert options["retention-days"] == 14
+    assert options["include-hidden-files"] is False
+    assert options["name"] == (
+        "runtime-admission-${{ github.run_id }}-${{ github.run_attempt }}-"
+        "${{ matrix.python-version }}-${{ github.sha }}"
+    )
+    assert steps[position + 3]["name"] == "Inject version"
+    assert not summary.get("continue-on-error", False) and not upload.get("continue-on-error", False)
+
+
 class TestGateJobStructure:
     def test_gate_needs_version(self) -> None:
         wf = _load_workflow()

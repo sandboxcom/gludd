@@ -1,5 +1,105 @@
 # GHA pipeline and agentic promotion audit
 
+## Hosted runtime trace and terminal archive wiring (2026-10-27 UTC)
+
+Published, remote-verified R3b4a12ae59680ed9116d840d0fc567712b655024 has
+independent SOURCE ONLY approval for its actual252-path development diff:
+244 unchanged F identities plus8 approved postimages. Normal direct publication
+passes191.570s at .gate-logs/observed/v012-R-normal-source-publication/
+v012-R-normal-source-3b4a12a-20261027.json and accepts its exact-SHA Build before
+success. Separate prerequisite/runtime receipts pass3.547s/81.493s under
+batch-push-prerequisite-admission and batch-push-runtime-admission,
+both run IDs ending42503. They retain original90/60 and all eight prerequisite pins.
+
+| Exact R workflow_dispatch, attempt1 | Native terminal result |
+| --- | --- |
+| [Build40489867319](https://github.com/sandboxcom/gludd/actions/runs/40489867319) |1FAIL/5PASS/13SKIP; gate311 runtime124/90.5s |
+| [Molecule40490205808](https://github.com/sandboxcom/gludd/actions/runs/40490205808) | All six jobs pass |
+| [Pages40490336699](https://github.com/sandboxcom/gludd/actions/runs/40490336699) | Three validations pass; deployment skipped |
+
+Exact ci-job-failure-context for Build job122140852035 preserves TAIL185 passing
+in70.57s and MAIN100% output at the90.5s timeout. Neither proves a terminal MAIN
+or joined pass. Earlier pinned-image/promotion steps pass, and gate312 passes
+the runtime independently. All eight downstream shard intervals remain unknown.
+Native ci-view ingestion reopens family
+955f7482bbd5b2c872fca39d3b20747a60ddd543c8b2c6ca76ca66fe8e1c0f2e;
+local R81.715/81.493/82.104 passes do not repair this new hosted failure.
+
+R's live nine-owner release-proof-admission passes148.399s at
+v012-R-release-admission/v012-release-admission-3b4a12a-20261027.json under
+.gate-logs/observed. Actual disk92% is below95; scratch1644.1MB is a soft limit.
+Cleanup is DRY-RUN: planned101 removals are not actual deletion. Resource
+ownership reports265; source contracts pass81 and eight prerequisite pins pass8.
+Its original90/60 runtime passes82.104s at release-proof-runtime-admission/
+proof-admission-20261027T104719Z-65565.json,5092events/2539pairs/zero issues.
+Admission grants no full-gate, hosted, deployment or release evidence.
+
+The actual hosted watcher defaults RUN_WATCHED_PYTEST_TRACE to0, and its workflow
+supplies no override. S adds literal1 to the same native watcher. Its original
+CMD, run/attempt/runtime identity,90/60, selectors,2/1/1, joins and drains remain.
+The next three steps reuse native runtime-startup-archive mode0, native
+test-xdist-trace-summary and the existing pinned upload action. No production
+Python, Make, manifest, package, runner, observer or cleanup policy changes.
+
+Archive runs after actual runtime success/failure, including a timed-out native
+owner. Earlier prerequisite failure leaves it skipped. Native exclusive output
+is /tmp/gludd-ci-runtime-admission-RUN-ATTEMPT-PYTHON, with original
+status/log/trace/report roles and manifest last. Summary reads immutable trace.raw
+and prints wall spans/RSS; it supplies no CPU or timing-cause proof. Upload requires
+archive success even if summary fails, uses only that leaf, includes actual
+run/attempt/runtime/source identity, retains14 days and fails on missing files.
+Nonhidden archive role names retain hidden producer inputs without broad upload.
+The declared source SHA is diagnostic input, not an authenticated attestation.
+
+Actual ordinary-receipt compatibility returned0 for report, mode0 archive and
+archived-trace summary using retained R batch-push-runtime-admission-42503.
+The new private archive
+/tmp/gludd-S-ordinary-runtime-compatibility-20261027-R42503 preserves original
+status/log/trace byte hashes. Source/private design and exact role pins are in
+/tmp/gludd-v012-S-hosted-diagnostic-design-20261027. Missing cold-import segments
+remain explicitly incomplete; ordinary argv remains in native progress_identity.
+Existing [firsthand import research](PIPELINE_STATUS_PROCESS_BOUNDARY.md#snapshot-providers-are-loaded-only-for-requested-cli-snapshots-2026-10-27-utc)
+supports attribution, without diagnosing this timeout or disabling plugins.
+
+Trace-flag RED is1FAIL/1ASTPASS18.74s/native20.101s; earlier flag-only receiving
+passes63/19.43s/native20.744s. Archive wiring independently fails2/.66s/native1.990s
+before implementation. Final changed-owner plus logical-Makefile guard passes65
+EACH:31119.09s/native20.444s and31221.13s/native22.540s. Both native traces have
+133events/65complete pairs/zero issues. Retain .gate-logs/observed/
+v012-S-changed-workflow-focus/v012-S-changed-workflow-focus{311,312}-3b4a12a-20261027.json.
+
+The complete fourteen-owner union plus AST separately passes765 EACH:
+311212.22s/native214.107s;312216.46s/native218.564s, at
+v012-S-complete-diagnostic-receiving/v012-S-complete-diagnostic-receiving{311,312}-3b4a12a-20261027.json.
+Those traces remain PARTIAL:1526events,441accepted pairs,320issues,1unfinished
+EACH. The native reader names test_controller_sessionstart_truncates_trace_once;
+source inspection finds retained trace-route globals outside that fixture's
+restoration. A second nested-run carrier issue is under separate bounded review.
+No current receipt or raw trace is edited. Complete fourteen-owner trace
+qualification stays pending;65-case focus does not replace that scope.
+
+The fourteen complete owners are ci_workflow_integrity,ci_hosted_failure_tooling,
+runtime_publish_admission,runtime_startup_diagnostic,runtime_startup_native_chain,
+test_files_native_trace,run_watched_trace,trace_summary_make_inputs,
+xdist_trace_diagnostics,xdist_trace_timings,gate_failure_promotion,
+build_workflow_node24_actions,ci_gate_matrix_full and release_pipeline_structure
+(each tests/unit/test_NAME.py). Preserve all61 original workflow cases and all
+old assertions. Three additive functions raise56/106 function/assertion nodes
+to59/140. Ruff, canonical configured strict typing, environment-write and
+strict<2500 line checks pass; workflow2481 lines. A wrong isolated typing config's
+missing YAML stubs remains failed caller input; canonical typings/policy are kept.
+Independent SOURCE ONLY approval binds the two files at
+/tmp/gludd-v012-S-diagnostic-wiring-source-review-20261027.md.
+
+This is a diagnostic-input repair before its normal commit. After fresh normal
+collection/commit and the required repair-owned original90/60 evidence, normal
+guarded publication must accept a new exact-SHA Build. Inspect its actual native
+archive and hosted outcome before selecting a performance repair. Do not rerun
+unchanged R or claim S fixes the timeout. Final source/focus/combined topology,
+canonical21600 gate/global85aggregate75per-file LINE AND BRANCH BOTH, exact-SHA
+push proof, genuine development/master promotion, ZDD and fresh signed complete
+artifacts remain pending. All seven S98 items remain unchecked.
+
 ## Draft-release fixture environment privacy (2026-10-27 UTC)
 
 Original-source review of a403ed858bb561f7bbc8353c54ad057be4020f89 found that
