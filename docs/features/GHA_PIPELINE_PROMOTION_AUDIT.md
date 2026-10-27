@@ -1,5 +1,52 @@
 # GHA pipeline and agentic promotion audit
 
+## Received native Make carrier context
+
+The [owning input-boundary record](GIT_STATUS_READONLY.md#explicit-native-make-carrier-fixture-context)
+retains U's actual two hosted failures and the outer recipe's environment-
+override witness. The repair adds the exact existing native MAKEFLAGS
+binding/.PHONY context only to two controlled Make workspaces. All original
+16 functions/102 assertions, real Git/hook/Ansible/confinement, argv, copied
+carriers and ordinary/-e behavior remain. One explicit-origin assertion is
+added; no production source or publication guard changes.
+
+Native local RED2FAIL/5PASS31.085s establishes the added origin contract,
+with the old payload present locally; it is not a reproduction of the
+host's missing payload. Initial GREEN7 EACH/native30.248/31.687s has
+17events/7pairs/zero issues. A122-character assertion then fails Ruff;
+an AST-identical layout correction restores lint. Final approved source
+f9476b8ffd5bab16562a857db7a5aa2095216c1513b171c195044375832aba1d
+passes complete changed Hook/native extraction/AST receiving66 EACH,
+native71.786/75.775s,135events/66pairs/zero issues/failures/unfinished.
+Every exact native session is drained. These are local input/behavior
+proofs; original hosted failures and runtime timeout remain authoritative.
+
+V4 parentf3f05324322383c2b2f10d54a22546eca10dad54 has immutable eleven-path
+approval, normal71.724s and fresh131423 selected/131447 collected/
+24deselected/0errors47.59s/native53.239s. Its family182/eight pins and
+complete864-EACH receiving keep their actual unchanged scopes. No new
+runtime speed or global coverage claim follows from this fixture repair.
+
+Local immutable source audit verifies that master9cccc35c4435983679ac315d0e5fa63ebed7310c
+and development82db11b57b254c1ca1e035975b5cc86253e2fed5 are ancestral
+baseline candidates, requiring native remote binding, but differ from published34a workflow bytes
+and retain168/12 intervening workflow commits. Merely changing the baseline
+name cannot satisfy feature-ci provenance. The native guard filters failure
+families by actual branch; it is not development-only or a blanket global
+blocker. Current branch16af needs its native repair-owned original90/60
+runtime evidence. Old branch745/e917 retain separate count/Hook scopes and
+failed-source ancestry. Format-only repair plans execute no admission,
+tests or ledger writes and grant no repair authority.
+
+Next after normal carrier checkpoint: use explicit single-family
+ci-failure-repair with actual clean source and matching public run-watched
+evidence, then preserve every canonical EE/prerequisite/runtime/publication
+guard and accepted exact-SHA Build signaling. Dispatch independent Molecule
+and Pages diagnostics in parallel with hosted Build; diagnostic events
+remain distinct from canonical push/master/tag authority. All seven S98
+tasks,132/128 focus HOLD,333 combined,21600 full gate/global85/75 BOTH,
+genuine integration/master ZDD and fresh signed matrix remain pending.
+
 ## Executed early-admission repair and remaining timeout (V4)
 
 The [trace record](XDIST_TRACE_SUMMARY.md#cheap-fixture-input-and-count-guards-v4)

@@ -1,5 +1,62 @@
 # Read-only native Git status
 
+## Explicit native Make carrier fixture context
+
+Fixed receiving at parentf3f05324322383c2b2f10d54a22546eca10dad54.
+U Build40513368737 unit-1b job122227591467 fails the two early-environment
+canonical carrier cases. Its exact native transport recorder reports
+MAKEFLAGS origin environment override, keys only CI_FAILURE_LEDGER, ledger
+origin command line and same-ledger true. The duplicate is absent already
+in the outer recipe; real Ansible/confinement still refuses the canonical
+ledger. No specific hosted Make version or upstream defect is established.
+
+The fixture extracts the original collection macro/recipes/providers but
+omits foundation's existing target context. In only the two deliberate
+carrier workspaces, the correction marks collect-check phony and reuses
+the native binding on owned-ledger-publication and collect-check:
+override MAKEFLAGS = $(MFLAGS) -- $(MAKEOVERRIDES). MFLAGS preserves native
+ordinary/-e/no-print flags and MAKEOVERRIDES retains every CLI assignment.
+Original argv, environment seed, native helper/provider bodies, unrelated
+carriers, Git authority, parent state and all102 assertions stay exact.
+One final assertion requires the controlled input's origin to be override.
+
+Actual local RED is2FAIL/5PASS29.64s/native31.085s, label
+v012-Makecarrier-input, ID v012-Makecarrier-red311-f3f0532-20261027.
+Ordinary origin is file; -e origin is environment override. The owned
+payload is present locally in both cases, unlike the original hosted
+omission. These are distinct witnesses. The four original real-Ansible
+cases pass and continue enforcing canonical refusal/active success.
+
+Initial GREEN passes7 EACH:31128.83/native30.248s and
+31230.25/native31.687s. Both traces have17events/7pairs/zero issues,
+failures or unfinished. Both ordinary/-e origins are override; ledger
+payload reaches recipe, hook and collection. Ansible remains enabled:
+canonical outcomes retain native nonzero and active outcomes native0.
+
+Ruff then catches the new assertion's122-character line. Parenthesizing
+the same message preserves its complete AST and fixes E501; the failed
+lint output remains retained. Final SHA256
+f9476b8ffd5bab16562a857db7a5aa2095216c1513b171c195044375832aba1d
+has independent source approval. All16 original functions/102 assertions
+remain,103 total; reversing only two context literals and the new assertion
+recovers the original module AST. No production source or guard changes.
+
+Complete changed Hook owner plus native source-extraction owner and logical
+Make AST pass66 EACH:31170.13/native71.786s and31274.08/native75.775s.
+Both exact sessions are drained and statuses inactive/passed/0; each trace
+has135events/66pairs/zero issues/failures/unfinished. Label
+v012-Makecarrier-whole uses v012-Makecarrier-whole{311,312}-f3f0532-20261027.
+Independent source review at
+/tmp/gludd-v012-Makecarrier-independent-source-review-20261027/DECISION.md
+retains native preimage/final bindings and the formatting boundary.
+
+Normal checkpoint and explicit matching native failure repair remain next.
+Local acceptance does not mark the hosted e917 family resolved or supply
+the separate runtime16af repair. Keep original90/60, all assertions,
+global85/75 LINE AND BRANCH, final21600 gate,132/128 focus HOLD,333 combined,
+canonical push, genuine promotion/master ZDD and complete signed artifacts.
+All seven S98 release tasks remain open.
+
 ## Hosted native fixture inputs (2026-10-27 UTC)
 
 Published source 9b01c62's Build40448994419 unit-3b job122011474870 fails both
