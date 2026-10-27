@@ -1,5 +1,50 @@
 # GHA pipeline and agentic promotion audit
 
+## Executed early-admission repair and remaining timeout (V4)
+
+The [trace record](XDIST_TRACE_SUMMARY.md#cheap-fixture-input-and-count-guards-v4)
+retains actual controlled4FAIL/1PASS, route1FAIL/1PASS, final9-EACH focus,
+terminal eight-pin acceptance and complete864-EACH sixteen-owner receiving.
+Independent source review binds all five postimages to actual V3 parent
+f78253494d85f6bf4d58816d45b25409be93cc23 and retains all181 predecessor
+families/760 assertions. This adds executable cheap regression guards to the
+existing owner, following the comparative review below; no second runner,
+observer or cache is introduced. Normal source checkpoint/publication and
+final release proofs retain their own authority.
+
+The actual current-source native fixture-audit profile runs the original
+test once through test-files-cprofile, selected installed311 in both watcher
+and CMD,45/30 diagnostic bounds and the ordinary Main harness. It passes1
+in7.03/native8.308 seconds. Emitted profile directory is
+.gate-logs/test-files-cprofile/profile-82238-ea1b769856d710bc, exact controller
+PID82238/run profile-82238-ea1b769856d710bc. Its real trace has5events/1pair,
+zero issues/failures/unfinished. One repository audit calls the source audit
+once;4204 source findings parse unique inputs. cProfile attributes5.802402
+elapsed-call seconds to the repository fixture and5.745314 to its audit;
+AST parse is3.393709 cumulative seconds. These overlapping rows are not OS
+CPU, hosted critical-path or savings measurements. Source already uses unique
+parsing, bounded/restored GC and grouped fixture ownership; no defensible
+parser repair follows. Preserve the actual V2 timeout rather than claiming
+this local diagnostic or new TAIL guards fixes MAIN completion.
+
+The exact retained Uunit1b native witness reports MAKEFLAGS origin
+environment override with only CI_FAILURE_LEDGER in the outer recipe's
+owned-key list; its ledger origin is command line and exact-ledger match
+true. The defect appears before Git/pre-push. Source inspection finds native
+foundation's existing target-specific MAKEFLAGS binding absent from those
+two fixture contexts. Its narrow private correction preserves all original
+assertions/argv/ordinary-e/provider/plugin/confinement behavior; RED/GREEN
+remain unexecuted at this fixed snapshot. No GNU Make-version or production
+confinement defect is inferred. Actual Uunit2 stale-count failure retains
+V1's local source correction and pending new hosted proof.
+
+V2 Build40522919824 remains failed124/90.566s in311;312 passes, and its exact
+failed archive is retained. Separate V2 Molecule six jobs and Pages three
+validation jobs pass; feature deployment is skipped. Canonical push/global
+gate,132/128 focus HOLD,333 combined replay, genuine development/master ZDD
+and fresh complete signed artifact matrix remain unproved. All seven S98
+tasks stay open.
+
 ## Comparative primary implementation review (2026-10-27 UTC)
 
 Earlier upstream research addressed individual CI/pytest failures; it did

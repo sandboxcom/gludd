@@ -1,5 +1,55 @@
 # Durable xdist Trace Summaries
 
+## Cheap fixture input and count guards (V4)
+
+At fixed V3 parentf78253494d85f6bf4d58816d45b25409be93cc23, V4 adds two
+cheap parameterized functions which call the actual existing fixture bodies
+and raise owned Captured at the real subprocess/helper boundary. No original
+success is synthesized and unexpected process execution refuses. Copied and
+captured environments remain repr=False with boolean-only comparisons.
+
+The controlled RED restores only the three historical child-input defects:
+4FAIL/1PASS18.59s/native19.902s, label v012-V4-cheap-guard,
+ID v012-V4-known-input-red311-f782534-20261027. This is an intentional
+regression control, not a claim that immutable V3 is broken. The three exact
+fixture-input corrections then pass5 ordinary cases EACH, including logical
+Make AST:31118.37/native19.604s,31219.96/native21.304s. The same four new cheap
+cases pass with real tracing on both runtimes:3110.58/native1.953s,
+3120.75/native2.142s,11events/4pairs/zero issues/failures/unfinished.
+These cheap controls supplement V3's retained real native controls.
+
+An additive routing control first fails1/1PASS19.50/native20.790 seconds
+because all three intended selectors occur zero times. Final implementation
+adds the two cheap selectors and existing three-case count guard once to
+TAIL before its original last four. MAIN139/HELP1 stay exact; TAIL19 yields
+159 unique selectors. Family182 appends to181 exact predecessors. Original
+three children/flags/barrier/join/status/drain,90/60 and21phases2850 remain.
+Seventeen numeric literals, nine inventory elements and the strict archive
+predecessor index conform together. Gate's21-phase literal has identical AST
+under a more compact layout,2471lines under the original2500 guard.
+Independent review retains all760 V3 assertions and the prior54/393 boundary.
+
+Final focused acceptance passes9 EACH:31118.51/native19.875s and
+31220.34/native21.735s,21events/9pairs/zero issues/failures/unfinished.
+Canonical check-gate-failure-promotions validates182 families then finishes
+all eight pins:8PASS1.73/native3.693s,19events/8pairs/zero issues. Its receipt
+is v012-V4-canonical-promotion-pins/v012-V4-eight-pins311-f782534-20261027.
+
+The complete sixteen-owner union passes864 EACH:311276.29/native278.233s;
+312285.26/native287.273s. Both exact sessions are drained and observed statuses
+inactive/passed/0. Each trace contains1731events/864pairs and zero issues,
+failure reports or unfinished nodes. Label v012-V4-complete-sixteen uses
+v012-V4-complete16-{311,312}-f782534-20261027. Ruff, strict typing on both
+runtimes, environment writes,303 target contracts and10896-file line guard
+pass. Exact five-file source approval is retained in
+/tmp/gludd-v012-V4-independent-source-review-20261027/VERDICT.md.
+
+These results certify this receiving scope only. They do not clear the
+hosted runtime timeout, prove a speed improvement or replace global85/75
+LINE AND BRANCH, final gate, exact-SHA push, genuine integration/master ZDD
+or fresh complete signed assets. Normal V4 checkpoint and separate carrier
+fixture receiving remain next; all seven S98 tasks stay open.
+
 ## Native child trace input isolation (V3)
 
 Fixed working-source receipt,2026-10-27 UTC, at parent
