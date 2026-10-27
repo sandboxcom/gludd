@@ -552,3 +552,103 @@ defines the no-sync equivalence. The repair changes the two native command
 environments, with no dependency synchronization, package update, extra process,
 service restart or cleanup-policy change. Full gate and exact-SHA release proof
 remain separate requirements.
+
+## Execution-only recursive registration after the D hosted warning
+
+Build `40448994419`, job `122011474974` (unit-1a1), failed the unchanged
+`test_native_parallel_creation_keeps_jobserver_for_registration` warning
+assertion on source D `9b01c6296f2a24d39a95e0c6194bd118ac8824f8`.
+Creation and native registration finished, but nested Make reported an
+unavailable jobserver and a single-job fallback. The retained native context is
+`/tmp/gludd-v012-D-failed-test-context-unit-1a1-20261027.log`. This actual hosted
+failure is the regression evidence; the earlier 98ba752 local no-reproduction
+and both 79-case receipts above retain their original scope.
+
+The public recipe enters `_agent-worktree-create` through a macro call. Its
+nested registration Make needs recursive-command classification at that outer
+recipe boundary. The only production change prefixes the macro's first command
+with `+` when the existing unconditional `_commit-native-mode` is `execute`.
+Inspection keeps the original command prefix and native `-n/-q/-t` behavior.
+The existing Foundation grammar, three mode bindings, literal inputs, native Git
+checks, ownership and registration failure handling remain. No Python FD bridge,
+lock change, token reader, new production parser or persistent process is added.
+
+Confined fixtures now include the actual complete Foundation inspection provider
+and all three native mode bindings. The original warning assertion and all
+ordinary/`-e` inspection assertions are unchanged. An owned probe observes the
+registration entry, then `execve`s the same installed Make with its original
+recipe arguments and copied environment. Pipe channels require distinct open,
+inheritable FIFO descriptors; FIFO-style channels require the actual accessible
+FIFO path. The probe never reads or writes jobserver tokens. A serial control
+detects channel absence. Matched parallel controls use the same entry and flags,
+deliberately closing pipe descriptors only in the negative; native Make help
+selects pipe style when the installed Make advertises that option. The original
+parallel test retains its default native jobserver style. Copied environment
+fields retain `repr=False`, and the probe records owned arguments and booleans.
+
+The first local probe incorrectly required both anonymous-pipe endpoints to have
+the same inode. macOS gave different endpoint inodes despite both descriptors
+being open and inheritable. Preserve the failed 1-fail/8-pass diagnostic receipts:
+`v012-jobserver-fd-red/v012-jobserver-fd-red311-9b01c62-20261027.json`
+(24.67s/native26.122s) and
+`v012-jobserver-fd-green/v012-jobserver-fd-green311-9b01c62-20261027.json`
+(24.12s/native25.659s). These are probe-assumption failures, not production RED
+or closed-channel evidence. Bounded native comparisons found open channels both
+before and after the production line on installed GNU Make 3.81; the old local
+no-reproduction remains valid. Private diagnostic files retain that comparison.
+
+After correcting the platform assumption, the logical-Makefile AST node plus the
+complete changed mode owner passes 11 cases on Python 3.11.14 in 27.25s/native 28.749s:
+`v012-jobserver-fd-portable/v012-jobserver-fd-portable311-9b01c62-20261027.json`.
+The exact session drained with native 0, an inactive passed status and 25 native
+trace events/11 complete pairs, with 0 issues, unfinished nodes or failure reports.
+This proves the active closed-FD detector and local execution/inspection behavior,
+not a local reproduction of the hosted warning or a GNU Make 4 execution.
+
+Complete receiving then ran the same four whole owners, with no selector filter:
+`test_agent_worktree_creation_fail_closed.py`,
+`test_agent_worktree_creation_make_modes.py`, `test_agent_worktree_targets.py`
+and `test_makefile_layout.py`. Both serial runs consumed the frozen four-path
+working snapshot on base D, after Root's native staged-content guard passed
+with 0 new clone findings in 6.996s. That guard's exact native run is
+`v012-J4-staged-content/v012-J4-staged-content311-9b01c62-20261027.json`.
+
+| Runtime | Actual cases | Pytest | Native observed |
+| --- | --- | --- | --- |
+| Python 3.11.14 | 122 passed/0 skipped | 106.08s | 108.170s |
+| Python 3.12.15 | 122 passed/0 skipped | 113.14s | 115.225s |
+
+Exact native receiving receipts under `.gate-logs/observed` are
+`v012-jobserver-receiving/v012-jobserver-receiving311-9b01c62-20261027.json`
+and `v012-jobserver-receiving/v012-jobserver-receiving312-9b01c62-20261027.json`.
+Both sessions drained; each exact-command status is inactive/passed/native 0.
+Each actual trace has 247 events/122 complete pairs, with 0 issues, unfinished
+nodes or failure reports. Both use fatal warnings, literal `ID=`, one pytest
+worker, at most two nested native Make jobs and a 600/180 diagnostic boundary.
+All 24 original function definitions and 104 assertion ASTs remain; the two test
+owners now contain 27 functions and 118 assertions. Strict typing of both changed
+test owners passes on both installed runtimes.
+
+Independent SOURCE ONLY review approved the frozen pre-receipt-prose four-path
+snapshot in `/tmp/gludd-v012-jobserver-J4-independent-source-review-20261027.md`.
+The three code/test postimages remained unchanged throughout both runs and this
+receipt edit. This is working-source receiving, not a future immutable-commit,
+GNU Make 4 hosted replay, full gate, coverage or release certificate. Normal
+hooks/collection and a fresh exact-source hosted warning replay remain pending;
+the final receipt paragraph requires its separate bounded source review.
+
+Root's accepted bounded public research retrieved the
+[GNU POSIX jobserver contract](https://www.gnu.org/software/make/manual/html_node/POSIX-Jobserver.html)
+and this [firsthand Make report from 2020](https://stackoverflow.com/questions/60702726/warning-jobserver-unavailable-using-j1-add-to-parent-make-rule).
+The manual ties pipe-descriptor access to recursive-command classification and
+explains that closed advertised descriptors indicate a missing recursive mark.
+The practitioner reproduces the warning for a plain Make invocation, compares
+`+` and `$(MAKE)`, and asks about forced execution under inspection flags. That
+context supports keeping the execution-only boundary; it does not prove this
+source fix or any installed Make version. Root's native retrieval receipt is
+`v012-jobserver-native-public-context/v012-jobserver-native-public-context-20261027.json`.
+
+This is control-plane ZDD: no deployment restart or cleanup policy changes.
+The 180/60 local diagnostic boundary supplies no canonical 90/60 runtime,
+21600-second full gate, 85% aggregate/75% every-file line and branch coverage,
+exact-SHA hosted, development integration, master deployment or release proof.

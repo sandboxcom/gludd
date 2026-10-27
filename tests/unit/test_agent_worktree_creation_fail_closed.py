@@ -32,7 +32,19 @@ def _creation_source(worktree_root: Path) -> str:
     goal_guard = re.search(
         r"^_MULTIWORD_VALUE_GOALS :=.*?^endif\nendif\n", source, re.MULTILINE | re.DOTALL,
     )
-    blocks = [literal_guard.group() if literal_guard else "",
+    provider = re.search(
+        r"^# Shared native Make inspection grammar\.\n.*?^# End shared native Make inspection grammar\.\n",
+        source, re.MULTILINE | re.DOTALL,
+    )
+    native_mode = re.search(
+        r"^override _commit-native-flags :=[^\n]*\n"
+        r"override _commit-native-short :=[^\n]*\n"
+        r"override _commit-native-mode :=[^\n]*\n",
+        source, re.MULTILINE,
+    )
+    assert provider is not None and native_mode is not None
+    blocks = [provider.group(), native_mode.group(),
+              literal_guard.group() if literal_guard else "",
               goal_guard.group() if goal_guard else "", macro.group() if macro else ""]
     blocks.extend(_block(source, target) for target in (*TARGETS, "workstream-register"))
     return "\n".join(blocks).replace("/tmp/gludd-worktrees", str(worktree_root))
