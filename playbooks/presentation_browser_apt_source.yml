@@ -19,6 +19,11 @@
         | flatten
         | list
       }}
+    presentation_apt_source_uri_fields: >-
+      {{
+        presentation_apt_source.content | b64decode
+        | regex_findall('(?im)^URIs:[^\n]*(?:\n[ \t]+[^\n]*)*')
+      }}
     presentation_apt_allowed_uris:
       - mirror+file:/etc/apt/apt-mirrors.txt
       - http://azure.archive.ubuntu.com/ubuntu/
@@ -99,19 +104,6 @@
         fail_msg: Unknown native Ubuntu mirror binding; retain it and repair the explicit input.
         quiet: true
 
-    - name: Rewrite a direct Azure archive binding to the reviewed mirror list
-      ansible.builtin.replace:
-        path: "{{ presentation_apt_root }}/sources.list.d/ubuntu.sources"
-        regexp: 'https?://azure\.archive\.ubuntu\.com/ubuntu/'
-        replace: 'mirror+file:/etc/apt/apt-mirrors.txt'
-        mode: "{{ presentation_apt_files.results[1].stat.mode }}"
-        unsafe_writes: false
-      when: >-
-        presentation_apt_source_uris
-        | intersect(['http://azure.archive.ubuntu.com/ubuntu/',
-                     'https://azure.archive.ubuntu.com/ubuntu/']) | length > 0
-      register: presentation_apt_source_rewrite
-
     - name: Read the exact reviewed native mirror list
       ansible.builtin.slurp:
         src: "{{ presentation_apt_root }}/apt-mirrors.txt"
@@ -128,6 +120,20 @@
             ]
         fail_msg: Unknown native mirror list; no endpoint was changed.
         quiet: true
+
+    - name: Rewrite only reviewed Deb822 URI fields to the mirror list
+      ansible.builtin.replace:
+        path: "{{ presentation_apt_root }}/sources.list.d/ubuntu.sources"
+        regexp: >-
+          {{ '(?m)^' ~ (item | regex_escape) ~ '(?=\n[^ \t]|\n?\Z)' }}
+        replace: >-
+          {{ item | regex_replace('https?://azure[.]archive[.]ubuntu[.]com/ubuntu/',
+                                  'mirror+file:/etc/apt/apt-mirrors.txt') }}
+        mode: "{{ presentation_apt_files.results[1].stat.mode }}"
+        unsafe_writes: false
+      loop: "{{ presentation_apt_source_uri_fields }}"
+      when: item is search('https?://azure[.]archive[.]ubuntu[.]com/ubuntu/')
+      register: presentation_apt_source_rewrite
 
     - name: Atomically remove only the reviewed Azure archive entry
       ansible.builtin.replace:
