@@ -1,5 +1,161 @@
 # Read-only native Git status
 
+## Hosted native fixture inputs (2026-10-27 UTC)
+
+Published source 9b01c62's Build40448994419 unit-3b job122011474870 fails both
+HEAD/owned-ref cases before the revision reader runs: the actual project SHA has
+40 characters, but the hosted source checkout has no attached branch. The
+separate current-state case exits128 during its initial native Git commit;
+that hosted excerpt does not retain stderr, so its exact hosted cause stays
+unknown. Unit-1b separately rejects the canonical ledger correctly through real
+Ansible, but its test expects an implicit MAKEFLAGS duplicate that is absent
+already in the pre-push hook snapshot.
+
+The repair owns only three complete unit owners: self_improve_integration_safety,
+worktree_state_guard and collection_hook_environment under tests/unit/test_*.py.
+The revision case reuses the established NativeWorkspace/private revision runner:
+real private attached Git supplies identity, while ROOT still supplies the
+complete actual project Make rule and original owner/header/SHA assertions.
+A child-only Git forwarding control executes actual detached Git for just the
+two literal source-root metadata queries; every other argv/environment/CWD and
+native Git status delegates unchanged. Active HEAD40/empty-branch witnesses run
+before the original case. No live project checkout is detached.
+
+The state control invokes the original case in a private -P child with copied
+environment, owned GIT_CONFIG_GLOBAL/useConfigOnly and no inherited identity or
+repository-redirect inputs. Its actual native128 stderr reports missing author
+identity and disabled email guessing. Two repository-local name/email commands
+repair that demonstrated fixture dependency. Default real current_state and all
+seven original assertions remain; this local RED does not recover the absent
+hosted stderr or prove that historical128's cause.
+
+The ledger case explicitly owns the same ledger payload in its copied child
+MAKEFLAGS, retaining the original CLI assignment, ordinary/-e inputs and every
+original assertion. A separate native transport control records key names,
+boolean payload equality and native Make origins, never carrier values. It
+observes command-line ledger origin in both modes, file MAKEFLAGS origin
+ordinarily and environment-override origin under -e. Both hook and collection
+receive the actual canonical MAKEFLAGS duplicate. That transport control retains
+its existing plugin opt-out/manual confinement boundary; the original four
+real-pytest_ansible cases separately prove enabled-plugin behavior. Canonical
+inputs still fail through Ansible/confinement, with both ledger keys visible;
+active-checkout inputs still collect three cases and publish only to the private
+local bare repository. Production sanitation, confinement and native failures
+are unchanged.
+
+All58 original qualified functions remain, with all258 original assertion
+expressions/messages retained. NativeWorkspace.env and HookFixture.environment
+remain repr=False; copied carriers still reach native children. The first strict
+check exposes five existing callback typing mismatches in the state owner:
+three list-only callbacks and two nullable cwd result inputs. Mechanical
+Sequence annotations and empty-string fallbacks conform to the native callback
+contract without changing assertion intent. The first registration check refuses
+only test_worktree_state_guard.py. Its approved literal is appended solely to the
+existing unchecked S98.4 row623 tail: all prior bytes, supporting line8,
+continuation624,2499 lines and328 IDs/states/order (188 checked/140 unchecked)
+remain. No task closes.
+
+### Actual bounded native evidence
+
+All rows below use installed Python3.11.14, fatal warnings and the native
+process observer, with180total/60quiet bounds and one reserved outer worker;
+nested native children stay within the admitted two-worker allowance.
+
+| Receipt relative to .gate-logs/observed/ | Pytest result/seconds | Native status/seconds |
+| --- | --- | --- |
+| v012-hosted-git-fixture-ast/v012-hosted-git-fixture-ast311-9b01c62-20261027.json | 1PASS /18.71 | 0 /20.031 |
+| v012-hosted-git-fixture-red/v012-hosted-git-fixture-red311-9b01c62-20261027.json | 3FAIL /5.32 | 2 /6.790 |
+| v012-hosted-git-fixture-green/v012-hosted-git-fixture-green311-9b01c62-20261027.json | 2FAIL,5PASS /26.48 | 2 /28.080 |
+| v012-hosted-git-fixture-green/v012-hosted-git-fixture-green311-native-make-9b01c62-20261027.json | 7PASS /26.39 | 0 /27.883 |
+| v012-hosted-ledger-transport/v012-hosted-ledger-transport311-9b01c62-20261027.json | 3PASS /22.33 | 0 /23.655 |
+| v012-hosted-fixtures-focus/v012-hosted-fixtures-focus311-9b01c62-20261027.json | 13PASS /36.66 | 0 /38.300 |
+
+The corresponding logs and pytest.jsonl artifacts share each receipt's stem.
+Exact sessions49793/34065/93263/34876/85961/67650 are drained and native
+observed-status confirms the recorded inactive state/status. Final focus trace
+contains29events/13 complete pairs with zero issues, unfinished cases or failure
+reports. Earlier expected failures remain in their own receipts and traces.
+
+The first repaired attempt's two failures belong only to the new nested control:
+the reused outer fixture PATH selects its recorder bin/make instead of native
+Make, returning empty successful output. Prepending the saved real Make directory
+after the exact Git-query shim corrects that control input; it does not repair
+production Make or relax the original output assertions.
+
+An optional private whole-file formatter then changes unrelated original
+formatting. The13-case focus executes those formatted bytes. A fixed native
+source comparison proves all three full module ASTs equal the exact minimal
+postimages; restoring those minimal postimages removes the unrelated formatting.
+The13-case receipt keeps its actual byte scope. Final whole-owner receiving must
+bind the restored minimal source, with Ruff CHECK and strict typing authoritative;
+no formatter-only requirement is invented.
+
+The complete deduplicated receiving union is the three changed owners plus
+test_legacy_integration_entrypoints.py, test_pytest_param_fixture_collisions.py
+and test_makefile_layout.py. Root admits bounded complete receiving after its
+staged content guard; independent source review proceeds separately alongside
+receiving and remains required before normal collection/commit. This bounded
+repair sequence supplies no frozen-candidate or canonical gate approval.
+
+### Complete receiving of the minimal source
+
+Root's exact five-path staged content guard passes native0/3.636s at its owned
+label v012-Git5-staged-content, run
+v012-Git5-staged-content311-9b01c62-20261027; its exact session32875 is drained.
+All three existing content hooks, staged line bounds and zero-production clone
+skip retain their native results. This guard precedes the final receipt-only
+feature update and must not be presented as admission of that later prose.
+
+The same complete six-owner union then runs on unchanged minimal working bytes:
+
+| Installed runtime | Pytest result/seconds | Native status/seconds | Full receiving run |
+| --- | --- | --- | --- |
+| Python3.11.14 | 240PASS /113.60 | 0 /116.367 | v012-hosted-fixtures-receiving311-9b01c62-20261027 |
+| Python3.12.15 | 240PASS /123.96 | 0 /127.078 | v012-hosted-fixtures-receiving312-9b01c62-20261027 |
+
+Both exact JSON receipts and corresponding logs/traces are under this peer's
+.gate-logs/observed/v012-hosted-fixtures-receiving/. There are no skips. Exact
+sessions99186/33744 are drained, and observed-status verifies inactive/passed/
+native0 for each actual owner. Each native trace contains483events/240 complete
+protocol pairs with zero issues, unfinished cases or failure reports. Those
+spans include fixtures and child waits; no CPU, speed or scheduling claim follows.
+
+Both watchers and actual commands explicitly select their installed Python/
+SYSTEM_PYTHON/environment and pinned UV0.13.1, fatal warnings, literal ID= and
+checkout-owned ledger/observations. They run sequentially with one reserved
+outer worker and the admitted native child allowance,600total/180quiet.
+Post-receiving source hashes confirm all three minimal code files and TASKS
+unchanged; original58 functions/258 assertion expressions/messages remain.
+No code/test edit occurs during either receiving run.
+
+Only this terminal-receipt prose changes afterward. Root owns final prose lint,
+restaging/content admission, independent final review and normal small source
+commits/collection. No production Python or coverage profile changes;
+unchanged85aggregate/75each-file LINE AND BRANCH on both runtimes, canonical
+gates, clean exact-SHA hosted repair, ZDD, promotion, deployment and release
+remain required. Neither240-case result is full release certification.
+
+### Primary and historical context
+
+[Git's user.useConfigOnly contract](https://git-scm.com/docs/git-config#Documentation/git-config.txt-useruseConfigOnly)
+requires configured identity instead of guessed name/email. The
+[actions/checkout README](https://raw.githubusercontent.com/actions/checkout/main/README.md)
+describes a detached-checkout caveat specifically for pull-request triggers;
+that context does not establish the cause or event of this workflow_dispatch.
+[Firsthand issue6](https://github.com/actions/checkout/issues/6), opened
+2019-08-12 and closed2019-12-10, reports an attached-branch difference against
+the older HCL v1 action. It supplies historical context only, with no current
+upstream defect or live-checkout cleanup permission inferred.
+
+Root's sole public research owner retrieves all three with HTTP200,
+native0/1.076s, at Main's
+.gate-logs/observed/v012-owned-git-fixture-public-context/
+v012-owned-git-fixture-public-context-20261027.json. Raw primary Git HTML,
+checkout README and issue6 API JSON remain in /tmp/gludd-v012-* files. These
+sources explain contracts and history; actual native REDs and unchanged original
+assertions supply the local causal evidence. New exact-source hosted receiving
+remains separate.
+
 ## Introduced fixture representations (2026-10-27 UTC)
 
 The original-source audit compares published

@@ -7,40 +7,34 @@ Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection 
 
 ## Current receiving record (2026-10-27 UTC)
 
-Receiving input snapshot: verified Main 9f4df32694085381e037a1bb17ad57685bf979c5
-is C 7eca8a3269fba7f25c1e72cd307e116db42f2b94 plus the reviewed CONFIG_REFERENCE FD row.
-Fixed privacy/typing donor 877dda03074ad6b8a095a998a15c7fe45ea8c60d and browser-witness
-donor 917e4679e7113d09ff05f36a8518d78b8be2a576 belong to the original-review repair peer.
-The resulting corrected Main source requires its own clean-SHA proofs; no future
-SHA or final-source approval is claimed. The first seven SESSION lines retain
-their fixed714 collection/source authority. Main9f4's normal transaction is
-58.278s; fresh collection131258/131282,24 deselected/0 errors,47.79s/native53.493s.
-The release-status record qualifies exact donor/collection receipt roots.
+Fixed receiving snapshot (2026-10-27 UTC): Main
+8eb3e5fb29fc298be259b6b3ca1dbbd0929a7843 contains the normal-publisher requirement
+for an accepted exact-source Build run after remote verification. Its Main narrow
+passes49 on each installed runtime; native receipts are listed in release status.
+Git fixture donor5e343834edf863e866138c546c15a75e26ca47ad is staged in this snapshot,
+with13 Main narrow passes on each runtime; its receiving commit and full22-owner
+acceptance remain pending here. These are fixed pre-commit facts, not a future SHA.
+The first seven SESSION lines retain their fixed714 source/collection authority.
 
-C's original3.12 runtime passes85.511s inside unchanged90/60, MAIN2351/HELP1/
-TAIL185 with actual join0/0/0; trace5088events/2537pairs has zero issues/failures.
-At C, native ledger0 open/12 repaired/50 resolved/167 runs is selected d506 local
-repair only. The older1-open/11-repaired snapshot is dated pre-C history.
-No new hosted request or hosted resolution is claimed. Retained a403 Build
-runtime failure, Molecule/Pages successes and skipped Pages deployment remain
-workflow_dispatch history, with no canonical push or deployment authority.
+D9b01c6296f2a24d39a95e0c6194bd118ac8824f8 retains APPROVE ORIGINAL SOURCE for its
+242-path original diff. Diagnostic attempt1 Build40448994419 ended8FAIL/19PASS/
+3SKIP; both runtime gates passed. Molecule40449089000 passed all6 jobs; Pages
+40449154482 passed3 validations and skipped deployment. Root's original observer
+timed out; a renewed observer followed actual additional completed jobs and
+retained the terminal failure. These workflow_dispatch results certify no deployment.
+Native Linux/comparison/private-policy/jobserver repair receipts are local evidence;
+the remaining four hosted failure families still require their native repair run.
+No newer hosted request is active at this fixed snapshot.
 
-C's241-path adverse audit remains. The focused privacy/typing/browser delta and
-receipt prose have source-only approval; final immutable Main242-path rebinding
-is pending. Four complete changed owners pass128 EACH on311/312 in the combined
-peer working snapshot before separate source checkpoints. Native strict4scope
-passes BOTH after the canonical collection_lock TYPE_CHECKING split. The new
-complete helper owner makes focus127<=128 and combined329=321 ordinary+same8
-E2E; these final plans remain unexecuted. Owning [pipeline](docs/features/GHA_PIPELINE_PROMOTION_AUDIT.md)
-and [browser](docs/features/PRESENTATION_JAVASCRIPT_COVERAGE.md) records hold details.
-
-Protected checkpoint 59e9c4292b8685076d98f2b4398c230ffd83cbe7 retains six predecessor WIP
-edits. All seven S98 tasks stay unchecked;133 backlog items are excluded and
-ratchet0 is unchanged. Corrected-source90/60, live admission, final original
-review/genuine development integration/focus127, canonical21600/global85-75
-LINE AND BRANCH BOTH, canonical exact-SHA push CI, master ZDD and fresh signed
-stable all-assets release remain pending. Consent/TOML inputs stay resolved;
-fixedf1 builds/smokes stay historical. Details: [release status](docs/releases/v0.1.2-implementation-status.md).
+Focus128 is at its unchanged128 cap; combined329 remains321 ordinary plus the same
+8 E2E. Both final plans are unexecuted. Independent final-source review, live
+admission, genuine development integration, canonical21600/global85aggregate-
+75per-file LINE AND BRANCH BOTH, canonical exact-SHA push CI, master ZDD deployment
+and fresh signed stable all-assets release remain pending. All seven S98 tasks
+stay unchecked;133 backlog items stay excluded and ratchet0 is unchanged.
+Earlier failed sources, receipts, protected checkpoints and fixedf1 artifacts
+retain their historical authority. Details:
+[release status](docs/releases/v0.1.2-implementation-status.md).
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 

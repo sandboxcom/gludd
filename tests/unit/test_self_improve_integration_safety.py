@@ -592,22 +592,25 @@ def test_active_owner_release_requires_exact_native_qualified_tuple(
 
 
 @pytest.mark.parametrize("reference", ["HEAD", "owned-ref"])
-def test_revision_reader_uses_an_existing_actual_project_make_owner(reference: str) -> None:
+def test_revision_reader_uses_an_existing_actual_project_make_owner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reference: str,
+) -> None:
     """The real complete project graph must supply the current immutable revision."""
-    environment = {**os.environ, "GIT_OPTIONAL_LOCKS": "0"}
+    workspace = _workspace(tmp_path, "candidate")
+    runner = _private_native_revision_runner(workspace, monkeypatch)
+    environment = _make_environment(workspace)
     expected = subprocess.run(
-        ["git", "rev-parse", "--verify", "HEAD"], cwd=ROOT, env=environment,
+        ["git", "rev-parse", "--verify", "HEAD"], cwd=workspace.main, env=environment,
         check=True, capture_output=True, text=True, timeout=10,
     ).stdout.strip()
     branch = subprocess.run(
-        ["git", "branch", "--show-current"], cwd=ROOT, env=environment,
+        ["git", "branch", "--show-current"], cwd=workspace.main, env=environment,
         check=True, capture_output=True, text=True, timeout=10,
     ).stdout.strip()
     assert len(expected) == 40 and branch
     selected = "HEAD" if reference == "HEAD" else f"refs/heads/{branch}"
     rules = _stanzas(compose_makefile(ROOT / "Makefile"))
     assert "git-show-commit" in rules
-    runner = runtime.MakeRunner(ROOT)
     native = runner.run("git-show-commit", {"C": selected}, read_only=True)
     assert native.returncode == 0, native.stdout + native.stderr
     lines = native.stdout.splitlines()
@@ -619,6 +622,71 @@ def test_revision_reader_uses_an_existing_actual_project_make_owner(reference: s
 
     assert actual == expected
     assert runner.operations[-1].argv[1] in rules, "a fabricated Make target is not an owner"
+
+
+
+@pytest.mark.parametrize("reference", ["HEAD", "owned-ref"])
+def test_revision_reader_uses_owned_git_when_source_is_detached(
+    tmp_path: Path, reference: str,
+) -> None:
+    """A detached source identity cannot replace the case's attached owned Git."""
+    detached_root = tmp_path / "detached-source"
+    detached_root.mkdir()
+    detached = _workspace(detached_root, "candidate")
+    detached.git_at(detached.main, "checkout", "--detach", "HEAD")
+    tools = tmp_path / "query-tools"
+    tools.mkdir()
+    forwarded = tmp_path / "forwarded-queries.jsonl"
+    shim = tools / "git"
+    shim.write_text(
+        f"#!{sys.executable}\nimport json, os, sys\nfrom pathlib import Path\n"
+        f"source = Path({str(ROOT)!r}).resolve()\n"
+        f"owned = {str(detached.main)!r}\n"
+        "args = sys.argv[1:]\n"
+        "if Path.cwd().resolve() == source and args in (\n"
+        "    ['rev-parse', '--verify', 'HEAD'], ['branch', '--show-current'],\n"
+        "):\n"
+        f"    with Path({str(forwarded)!r}).open('a', encoding='utf-8') as stream:\n"
+        "        stream.write(json.dumps(args) + '\\n')\n"
+        "    args = ['-C', owned, *args]\n"
+        f"os.execve({detached.git!r}, [{detached.git!r}, *args], dict(os.environ))\n",
+        encoding="utf-8",
+    )
+    shim.chmod(0o700)
+    environment = _make_environment(detached)
+    environment["PATH"] = os.pathsep.join([
+        str(tools), str(Path(detached.make).parent), environment["PATH"],
+    ])
+    for key in (
+        "PYTEST_ADDOPTS", "GLUDD_XDIST_TRACE_LOG",
+        "GLUDD_XDIST_TRACE_RUN_ID", "GLUDD_XDIST_TRACE_TRUNCATE",
+    ):
+        environment.pop(key, None)
+    head = subprocess.run(
+        ["git", "rev-parse", "--verify", "HEAD"], cwd=ROOT, env=environment,
+        check=True, capture_output=True, text=True, timeout=10,
+    ).stdout.strip()
+    branch = subprocess.run(
+        ["git", "branch", "--show-current"], cwd=ROOT, env=environment,
+        check=True, capture_output=True, text=True, timeout=10,
+    ).stdout.strip()
+    assert head == detached.git_at(detached.main, "rev-parse", "HEAD") and len(head) == 40
+    assert branch == "", "the native control must actively observe detached Git"
+    selector = (
+        str(Path(__file__).resolve())
+        + "::test_revision_reader_uses_an_existing_actual_project_make_owner["
+        + reference + "]"
+    )
+    result = subprocess.run(
+        [sys.executable, "-P", "-m", "pytest", selector, "-q", "-W", "error",
+         "-n", "0", "--maxprocesses", "1", "-o", "addopts=", "--tb=short",
+         "--basetemp=" + str(tmp_path / "nested-pytest")],
+        cwd=ROOT, env=environment, check=False, capture_output=True, text=True, timeout=90,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert [json.loads(line) for line in forwarded.read_text(encoding="utf-8").splitlines()] == [
+        ["rev-parse", "--verify", "HEAD"], ["branch", "--show-current"],
+    ], "the case must obtain Git identity from its fixture, keeping ROOT for source rules only"
 
 
 def _private_native_revision_runner(
