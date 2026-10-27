@@ -127,7 +127,7 @@ hand-authored entries for the core runtime variables.
 | `GLUDD_COLLECTION_LOCK_TIMEOUT` | Auto-indexed (see source) | — | optional | `scripts/collection_lock.py:53` |
 | `GLUDD_COMMIT_LOCK_ENFORCE` | Auto-indexed (see source) | — | optional | `scripts/test_hook_runtime.py:3729` |
 | `GLUDD_COMMIT_LOCK_PATH` | Auto-indexed (see source) | — | optional | `scripts/test_hook_runtime.py:3632` |
-| `GLUDD_COMMIT_TRANSACTION_FD` | File descriptor passed by the Make commit-transaction owner to the child Python commit helper; internal pipe used for serialized transaction state. | `""` | optional | `src/general_ludd/git_automation/locking.py:651` |
+| `GLUDD_COMMIT_TRANSACTION_FD` | Inherited file descriptor for the common-repository flock held by the native Make commit-transaction owner and its child helper. | `""` | optional | `src/general_ludd/git_automation/locking.py:699` |
 | `GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD` | Auto-indexed (see source) | — | optional | `scripts/test_hook_runtime.py:1581` |
 | `GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS` | Auto-indexed (see source) | — | optional | `scripts/test_hook_runtime.py:1582` |
 | `GLUDD_CONTAINER_RUNTIME` | Auto-indexed (see source) | — | optional | `scripts/mac_unified_memory_smoke.py:130` |
