@@ -719,3 +719,185 @@ class TestModuleExports:
         assert locking._DEFAULT_ACQUIRE_TIMEOUT > 0
         assert locking._DEFAULT_STALE_AFTER > 0
         assert locking._POLL_INTERVAL > 0
+
+
+@pytest.mark.skipif(not hasattr(os, "fork") or not locking._HAVE_FCNTL, reason="native POSIX fork/flock required")
+@pytest.mark.parametrize("disposal", ("drop", "exit", "enter", "locked-state"))
+def test_forked_async_handle_disposal_preserves_parent_mutex_and_reused_child_fd(tmp_path: Path, disposal: str) -> None:
+    """Dispose inherited async handles without losing parent or child-owned resources."""
+    import json
+    import sys
+    import textwrap
+
+    from stream_command import stream_command
+
+    repo = tmp_path / "owned-repository"
+    (repo / ".git").mkdir(parents=True)
+    probe = tmp_path / "owned_async_fork_disposal_probe.py"
+    probe.write_text(
+        textwrap.dedent(
+            r'''
+            import asyncio
+            import gc
+            import json
+            import os
+            import signal
+            import subprocess
+            import sys
+            import time
+            import warnings
+            from pathlib import Path
+
+            from general_ludd.git_automation import locking
+
+            repo, mode = Path(sys.argv[1]), sys.argv[2]
+            source = str(Path(locking.__file__).resolve())
+            competitor = """
+            import sys
+            from general_ludd.git_automation import locking
+            try:
+                with locking.git_repo_lock(sys.argv[1], timeout=0.2):
+                    pass
+            except TimeoutError:
+                raise SystemExit(23)
+            """
+
+            def compete():
+                result = subprocess.run(
+                    [sys.executable, "-W", "error", "-c", competitor, str(repo)],
+                    capture_output=True, text=True, timeout=5, env=os.environ.copy(),
+                )
+                assert not result.stdout and not result.stderr, (result.stdout, result.stderr)
+                return result.returncode
+
+            async def main():
+                handle = await locking.async_git_repo_lock(str(repo), timeout=2.0)
+                handle.__enter__()
+                assert len(locking._file_lock_fds) == 1
+                inherited_fd = next(iter(locking._file_lock_fds.values()))
+                report = repo / "owned-child-report.json"
+                marker = repo / "owned-child-descriptor"
+                marker.write_bytes(b"owned descriptor")
+                child = None
+                child_exited = False
+                child_status = None
+                guard_held = mode == "locked-state"
+                if guard_held:
+                    handle._state_guard.acquire()
+                try:
+                    with warnings.catch_warnings(record=True) as native_warnings:
+                        warnings.simplefilter("always", DeprecationWarning)
+                        child = os.fork()
+                    if child != 0 and guard_held:
+                        handle._state_guard.release()
+                        guard_held = False
+                    for warning in native_warnings:
+                        assert sys.version_info >= (3, 12)
+                        assert warning.category is DeprecationWarning
+                        assert "multi-threaded" in str(warning.message) and "fork()" in str(warning.message)
+                    if child == 0:
+                        code = 0
+                        unraisable = []
+                        sys.unraisablehook = lambda event: unraisable.append(type(event.exc_value).__name__)
+                        try:
+                            assert not locking._file_lock_fds and not locking._repo_locks
+                            replacement = os.open(marker, os.O_RDONLY)
+                            if replacement != inherited_fd:
+                                os.dup2(replacement, inherited_fd)
+                                os.close(replacement)
+                            refused = True
+                            if mode == "enter":
+                                try:
+                                    handle.__enter__()
+                                except RuntimeError:
+                                    pass
+                                else:
+                                    refused = False
+                            elif mode == "exit":
+                                handle.__exit__(None, None, None)
+                            del handle
+                            gc.collect()
+                            survived = os.fstat(inherited_fd).st_ino == marker.stat().st_ino
+                            os.close(inherited_fd)
+                            parent_blocked = False
+                            try:
+                                with locking.git_repo_lock(str(repo), timeout=0.2):
+                                    pass
+                            except TimeoutError:
+                                parent_blocked = True
+                            report.write_text(json.dumps({
+                                "descriptor_survived": survived,
+                                "parent_lock_blocked": parent_blocked,
+                                "inherited_enter_refused": refused,
+                                "source": source,
+                                "unraisable_types": unraisable,
+                            }))
+                        except BaseException:
+                            code = 71
+                        os._exit(code)
+                    deadline = time.monotonic() + 2.0
+                    while time.monotonic() < deadline:
+                        completed, status = os.waitpid(child, os.WNOHANG)
+                        if completed == child:
+                            child_exited = True
+                            child_status = os.waitstatus_to_exitcode(status)
+                            break
+                        time.sleep(0.01)
+                    if not child_exited:
+                        os.kill(child, signal.SIGKILL)
+                        os.waitpid(child, 0)
+                    held_competitor = compete()
+                finally:
+                    if guard_held and child != 0:
+                        handle._state_guard.release()
+                    if child and not child_exited:
+                        try:
+                            completed, _ = os.waitpid(child, os.WNOHANG)
+                        except ChildProcessError:
+                            completed = child
+                        if not completed:
+                            os.kill(child, signal.SIGKILL)
+                            os.waitpid(child, 0)
+                    handle.__exit__(None, None, None)
+                released_competitor = compete()
+                payload = {
+                    "child_exited": child_exited, "child_status": child_status,
+                    "held_competitor": held_competitor, "released_competitor": released_competitor,
+                    "source": source, "native_fork_warnings": len(native_warnings),
+                }
+                if report.exists():
+                    payload["child"] = json.loads(report.read_text())
+                print(json.dumps(payload), flush=True)
+
+            asyncio.run(main())
+
+            '''
+        ),
+        encoding="utf-8",
+    )
+    source_root = Path(locking.__file__).resolve().parents[3]
+    environment = os.environ.copy()
+    prefix = os.pathsep.join(str(source_root / name) for name in ("src", "scripts", ""))
+    inherited = environment.get("PYTHONPATH", "")
+    environment["PYTHONPATH"] = prefix + (os.pathsep + inherited if inherited else "")
+    log = tmp_path / "owned-probe.log"
+    status = stream_command(
+        [sys.executable, "-W", "error", str(probe), str(repo), disposal], log,
+        observed_root=tmp_path / "observed", label="async-fork-disposal", run_id=disposal,
+        heartbeat_seconds=0.1, quiet_seconds=0, max_seconds=15, retain_runs=3,
+        environment=environment, cwd=tmp_path,
+    )
+    output = log.read_text(encoding="utf-8")
+    assert status == 0, output
+    payload = json.loads(output)
+    assert payload["source"] == str(Path(locking.__file__).resolve())
+    assert payload["child_exited"] is True, payload
+    assert payload["child_status"] == 0, payload
+    assert payload["held_competitor"] == 23, payload
+    assert payload["released_competitor"] == 0, payload
+    child = payload["child"]
+    assert child["source"] == payload["source"]
+    assert child["descriptor_survived"] is True, child
+    assert child["parent_lock_blocked"] is True, child
+    assert child["inherited_enter_refused"] is True, child
+    assert child["unraisable_types"] == [], child

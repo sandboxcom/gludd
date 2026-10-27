@@ -1427,6 +1427,124 @@ development/master integration, deployment or v0.1.2 sign-off. The original
 85/75 line AND branch floors, cleanup/ZDD, eight promotion pins and90/60
 publication/runtime boundaries remain. All seven release tasks stay open.
 
+## Forked async-handle disposal (2026-10-27 UTC)
+
+The original-source audit of a403ed858bb561f7bbc8353c54ad057be4020f89
+found a release-blocking inherited async-handle hang. After a native async
+acquisition and fork, the child retained a wrapper whose executor thread
+existed only in the parent. Abandonment, explicit exit or entry could wait
+forever; an inherited locked state guard was a separate blocking boundary.
+The registered fork hook correctly closed copied descriptors and reset the
+registries, but later generator cleanup could still unlock or close that
+recycled child descriptor and release a parent-thread RLock.
+
+The isolated feature/v012-fork-lock-repair-20261026 checkout starts at that
+exact source. Workers now retain their creating PID. Foreign-process entry
+refuses before the state guard; inherited exit and abandonment invalidate the
+wrapper before touching the guard or executor. Submit, await, result and idle
+shutdown boundaries retain explicit PID checks. Generator cleanup changes
+depth/ownership, unlocks/closes the native descriptor and releases the RLock
+only in the acquiring process. Native fork registry/descriptor reset,
+same-process abandonment, cancellation cleanup, live-task refusal and
+completed-task ownership transfer retain their existing behavior.
+
+The additive canonical-owner regression runs the installed Python and actual
+native flock in an owned filesystem repository. Four complete modes cover
+drop, explicit exit, attempted entry and a state guard held across fork. The
+bounded parent waits for and reaps only its fork child; the outer native
+observer also owns descendant cleanup. Each mode checks child exit, a reused
+child descriptor surviving disposal, no unraisable cleanup exception and a
+fresh competitor returning23 while the parent holds the mutex, then0 after
+release. Child environments are copied with physical checkout imports and
+unrelated carriers retained. The known Python3.12 multithreaded-fork
+DeprecationWarning is caught and asserted locally; other warnings remain
+errors. No ambient environment values are recorded.
+
+Actual failing-first311 run v012-fork-lock-red311-a403-20261027 reports4FAIL
+in14.90s/native2/16.214s: all four children fail their bounded exit assertion,
+while the independent parent-held/released competitor checks still return23/0.
+Its native failed log, trace and receipt remain under
+.gate-logs/observed/v012-fork-lock-repair/. After the producer repair, exact
+green311 and green312 runs with the same suffix each pass4:7.66s/native9.141s
+and8.03s/native9.647s. Every exact session is drained and observed-status
+verifies inactive terminal native0 for GREEN and native2 for RED. These are
+90total/60quiet diagnostic controls, not runtime-admission or release proof.
+
+Ruff, strict production and canonical-test typing on both installed runtimes,
+the test environment-write guard and working-tree line limits pass. An initial
+new-test layout check refused six whitespace-only lines; a later strict check
+refused duplicate observer module aliases. Both private diagnostics are
+retained; only the new fixture layout/import was corrected, with every original
+test body and assertion preserved. The complete canonical, adversarial and
+handoff owners and unchanged original mutex coverage profile remain pending.
+Coverage keeps config/coverage_git_repository_mutex.ini, all original eight
+whole-file selectors plus complete handoff receiving,600total/180quiet and
+85aggregate/75per-file line and branch floors. Root owns the exact three-path
+staged-content guard, normal collection/commit and independent source review.
+The old a403 acceptance receipts do not clear this repair's new source:
+combined acceptance, canonical gate, exact-SHA hosted, deployment and v0.1.2
+release proof remain separate.
+
+### Complete receiving at the frozen repair input
+
+Root verified the exact three-path staged-content guard at
+.gate-logs/observed/v012-fork-lock-content/v012-fork-lock-content311-a403-20261027.json:
+native0/8.470s, three staged paths, secret/line checks passed and zero new
+clones. Root's actual source review approves the PID fences and additive
+native probe only. Following the preceding narrow-control checkpoint, all
+required receiving below completed without further producer or test edits.
+
+The complete three normal owners under tests/unit are
+test_git_automation_locking.py, test_git_automation_locking_adversarial.py and
+test_git_automation_locking_handoff.py. Each installed runtime passes63:
+Python3.11.14 takes11.58s/native12.767s; Python3.12.15 takes12.13s/native13.548s.
+Receipts are .gate-logs/observed/v012-fork-lock-owners/
+v012-fork-lock-owners311-a403-20261027.json and
+v012-fork-lock-owners312-a403-20261027.json, with sibling logs and pytest.jsonl
+traces. Each exact trace contains129events,63matching controller pairs,
+zero issues, zero unfinished cases and zero failure reports.
+
+The coverage profile retains all eight original complete owners listed in the
+2026-10-26 receiving record and adds the complete handoff owner. Its exact nine
+files under tests/unit are test_git_automation_locking.py,
+test_git_automation_locking_adversarial.py, test_git_locking.py,
+test_git_automation_deep.py, test_context_manager_audit_deep.py,
+test_make_commit_transaction.py, test_commit_observer_loading.py,
+test_commit_transaction_inputs.py and test_git_automation_locking_handoff.py.
+The normal three owners are also included in this profile. Native
+coverage-files uses unchanged config/coverage_git_repository_mutex.ini,
+600total/180quiet, fatal warnings, n0/maxprocesses1, literal ID= and the explicit
+installed runtime tuple with pinned UV0.13.1. Runtimes run sequentially in one
+reserved width1 cohort; no selection, source exclusion or floor was relaxed.
+
+Both profiles pass516 with no skips:311294.83s/native297.197s and
+312311.81s/native315.205s. Exact coverage-files receipts under
+.gate-logs/observed/coverage-files/ are
+20261027T012132Z-56379-993e0b69.json and
+20261027T012655Z-86635-493906ac.json respectively. Raw reports are
+.gate-logs/v012-fork-lock-mutex311-a403-20261027.json and
+.gate-logs/v012-fork-lock-mutex312-a403-20261027.json. Native audits
+.gate-logs/coverage-20261027T012628Z.json and
+.gate-logs/coverage-20261027T013209Z.json both pass the unchanged85aggregate/
+75per-file LINE and BRANCH requirements. Each measures exactly the repair
+checkout's canonical src/general_ludd/git_automation/locking.py, with no
+foreign or extra file:475/493lines,96.348884%;145/166branches,87.349398%.
+Each exact profile trace has1035events,516matching controller pairs, zero
+issues, zero unfinished cases and zero failure reports.
+
+Every execution session is drained. Native observed-status verifies passed,
+exit0, inactive and no termination reason for both normal owners and profiles.
+The earlier four-case RED remains failed/native2, with15trace events, four
+matching pairs and four failure reports; it is retained alongside the GREEN
+receipts. After terminal receiving, worktree-state still names
+feature/v012-fork-lock-repair-20261026 at the original full a403 source above,
+with exactly the three staged owned paths and zero unstaged/untracked paths.
+This bounded receipt appendix changes only the feature. Root must restage it
+and run fresh normal collection/commit. The existing practitioner evidence is
+retained without another HTTP lookup. Combined-candidate acceptance, the full
+global gate, new exact-SHA hosted proof, master deployment, artifacts and
+v0.1.2 release proof remain pending.
+
 ## Verification
 
 - `tests/unit/test_git_automation_locking.py` proves PID/thread ownership, fork
