@@ -1,5 +1,53 @@
 # GHA pipeline and agentic promotion audit
 
+## U complete receiving count failure and V conformance
+
+Published U4482072ab960426a91ab198a22ed1504900a28ad retains its normal72.640-second
+checkpoint and fresh131392 selected/131416 collected/24 deselected/0-error
+collection. Its clean-source runtime82.862 seconds, exact terminal archive and
+parent84.219-second repair owner passed. Family
+d5b8783d8fa968c3eec9b4efff1a5ec84f632e5fb575e3d448ed3134ec349de4 is locally REPAIRED.
+Normal publication194.389 seconds verified the exact remote SHA and accepted
+Build40513368737; native parallel dispatchers accepted Molecule40513728636 and
+Pages40513571271. The retained native step snapshot shows the311 whole gate
+passed and both runtimes passed runtime/archive/summary/upload. Complete runs,
+canonical push, deployment and release proof remain separate required outcomes.
+
+The complete13 ordinary owners plus logical Make AST failed3/778 on EACH
+installed runtime:311263.02/native264.975 and312276.20/native278.189 seconds.
+All three failures are the original parameters of
+`test_native_reviewed_finalization_executes_in_bounded_early_admission`:
+its independent TAIL count remained15 after U intentionally added selector16.
+The eight promotion pins did not cover this whole owner. Prior source-only
+approvals missed this literal; retain those approvals and the adverse correction.
+Both failed receipts remain under `v012-U-ordinary13` with exact IDs
+`v012-U-ordinary13-311-4482072-20261027` and
+`v012-U-ordinary13-312-4482072-20261027`. Each trace has1725events/812pairs,
+zero issues/unfinished and13 mixed failure reports across5 nodes: actual3 outer
+failures and expected nested control failures are distinct. Trace ownership
+of those additional31 child pairs is a separate bounded source diagnosis.
+
+V changes only that assertion's count15 to16. All54 functions/336 assertion
+nodes, selector occurrence, last-four order, MAIN/HELP exclusions and original
+90/60/full-gate assertions remain. Exact code hash
+952305c2d6c4105184f0bfacdd184215b1d69a32e8dc377c981c71d72e1a2534 has independent
+source approval; the additional16-owner literal/AST audit found no other stale
+TAIL/union/family count within its bounded scope. Complete changed owner plus
+logical Make AST passes129 EACH:31125.79/native27.155 and31227.26/native28.666
+seconds,261events/129pairs/zero issues/failures/unfinished. Exact native IDs are
+`v012-V-tail-count-green311-4482072-20261027` and
+`v012-V-tail-count-green312-4482072-20261027`, label `v012-V-tail-count`.
+Ruff, configured strict typing and test-environment-write checks pass.
+
+The separate complete12-owner/four-source coverage attempts passed574 EACH
+but failed aggregate branch85:311726/856 and312727/856; every file passes75.
+Native failed audits `.gate-logs/coverage-20261027T134053Z.json` and
+`.gate-logs/coverage-20261027T134103Z.json` remain failed. New meaningful archive
+path/required-role controls are only proposed; no production or floor changes.
+Normal source checkpoint, broader receiving, fresh exact-SHA diagnostics,
+focus132/128 HOLD, combined333, genuine integration, canonical21600/global
+coverage, master ZDD, complete signed artifacts and all seven S98 proofs remain.
+
 ## Working U native archive contract repair
 
 Fixed pre-commit source snapshot,2026-10-27 UTC.
