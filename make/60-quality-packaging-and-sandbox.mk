@@ -1015,7 +1015,7 @@ qa: lint typecheck test healthcheck
 	@echo "QA gate passed."
 
 validate: lint ansible-syntax healthcheck check-plugin-liveness
-	@ERRS=$$(MYPYPATH="$$(pwd -P)/src:$$(pwd -P)/scripts" $(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); ERRS=$${ERRS:-0}; \
+	@ERRS=$$(MYPYPATH="$$(pwd -P)/src:$$(pwd -P)/scripts$${MYPYPATH:+:$$MYPYPATH}" $(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); ERRS=$${ERRS:-0}; \
 	if [ "$$ERRS" -le "$(MYPY_MAX)" ]; then echo "typecheck: OK ($$ERRS errors, baseline $(MYPY_MAX))"; else echo "typecheck: FAIL ($$ERRS errors > baseline $(MYPY_MAX))"; exit 1; fi
 	@$(UV) run python -m pytest tests/ $(_XD) -q > /tmp/gludd-validate.txt 2>&1; EXIT=$$?; \
 	if [ $$EXIT -eq 0 ]; then echo "test: PASS"; else echo "test: FAIL (non-zero exit)"; exit 1; fi

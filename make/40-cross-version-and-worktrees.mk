@@ -261,10 +261,10 @@ _gate-refresh-body:
 	$(MAKE) --no-print-directory test-hook-runtime > .gate-logs/hook-runtime.log 2>&1 && echo "PASS" >> "$$STATUS_WORK" || (echo "FAIL" >> "$$STATUS_WORK" && touch .gate-failed && tail -30 .gate-logs/hook-runtime.log); \
 	echo "=== GATE PHASE: typecheck ==="; \
 	printf "typecheck " >> "$$STATUS_WORK"; \
-	TC_ERRS=$$(MYPYPATH="$$(pwd -P)/src:$$(pwd -P)/scripts" $(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); \
+	TC_ERRS=$$(MYPYPATH="$$(pwd -P)/src:$$(pwd -P)/scripts$${MYPYPATH:+:$$MYPYPATH}" $(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); \
 	TC_ERRS=$${TC_ERRS:-0}; \
 	if [ "$$TC_ERRS" -le "$(MYPY_MAX)" ]; then echo "PASS $$TC_ERRS" >> "$$STATUS_WORK"; else echo "FAIL $$TC_ERRS" >> "$$STATUS_WORK" && touch .gate-failed; fi; \
-	echo "=== GATE PHASE: collect ==="; \\
+	echo "=== GATE PHASE: collect ==="; \
 	printf "collect " >> "$$STATUS_WORK"; \
 	$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> "$$STATUS_WORK" || (echo "FAIL collection-errors" >> "$$STATUS_WORK" && touch .gate-failed); \
 	if [ -n "$$OLD_TEST" ] && echo "$$OLD_TEST" | grep -q "PASS"; then echo "$$OLD_TEST" >> "$$STATUS_WORK"; else \

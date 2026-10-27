@@ -1001,3 +1001,165 @@ receipts retain the older recipe input. Fresh full behavior, complete receiving
 on both runtimes, staged guard, source approval and normal collection remain
 required for the repaired input. No full-gate, canonical push, deployment or
 release proof is supplied by these focused passes.
+
+## Original-source compatibility typing boundaries (2026-10-27 UTC)
+
+The original-source audit compares immutable
+a403ed858bb561f7bbc8353c54ad057be4020f89 against development
+82db11b57b254c1ca1e035975b5cc86253e2fed5. It holds source approval for five
+compatibility package-mypy commands that prepend the physical checkout's src and
+scripts but discard the inherited MYPYPATH suffix: gate, gate-lite,
+typecheck-all, gate-refresh's internal body and validate. The canonical
+typecheck and pre-commit owners above already retain that suffix. Configured
+typings, installed dependencies and the original phase/error-count policies must
+remain; replacing source precedence with an installed editable is not a repair.
+
+The same audit finds two trailing backslashes on the gate-refresh collect
+announcement where the original shared shell requires one. This is a separate
+shell-continuity input, not an explanation of any earlier ninety-second timeout.
+A private proposed repair changes only those five bindings and that continuation.
+Root registered feature/v012-typing-boundary-repair-20261026 at the exact a403
+source in the preserved integration-safety worktree. Main and the old source and
+proof references remain separate; this paragraph supplies no native merge,
+candidate, gate or release authority.
+
+The existing mypy fixture keeps its full copied Make include graph, real
+installed UV/Python/mypy, active package/helper/configured stub and owned inherited
+carrier. Seventeen predecessor cases and every original assertion remain.
+Ten additional ordinary/-e controls use the actual mypy command from each complete
+native rule. Two further controls execute the complete gate-refresh body with
+the native PHONY/provider context and owned argv-only substitutes for unrelated
+children, asserting collection, retained test/smoke rows and terminal status.
+The fixture's status is not a signed gate receipt. Root reserved one serial
+test cohort. The actual failing-first results below precede every production
+repair.
+
+Non-pytest preparation passes Ruff, the bare-environment-write guard and the
+tracked working-file line limit. An initial strict test-owner check reports
+no-any-return in the new regex helper. Explicit list-of-string annotations for
+its actual string matches resolve that error; the unchanged strict owner then
+passes. No assertion or typing policy changes. The earlier private proposal and
+that failed diagnostic retain their actual scope.
+
+The already retrieved mypy import-order/stub guidance and firsthand issue13214
+above provide historical context only. The native same-entrypoint regression
+must establish this project's actual cause; no new public retrieval or current
+upstream bug is claimed. Canonical source identity, unrelated carriers, native
+statuses, fatal warnings, all coverage and ZDD guards, focus600/3600,
+runtime90/60 and full-release21600 remain unchanged. The receipts below establish
+the narrow regression and complete affected-owner receiving; independent review
+approves only this source. Normal collection/commit, exact-SHA gate/hosted,
+artifact/deployment and promotion proofs remain separate and pending.
+
+### Actual current-source RED before the six native edits
+
+The logical-Makefile AST control passes one case in19.21s/native20.444s:
+v012-typing-boundary-ast/v012-typing-ast311-a403-20261027.json. Its native
+trace has5 events/1 complete pair, zero issues, unfinished tests or failures.
+
+The first twelve controls all fail in4.96s/native6.367s:
+v012-typing-boundary-red/v012-typing-red311-a403-20261027.json.
+Ten actual package commands report one lost retained-mypy-carrier import;
+both complete refresh bodies reach the collect announcement and fail with a
+stray backslash command, native127/Make2. Every case reaches its intended
+assertion, with no setup/collection failure. The trace has39 events/12 pairs,
+zero issues/unfinished and twelve expected failure reports.
+
+That run also shows the existing fixture selecting UV from PATH. Its watcher
+and actual test-files CMD were pinned, but that downstream selection does not
+prove the fixture's own UV pin. The fixture now honors explicit inherited UV,
+falling back to PATH only when it is unset. All original assertions remain.
+With actual child argv now naming pinned UV0.13.1, the same twelve controls
+again fail in4.78s/native6.093s:
+v012-typing-boundary-red/v012-typing-pin-red311-a403-20261027.json.
+The same import and shell failures remain, with the same39/12/zero-issues/
+zero-unfinished/twelve-failure trace counts. Both exact sessions drained and
+their native failed/inactive/exit2 receipts were verified before production
+changed. No version-dependent cause or speed improvement is inferred.
+
+Six singleton native edits now preserve the five physical-source prefixes plus
+their inherited suffix and restore the original single collect continuation.
+Readback hashes of all four Make fragments match the independently proposed
+postimages. No original error-count baseline, native status, phase, test,
+selector, timeout, coverage, cleanup or promotion policy is changed. All logs,
+JSON and trace paths above are relative to this checkout's .gate-logs/observed.
+The following repaired-source receipts establish narrow GREEN and complete
+receiving on both installed runtimes; they do not supply a full gate or release.
+
+The first native registration check refuses two existing paths: this feature
+and the complete mypy test owner. No GREEN test starts after that failed static
+input. Root then authorizes only their exact administrative addition to the
+existing supporting integration scope on TASKS line8. The native registration
+owner passes all seven changed paths; ledger validation retains188 checked/
+140 unchecked. An independent native diff contains exactly one removed and
+one added plain support line, no checkbox change and no other TASKS edit, so
+all328 IDs/states/order and the existing2499-line count remain. No task tick,
+new paragraph, release-state update or guard bypass is introduced.
+
+### Repaired-source acceptance and remaining proofs
+
+The current logical-Makefile control plus all twelve new native regressions
+pass thirteen cases in24.51s/native26.005s on installed3.11:
+v012-typing-boundary-green/v012-typing-green311-a403-20261027.json.
+Its trace has29 events/13 complete pairs, zero issues, unfinished tests or failure
+reports. The exact session drained; observed-status verifies inactive/passed/0.
+The five carrier and one continuation edits follow the actual pinned-UV RED
+above. They introduce no runtime-cohort routing change.
+
+Cheap repaired-source checks pass Ruff, the complete changed test owner's strict
+typing, the environment-write guard, working line limits,303 target contracts,
+the1181-target logical layout/parity checks and seven-path task registration.
+The preserved peer environment lacks locked Rumdl, so its native Markdown owner
+refuses before linting. No install or environment substitution follows.
+Root authorizes Main's existing locked Markdown owner with its unchanged config
+against these exact two absolute peer documents; that two-file check passes.
+The source-only review independently reads all seven frozen implementation
+paths, retaining all seventeen predecessor cases and their predicates, and gives
+APPROVE SOURCE ONLY. The following receipt-only prose is a later bounded input.
+
+Complete affected-owner receiving uses all nineteen whole-file selectors below
+with installed UV0.13.1, fatal warnings, a serial outer pytest controller, explicit runtime
+in both watcher and child CMD, literal ID= and checkout-owned ledger/observations.
+No filter or narrowed class substitutes for an owner. The runtimes run serially:
+
+- Installed3.11:970 passed, zero skips, pytest316.57s/native320.300s;
+  v012-typing-boundary-receiving/v012-typing-receiving311-a403-20261027.json.
+- Installed3.12:970 passed, zero skips, pytest332.16s/native335.747s;
+  v012-typing-boundary-receiving/v012-typing-receiving312-a403-20261027.json.
+
+Both exact sessions drain and their native inactive/passed/exit0 states are
+verified. Each complete trace has2119 events/1009 finished pairs, zero issues
+and zero unfinished tests. Each retains ten failure reports from the same three
+original nested selected-failure/warning node IDs; all970 outer cases pass.
+The trace summary explicitly reports populated-with-failures. These nested
+controls and elapsed spans supply no performance or timeout-cause claim.
+Production Make and test bytes stay frozen through both profiles.
+
+```text
+tests/unit/test_mypy_worktree_source_identity.py
+tests/unit/test_makefile_layout.py
+tests/unit/test_makefile_syntax.py
+tests/unit/test_make_target_contract.py
+tests/unit/test_check_make_target_contract.py
+tests/unit/test_makefile_targets_deep.py
+tests/unit/test_makefile_audit_deep.py
+tests/unit/test_make_uv_execution_boundary.py
+tests/unit/test_gate_status_attestation.py
+tests/unit/test_gate_run_lock.py
+tests/unit/test_development_merge_forward_targets.py
+tests/unit/test_legacy_integration_entrypoints.py
+tests/unit/test_gate_failure_promotion.py
+tests/unit/test_admission_cold_start_selection.py
+tests/unit/test_runtime_admission_scheduling.py
+tests/unit/test_runtime_publish_admission.py
+tests/unit/test_precommit_quality_guards.py
+tests/unit/test_root_make_startup_probes.py
+tests/unit/test_pytest_param_fixture_collisions.py
+```
+
+The one reserved pytest slot is released after exact3.12 status/trace verification.
+Root still owns the final staged content guard, normal collection/hooks and
+substantive seven-path commit, followed by native integration and required
+candidate review/combined acceptance/full-gate/exact-SHA hosted, artifact,
+deployment, ZDD and promotion proofs. This local receiving does not approve the
+immutable original a403 source or close a release task.
