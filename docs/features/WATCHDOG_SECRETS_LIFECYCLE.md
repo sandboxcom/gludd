@@ -1,5 +1,88 @@
 # Watchdog Secrets Scan Lifecycle
 
+## Native async-gate inherited-signal boundary (2026-10-27 UTC)
+
+Independent review of published a403ed858bb561f7bbc8353c54ad057be4020f89
+finds scripts/gate_async.sh resetting INT/TERM only inside a short-lived Python
+child. That cannot change Bash's inherited dispositions or blocked mask. Its
+test fixture had reset signals before Bash and changed the original group-INT
+case to wrapper-only, masking the production boundary.
+
+The isolated feature/v012-signal-boundary-repair-20261026 starts at that exact
+source. Tests first restore the original group-INT call and ten-second child
+communication bound, remove the fixture reset and add real exec inheritance
+controls. All original development and a403 assertions/test functions remain.
+The native host RED is 9FAIL/5PASS in82.69s, watched native2/84.038s:
+.gate-logs/observed/v012-signal-boundary-red/
+v012-signal-boundary-red311-a403-20261027.json. Its exact session2199 is drained;
+observed-status verifies inactive/failed2. Four active unguarded Bash controls
+and original group-INT pass. All eight dirty group/wrapper cases retain their
+ten-second TimeoutExpired failures. The ninth failure executes the owned CWD
+signal.py payload in the old non-P bootstrap, after a successful active witness.
+These are actual source failures, not sandbox process-permission failures.
+
+The repair stays in the same wrapper. Selected SYSTEM_PYTHON -P probes only
+inherited INT/TERM state before any lock/status/child ownership. Dirty state
+triggers same-PID exec of that Python, native disposition/mask reset, then
+os.execve of the same actual Bash/script/arguments with a copied environment.
+The next probe observes clean state. No environment sentinel or bypass flag is
+added; -c preserves stdin. The original body from REF onward remains byte-exact,
+including PID/group/session, locks, full gate command, native status, signal
+cleanup and escalation. Unrelated environment and signal-mask carriers remain.
+
+Ruff, strict complete test-owner typing, the unchanged test-environment guard,
+shell syntax and working-file line limits pass. The native Make-reading AST
+runs first in repaired focus:15PASS20.30s/native21.541s at
+.gate-logs/observed/v012-signal-boundary-green/
+v012-signal-boundary-green311-a403-20261027.json. Exact session92403 is drained;
+observed-status verifies inactive/passed0. Its trace has33events/15pairs,
+zero issues, unfinished cases or failure reports; RED retains40events/14pairs
+and9failures. These spans establish no CPU or performance improvement.
+The native Markdown owner initially refuses a missing peer .venv/bin/rumdl;
+authorized reuse of the verified Main linter checks the exact peer file and
+unchanged policy successfully, without sync/install or runtime override.
+Both complete consumers, tests/unit/test_gate_async.py and
+tests/unit/test_shell_scripts_deep.py, pass 173 cases each with no skips:
+Python 3.11 in 5.18s/native 6.500s and Python 3.12 in 6.00s/native 7.397s.
+Their receipts are under .gate-logs/observed/v012-signal-consumers/:
+v012-signal-consumers311-a403-20261027.json and
+v012-signal-consumers312-a403-20261027.json. Exact sessions 56388 and 92601
+are drained; observed-status verifies inactive/passed0 for each. Each trace
+has 349 events/173 pairs and zero issues, unfinished cases or failure reports.
+These are focused behavior receipts, with no CPU or speed claim.
+
+Independent code/test and research review approves source only. Root's earlier
+three-path staged content guard passed native0 in 7.742s before the research
+and final receipt prose. Final restaging/content guard, normal fresh collection
+and the small source commit remain Root-owned and pending.
+Every watcher and child uses the same explicit installed runtime, pinned UV0.13.1,
+literal ID= and checkout-owned ledger/observation paths. No Python production
+coverage profile is changed; canonical global85/75 line AND branch, combined
+acceptance, full gate, exact-SHA hosted/promotion, ZDD and complete release
+proofs remain required. The Root-owned Build40427263941 and
+Molecule40427577982 dispatches select a403, not this uncommitted repair, and
+do not certify its source.
+
+### Inherited-signal research and proof limits
+
+The [2017 firsthand process-group SIGINT report](https://unix.stackexchange.com/questions/401169/sending-sigint-to-process-groups-sometimes-gets-ignored)
+describes ignored interrupts through nested/background Bash. It is historical
+operational context, not proof of a current Bash defect or Gludd's cause.
+Our active native inheritance controls and the retained source RED establish
+this repository's boundary independently.
+
+The [Bash signal manual](https://www.gnu.org/software/bash/manual/html_node/Signals.html)
+describes ignored INT/QUIT in asynchronous commands when job control is off.
+[POSIX exec](https://pubs.opengroup.org/onlinepubs/9799919799/functions/exec.html)
+retains ignored dispositions and the calling thread's signal mask across exec.
+[Python's pthread_sigmask contract](https://docs.python.org/3.12/library/signal.html#signal.pthread_sigmask)
+changes the calling thread's mask. Those boundaries explain why a short-lived
+child cannot reset its Bash parent and why the repair resets the actual process
+before re-entering the same Bash script. Root's bounded public retrieval
+returned HTTP200 for these sources; raw research remains at
+/tmp/gludd-v012-signal-public-research-20261026. External context supplies no
+test, global coverage, hosted or deployment proof.
+
 ## Ownership and proof boundary
 
 S98.4 support begins at reviewed development

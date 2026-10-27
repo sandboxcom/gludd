@@ -28,21 +28,37 @@
 
 set -euo pipefail
 
-# Reset inherited signal disposition/mask before setting traps.  Some callers
-# (e.g. pytest-xdist workers) may leave SIGINT blocked or ignored; without this
-# reset the INT/TERM traps below would not fire and the wrapper would hang.
-python3 - <<'PY'
+# A child cannot repair its parent's inherited signal state. Probe without
+# consuming stdin; when needed, replace this same process twice before locks.
+gludd_gate_signal_state=0
+"${SYSTEM_PYTHON:-python3}" -P -c '
 import signal
-for sig in (signal.SIGINT, signal.SIGTERM):
-    try:
-        signal.signal(sig, signal.SIG_DFL)
-    except (ValueError, OSError):
-        pass
-    try:
-        signal.pthread_sigmask(signal.SIG_UNBLOCK, [sig])
-    except (ValueError, OSError):
-        pass
-PY
+import sys
+
+watched = (signal.SIGINT, signal.SIGTERM)
+blocked = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+raise SystemExit(75 if any(
+    signal.getsignal(signum) == signal.SIG_IGN or signum in blocked
+    for signum in watched
+) else 0)
+' || gludd_gate_signal_state=$?
+case "${gludd_gate_signal_state}" in
+    0) ;;
+    75)
+        exec "${SYSTEM_PYTHON:-python3}" -P -c '
+import os
+import signal
+import sys
+
+watched = (signal.SIGINT, signal.SIGTERM)
+for signum in watched:
+    signal.signal(signum, signal.SIG_DFL)
+signal.pthread_sigmask(signal.SIG_UNBLOCK, watched)
+os.execve(sys.argv[1], sys.argv[1:], os.environ.copy())
+' "${BASH}" "$0" "$@"
+        ;;
+    *) exit "${gludd_gate_signal_state}" ;;
+esac
 
 REF="${1:-}"
 
