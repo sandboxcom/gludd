@@ -1200,6 +1200,115 @@ approval, ancestry result, collection, canonical full gate, exact-SHA hosted
 CI, deployment, capacity clearance or release completion. Existing coverage,
 ZDD, promotion and final-proof guards remain. Local validation remains distinct from those authorities.
 
+### Hosted inherited gate-candidate boundary (2026-10-27 UTC)
+
+Published D9b01c6296f2a24d39a95e0c6194bd118ac8824f8 Build40448994419
+unit-2 job122011474948 fails the original nine same/equal-tree/different cases
+across CLI/environment/-e. Each receives an unexpected first Git argv
+rev-parse HEAD before its required two readonly cat-file calls and diff.
+Root retains the exact native failure context at
+/tmp/gludd-v012-D-failed-test-context-unit-2-20261027.log.
+
+The full Make graph eagerly assigns GATE_CANDIDATE_SHA with :=. An absent or
+empty inherited value evaluates its Git HEAD fallback during parsing, before
+the explicit comparison recipe. A populated local Make carrier had hidden it.
+The actual native nine cases reproduce unchanged D with a controlled empty
+carrier:9FAIL7.58s/native2/8.784s at .gate-logs/observed/
+v012-git-compare-hosted-red/v012-git-compare-hosted-red311-D-empty-20261027.json.
+Exact session94426 is drained; inactive/failed2 and the actual nested command/
+180total60quiet/runtime identity are verified. Its30events/9pairs have zero
+issues/unfinished and nine failure reports. No original assertion is changed.
+
+Additive owned missing/empty/pinned controls retain copied environments,
+unrelated carriers and all index/ref/HEAD/working-byte assertions. Before repair
+they report6FAIL/9PASS11.21s/native2/12.622s at
+v012-git-compare-carrier-red/v012-git-compare-carrier-red311-D-controls-20261027.json
+under the same checkout's .gate-logs/observed. Session77622 is drained and its
+inactive/failed2 status is verified;39events/15pairs have zero issues/unfinished
+and six failures. All three pinned comparison controls and six actual native
+release gate-admission-config ordinary/-e positives pass on the old source.
+
+Only the exact git-compare-commits goal now skips this unrelated eager capture.
+The assignment and every other goal's candidate default/capture stay intact.
+Existing raw40hex/multiple-goal refusals, native readonly argv/statuses, safe
+import boundary, supplied values and index/ref preservation remain. No gate
+family, phase, selector, schedule, timeout or coverage setting changes.
+The repaired source runs the logical-Makefile AST first, then all original nine
+cases with an explicit empty carrier and all fifteen added controls:25PASS in
+37.87s/native0/39.440s at .gate-logs/observed/v012-git-compare-hosted-green/
+v012-git-compare-hosted-green311-D-empty-controls-20261027.json. Exact session
+49410 is drained; inactive/passed0 and actual nested command/bounds are verified.
+Its53events/25pairs have zero issues, unfinished nodes or failure reports.
+
+Native Ruff CHECK, strict test-owner typing BOTH, environment-write guard,
+303target contract and working-line policy pass. The original complete D test
+byte prefix, all16 original functions and65 assertion ASTs remain exact; only
+two new functions are appended. An optional private formatter diagnostic is
+not repository authority: its whole-file formatting was reverted to that exact
+D prefix. A documentation transport UTF8 refusal occurred before any write;
+corrected literal transport is retained separately from behavior RED.
+The real registration guard refused only the new active comparison test path.
+One existing blank TASKSline9 now names that exact owned support scope, retaining
+2499lines, all328 IDs/states/order188checked140unchecked and exact protected
+line8/privacy623/resource624 bytes. Native registration passes all four paths;
+ledger validation passes. The peer's missing locked Rumdl refuses before lint;
+Root's sanctioned existing Main owner checks the exact peer feature+TASKS and
+unchanged policy successfully, native0/23ms, before this receipt-only prose.
+
+Root's exact four-path staged-content guard passes native0/8.875s at
+.gate-logs/observed/v012-G4-staged-content/
+v012-G4-staged-content311-9b01c62-20261027.json; its exact session61997 is drained
+and inactive. Independent review approves this frozen four-path source only,
+including all original test bodies, the sole Make guard and TASKS invariants.
+That guard and review precede this final receipt-only feature reconciliation.
+
+Complete eleven-whole-owner receiving passes414cases with zero skips on EACH
+installed runtime: CPython3.11.14 takes229.85s/native0/234.844s, and3.12.15 takes
+230.82s/native0/236.028s. Receipts under this checkout's
+.gate-logs/observed/v012-git-compare-consumers/ are
+v012-git-compare-consumers311-D-20261027.json and
+v012-git-compare-consumers312-D-20261027.json. Exact sessions82130/89414 are drained;
+both observed statuses are inactive/passed0 with their actual nested commands
+and1800total/180quiet limits verified. Each trace has831events/414paired nodes,
+zero issues, unfinished nodes or failure reports. Both layers select the same
+installed interpreter and pinned uv0.13.1; fatal warnings, n0/width1, literal ID=,
+checkout-owned ledger/observations and the ordinary native harness remain.
+Missing/empty/pinned candidate inputs belong to their individual controls;
+complete receiving does not impose an empty candidate on unrelated consumers.
+
+The deduplicated complete owners, all under tests/unit/, are:
+
+```text
+test_git_compare_commits.py
+test_canonical_release_gate.py
+test_gate_background_targets.py
+test_gate_async.py
+test_gate_run_lock.py
+test_gate_preflight_aggregation.py
+test_release_proof_admission_target.py
+test_runtime_publish_admission.py
+test_fast_resumable_gate_admission.py
+test_makefile_layout.py
+test_make_target_contract.py
+```
+
+Only this feature's receipt prose changes after terminal receiving; passed code
+tests are not repeated for metadata. Root owns final restaging/content checks,
+normal fresh collection/commit and integration. Global85aggregate/75each-file
+LINE AND BRANCH BOTH, canonical full gate, new exact-SHA hosted/promotion, ZDD
+and signed release proofs remain required and are not supplied by this repair.
+
+The [GNU simply expanded-variable manual](https://www.gnu.org/software/make/manual/html_node/Simple-Assignment.html)
+states that := expands variable/function references when the definition is
+parsed. The [firsthand2018 at-most-once question](https://stackoverflow.com/questions/50771834/how-to-get-at-most-once-semantics-in-variable-assignments)
+reports a shell assignment executing even when the selected target does not
+need its variable. That is long-lived context, not an upstream defect or this
+repository's causal proof. The native nine-case RED supplies that proof;
+no memoization/eval technique from the discussion is adopted. Root's bounded
+public retrieval returns HTTP200/200, native0/.970s, with primary HTML and forum
+body retained under /tmp/gludd-v012-gnu-immediate-*-20261027.*. External retrieval
+is diagnostic context, not acceptance, gate, deployment or release evidence.
+
 ### Native local validation (2026-10-24 UTC)
 
 The isolated source base is 31de23bbd8260528dcaba64cac7da1904829c29d on

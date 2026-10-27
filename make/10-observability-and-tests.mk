@@ -1043,7 +1043,10 @@ pants-unit-cache-nightly:
 .NOTPARALLEL: gate gate-refresh
 
 GATE_TEST_PROFILE ?= native
+# Explicit commit-tree review does not need the unrelated current gate HEAD.
+ifneq ($(MAKECMDGOALS),git-compare-commits)
 GATE_CANDIDATE_SHA := $(or $(GATE_CANDIDATE_SHA),$(shell git rev-parse HEAD 2>/dev/null))
+endif
 GATE_EXACT_SHA_RESUME ?= 1
 GATE_MAX_FILES_PER_BATCH ?= 32
 ifeq ($(GATE_TEST_PROFILE),release)
