@@ -576,3 +576,118 @@ def test_native_ansible_atomic_write_failure_preserves_inputs(tmp_path: Path) ->
         assert sorted(path.name for path in apt_root.iterdir()) == ["apt-mirrors.txt", "sources.list.d"]
     finally:
         apt_root.chmod(0o700)
+
+
+@pytest.mark.parametrize(
+    "azure_uri",
+    [
+        "http://azure.archive.ubuntu.com/ubuntu/",
+        "https://azure.archive.ubuntu.com/ubuntu/",
+    ],
+)
+def test_native_ansible_refuses_unreviewed_mirrors_before_direct_source_rewrite(
+    tmp_path: Path,
+    azure_uri: str,
+) -> None:
+    source_text = NATIVE_SOURCE.replace(
+        "URIs: mirror+file:/etc/apt/apt-mirrors.txt\n",
+        f"URIs: {azure_uri}\n",
+    )
+    mirrors = ORIGINAL_MIRRORS + "https://unreviewed.invalid/ priority:0\n"
+    apt_root, mirror, source = _native_fixture(
+        tmp_path, mirrors=mirrors, source=source_text,
+    )
+    unrelated = source.parent / "unrelated.list"
+    before = {
+        path: (
+            path.read_bytes(), stat.S_IMODE(path.stat().st_mode),
+            path.stat().st_uid, path.stat().st_gid,
+            path.stat().st_ino, path.stat().st_mtime_ns,
+        )
+        for path in (mirror, source, unrelated)
+    }
+
+    result = _native_ansible(tmp_path, apt_root)
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "Unknown native mirror list" in result.stdout + result.stderr
+    assert "outcome=prepared" not in result.stdout
+    for path, original in before.items():
+        assert (
+            path.read_bytes(), stat.S_IMODE(path.stat().st_mode),
+            path.stat().st_uid, path.stat().st_gid,
+            path.stat().st_ino, path.stat().st_mtime_ns,
+        ) == original
+
+
+@pytest.mark.parametrize(
+    "azure_uri",
+    [
+        "http://azure.archive.ubuntu.com/ubuntu/",
+        "https://azure.archive.ubuntu.com/ubuntu/",
+    ],
+)
+def test_native_ansible_rewrites_only_complete_uri_fields_and_keeps_metadata(
+    tmp_path: Path,
+    azure_uri: str,
+) -> None:
+    mirror_uri = "mirror+file:/etc/apt/apt-mirrors.txt"
+    first_field = (
+        f"uRiS:{azure_uri} {azure_uri} https://archive.ubuntu.com/ubuntu/\n"
+        f"\t{azure_uri}\n"
+    )
+    second_field = f"URIs: {azure_uri}\n"
+    source_text = (
+        "# Previous mirror http://azure.archive.ubuntu.com/ubuntu/\n"
+        "X-Mirror-History: https://azure.archive.ubuntu.com/ubuntu/\n"
+        "Types: deb\n"
+        + first_field
+        + "Suites: noble noble-updates\n"
+        "Components: main restricted\n"
+        "Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n"
+        "Check-Valid-Until: yes\n"
+        "\n"
+        "Types: deb-src\n"
+        + second_field
+        + "Suites: noble-security\n"
+        "Components: main\n"
+        "Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n"
+    )
+    expected_source = source_text.replace(
+        first_field, first_field.replace(azure_uri, mirror_uri),
+    ).replace(second_field, second_field.replace(azure_uri, mirror_uri))
+    apt_root, mirror, source = _native_fixture(tmp_path, source=source_text)
+    unrelated = source.parent / "unrelated.list"
+    original_unrelated = unrelated.read_bytes()
+    original_source_metadata = (
+        stat.S_IMODE(source.stat().st_mode),
+        source.stat().st_uid, source.stat().st_gid,
+    )
+
+    result = _native_ansible(tmp_path, apt_root)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert source.read_bytes() == expected_source.encode("utf-8")
+    assert mirror.read_text(encoding="utf-8") == PREFERRED_MIRRORS
+    assert unrelated.read_bytes() == original_unrelated
+    assert (
+        stat.S_IMODE(source.stat().st_mode),
+        source.stat().st_uid, source.stat().st_gid,
+    ) == original_source_metadata
+    assert "source_rewritten=true" in result.stdout
+    assert "installer_run=false gate_evidence=false release_ready=false" in result.stdout
+    identity = {
+        path: (path.stat().st_ino, path.stat().st_mtime_ns)
+        for path in (mirror, source, unrelated)
+    }
+
+    repeated = _native_ansible(tmp_path, apt_root)
+
+    assert repeated.returncode == 0, repeated.stdout + repeated.stderr
+    assert "changed=0" in repeated.stdout
+    assert source.read_bytes() == expected_source.encode("utf-8")
+    assert unrelated.read_bytes() == original_unrelated
+    assert {
+        path: (path.stat().st_ino, path.stat().st_mtime_ns)
+        for path in identity
+    } == identity

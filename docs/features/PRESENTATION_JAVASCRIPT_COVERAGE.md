@@ -35,15 +35,57 @@ and change that input before another attempt.
 ### Native source and write boundary
 
 The native playbook inspects fixed /etc/apt/apt-mirrors.txt and its ubuntu.sources
-binding, refusing missing/non-regular/symlink or unknown inputs. The mirror bytes
-must match the observed image tag's exact Azure HTTP priority1/archive HTTPS2/
-security HTTPS3 list, or the already-repaired last two lines. Known uncontinued
-URI bindings are required; unknown/duplicate/folded forms refuse. Non-URI fields
-are left byte-identical. Ansible builtin replace atomically removes only that
-exact Azure line; no Deb822, suite/component/signature, cloud-init, acquire
-option, package or browser selection is rewritten. Priorities2/3 and mode remain.
-The trusted ephemeral runner's parent paths are assumed; no concurrent hostile
-filesystem guarantee is claimed.
+binding, refusing missing/non-regular/symlink or unknown inputs. Both source URI
+tokens and complete mirror bytes are validated before either file is changed.
+Mirror bytes must match the exact reviewed Azure HTTP or HTTPS priority1/archive
+HTTPS2/security HTTPS3 list, or the already-repaired last two lines. Known URI
+fields retain case, repeated stanzas, multiple tokens and continuation bytes;
+unknown tokens and empty fields refuse. Each complete original URI field is
+regex-escaped and anchored for native atomic replace; only Azure tokens within
+that validated field are rebound to the reviewed mirror list. Comments and
+other field bytes remain exact. A separate atomic native replace removes only
+the reviewed Azure mirror line. Suites/components/signatures, cloud-init,
+acquire options, packages and browsers retain their inputs, priorities2/3 and
+modes. The trusted ephemeral runner's parent paths are assumed; no concurrent
+hostile filesystem guarantee is claimed.
+
+Original-source review of a403ed858bb561f7bbc8353c54ad057be4020f89 retains two
+concrete failures of proof: a direct Azure source could be rewritten before an
+unreviewed mirror file was refused, and an unanchored URL replacement could
+also alter comments or other Deb822 fields. Additive confined native controls
+pair each direct HTTP/HTTPS binding with an unreviewed mirror file and require
+unchanged bytes/modes/ownership/inode/mtime. Separate valid native controls
+retain comment/metadata URLs while rewriting case-varied, repeated, multi-token
+and continued URI fields, then require idempotence. At proposal time these
+controls and their repair have not run. Record their actual RED/GREEN receipts
+before claiming acceptance; no hosted, installer, browser or release outcome
+follows source review.
+
+Actual review repair starts from that frozen a403 source in
+feature/v012-original-review-repairs-20261026. The tests-only native RED
+reports four browser failures plus the separate release-fixture repr failure:
+5FAIL/7.96s/native2/9.632s, at
+.gate-logs/observed/v012-review-apt-repr-red/v012-review-apt-repr-red311-a403-20261026.json.
+The first complete receiving retains549PASS/5FAIL/105.86s/native2/107.475s:
+v012-review-root-receiving/v012-review-root-receiving311-a403-20261026.json.
+Its five failures exposed doubled backslashes in the proposed Jinja suffix,
+which matched literal escape text and left valid URI fields unchanged.
+Only that suffix was corrected to single backslashes. No test was relaxed.
+The complete native browser owner then passes32/35.84s/native0/37.254s:
+v012-review-apt-corrected/v012-review-apt-corrected311-a403-20261027.json.
+
+The final deduplicated19 whole-owner browser/privacy union passes554 EACH:
+3.11 in106.76s/native108.332s and3.12 in115.86s/native117.729s. Exact receipts
+are v012-review-root-receiving/v012-review-root-receiving{311,312}-corrected-a403-20261027.json
+under .gate-logs/observed in the same isolated checkout. Both sessions are
+drained; native observed-status verifies inactive/passed0 and exact commands.
+Each native trace has1111events/554paired protocols, zero issues, failures or
+unfinished nodes. Ruff/strict typing, environment-write, line and logical-Make
+checks pass; the six-path staged guard passes3.876s with no changed-production
+clone scan needed. Independent review approves source only and preserves all
+original browser function bodies/assertions. Final prose/normal collection and
+commit remain separate; canonical gate, current-SHA hosted installer/browser,
+deployment, ZDD and release acceptance remain required.
 
 Installed Ansible's native stat/slurp/assert/replace provide inspection,
 validation, check mode and atomic writes. apt_repository/deb822_repository would
