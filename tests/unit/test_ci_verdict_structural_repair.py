@@ -8,6 +8,7 @@ import json
 import re
 import shlex
 import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import cast
@@ -179,3 +180,29 @@ def test_safe_verdict_compatibility_line_never_authorizes_incomplete_or_foreign_
     assert not re.search(r"^CI (GREEN|RED):", result.stdout, re.MULTILINE)
     assert history.read_bytes() == before and restart.read_text() == "2"
     assert "Error 2" in result.stderr
+
+
+@pytest.mark.parametrize("target", ("ci-verdict", "ci-verdict-safe"))
+def test_native_remote_verdict_does_not_load_snapshot_only_providers(
+    tmp_path: Path, target: str,
+) -> None:
+    runs = [_run("Build and Release", 1), _run("Molecule Tests", 2)]
+    result = _sandbox(
+        tmp_path, runs, target,
+        make_variables=(f"PYTHON={sys.executable} -X importtime",),
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"CI GREEN: sha={SHA} run=1,2" in result.stdout
+    calls = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
+    assert len(calls) == 1 and "--jq" not in calls[0]
+    assert calls[0][calls[0].index("--commit") + 1] == SHA
+    loaded = {
+        match.group(1).strip()
+        for match in re.finditer(r"(?m)^import time:\s*\d+\s*\|\s*\d+\s*\|\s*(.+)$", result.stderr)
+    }
+    assert {"runpy", "argparse"} <= loaded, "the same native child must exercise import instrumentation"
+    snapshot_only = {
+        "scripts.active_work_status", "scripts.automatic_disk_cleanup", "scripts.check_disk_usage",
+        "active_work_status", "automatic_disk_cleanup", "check_disk_usage",
+    }
+    assert not (loaded & snapshot_only), sorted(loaded & snapshot_only)

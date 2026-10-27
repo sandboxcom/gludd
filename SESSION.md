@@ -5,36 +5,14 @@ Published/remote-VERIFIED: release-candidate/v012-git-mutex-20261022 eb772a658a0
 Previously recorded development publication: 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
 Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection errors in47.54s/native54.341s during the native guarded714ce2d65e3dbeec9d3dbbadced9f983c13c2a3d source commit preflight. Native receipt: .gate-logs/observed/test-count/20261022T234100Z-13723-e7e319e7.json. This is fixed714 evidence, not a later handoff-commit measurement; lock duration54.257s is distinct. Earlier23b/638/ef41/64 collections keep their actual refs/receipts. Collection is separate from runtime, full gate, hosted and deployment proof. Keep normal fresh collection per commit without repeating accepted source tests for a handoff alone.
 
-## Current receiving record (2026-10-27 UTC)
+## Current R receiving record (2026-10-27 UTC)
 
-Fixed receiving snapshot (2026-10-27 UTC): Main
-8eb3e5fb29fc298be259b6b3ca1dbbd0929a7843 contains the normal-publisher requirement
-for an accepted exact-source Build run after remote verification. Its Main narrow
-passes49 on each installed runtime; native receipts are listed in release status.
-Git fixture donor5e343834edf863e866138c546c15a75e26ca47ad is staged in this snapshot,
-with13 Main narrow passes on each runtime; its receiving commit and full22-owner
-acceptance remain pending here. These are fixed pre-commit facts, not a future SHA.
+Fixed R receiving snapshot (2026-10-27 UTC), before its source commit: published/remote-verified Main 0a4a56a043590fb99d1e5c08bc1cefb36a0c6f83 includes the enforced exact-SHA Build request; normal batch publication passes201.402s and the complete22-owner union passes1037 EACH. Independent F review approves249 source paths only. F diagnostic Build40474709144 ends1FAIL/5PASS/13SKIP: gate311 original90/60 runtime ends124/90.5s, family955f7482bbd5b2c872fca39d3b20747a60ddd543c8b2c6ca76ca66fe8e1c0f2e remains OPEN; gate312 passes89.9s. Molecule40475173286 passes6 and Pages40475644714 passes3 validations, deployment skipped. The R snapshot-provider import repair preserves library APIs, exact-SHA verdict/history controls and all original assertions; final15 complete owners pass827 EACH on311/312 at99.3line/98.3branch aggregate, unchanged85/75 BOTH. R3 has independent SOURCE ONLY approval. These are working-source receiving receipts, not a future SHA or timeout clearance. Next: normal source commit/fresh collection, repair-owned unchanged90/60 runtime, guarded publication and actual new exact-SHA hosted observation. Final focus128/combined329 plans, live final admission, genuine development integration, canonical21600/global85-75 LINE AND BRANCH BOTH, canonical exact-SHA push CI, master ZDD deployment and fresh signed complete assets remain pending. All328 task states/seven unchecked S98 items,133 excluded backlog and ratchet0 are unchanged. Details: [process boundary](docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#snapshot-providers-are-loaded-only-for-requested-cli-snapshots-2026-10-27-utc) and [release status](docs/releases/v0.1.2-implementation-status.md).
+
 The first seven SESSION lines retain their fixed714 source/collection authority.
-
-D9b01c6296f2a24d39a95e0c6194bd118ac8824f8 retains APPROVE ORIGINAL SOURCE for its
-242-path original diff. Diagnostic attempt1 Build40448994419 ended8FAIL/19PASS/
-3SKIP; both runtime gates passed. Molecule40449089000 passed all6 jobs; Pages
-40449154482 passed3 validations and skipped deployment. Root's original observer
-timed out; a renewed observer followed actual additional completed jobs and
-retained the terminal failure. These workflow_dispatch results certify no deployment.
-Native Linux/comparison/private-policy/jobserver repair receipts are local evidence;
-the remaining four hosted failure families still require their native repair run.
-No newer hosted request is active at this fixed snapshot.
-
-Focus128 is at its unchanged128 cap; combined329 remains321 ordinary plus the same
-8 E2E. Both final plans are unexecuted. Independent final-source review, live
-admission, genuine development integration, canonical21600/global85aggregate-
-75per-file LINE AND BRANCH BOTH, canonical exact-SHA push CI, master ZDD deployment
-and fresh signed stable all-assets release remain pending. All seven S98 tasks
-stay unchecked;133 backlog items stay excluded and ratchet0 is unchanged.
-Earlier failed sources, receipts, protected checkpoints and fixedf1 artifacts
-retain their historical authority. Details:
-[release status](docs/releases/v0.1.2-implementation-status.md).
+Earlier fixed8eb and D receiving records remain in immutable
+0a4a56a043590fb99d1e5c08bc1cefb36a0c6f83:SESSION.md. Native current producers own
+live source, ownership and CI state; this manual snapshot grants no release proof.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 

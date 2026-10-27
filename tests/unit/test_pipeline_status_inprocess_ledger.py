@@ -701,6 +701,70 @@ def test_native_original_shell_keeps_ledger_exit_after_final_echo_failure(
     assert f"Error {ledger_code}" in native.stderr
 
 
+def test_fresh_main_loads_real_snapshot_providers_when_output_is_requested(tmp_path: Path) -> None:
+    pipeline = Path(owner.__file__).resolve()
+    snapshot = tmp_path / "fresh-cli-snapshot.json"
+    capture = tmp_path / "queries.jsonl"
+    executable = tmp_path / "gh"
+    executable.write_text(
+        f"#!{sys.executable}\n"
+        "import json, sys\nfrom pathlib import Path\n"
+        f"with Path({str(capture)!r}).open('a') as stream:\n"
+        "    stream.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        "print('[]')\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    child = f"""
+import runpy
+import sys
+sys.path.insert(0, {str(pipeline.parents[1])!r})
+from scripts import active_work_status, automatic_disk_cleanup
+assert "scripts.pipeline_status" not in sys.modules
+assert "pipeline_status" not in sys.modules
+
+def observation_must_not_clean(*args, **kwargs):
+    raise AssertionError("snapshot observation must not clean")
+
+active_work_status.collect_status = lambda: {{
+    "git": {{"branch": "development", "head": {SHA!r}}},
+    "open_task_ids": ["S98.4"],
+}}
+automatic_disk_cleanup.inspect_usage = lambda: automatic_disk_cleanup.DiskSnapshot(0.0, 80.0)
+automatic_disk_cleanup._automatic_cleanup = observation_must_not_clean
+sys.argv = [
+    {str(pipeline)!r}, "--remote-only", "--sha", {SHA!r},
+    "--snapshot-output", {str(snapshot)!r},
+    "--failure-ledger", {str(tmp_path / "absent-ledger.json")!r},
+]
+runpy.run_path({str(pipeline)!r}, run_name="__main__")
+"""
+    environment = {
+        **os.environ,
+        "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+    result = subprocess.run(
+        [sys.executable, "-P", "-W", "error", "-c", child],
+        cwd=tmp_path, env=environment, text=True, capture_output=True, check=False, timeout=20,
+    )
+    assert result.returncode == 2, result.stdout + result.stderr
+    identity = {"repo": owner.DEFAULT_REPO, "branch": "development", "sha": SHA}
+    current = read_snapshot(snapshot, producer="pipeline-status", identity=identity)
+    assert current["identity"] == identity
+    assert current["state"] == "pending"
+    assert current["evidence"]["errors"] == []
+    assert current["evidence"]["capacity"]["disk_pct"] == 80.0
+    assert current["evidence"]["capacity"]["hard_blocked"] is False
+    assert current["evidence"]["local"]["git"]["head"] == SHA
+    assert current["gate_evidence"] is False and current["release_ready"] is False
+    assert "PIPELINE-SNAPSHOT-WRITTEN" in result.stdout
+    assert "PIPELINE-TERMINAL-OBSERVED" not in result.stdout
+    calls = [json.loads(line) for line in capture.read_text().splitlines()]
+    assert len(calls) == 1 and calls[0][:2] == ["run", "list"]
+    assert calls[0][calls[0].index("--commit") + 1] == SHA
+
+
 @pytest.mark.parametrize("ledger_code", [5, 120])
 def test_final_diagnostic_error_report_failure_keeps_captured_ledger_result(
     monkeypatch: pytest.MonkeyPatch, ledger_code: int,
