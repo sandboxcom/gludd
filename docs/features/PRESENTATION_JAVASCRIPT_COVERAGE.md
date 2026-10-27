@@ -1254,3 +1254,57 @@ checkpoints and next native Make actions. Generated current JSON belongs only
 to existing pipeline-status/ci-await/observer/registry producers. Pipeline and
 gate repairs precede preparing completed backlog items as the user requested.
 ```
+
+## Active native mode-payload witness (2026-10-27 UTC)
+
+Final original-source review of7eca8a3269fba7f25c1e72cd307e116db42f2b94 retains
+a test-evidence gap: the original mode guard asserts no marker evaluation but
+has no active unguarded same-input witness, and its marker path is unquoted.
+This does not demonstrate a production guard defect. Keep all original guard
+assertions, the complete three command/environment/environment-override origins,
+actual project Make entrypoint, explicit copied environment and15-second child
+bound. A separate owned .PHONY Make target expands the same MODE variable,
+exact payload and origin. Its space-bearing owned marker must contain unsafe;
+remove only that owned witness before the existing guarded no-evaluation check.
+Use shlex.quote for the owned marker path; retain unrelated environment carriers.
+
+The real tests-first control adds that witness but keeps the old unquoted
+payload construction: all three origins fail on the missing full space-bearing
+marker path. They join two independently owned repr failures, with the logical
+Make AST control passing, at v012-final-review-red/
+v012-final-review-red311-a7a2cc2-20261027.json:5FAIL/1PASS18.50s/native19.855s.
+Changing only marker quoting and the two repr fields makes the identical cohort
+6PASS20.61s/native22.002s at v012-final-review-green/
+v012-final-review-green311-a7a2cc2-20261027.json. These registered repair-checkout
+receipts prove the active payload and guarded refusal on this scope, not hosted
+browser/coverage, installer, apt mutation, runtime performance or release proof.
+The pipeline audit records the separate strict-import prerequisite and complete
+receiving/normal-collection/final-review obligations. Preserve the existing
+primary dependency research and its bounded forum-search limitations above;
+no new upstream bug or public research result is inferred from this fixture gap.
+
+### Complete affected-owner receiving before source checkpoints
+
+The frozen repair working snapshot passes all128 cases in these four complete
+owners on EACH installed runtime: test_collection_hook_environment.py,
+test_make_uv_execution_boundary.py, test_presentation_browser_apt_source.py and
+test_collection_lock.py. Python3.11.14 reports107.17s/native109.061s at
+v012-final-review-receiving/v012-final-review-receiving311-a7a2cc2-20261027.json;
+Python3.12.15 reports111.33s/native113.473s at the matching312 receipt. Both
+exact sessions drain and native observed-status confirms inactive/passed/exit0.
+Each trace has259events/128 complete pairs/zero issues, unfinished or failures.
+These600/180 diagnostics use ordinary project configuration, fatal warnings,
+one outer worker, literal ID= and the selected installed tuple/UV0.13.1 in
+both watcher and actual CMD. No production90/60 or canonical21600 bound changes.
+
+Independent delta review retains all333 original assertion ASTs across the four
+owners, with no stale donor baseline replacing Main C. The existing apt control
+adds the active witness; other original function bodies and runtime imports
+remain. Source review also covers only the owned TASKS624 insertion, preserving
+all328 states/order and2499lines. These are four-owner WORKING-snapshot receipts
+before the separate privacy/typing and browser-witness source commits; they do
+not certify an isolated earlier partial checkpoint. Normal hooks/fresh collection,
+Main receiving/final immutable source rebinding, the corrected-source original
+runtime, canonical gate/global85aggregate75per-file LINE AND BRANCH BOTH,
+canonical exact-SHA push CI, master ZDD and fresh signed all-assets release stay
+required. Earlier C/a403 adverse decisions and every failed receipt remain.

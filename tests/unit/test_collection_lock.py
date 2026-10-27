@@ -8,8 +8,12 @@ import subprocess
 import threading
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from scripts.collection_lock import collection_lock
+if TYPE_CHECKING:
+    from collection_lock import collection_lock
+else:
+    from scripts.collection_lock import collection_lock
 from scripts.makefile_layout import compose_makefile
 
 ROOT = Path(__file__).parents[2]

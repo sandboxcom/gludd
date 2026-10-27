@@ -310,7 +310,7 @@ def test_observed_reader_keeps_native_stdlib_capability_failure(reader_make: Rea
 @dataclass(frozen=True)
 class NativeMake:
     root: Path
-    environment: dict[str, str]
+    environment: dict[str, str] = field(repr=False)
     native_git: str
 
     def run(self, *arguments: str, without_runtime: bool = False) -> subprocess.CompletedProcess[str]:
@@ -711,3 +711,17 @@ def test_single_guarded_target_keeps_quoted_value_and_path_executable(native_mak
     assert owned.read_text(encoding="utf-8") == "two word needle\n"
     assert native_make.authority() == before and os.environ == parent
     assert not (native_make.root / ".venv").exists() and not (native_make.root / "uv.lock").exists()
+
+
+def test_native_make_repr_keeps_owned_environment_private(tmp_path: Path) -> None:
+    environment = {
+        "GLUDD_FAKE_PRIVATE_CARRIER": "owned-make-private-repr-marker",
+        "GLUDD_FAKE_RETAINED_CARRIER": "owned-make-retained-repr-marker",
+    }
+    fixture = NativeMake(tmp_path, environment, "owned-native-git")
+
+    rendered = repr(fixture)
+
+    assert all(name not in rendered and value not in rendered for name, value in environment.items())
+    assert fixture.environment is environment
+    assert str(fixture.root) in rendered and fixture.native_git in rendered

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import stat
 import subprocess
 import sys
@@ -128,10 +129,40 @@ def test_apt_default_is_an_offline_plan(tmp_path: Path) -> None:
     assert "gate_evidence=false release_ready=false" in result.stderr
 
 
+def _unguarded_mode_witness(
+    tmp_path: Path, payload: str, origin: str,
+) -> subprocess.CompletedProcess[str]:
+    """Demonstrate that this exact payload evaluates under the same native origin."""
+    environment = _environment(tmp_path)
+    for key in ("MAKELEVEL", "GNUMAKEFLAGS", "MAKEFILES"):
+        environment.pop(key, None)
+    makefile = tmp_path / "owned-unguarded-mode.mk"
+    makefile.write_text(
+        ".PHONY: owned-mode-witness\n"
+        "owned-mode-witness:\n\t@: $(" + MODE + ")\n",
+        encoding="utf-8",
+    )
+    command = ["make", "--no-print-directory", "-f", str(makefile), "owned-mode-witness"]
+    if origin == "command":
+        command.append(MODE + "=" + payload)
+    else:
+        environment[MODE] = payload
+        if origin == "environment-override":
+            command.insert(1, "-e")
+    return subprocess.run(
+        command, cwd=tmp_path, env=environment, capture_output=True,
+        text=True, check=False, timeout=15,
+    )
+
+
 @pytest.mark.parametrize("origin", ["command", "environment", "environment-override"])
 def test_apt_mode_is_literal_at_real_make_startup(tmp_path: Path, origin: str) -> None:
-    marker = tmp_path / "must-not-exist"
-    payload = "$(shell printf unsafe > " + str(marker) + ")"
+    marker = tmp_path / "owned apt mode witness"
+    payload = "$(shell printf unsafe > " + shlex.quote(str(marker)) + ")"
+    witness = _unguarded_mode_witness(tmp_path, payload, origin)
+    assert witness.returncode == 0, witness.stdout + witness.stderr
+    assert marker.read_text(encoding="utf-8") == "unsafe"
+    marker.unlink()
     result, recorder = _make(tmp_path, mode=payload, origin=origin)
     assert result.returncode == 2
     assert not marker.exists()

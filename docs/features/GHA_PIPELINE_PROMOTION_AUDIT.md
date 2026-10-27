@@ -704,3 +704,97 @@ Keep required local admission/full gate and exact-SHA hosted/deployment proof
 pending. Resume each blocked owner only after its actual input changes;retain
 the existing capacity and selected-account consent requests. Use interruptible
 host input waits no longer than60s when independent authorized work is drained.
+
+## Final original-source fixture privacy receiving (2026-10-27 UTC)
+
+Independent original82db-to-7eca8a3269fba7f25c1e72cd307e116db42f2b94 review
+binds all241 changed paths and retains CHANGES REQUIRED for three test owners
+and one descriptor-documentation row. The earlier a403 adverse review stays
+history. The remaining fixture fields are earlier declarations reached by new
+release callers: HookFixture.environment in test_collection_hook_environment.py
+and NativeMake.environment in test_make_uv_execution_boundary.py. Add only
+field(repr=False), retaining frozen construction, the exact mutable environment
+object and every existing child carrier/argument/assertion. Two new repr tests
+construct only two owned marker entries; no ambient secret is read or rendered.
+This is a bounded affected-fixture claim, not universal repr privacy.
+
+The actual combined failing-first owner includes the logical-Make AST guard,
+the two new privacy controls and three browser-mode origins. It reports5FAIL/
+1PASS18.50s/native19.855s at v012-final-review-red/
+v012-final-review-red311-a7a2cc2-20261027.json. Two failures are repr assertions;
+three are missing space-bearing owned witness paths. After the two repr fields
+and marker quoting change, the identical selectors report6PASS20.61s/native
+22.002s at v012-final-review-green/v012-final-review-green311-a7a2cc2-20261027.json.
+Both receipts belong to the registered original-review repair checkout under
+.gate-logs/observed. Their traces retain6 complete pairs/zero issues: RED has
+20events/5failure reports, GREEN15events/zero failures. All exact sessions drain.
+
+Ruff, environment-write and working line guards pass. The three-file native
+strict-mypy input stops on scripts.collection_lock versus collection_lock;
+the same input reproduces on unchanged Main7eca test bytes. Preserve that native
+failure and repair its actual source-identity input before broad receiving;
+no ignore, import suppression, weakened strictness or new green scope follows.
+A bounded native mypy shadow diagnostic preserves full imports and finds one
+canonical static import split in the existing test_collection_lock.py helper:
+TYPE_CHECKING uses flat collection_lock; ordinary runtime keeps the original
+scripts.collection_lock import. Applying that exact split makes the actual
+four-file native strict scope pass on BOTH installed3.11.14/3.12.15; Ruff passes.
+No original helper function or assertion changes. Native registration initially
+refuses the HookFixture owner; adding that exact path beside collection_lock
+in the existing S98.4 continuation clears registration for all seven paths,
+retaining2499TASKS lines and all328 states/order. The final complete ordinary
+inventory must add this whole helper owner:329 files, with127 supported native
+focus files inside the unchanged128 cap; no E2E or earlier owner is dropped.
+Complete affected owners on both installed runtimes, normal source collection,
+independent final-source rebinding and all release proofs remain required.
+
+Separately, clean7eca's original3.12 runtime repair reports MAIN2351PASS82.09s,
+HELP1PASS0.87s and TAIL185PASS64.85s, actual join0/0/0, native85.511s inside
+unchanged90/60. The native repair owner records selected familyd506 at7eca;
+ledger open0/repaired12/resolved50/runs167 is local repair evidence only.
+Its trace has5088events/2537 complete pairs/zero issues, unfinished or failures.
+No hosted resolution, full gate, exact-SHA push, promotion, ZDD deployment or
+all-assets release follows. All seven S98 tasks remain unchecked.
+
+### Complete affected-owner receiving before source checkpoints
+
+The frozen repair working snapshot passes all128 cases in these four complete
+owners on EACH installed runtime: test_collection_hook_environment.py,
+test_make_uv_execution_boundary.py, test_presentation_browser_apt_source.py and
+test_collection_lock.py. Python3.11.14 reports107.17s/native109.061s at
+v012-final-review-receiving/v012-final-review-receiving311-a7a2cc2-20261027.json;
+Python3.12.15 reports111.33s/native113.473s at the matching312 receipt. Both
+exact sessions drain and native observed-status confirms inactive/passed/exit0.
+Each trace has259events/128 complete pairs/zero issues, unfinished or failures.
+These600/180 diagnostics use ordinary project configuration, fatal warnings,
+one outer worker, literal ID= and the selected installed tuple/UV0.13.1 in
+both watcher and actual CMD. No production90/60 or canonical21600 bound changes.
+
+Independent delta review retains all333 original assertion ASTs across the four
+owners, with no stale donor baseline replacing Main C. The existing apt control
+adds the active witness; other original function bodies and runtime imports
+remain. Source review also covers only the owned TASKS624 insertion, preserving
+all328 states/order and2499lines. These are four-owner WORKING-snapshot receipts
+before the separate privacy/typing and browser-witness source commits; they do
+not certify an isolated earlier partial checkpoint. Normal hooks/fresh collection,
+Main receiving/final immutable source rebinding, the corrected-source original
+runtime, canonical gate/global85aggregate75per-file LINE AND BRANCH BOTH,
+canonical exact-SHA push CI, master ZDD and fresh signed all-assets release stay
+required. Earlier C/a403 adverse decisions and every failed receipt remain.
+
+### Main receiving of the final original-source corrections
+
+Main starts at verified clean9f4df32694085381e037a1bb17ad57685bf979c5.
+A native merge-tree diagnostic for donor917e4679e7113d09ff05f36a8518d78b8be2a576
+returns1 with TASKS.md as its sole conflicted path; no merge is attempted.
+A private native preflight verifies all six incoming Main code/feature preimages
+equal a7 and all six donor working postimages equal immutable917. Native
+show-file exports through /tmp/gludd and exact copy-file receive those six
+postimages. Only the two approved owner references are inserted in Main's
+existing TASKS624 continuation, preserving line8, privacy623, Node624 and all
+328 states/order/2499lines. No whole peer TASKS, successful merge or donor917
+ancestry is claimed. Main native four-file strict typing then passes on BOTH
+installed runtimes; Ruff, registration and ledger checks pass. Corrected Main
+acceptance, normal source collection, final immutable original-source review,
+original90/60 repair-owned runtime and all canonical/global/exact-SHA/ZDD and
+stable all-assets release proofs remain required.

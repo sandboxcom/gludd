@@ -9,7 +9,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
@@ -30,7 +30,7 @@ class HookFixture:
     linked: Path
     remote: Path
     native_git: str
-    environment: dict[str, str]
+    environment: dict[str, str] = field(repr=False)
     hook_snapshot: Path
     collection_snapshot: Path
 
@@ -458,3 +458,21 @@ def test_pre_push_collection_retains_ledger_path_confinement_with_real_ansible(
         remote = fixture.git("--git-dir", str(fixture.remote), "rev-parse", "--verify", "refs/heads/ledger-probe")
         assert remote.returncode == 0
         assert remote.stdout == fixture.git("rev-parse", "HEAD").stdout
+
+
+def test_hook_fixture_repr_keeps_owned_environment_private(tmp_path: Path) -> None:
+    environment = {
+        "GLUDD_FAKE_PRIVATE_CARRIER": "owned-hook-private-repr-marker",
+        "GLUDD_FAKE_RETAINED_CARRIER": "owned-hook-retained-repr-marker",
+    }
+    fixture = HookFixture(
+        tmp_path / "main", tmp_path / "linked", tmp_path / "remote.git",
+        "owned-native-git", environment, tmp_path / "hook", tmp_path / "collection",
+    )
+
+    rendered = repr(fixture)
+
+    assert all(name not in rendered and value not in rendered for name, value in environment.items())
+    assert fixture.environment is environment
+    assert str(fixture.main) in rendered and str(fixture.linked) in rendered
+    assert str(fixture.hook_snapshot) in rendered and str(fixture.collection_snapshot) in rendered

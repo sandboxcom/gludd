@@ -7,39 +7,40 @@ Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection 
 
 ## Current receiving record (2026-10-27 UTC)
 
-Receiving starts from verified Main
-e7d814b263c15571f9c457f317a9b9c5ba422652, with privacy donor
-86ba8b8fd263a4acacbf709f04dacad5e97aeff8 and routing donor
-eed654ec2beefe8f8528241055f5e37616c9ba0c. The resulting cumulative source requires its own
-clean-SHA proofs. The first seven SESSION lines retain their fixed714 authority.
-The e7 source transaction passes68.647s; its fresh collection passes131246/
-131270,24 deselected/0 errors,49.32s/native55.386s. The privacy donor's normal
-transaction passes56.581s; its fresh collection passes131215/131239,24
-deselected/0 errors,44.15s/native49.789s. The release-status record retains exact
-receipts. Fixedf1 collection131210/131234 and five-artifact builds/smokes remain
-history. Checkpoint59e9c4292b8685076d98f2b4398c230ffd83cbe7 retains the six
-unapproved predecessor edits. The [privacy](docs/features/GIT_STATUS_READONLY.md) and
-[routing](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md) records own details.
+Receiving input snapshot: verified Main 9f4df32694085381e037a1bb17ad57685bf979c5
+is C 7eca8a3269fba7f25c1e72cd307e116db42f2b94 plus the reviewed CONFIG_REFERENCE FD row.
+Fixed privacy/typing donor 877dda03074ad6b8a095a998a15c7fe45ea8c60d and browser-witness
+donor 917e4679e7113d09ff05f36a8518d78b8be2a576 belong to the original-review repair peer.
+The resulting corrected Main source requires its own clean-SHA proofs; no future
+SHA or final-source approval is claimed. The first seven SESSION lines retain
+their fixed714 collection/source authority. Main9f4's normal transaction is
+58.278s; fresh collection131258/131282,24 deselected/0 errors,47.79s/native53.493s.
+The release-status record qualifies exact donor/collection receipt roots.
 
-Authentication/workflow scope and unsafe-TOML rejection are explicitly approved
-and resolved. All four Node families have local repairs; the narrow native
-audit at clean a403 reports zero vulnerabilities. The current native ledger has
-1 open family,11 repaired,50 resolved/167 runs. It supplies no hosted success.
+C's original3.12 runtime passes85.511s inside unchanged90/60, MAIN2351/HELP1/
+TAIL185 with actual join0/0/0; trace5088events/2537pairs has zero issues/failures.
+At C, native ledger0 open/12 repaired/50 resolved/167 runs is selected d506 local
+repair only. The older1-open/11-repaired snapshot is dated pre-C history.
+No new hosted request or hosted resolution is claimed. Retained a403 Build
+runtime failure, Molecule/Pages successes and skipped Pages deployment remain
+workflow_dispatch history, with no canonical push or deployment authority.
 
-Actual a403 Build40427263941 attempt1 fails gate312 job121936054995 at the
-original runtime90.5s/124; gate311 passes and all eight downstream shards stay
-unknown. Molecule40427577982 passes all six jobs. Pages40428095450 passes both
-browsers and JavaScript, with deployment skipped. All three are
-workflow_dispatch diagnostics, with no canonical push or deployment proof.
+C's241-path adverse audit remains. The focused privacy/typing/browser delta and
+receipt prose have source-only approval; final immutable Main242-path rebinding
+is pending. Four complete changed owners pass128 EACH on311/312 in the combined
+peer working snapshot before separate source checkpoints. Native strict4scope
+passes BOTH after the canonical collection_lock TYPE_CHECKING split. The new
+complete helper owner makes focus127<=128 and combined329=321 ordinary+same8
+E2E; these final plans remain unexecuted. Owning [pipeline](docs/features/GHA_PIPELINE_PROMOTION_AUDIT.md)
+and [browser](docs/features/PRESENTATION_JAVASCRIPT_COVERAGE.md) records hold details.
 
-Peer acceptance preserves original assertions/settings and has source-only
-approvals; exact scopes/counts remain in the implementation and feature records.
-Final clean cumulative90/60 repair-owned evidence, live admission, independent
-original-source review, genuine development integration/focus, canonical21600
-gate/global85aggregate-75per-file LINE AND BRANCH BOTH, canonical exact-SHA push
-CI, master ZDD and fresh signed stable all-assets release remain unproved.
-All seven S98 tasks stay unchecked;133 backlog items are excluded and ratchet0
-is unchanged. Details: [release status](docs/releases/v0.1.2-implementation-status.md).
+Protected checkpoint 59e9c4292b8685076d98f2b4398c230ffd83cbe7 retains six predecessor WIP
+edits. All seven S98 tasks stay unchecked;133 backlog items are excluded and
+ratchet0 is unchanged. Corrected-source90/60, live admission, final original
+review/genuine development integration/focus127, canonical21600/global85-75
+LINE AND BRANCH BOTH, canonical exact-SHA push CI, master ZDD and fresh signed
+stable all-assets release remain pending. Consent/TOML inputs stay resolved;
+fixedf1 builds/smokes stay historical. Details: [release status](docs/releases/v0.1.2-implementation-status.md).
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
