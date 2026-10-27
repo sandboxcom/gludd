@@ -7,6 +7,7 @@ so no real pytest run is triggered and no enclosing-worktree state is touched.
 
 from __future__ import annotations
 
+import json
 import os
 import select
 import shlex
@@ -169,16 +170,46 @@ def _held_gate(
                     raise AssertionError("held gate did not drain within 10s") from exc
 
 
-def _reset_signal_mask() -> None:
-    """Ensure the child process starts with INT/TERM unblocked and defaulted."""
-    # pytest-xdist and other harnesses may block or ignore SIGINT in workers.
-    # The wrapper script also resets these, but resetting here makes the test
-    # contract explicit and prevents the wrapper from hanging on signal tests.
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        with suppress((ValueError, OSError)):
-            signal.signal(sig, signal.SIG_DFL)
-        with suppress((ValueError, OSError)):
-            signal.pthread_sigmask(signal.SIG_UNBLOCK, [sig])
+def _inherited_signal_command(
+    command: list[str],
+    mode: str,
+    witness: Path,
+) -> list[str]:
+    """Poison only this child before exec; never reset the real Bash fixture."""
+    source = r"""
+import json
+import os
+import signal
+import sys
+from pathlib import Path
+
+modes = {
+    "ignored-int": ((signal.SIGINT,), ()),
+    "blocked-int": ((), (signal.SIGINT,)),
+    "blocked-term": ((), (signal.SIGTERM,)),
+    "ignored-int-blocked-term": ((signal.SIGINT,), (signal.SIGTERM,)),
+}
+ignored, blocked = modes[sys.argv[1]]
+watched = (signal.SIGINT, signal.SIGTERM)
+unrelated = signal.pthread_sigmask(signal.SIG_BLOCK, ()) - set(watched)
+# Own a deterministic bad-state input, then prove it survives the actual exec.
+for signum in watched:
+    signal.signal(signum, signal.SIG_DFL)
+signal.pthread_sigmask(signal.SIG_UNBLOCK, watched)
+for signum in ignored:
+    signal.signal(signum, signal.SIG_IGN)
+signal.pthread_sigmask(signal.SIG_BLOCK, blocked)
+Path(sys.argv[2]).write_text(json.dumps({
+    "pid": os.getpid(), "pgid": os.getpgid(0), "sid": os.getsid(0),
+    "ignored_int": signal.getsignal(signal.SIGINT) == signal.SIG_IGN,
+    "blocked_int": signal.SIGINT in signal.pthread_sigmask(signal.SIG_BLOCK, ()),
+    "blocked_term": signal.SIGTERM in signal.pthread_sigmask(signal.SIG_BLOCK, ()),
+    "unrelated_blocked": sorted(int(signum) for signum in unrelated),
+    "carrier": os.environ.get("GLUDD_SIGNAL_TEST_CARRIER"),
+}), encoding="utf-8")
+os.execvpe(sys.argv[3], sys.argv[3:], os.environ.copy())
+"""
+    return [sys.executable, "-P", "-c", source, mode, str(witness), *command]
 
 
 def _interrupt_running_gate(
@@ -186,6 +217,7 @@ def _interrupt_running_gate(
     caught_signal: signal.Signals,
     *,
     signal_process_group: bool = True,
+    inherited_signal_mode: str | None = None,
 ) -> tuple[int, str, str, Path, Path]:
     """Start an isolated gate, signal its process group, and collect evidence."""
     status = tmp_path / "gate-status"
@@ -194,24 +226,43 @@ def _interrupt_running_gate(
         "sleep 30",
         status_file=status,
         lock_file=lock,
-        extra_env={"GLUDD_GATE_ASYNC_FORCE_PIDFILE": "1"},
+        extra_env={
+            "GLUDD_GATE_ASYNC_FORCE_PIDFILE": "1",
+            "SYSTEM_PYTHON": sys.executable,
+            "GLUDD_SIGNAL_TEST_CARRIER": "owned unrelated carrier",
+        },
     )
+    command = ["bash", str(GATE_ASYNC_SH)]
+    if inherited_signal_mode is not None:
+        command = _inherited_signal_command(
+            command,
+            inherited_signal_mode,
+            tmp_path / "inherited-launch.json",
+        )
     proc = subprocess.Popen(
-        ["bash", str(GATE_ASYNC_SH)],
+        command,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         env=env,
         start_new_session=True,
-        preexec_fn=_reset_signal_mask,
     )
     try:
-        _wait_for_status(status, "RUNNING ")
+        running = _wait_for_status(status, "RUNNING ")
+        if inherited_signal_mode is not None:
+            witness = json.loads((tmp_path / "inherited-launch.json").read_text(encoding="utf-8"))
+            assert int(running.split()[2]) == proc.pid == witness["pid"]
+            assert os.getpgid(proc.pid) == os.getsid(proc.pid) == proc.pid
+            assert witness["pgid"] == witness["sid"] == proc.pid
+            assert witness["carrier"] == "owned unrelated carrier"
+            assert witness["ignored_int"] is (inherited_signal_mode in {"ignored-int", "ignored-int-blocked-term"})
+            assert witness["blocked_int"] is (inherited_signal_mode == "blocked-int")
+            assert witness["blocked_term"] is (inherited_signal_mode in {"blocked-term", "ignored-int-blocked-term"})
         if signal_process_group:
             os.killpg(proc.pid, caught_signal)
         else:
             proc.send_signal(caught_signal)
-        stdout, stderr = proc.communicate(timeout=30)
+        stdout, stderr = proc.communicate(timeout=10)
     except BaseException:
         if proc.poll() is None:
             os.killpg(proc.pid, signal.SIGKILL)
@@ -364,13 +415,9 @@ class TestGateAsyncSignalTerminalState:
         assert not list(tmp_path.glob("gate-status.*.tmp"))
 
     def test_sigint_writes_aborted_and_preserves_130(self, tmp_path: Path) -> None:
-        # Send SIGINT to the wrapper only: the wrapper's trap must still clean up
-        # the owned child. The child sleep ignores SIGINT when launched as a
-        # background job, so a process-group signal can race and hang.
         result, stdout, stderr, status, lock = _interrupt_running_gate(
             tmp_path,
             signal.SIGINT,
-            signal_process_group=False,
         )
 
         assert result == 130, f"stdout: {stdout}\nstderr: {stderr}"
@@ -691,3 +738,171 @@ def test_original_gate_assertions_reject_broken_fixture_ownership(
     with pytest.raises(AssertionError, match=message):
         case(tmp_path)
     assert not (tmp_path / "gate-async.lock").exists()
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "ignored-int",
+        "blocked-int",
+        "blocked-term",
+        "ignored-int-blocked-term",
+    ],
+)
+def test_inherited_signal_state_survives_unguarded_native_bash_exec(
+    tmp_path: Path,
+    mode: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An active unguarded witness proves the same child input reaches Bash."""
+    monkeypatch.setenv("GLUDD_SIGNAL_TEST_CARRIER", "owned unrelated carrier")
+    before_handlers = {signum: signal.getsignal(signum) for signum in (signal.SIGINT, signal.SIGTERM)}
+    before_mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+    witness = tmp_path / "before-exec.json"
+    observed = tmp_path / "after-bash-exec.json"
+    probe = r"""
+import json
+import os
+import signal
+import sys
+from pathlib import Path
+
+watched = (signal.SIGINT, signal.SIGTERM)
+mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+Path(sys.argv[1]).write_text(json.dumps({
+    "pid": os.getpid(), "pgid": os.getpgid(0), "sid": os.getsid(0),
+    "ignored_int": signal.getsignal(signal.SIGINT) == signal.SIG_IGN,
+    "blocked_int": signal.SIGINT in mask,
+    "blocked_term": signal.SIGTERM in mask,
+    "unrelated_blocked": sorted(int(signum) for signum in mask - set(watched)),
+    "carrier": os.environ.get("GLUDD_SIGNAL_TEST_CARRIER"),
+}), encoding="utf-8")
+"""
+    command = [
+        "bash",
+        "-c",
+        'exec "$@"',
+        "gludd-inherited-signal-control",
+        sys.executable,
+        "-P",
+        "-c",
+        probe,
+        str(observed),
+    ]
+    result = subprocess.run(
+        _inherited_signal_command(command, mode, witness),
+        cwd=tmp_path,
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+        start_new_session=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    before = json.loads(witness.read_text(encoding="utf-8"))
+    after = json.loads(observed.read_text(encoding="utf-8"))
+    assert after == before
+    assert before["pid"] == before["pgid"] == before["sid"]
+    assert before["ignored_int"] is (mode in {"ignored-int", "ignored-int-blocked-term"})
+    assert before["blocked_int"] is (mode == "blocked-int")
+    assert before["blocked_term"] is (mode in {"blocked-term", "ignored-int-blocked-term"})
+    assert before["carrier"] == "owned unrelated carrier"
+    assert {signum: signal.getsignal(signum) for signum in before_handlers} == before_handlers
+    assert signal.pthread_sigmask(signal.SIG_BLOCK, ()) == before_mask
+    assert os.environ["GLUDD_SIGNAL_TEST_CARRIER"] == "owned unrelated carrier"
+
+
+@pytest.mark.parametrize(
+    ("mode", "caught_signal"),
+    [
+        ("ignored-int", signal.SIGINT),
+        ("blocked-int", signal.SIGINT),
+        ("blocked-term", signal.SIGTERM),
+        ("ignored-int-blocked-term", signal.SIGTERM),
+    ],
+)
+@pytest.mark.parametrize("signal_process_group", [True, False], ids=["group", "wrapper"])
+def test_native_wrapper_resets_inherited_signal_state(
+    tmp_path: Path,
+    mode: str,
+    caught_signal: signal.Signals,
+    signal_process_group: bool,
+) -> None:
+    """The original Bash entrypoint owns its reset, terminal record and drain."""
+    result, stdout, stderr, status, lock = _interrupt_running_gate(
+        tmp_path,
+        caught_signal,
+        signal_process_group=signal_process_group,
+        inherited_signal_mode=mode,
+    )
+    expected = 128 + caught_signal
+    assert result == expected, f"stdout: {stdout}\nstderr: {stderr}"
+    lines = status.read_text(encoding="utf-8").splitlines()
+    parts = lines[0].split()
+    assert parts[0] == "ABORTED" and int(parts[1]) > 1_700_000_000
+    assert parts[2:] == [
+        f"signal={caught_signal.name.removeprefix('SIG')}",
+        f"rc={expected}",
+        "cleanup_rc=0",
+    ]
+    assert lines[1] == "=== GATE: ABORTED ==="
+    assert "[gate-kill]" in stdout
+    assert not lock.exists()
+    assert not list(tmp_path.glob("gate-status.*.tmp"))
+
+
+def test_signal_bootstrap_preserves_native_import_boundary_and_arguments(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise an active CWD shadow before the same dirty-state native entry."""
+    carrier = tmp_path / "explicit-pythonpath-carrier"
+    carrier.mkdir()
+    monkeypatch.setenv("PYTHONPATH", str(carrier))
+    marker = tmp_path / "owned import shadow"
+    (tmp_path / "signal.py").write_text(
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('active owned signal import')\n"
+        "raise RuntimeError('owned import-shadow witness')\n",
+        encoding="utf-8",
+    )
+    env = _isolated_gate_env(
+        "exit 0",
+        status_file=tmp_path / "gate-status",
+        lock_file=tmp_path / "gate-async.lock",
+        extra_env={"SYSTEM_PYTHON": sys.executable, "GLUDD_GATE_ASYNC_FORCE_PIDFILE": "1"},
+    )
+    unguarded = subprocess.run(
+        [sys.executable, "-c", "import signal"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert unguarded.returncode != 0
+    assert marker.read_text(encoding="utf-8") == "active owned signal import"
+    marker.unlink()
+    reference = "owned reference with spaces"
+    result = subprocess.run(
+        _inherited_signal_command(
+            ["bash", str(GATE_ASYNC_SH), reference],
+            "ignored-int-blocked-term",
+            tmp_path / "before-native-exec.json",
+        ),
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+        start_new_session=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not marker.exists(), "the actual bootstrap must retain its native -P boundary"
+    assert f"ref='{reference}'" in result.stdout
+    assert (tmp_path / "gate-status").read_text(encoding="utf-8").startswith("PASS ")
+    assert not (tmp_path / "gate-async.lock").exists()
+    assert env["PYTHONPATH"] == os.environ["PYTHONPATH"] == str(carrier)
