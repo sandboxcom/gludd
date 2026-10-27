@@ -229,7 +229,8 @@ def test_native_reviewed_finalization_executes_in_bounded_early_admission(test_n
     recipes = executable.split("$(MAKE) --no-print-directory test-files")
     assert len(recipes) == 4
     selectors = recipes[3].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
-    assert len(selectors) == 14 and selectors.count(node) == 1
+    assert len(selectors) == 15 and selectors.count(node) == 1
+    assert selectors[-4] == "tests/unit/test_ansible_ee_locked_consumer.py"
     assert selectors[-3:-1] == ["tests/unit/test_observed_command.py", "tests/unit/test_status_heartbeat_terminal.py"]
     assert node not in recipes[1] and node not in recipes[2]
     phase = next(item for item in manifest["runtime_contract"]["phases"] if item["target"] == family["owner_target"])
@@ -2113,7 +2114,6 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_azure_containerapp_coverage_target.py "
         "tests/unit/test_ee_owned_collection_runtime_metadata.py "
         "tests/unit/test_no_sleep_subagent.py "
-        "tests/unit/test_ansible_ee_locked_consumer.py "
         "tests/unit/test_native_builder_optional_formats.py "
         "tests/unit/test_native_format_profile_sync_target.py "
         "tests/unit/test_ansible_ee_locked_consumer_admission.py "

@@ -152,7 +152,6 @@ ROSTER = (
     "tests/unit/test_azure_containerapp_coverage_target.py",
     "tests/unit/test_ee_owned_collection_runtime_metadata.py",
     "tests/unit/test_no_sleep_subagent.py",
-    "tests/unit/test_ansible_ee_locked_consumer.py",
     "tests/unit/test_native_builder_optional_formats.py",
     "tests/unit/test_native_format_profile_sync_target.py",
     "tests/unit/test_ansible_ee_locked_consumer_admission.py",
@@ -220,6 +219,7 @@ REVIEWED_FINALIZATION = (
     "tests/unit/test_makefile_audit_deep.py::TestScriptReferencesExist::test_all_scripts_exist",
     "tests/unit/test_task_watchdog.py::test_live_gate_bound_waiter_protects_the_complete_tree[make-pid]",
     "tests/unit/test_push_discipline_checks.py::TestVerifyRemoteAfterPush::test_verify_remote_compares_sha",
+    "tests/unit/test_ansible_ee_locked_consumer.py",
     "tests/unit/test_observed_command.py",
     "tests/unit/test_status_heartbeat_terminal.py",
     "tests/unit/test_dependency_profiles.py::test_selected_profile_locks_preserve_controller_jsonpointer_requirement",
@@ -275,7 +275,7 @@ def test_runtime_admission_retains_entire_roster_and_fresh_help(tmp_path: Path) 
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
     assert "tests/unit/test_makefile_audit_deep.py" not in str(rows[0]["files"])
     tail = rows[2]["files"]
-    assert isinstance(tail, list) and len(tail) == 14
+    assert isinstance(tail, list) and len(tail) == 15
     assert tail[-1] == (
         "tests/unit/test_dependency_profiles.py::"
         "test_selected_profile_locks_preserve_controller_jsonpointer_requirement"
@@ -296,6 +296,34 @@ def test_runtime_admission_retains_entire_roster_and_fresh_help(tmp_path: Path) 
     assert 'export VIRTUAL_ENV="$$UV_PROJECT_ENVIRONMENT"' in test_files
     assert "verbosity_test_cases" not in test_files
     assert "--dist loadgroup" in makefile_layout.compose_makefile(ROOT / "Makefile")
+
+
+def test_locked_ee_whole_owner_uses_existing_tail_with_original_inventory(tmp_path: Path) -> None:
+    """Route the complete profiled owner once while retaining the original native union."""
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert len(rows) == 3
+    selections: list[list[str]] = []
+    for row in rows:
+        files = row["files"]
+        assert isinstance(files, list) and all(isinstance(node, str) for node in files)
+        selections.append(files)
+    original_inventory = (*ROSTER, HELP, *REVIEWED_FINALIZATION)
+    assert len(original_inventory) == len(set(original_inventory)) == 155
+    assert Counter(node for files in selections for node in files) == Counter(original_inventory)
+    locked = "tests/unit/test_ansible_ee_locked_consumer.py"
+    coverage = [
+        sum(node == locked or node.startswith(locked + "::") for node in files)
+        for files in selections
+    ]
+    assert coverage == [0, 0, 1], (locked, coverage)
+    assert selections[2][-4:] == [
+        locked, "tests/unit/test_observed_command.py", "tests/unit/test_status_heartbeat_terminal.py",
+        "tests/unit/test_dependency_profiles.py::"
+        "test_selected_profile_locks_preserve_controller_jsonpointer_requirement",
+    ]
+    assert [len(files) for files in selections] == [139, 1, 15]
+    assert rows[2]["phase"] == "reviewed"
 
 
 def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp_path: Path) -> None:
@@ -541,6 +569,7 @@ def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp
     assert len(original_selectors) == len(set(original_selectors)) == 155
     assert Counter(node for files in selections for node in files) == Counter(original_selectors)
     moved = (
+        "tests/unit/test_ansible_ee_locked_consumer.py",
         "tests/unit/test_observed_command.py",
         "tests/unit/test_status_heartbeat_terminal.py",
     )
@@ -551,7 +580,7 @@ def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp
         ]
         assert coverage == [0, 0, 1], (file, coverage)
         assert selections[2].count(file) == 1
-    assert [len(files) for files in selections] == [140, 1, 14]
+    assert [len(files) for files in selections] == [139, 1, 15]
     assert selections[0] == [node for node in original_selectors[:142] if node not in moved]
     assert selections[1] == [original_selectors[142]]
     original_tail = list(original_selectors[143:])

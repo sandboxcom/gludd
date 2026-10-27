@@ -120,6 +120,10 @@ def test_admission_contracts_reject_mutated_promoted_selectors(
         assert mutation == "widening"
         # The new whole-file routes need active narrowing, not file-to-file identity.
         narrowing = {
+            "tests/unit/test_ansible_ee_locked_consumer.py": (
+                "tests/unit/test_ansible_ee_locked_consumer.py::"
+                "test_native_create_consumes_sixteen_local_metadata_fixtures_once"
+            ),
             "tests/unit/test_observed_command.py": (
                 "tests/unit/test_observed_command.py::"
                 "test_running_publication_requires_armed_and_restored_signal_handlers"
