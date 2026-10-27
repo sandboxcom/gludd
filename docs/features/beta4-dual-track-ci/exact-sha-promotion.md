@@ -828,6 +828,33 @@ it is not a Gludd execution or performance measurement. The current advisory's
 reviewed range, actual lock and native audit establish this candidate's scope.
 No additional issue comments or broad source search were retrieved.
 
+The original-source a403 review separately found an unsafe test-recorder
+boundary: tests/unit/test_node_audit_source_inspection.py saved the entire
+inherited environment in JSONL. The recorder now retains all environment key
+names and only its three owned public fields, LC_ALL, MODE and
+GLUDD_NODE_SOURCE_UNRELATED. The existing forbidden-carrier assertion checks
+the complete name set, preserving sanitation without retaining credential
+values. All other original function bodies/assertions remain. Two additive
+ordinary/-e witnesses use only a bounded owned environment and require a
+private canary value to be absent from recorded output.
+
+Actual tests-only RED is2FAIL/1.35s/native2/2.722s:
+v012-review-node-privacy-red/v012-review-node-privacy-red311-a403-20261026.json.
+The complete19-owner browser/privacy receiving passes554 EACH,3.11 in106.76s/
+native108.332s and3.12 in115.86s/native117.729s:
+v012-review-root-receiving/v012-review-root-receiving{311,312}-corrected-a403-20261027.json.
+These paths are under .gate-logs/observed in the isolated
+feature/v012-original-review-repairs-20261026 checkout at base
+a403ed858bb561f7bbc8353c54ad057be4020f89. Both exact sessions are drained and
+native observed-status verifies inactive/passed0; each native trace retains
+1111events/554complete protocols with zero issues/failures/unfinished nodes.
+Static checks and the six-path content guard pass. Independent review approves
+source only. TASKS adds only this exact test path to existing S98.4 scope,
+retaining all328 IDs/states/order and2499 lines. No real transport/auth/npm,
+audit, canonical gate, exact-SHA CI, deployment or release result is supplied
+by these fixture controls. Final prose and normal collection/commit remain
+separate from the original installed audit and all final release obligations.
+
 The Make-only public companion is `inspect-node-audit-source`. Its literal
 `NODE_AUDIT_SOURCE_VALIDATE_ONLY=1` default is a pure offline plan; explicit 0
 retrieves a fixed list with four advisories, four npm metadata endpoints and
