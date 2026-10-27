@@ -5,8 +5,8 @@ import json
 import os
 import shlex
 import subprocess
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import NamedTuple
 
 import pytest
 from scripts.makefile_layout import compose_makefile
@@ -16,10 +16,11 @@ from tests.unit.test_git_merge_nc_safety import REAL_GIT, run_git
 ROOT = Path(__file__).resolve().parents[2]
 
 
-class StatusFixture(NamedTuple):
+@dataclass(frozen=True)
+class StatusFixture:
     root: Path
     makefile: Path
-    environment: dict[str, str]
+    environment: dict[str, str] = field(repr=False)
 
 
 @pytest.fixture
@@ -160,3 +161,18 @@ def test_status_contract_has_a_safe_zero_variable_example() -> None:
     assert len(matches) == 1
     assert matches[0]["make_variables"] == []
     assert matches[0]["behavior"] == "make git-status"
+
+
+def test_status_fixture_repr_keeps_owned_environment_private(tmp_path: Path) -> None:
+    environment = {
+        "GLUDD_FAKE_PRIVATE_CARRIER": "owned-private-repr-marker",
+        "GLUDD_FAKE_RETAINED_CARRIER": "owned-retained-repr-marker",
+    }
+    fixture = StatusFixture(tmp_path, tmp_path / "owned.mk", environment)
+
+    rendered = repr(fixture)
+
+    assert all(name not in rendered and value not in rendered for name, value in environment.items())
+    assert fixture.environment is environment
+    assert fixture.root == tmp_path
+    assert str(fixture.makefile) in rendered

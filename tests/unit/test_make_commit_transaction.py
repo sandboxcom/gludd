@@ -13,7 +13,7 @@ import signal
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import FunctionType, ModuleType
 from typing import TYPE_CHECKING
@@ -232,7 +232,7 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
 class NativeTransaction:
     root: Path
     state: Path
-    environment: dict[str, str]
+    environment: dict[str, str] = field(repr=False)
 
     def start(
         self,
@@ -1516,3 +1516,18 @@ def test_shared_provider_overrides_reject_replacement_with_native_unguarded_witn
         assert result.returncode == 0, (result.stdout, result.stderr)
         assert result.stdout.strip() == expected
         assert not result.stderr
+
+
+def test_transaction_fixture_repr_keeps_owned_environment_private(tmp_path: Path) -> None:
+    environment = {
+        "GLUDD_FAKE_PRIVATE_CARRIER": "owned-private-repr-marker",
+        "GLUDD_FAKE_RETAINED_CARRIER": "owned-retained-repr-marker",
+    }
+    fixture = NativeTransaction(tmp_path, tmp_path / "owned-state", environment)
+
+    rendered = repr(fixture)
+
+    assert all(name not in rendered and value not in rendered for name, value in environment.items())
+    assert fixture.environment is environment
+    assert fixture.root == tmp_path
+    assert str(fixture.state) in rendered

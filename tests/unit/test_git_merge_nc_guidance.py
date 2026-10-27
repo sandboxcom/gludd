@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from tests.unit.test_git_merge_nc_safety import (
+    RepositoryFixture,
     invoke,
     run_git,
     snapshot,
@@ -18,10 +19,10 @@ from tests.unit.test_git_merge_nc_safety import (
 
 @pytest.mark.parametrize("merge_outcome", ("clean", "dirty", "missing", "conflict", "existing"))
 def test_result_guidance_preserves_native_status_and_proof_scope(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path, merge_outcome: str,
+    repository: RepositoryFixture, tmp_path: Path, merge_outcome: str,
 ) -> None:
     """Each terminal result directs the next action without granting release proof."""
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     branch = "feature/clean"
     if merge_outcome == "dirty":
         (root / "keep.txt").write_bytes(b"retain the owned dirty file\n")

@@ -9,6 +9,7 @@ import shutil
 import stat
 import subprocess
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
@@ -38,8 +39,18 @@ def git_path(root: Path, environment: dict[str, str], name: str) -> Path:
     return value if value.is_absolute() else root / value
 
 
+@dataclass(frozen=True)
+class RepositoryFixture:
+    root: Path
+    environment: dict[str, str] = field(repr=False)
+
+
+def _repository_state(root: Path, environment: dict[str, str]) -> RepositoryFixture:
+    return RepositoryFixture(root, environment)
+
+
 @pytest.fixture
-def repository(tmp_path: Path) -> tuple[Path, dict[str, str]]:
+def repository(tmp_path: Path) -> RepositoryFixture:
     root = tmp_path / "repository"
     root.mkdir()
     private_home = tmp_path / "home"
@@ -93,7 +104,7 @@ def repository(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     (root / "keep.txt").write_text("checkpoint payload\n", encoding="utf-8")
     run_git(root, environment, "stash", "push", "-m", "owned fixture checkpoint")
     run_git(root, environment, "update-ref", "refs/gludd-checkpoints/retained", base)
-    return root, environment
+    return _repository_state(root, environment)
 
 
 def snapshot(root: Path, environment: dict[str, str]) -> dict[str, object]:
@@ -208,9 +219,9 @@ def test_external_fixture_configuration_is_confined(tmp_path: Path) -> None:
 @pytest.mark.parametrize("dirty", ["staged-new", "unstaged", "untracked", "mode"])
 @pytest.mark.parametrize("origin", ["command", "inherited", "environment-e"])
 def test_dirty_refusal_preserves_exact_index_worktree_and_checkpoints(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path, dirty: str, origin: str,
+    repository: RepositoryFixture, tmp_path: Path, dirty: str, origin: str,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     if dirty == "staged-new":
         (root / "new-test.py").write_text("# source-identical fixture test\n", encoding="utf-8")
         run_git(root, environment, "add", "new-test.py")
@@ -229,9 +240,9 @@ def test_dirty_refusal_preserves_exact_index_worktree_and_checkpoints(
 
 
 def test_existing_merge_is_never_aborted(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path,
+    repository: RepositoryFixture, tmp_path: Path,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     native = run_git(root, environment, "-c", "merge.autoStash=false", "merge", "--no-autostash",
                      "--no-ff", "--no-commit", "feature/conflict", check=False)
     assert native.returncode == 1
@@ -248,9 +259,9 @@ def test_existing_merge_is_never_aborted(
     '"; touch TRIPWIRE; #', "--not-a-merge-option",
 ])
 def test_branch_data_is_literal_before_make_and_shell_expansion(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path, origin: str, payload: str,
+    repository: RepositoryFixture, tmp_path: Path, origin: str, payload: str,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     before = snapshot(root, environment)
     result, calls = invoke(root, environment, tmp_path, payload, origin=origin)
     assert not (root / "TRIPWIRE").exists(), result.stdout + result.stderr
@@ -261,9 +272,9 @@ def test_branch_data_is_literal_before_make_and_shell_expansion(
 
 @pytest.mark.parametrize("origin", ["command", "inherited", "environment-e"])
 def test_clean_no_commit_merge_pins_head_and_retains_owned_checkpoints(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path, origin: str,
+    repository: RepositoryFixture, tmp_path: Path, origin: str,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     before = snapshot(root, environment)
     result, calls = invoke(root, environment, tmp_path, origin=origin)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -281,9 +292,9 @@ def test_clean_no_commit_merge_pins_head_and_retains_owned_checkpoints(
 
 
 def test_valid_branch_containing_dollar_is_not_expanded(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path,
+    repository: RepositoryFixture, tmp_path: Path,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     branch = "feature/literal-$x"
     target = git_text(root, environment, "rev-parse", "feature/clean")
     run_git(root, environment, "update-ref", "refs/heads/" + branch, target)
@@ -295,9 +306,9 @@ def test_valid_branch_containing_dollar_is_not_expanded(
 
 
 def test_native_conflict_aborts_only_its_new_merge_and_retains_native_status(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path,
+    repository: RepositoryFixture, tmp_path: Path,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     before = snapshot(root, environment)
     result, calls = invoke(root, environment, tmp_path, "feature/conflict")
     assert result.returncode != 0
@@ -311,9 +322,9 @@ def test_native_conflict_aborts_only_its_new_merge_and_retains_native_status(
 
 @pytest.mark.parametrize("fault", ["status17", "merge17", "index-lock", "bad-ref"])
 def test_native_errors_do_not_abort_or_rewrite_prior_state(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path, fault: str,
+    repository: RepositoryFixture, tmp_path: Path, fault: str,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     lock = git_path(root, environment, "index.lock")
     if fault == "index-lock":
         lock.write_bytes(b"existing fixture-owned lock\n")
@@ -330,9 +341,9 @@ def test_native_errors_do_not_abort_or_rewrite_prior_state(
 
 
 def test_foreign_merge_state_after_native_error_is_retained(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path,
+    repository: RepositoryFixture, tmp_path: Path,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     before = snapshot(root, environment)
     result, calls = invoke(root, environment, tmp_path, fault="foreign17")
     assert result.returncode != 0
@@ -348,9 +359,9 @@ def test_foreign_merge_state_after_native_error_is_retained(
 
 
 def test_abort_failure_retains_both_native_failures_and_conflict_state(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path,
+    repository: RepositoryFixture, tmp_path: Path,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     before = snapshot(root, environment)
     result, calls = invoke(root, environment, tmp_path, "feature/conflict", fault="abort23")
     assert result.returncode != 0
@@ -365,9 +376,9 @@ def test_abort_failure_retains_both_native_failures_and_conflict_state(
 
 
 def test_ignored_checkpoint_is_not_overwritten(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path,
+    repository: RepositoryFixture, tmp_path: Path,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     (root / "ignored-proof.txt").write_bytes(b"retained ignored checkpoint")
     (root / "ignored-proof.txt").chmod(0o600)
     before = snapshot(root, environment)
@@ -404,9 +415,9 @@ def prepare_result_rename(root: Path, environment: dict[str, str], mode: str) ->
 @pytest.mark.parametrize("mode", ["true", "conflict"])
 @pytest.mark.parametrize("origin", ["command", "inherited", "environment-e"])
 def test_result_directory_rename_preserves_ignored_destination(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path, mode: str, origin: str,
+    repository: RepositoryFixture, tmp_path: Path, mode: str, origin: str,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     checkpoint = prepare_result_rename(root, environment, mode)
     before = snapshot(root, environment)
     result, calls = invoke(root, environment, tmp_path, "result/rename", origin=origin)
@@ -420,9 +431,9 @@ def test_result_directory_rename_preserves_ignored_destination(
 @pytest.mark.parametrize("direction", ["ignored-file", "ignored-directory"])
 @pytest.mark.parametrize("name", ["blocked", "blocked space", "blocked\nnewline"])
 def test_result_file_directory_prefix_collision_preserves_checkpoint(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path, direction: str, name: str,
+    repository: RepositoryFixture, tmp_path: Path, direction: str, name: str,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     run_git(root, environment, "checkout", "-b", "result/prefix")
     incoming = root / name
     if direction == "ignored-file":
@@ -448,9 +459,9 @@ def test_result_file_directory_prefix_collision_preserves_checkpoint(
 
 
 def test_result_unchanged_target_path_does_not_refuse_legitimate_merge(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path,
+    repository: RepositoryFixture, tmp_path: Path,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     (root / "retired.dat").write_bytes(b"base tracked bytes\n")
     run_git(root, environment, "add", "retired.dat")
     run_git(root, environment, "commit", "-m", "shared retired path")
@@ -479,9 +490,9 @@ def test_result_unchanged_target_path_does_not_refuse_legitimate_merge(
 
 @pytest.mark.parametrize("mode", ["true", "conflict"])
 def test_result_native_merge_tree_exposes_destination_without_index_or_ref_changes(
-    repository: tuple[Path, dict[str, str]], mode: str,
+    repository: RepositoryFixture, mode: str,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     prepare_result_rename(root, environment, mode)
     before = snapshot(root, environment)
     native = run_git(root, environment, "merge-tree", "--write-tree", "--no-messages", "--name-only",
@@ -502,9 +513,9 @@ def test_result_native_merge_tree_exposes_destination_without_index_or_ref_chang
     ("tree17", 17), ("tree129", 129), ("tree-malformed0", 2), ("tree-malformed1", 128),
 ])
 def test_result_preflight_errors_fail_closed_before_native_merge(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path, fault: str, expected: int,
+    repository: RepositoryFixture, tmp_path: Path, fault: str, expected: int,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     before = snapshot(root, environment)
     result, calls = invoke(root, environment, tmp_path, fault=fault)
     assert result.returncode != 0, result.stdout + result.stderr
@@ -535,9 +546,9 @@ def prepare_config_subtree(root: Path, environment: dict[str, str]) -> Path:
 @pytest.mark.parametrize("options", ["-s subtree", "-Xsubtree=prefix"])
 @pytest.mark.parametrize("origin", ["command", "inherited", "environment-e"])
 def test_config_branch_merge_options_refuse_before_result_or_actual_merge(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path, options: str, origin: str,
+    repository: RepositoryFixture, tmp_path: Path, options: str, origin: str,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     checkpoint = prepare_config_subtree(root, environment)
     run_git(root, environment, "config", "branch.development.mergeOptions", options)
     config = git_path(root, environment, "config")
@@ -556,9 +567,9 @@ def test_config_branch_merge_options_refuse_before_result_or_actual_merge(
 
 
 def test_config_native_subtree_changes_result_paths_without_mutating_checkout(
-    repository: tuple[Path, dict[str, str]],
+    repository: RepositoryFixture,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     prepare_config_subtree(root, environment)
     before = snapshot(root, environment)
     paths = {}
@@ -582,9 +593,9 @@ def test_config_native_subtree_changes_result_paths_without_mutating_checkout(
 
 @pytest.mark.parametrize("selection", ["default", "attribute"])
 def test_config_external_driver_cannot_run_during_preflight(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path, selection: str,
+    repository: RepositoryFixture, tmp_path: Path, selection: str,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     checkpoint = root / "ignored-proof.txt"
     checkpoint.write_bytes(b"external driver checkpoint stays\n")
     checkpoint.chmod(0o600)
@@ -622,9 +633,9 @@ def test_config_external_driver_cannot_run_during_preflight(
 
 
 def test_config_builtin_union_remains_native_and_preserves_no_commit_intent(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path,
+    repository: RepositoryFixture, tmp_path: Path,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     run_git(root, environment, "config", "merge.default", "union")
     config = git_path(root, environment, "config")
     before_config = config.read_bytes()
@@ -650,9 +661,9 @@ def test_config_builtin_union_remains_native_and_preserves_no_commit_intent(
 
 @pytest.mark.parametrize("default_strategy", ["ours", "missing-fixture-strategy"])
 def test_config_explicit_ort_replaces_default_strategy_without_changing_config(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path, default_strategy: str,
+    repository: RepositoryFixture, tmp_path: Path, default_strategy: str,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     run_git(root, environment, "config", "pull.twohead", default_strategy)
     config = git_path(root, environment, "config")
     before_config = config.read_bytes()
@@ -672,9 +683,9 @@ def test_config_explicit_ort_replaces_default_strategy_without_changing_config(
 
 
 def test_config_effective_empty_branch_options_allow_normal_merge(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path,
+    repository: RepositoryFixture, tmp_path: Path,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     run_git(root, environment, "config", "--add", "branch.development.mergeOptions", "-s subtree")
     run_git(root, environment, "config", "--add", "branch.development.mergeOptions", "")
     config = git_path(root, environment, "config")
@@ -691,9 +702,9 @@ def test_config_effective_empty_branch_options_allow_normal_merge(
 
 
 def test_config_detached_head_keeps_clean_native_merge_behavior(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path,
+    repository: RepositoryFixture, tmp_path: Path,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     run_git(root, environment, "checkout", "--detach")
     before = snapshot(root, environment)
     result, _calls = invoke(root, environment, tmp_path)
@@ -707,9 +718,9 @@ def test_config_detached_head_keeps_clean_native_merge_behavior(
 
 @pytest.mark.parametrize("fault", ["symbolic17", "config17"])
 def test_config_native_query_error_preserves_status_and_prevents_preflight(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path, fault: str,
+    repository: RepositoryFixture, tmp_path: Path, fault: str,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     before = snapshot(root, environment)
     result, calls = invoke(root, environment, tmp_path, fault=fault)
     assert result.returncode != 0, result.stdout + result.stderr
@@ -720,9 +731,9 @@ def test_config_native_query_error_preserves_status_and_prevents_preflight(
 
 
 def test_config_signature_verification_is_not_silently_disabled(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path,
+    repository: RepositoryFixture, tmp_path: Path,
 ) -> None:
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     run_git(root, environment, "config", "merge.verifySignatures", "true")
     before = snapshot(root, environment)
     result, calls = invoke(root, environment, tmp_path)
@@ -748,10 +759,10 @@ def install_full_make(root: Path, environment: dict[str, str]) -> None:
     "$(shell touch FULL_MAKE_TRIPWIRE)", chr(96) + "touch FULL_MAKE_TRIPWIRE" + chr(96),
 ], ids=["make-expression", "shell-expression"])
 def test_full_make_branch_data_stays_literal_before_startup(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path, origin: str, payload: str,
+    repository: RepositoryFixture, tmp_path: Path, origin: str, payload: str,
 ) -> None:
     """Real startup exports must never evaluate public branch data."""
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     install_full_make(root, environment)
     before = snapshot(root, environment)
     result, calls = invoke(root, environment, tmp_path, payload, origin=origin, full_make=True)
@@ -763,10 +774,10 @@ def test_full_make_branch_data_stays_literal_before_startup(
 
 @pytest.mark.parametrize("origin", ["command", "inherited", "environment-e"])
 def test_full_make_clean_merge_retains_native_no_commit_intent(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path, origin: str,
+    repository: RepositoryFixture, tmp_path: Path, origin: str,
 ) -> None:
     """The actual entrypoint supports all three literal branch origins."""
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     install_full_make(root, environment)
     before = snapshot(root, environment)
     result, calls = invoke(root, environment, tmp_path, origin=origin, full_make=True)
@@ -784,10 +795,10 @@ def test_full_make_clean_merge_retains_native_no_commit_intent(
 
 @pytest.mark.parametrize("origin", ["command", "inherited", "environment-e"])
 def test_full_make_dirty_refusal_keeps_the_staged_source_test(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path, origin: str,
+    repository: RepositoryFixture, tmp_path: Path, origin: str,
 ) -> None:
     """A staged source-identical test is refused without opening or aborting a merge."""
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     install_full_make(root, environment)
     (root / "new-test.py").write_bytes(b"# staged source-identical test\n")
     run_git(root, environment, "add", "new-test.py")
@@ -800,10 +811,10 @@ def test_full_make_dirty_refusal_keeps_the_staged_source_test(
 
 
 def test_namesake_file_cannot_skip_dirty_checkout_refusal(
-    repository: tuple[Path, dict[str, str]], tmp_path: Path,
+    repository: RepositoryFixture, tmp_path: Path,
 ) -> None:
     """A file named after the command must not turn admission into a no-op."""
-    root, environment = repository
+    root, environment = repository.root, repository.environment
     (root / "git-merge-nc").write_bytes(b"retained namesake checkpoint\n")
     before = snapshot(root, environment)
     result, calls = invoke(root, environment, tmp_path)
@@ -811,3 +822,18 @@ def test_namesake_file_cannot_skip_dirty_checkout_refusal(
     assert "GIT_MERGE_NC_REFUSED dirty" in result.stderr
     assert not merge_calls(calls), calls
     assert snapshot(root, environment) == before
+
+
+def test_merge_fixture_repr_keeps_owned_environment_private(tmp_path: Path) -> None:
+    environment = {
+        "GLUDD_FAKE_PRIVATE_CARRIER": "owned-private-repr-marker",
+        "GLUDD_FAKE_RETAINED_CARRIER": "owned-retained-repr-marker",
+    }
+    before = dict(environment)
+    fixture = _repository_state(tmp_path, environment)
+
+    rendered = repr(fixture)
+
+    assert all(name not in rendered and value not in rendered for name, value in environment.items())
+    assert str(tmp_path) in rendered
+    assert environment == before

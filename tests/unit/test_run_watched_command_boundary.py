@@ -12,7 +12,7 @@ import sys
 import types
 from collections.abc import Iterator
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
@@ -72,7 +72,7 @@ raise SystemExit(code)
 @dataclass
 class Probe:
     root: Path
-    environment: dict[str, str]
+    environment: dict[str, str] = field(repr=False)
 
     def command(self, phase: str, code: int = 0, *args: str) -> str:
         return shlex.join([sys.executable, str(self.root / "child.py"), phase, str(code), *args])
@@ -408,3 +408,18 @@ def test_second_stage_timeout_has_native124_and_is_drained(probe: Probe) -> None
         assert isinstance(child_pid, int) and child_pid > 0
         with pytest.raises(ProcessLookupError):
             os.kill(child_pid, 0)
+
+
+def test_probe_fixture_repr_keeps_owned_environment_private(tmp_path: Path) -> None:
+    environment = {
+        "GLUDD_FAKE_PRIVATE_CARRIER": "owned-private-repr-marker",
+        "GLUDD_FAKE_RETAINED_CARRIER": "owned-retained-repr-marker",
+    }
+    fixture = Probe(tmp_path, environment)
+
+    rendered = repr(fixture)
+
+    assert all(name not in rendered and value not in rendered for name, value in environment.items())
+    assert fixture.environment is environment
+    assert fixture.root == tmp_path
+    assert str(fixture.root) in rendered

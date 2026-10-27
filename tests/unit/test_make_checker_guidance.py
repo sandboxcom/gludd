@@ -10,6 +10,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypedDict, cast
 
@@ -42,8 +43,18 @@ def test_guidance_fixture_keeps_external_config_boundary(tmp_path: Path) -> None
     merge_safety.test_external_fixture_configuration_is_confined(tmp_path)
 
 
+@dataclass(frozen=True)
+class NativeRepositoryFixture:
+    root: Path
+    environment: dict[str, str] = field(repr=False)
+
+
+def _native_repository_state(root: Path, environment: dict[str, str]) -> NativeRepositoryFixture:
+    return NativeRepositoryFixture(root, environment)
+
+
 @pytest.fixture
-def native_repository(tmp_path: Path) -> tuple[Path, dict[str, str]]:
+def native_repository(tmp_path: Path) -> NativeRepositoryFixture:
     root = tmp_path / "native-repository"
     root.mkdir()
     (root / "scripts").mkdir()
@@ -64,7 +75,7 @@ def native_repository(tmp_path: Path) -> tuple[Path, dict[str, str]]:
         PYTHONPATH=str(root), PYTHONSAFEPATH="1", PYTHONNOUSERSITE="1",
         PYTHONDONTWRITEBYTECODE="1",
     )
-    return root, environment
+    return _native_repository_state(root, environment)
 
 
 def _native_result(
@@ -130,9 +141,9 @@ def _guidance_line(output: str) -> str:
 
 @pytest.mark.parametrize("expected_refusal", [False, True])
 def test_contract_native_pass_guidance_preserves_summary_and_limits(
-    native_repository: tuple[Path, dict[str, str]], expected_refusal: bool,
+    native_repository: NativeRepositoryFixture, expected_refusal: bool,
 ) -> None:
-    root, environment = native_repository
+    root, environment = native_repository.root, native_repository.environment
     path, payload = _contract_fixture(root)
     if expected_refusal:
         payload["targets"][0]["behavior"] += " # expected refusal: Make2"
@@ -157,9 +168,9 @@ def test_contract_native_pass_guidance_preserves_summary_and_limits(
     ("example-target", "fixture-owner: behavior must start with 'make fixture-owner'"),
 ])
 def test_contract_native_fail_guidance_preserves_every_native_reason(
-    native_repository: tuple[Path, dict[str, str]], broken: str, reason: str,
+    native_repository: NativeRepositoryFixture, broken: str, reason: str,
 ) -> None:
-    root, environment = native_repository
+    root, environment = native_repository.root, native_repository.environment
     path, payload = _contract_fixture(root)
     entry = payload["targets"][0]
     if broken == "target":
@@ -196,9 +207,9 @@ def test_contract_native_fail_guidance_preserves_every_native_reason(
     ("include", "include must be one explicit make/*.mk path"),
 ], ids=("missing", "json", "utf8", "shape", "makefile-missing", "include"))
 def test_contract_native_input_error_guidance_retains_exit_one(
-    native_repository: tuple[Path, dict[str, str]], broken: str, reason: str,
+    native_repository: NativeRepositoryFixture, broken: str, reason: str,
 ) -> None:
-    root, environment = native_repository
+    root, environment = native_repository.root, native_repository.environment
     path, payload = _contract_fixture(root)
     if broken == "json":
         path.write_text("{", encoding="utf-8")
@@ -231,9 +242,9 @@ def _guidance_promotion_fixture(root: Path) -> tuple[Path, dict[str, object]]:
 
 @pytest.mark.parametrize("manifest_spelling", ["relative", "absolute"])
 def test_promotion_native_pass_guidance_waits_for_six_terminal_children(
-    native_repository: tuple[Path, dict[str, str]], manifest_spelling: str,
+    native_repository: NativeRepositoryFixture, manifest_spelling: str,
 ) -> None:
-    root, environment = native_repository
+    root, environment = native_repository.root, native_repository.environment
     _root, payload = _guidance_promotion_fixture(root)
     path = root / "config" / "gate_failure_promotions.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
@@ -263,9 +274,9 @@ def test_promotion_native_pass_guidance_waits_for_six_terminal_children(
                   "owner target is not wired into integration-admission")),
 ])
 def test_promotion_native_fail_guidance_retains_all_actual_reasons(
-    native_repository: tuple[Path, dict[str, str]], broken: str, reasons: tuple[str, ...],
+    native_repository: NativeRepositoryFixture, broken: str, reasons: tuple[str, ...],
 ) -> None:
-    root, environment = native_repository
+    root, environment = native_repository.root, native_repository.environment
     _root, payload = _guidance_promotion_fixture(root)
     families = cast(list[dict[str, object]], payload["families"])
     runtime = cast(dict[str, object], payload["runtime_contract"])
@@ -304,9 +315,9 @@ def test_promotion_native_fail_guidance_retains_all_actual_reasons(
     ("oversized", "exceeds the 256000-byte limit"),
 ])
 def test_promotion_native_input_error_guidance_preserves_status_and_bound(
-    native_repository: tuple[Path, dict[str, str]], broken: str, reason: str,
+    native_repository: NativeRepositoryFixture, broken: str, reason: str,
 ) -> None:
-    root, environment = native_repository
+    root, environment = native_repository.root, native_repository.environment
     path = root / "config" / "gate_failure_promotions.json"
     if broken == "json":
         path.write_text("{", encoding="utf-8")
@@ -332,9 +343,9 @@ def test_promotion_native_input_error_guidance_preserves_status_and_bound(
     (["--manifest"], "expected one argument"),
 ])
 def test_promotion_native_argument_error_retains_usage_and_exit_two(
-    native_repository: tuple[Path, dict[str, str]], arguments: list[str], reason: str,
+    native_repository: NativeRepositoryFixture, arguments: list[str], reason: str,
 ) -> None:
-    root, environment = native_repository
+    root, environment = native_repository.root, native_repository.environment
     result = _native_result(root, environment, "check_gate_failure_promotions", *arguments)
     assert result.returncode == 2, result.stdout + result.stderr
     assert result.stdout == ""
@@ -348,12 +359,27 @@ def test_promotion_native_argument_error_retains_usage_and_exit_two(
 
 
 def test_promotion_native_help_stays_zero_without_claiming_a_result(
-    native_repository: tuple[Path, dict[str, str]],
+    native_repository: NativeRepositoryFixture,
 ) -> None:
-    root, environment = native_repository
+    root, environment = native_repository.root, native_repository.environment
     result = _native_result(root, environment, "check_gate_failure_promotions", "--help")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "usage:" in result.stdout
     assert result.stderr == ""
     assert "AGENT_NEXT " not in result.stdout
     assert "gate-failure-promotions: PASS" not in result.stdout
+
+
+def test_guidance_fixture_repr_keeps_owned_environment_private(tmp_path: Path) -> None:
+    environment = {
+        "GLUDD_FAKE_PRIVATE_CARRIER": "owned-private-repr-marker",
+        "GLUDD_FAKE_RETAINED_CARRIER": "owned-retained-repr-marker",
+    }
+    before = dict(environment)
+    fixture = _native_repository_state(tmp_path, environment)
+
+    rendered = repr(fixture)
+
+    assert all(name not in rendered and value not in rendered for name, value in environment.items())
+    assert str(tmp_path) in rendered
+    assert environment == before
