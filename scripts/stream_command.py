@@ -1367,8 +1367,11 @@ def _startup_inputs(
             raise ValueError("startup evidence path is outside the producer namespace")
         files.append(_startup_read(role, path, repository))
     log = next(item for item in files if item.role == "log")
-    if (status.get("bytes_written") != len(log.data)
-            or status.get("lines_written") != len(log.data.splitlines())):
+    # Match the native producer: complete LF records, excluding an unfinished tail.
+    if (type(status.get("bytes_written")) is not int
+            or type(status.get("lines_written")) is not int
+            or status.get("bytes_written") != len(log.data)
+            or status.get("lines_written") != log.data.count(b"\n")):
         raise ValueError("startup log size/count differs from its terminal status")
     if len(console_paths) > 8 or len(set(console_paths)) != len(console_paths):
         raise ValueError("at most eight distinct external console parts are accepted")

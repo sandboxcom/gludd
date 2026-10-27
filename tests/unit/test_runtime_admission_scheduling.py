@@ -18,7 +18,7 @@ from scripts import makefile_layout
 from tests.unit.test_observed_command import _command, _current_status
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 180
+EXPECTED_FAMILY_COUNT = 181
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 EXPECTED_MAIN_PYTEST_FLAGS = (
@@ -219,6 +219,7 @@ REVIEWED_FINALIZATION = (
     "tests/unit/test_makefile_audit_deep.py::TestScriptReferencesExist::test_all_scripts_exist",
     "tests/unit/test_task_watchdog.py::test_live_gate_bound_waiter_protects_the_complete_tree[make-pid]",
     "tests/unit/test_push_discipline_checks.py::TestVerifyRemoteAfterPush::test_verify_remote_compares_sha",
+    "tests/unit/test_runtime_startup_diagnostic.py::test_archive_unit_inputs_require_exact_integer_lf_counters",
     "tests/unit/test_ansible_ee_locked_consumer.py",
     "tests/unit/test_observed_command.py",
     "tests/unit/test_status_heartbeat_terminal.py",
@@ -275,7 +276,7 @@ def test_runtime_admission_retains_entire_roster_and_fresh_help(tmp_path: Path) 
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
     assert "tests/unit/test_makefile_audit_deep.py" not in str(rows[0]["files"])
     tail = rows[2]["files"]
-    assert isinstance(tail, list) and len(tail) == 15
+    assert isinstance(tail, list) and len(tail) == 16
     assert tail[-1] == (
         "tests/unit/test_dependency_profiles.py::"
         "test_selected_profile_locks_preserve_controller_jsonpointer_requirement"
@@ -309,7 +310,7 @@ def test_locked_ee_whole_owner_uses_existing_tail_with_original_inventory(tmp_pa
         assert isinstance(files, list) and all(isinstance(node, str) for node in files)
         selections.append(files)
     original_inventory = (*ROSTER, HELP, *REVIEWED_FINALIZATION)
-    assert len(original_inventory) == len(set(original_inventory)) == 155
+    assert len(original_inventory) == len(set(original_inventory)) == 156
     assert Counter(node for files in selections for node in files) == Counter(original_inventory)
     locked = "tests/unit/test_ansible_ee_locked_consumer.py"
     coverage = [
@@ -322,7 +323,7 @@ def test_locked_ee_whole_owner_uses_existing_tail_with_original_inventory(tmp_pa
         "tests/unit/test_dependency_profiles.py::"
         "test_selected_profile_locks_preserve_controller_jsonpointer_requirement",
     ]
-    assert [len(files) for files in selections] == [139, 1, 15]
+    assert [len(files) for files in selections] == [139, 1, 16]
     assert rows[2]["phase"] == "reviewed"
 
 
@@ -555,6 +556,7 @@ def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp
         "tree[make-pid]",
         "tests/unit/test_push_discipline_checks.py::TestVerifyRemoteAfterPush::test_verify_remote_"
         "compares_sha",
+        "tests/unit/test_runtime_startup_diagnostic.py::test_archive_unit_inputs_require_exact_integer_lf_counters",
         "tests/unit/test_dependency_profiles.py::test_selected_profile_locks_preserve_controller_"
         "jsonpointer_requirement",
     )
@@ -566,7 +568,7 @@ def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp
         files = row["files"]
         assert isinstance(files, list) and all(isinstance(node, str) for node in files)
         selections.append(files)
-    assert len(original_selectors) == len(set(original_selectors)) == 155
+    assert len(original_selectors) == len(set(original_selectors)) == 156
     assert Counter(node for files in selections for node in files) == Counter(original_selectors)
     moved = (
         "tests/unit/test_ansible_ee_locked_consumer.py",
@@ -580,11 +582,11 @@ def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp
         ]
         assert coverage == [0, 0, 1], (file, coverage)
         assert selections[2].count(file) == 1
-    assert [len(files) for files in selections] == [139, 1, 15]
+    assert [len(files) for files in selections] == [139, 1, 16]
     assert selections[0] == [node for node in original_selectors[:142] if node not in moved]
     assert selections[1] == [original_selectors[142]]
     original_tail = list(original_selectors[143:])
-    assert len(original_tail) == 12
+    assert len(original_tail) == 13
     assert selections[2] == original_tail[:-1] + list(moved) + original_tail[-1:]
     assert selections[2][-1] == (
         "tests/unit/test_dependency_profiles.py::"
@@ -1325,7 +1327,7 @@ def test_coverage_suite_provenance_failure_has_one_exact_native_route(tmp_path: 
         if index:
             assert node not in selection
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 181
     assert payload["families"][149]["id"] == "native-full-scan-success-inventory"
     assert payload["families"][150] == {
         "id": "coverage-native-suite-provenance",
@@ -1389,7 +1391,7 @@ def test_uv_prune_native_failure_has_one_exact_native_route(tmp_path: Path) -> N
         assert node.split("::", 1)[0] not in selection
     assert counts == [1, 0, 0]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 181
     assert payload["families"][150]["id"] == "coverage-native-suite-provenance"
     assert payload["families"][151] == {
         "id": "uv-prune-native-failure-status",
@@ -1425,7 +1427,7 @@ def test_uv_prune_inherited_policy_has_one_exact_native_route(tmp_path: Path) ->
     assert counts == [1, 0, 0]
     assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 181
     assert payload["families"][151]["id"] == "uv-prune-native-failure-status"
     assert payload["families"][152] == {
         "id": "uv-prune-inherited-policy-context", "owner_target": OWNER,
@@ -1456,7 +1458,7 @@ def test_shared_uv_inventory_has_one_exact_native_route(tmp_path: Path) -> None:
     assert all(node.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 181
     assert payload["families"][152]["id"] == "uv-prune-inherited-policy-context"
     assert payload["families"][153] == {
         "id": "shared-uv-cache-inventory-exposure", "owner_target": OWNER,
@@ -1496,7 +1498,7 @@ def test_git_handoff_failures_have_exact_native_routes(
     assert all(node_selector.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 181
     assert payload["families"][153]["id"] == "shared-uv-cache-inventory-exposure"
     assert payload["families"][154:156] == [
         {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
@@ -1590,6 +1592,9 @@ CANDIDATE_PROOF_PROMOTIONS = (
      "test_live_gate_bound_waiter_protects_the_complete_tree[make-pid]"),
     ("verify-remote-recipe-boundary", "tests/unit/test_push_discipline_checks.py::"
      "TestVerifyRemoteAfterPush::test_verify_remote_compares_sha"),
+    ("runtime-archive-lf-counter-contract",
+     "tests/unit/test_runtime_startup_diagnostic.py::"
+     "test_archive_unit_inputs_require_exact_integer_lf_counters"),
 )
 
 WORK_ITEM_PROMOTIONS = (
@@ -1617,12 +1622,13 @@ def test_make_safety_and_guidance_have_exact_native_routes(
         selections.append(selection)
     expected = [0, 0, 1] if promoted_family in {
         "make-local-script-reference-boundary", "watchdog-bound-gate-waiter", "verify-remote-recipe-boundary",
+        "runtime-archive-lf-counter-contract",
     } else [1, 0, 0]
     assert [selection.count(node_selector) for selection in selections] == expected
     assert all(node_selector.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 181
     assert [family["id"] for family in payload["families"][154:156]] == [
         "git-async-live-owner-handoff", "git-async-completed-owner-adoption",
     ]
@@ -1904,3 +1910,46 @@ def test_existing_observer_drains_both_overlap_branches_and_descendants(
             capture_output=True, text=True, check=False, timeout=5,
         )
         assert inspected.returncode == 1 and not inspected.stdout.strip(), inspected.stderr
+
+
+@pytest.mark.parametrize(
+    ("promoted_family", "node_selector"),
+    [pytest.param(
+        "runtime-archive-lf-counter-contract",
+        "tests/unit/test_runtime_startup_diagnostic.py::"
+        "test_archive_unit_inputs_require_exact_integer_lf_counters",
+        id="runtime-archive-lf-counter-contract",
+    )],
+)
+def test_archive_counter_promotion_uses_one_existing_tail_slot(
+    tmp_path: Path, promoted_family: str, node_selector: str,
+) -> None:
+    """Bind the literal archive predicate once without another native child."""
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    selections: list[list[str]] = []
+    for row in rows:
+        selection = row["files"]
+        assert isinstance(selection, list) and all(isinstance(node, str) for node in selection)
+        selections.append(selection)
+    assert [selection.count(node_selector) for selection in selections] == [0, 0, 1]
+    assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
+    assert [len(selection) for selection in selections] == [139, 1, 16]
+    assert selections[2][-4:] == [
+        "tests/unit/test_ansible_ee_locked_consumer.py", "tests/unit/test_observed_command.py",
+        "tests/unit/test_status_heartbeat_terminal.py", "tests/unit/test_dependency_profiles.py::"
+        "test_selected_profile_locks_preserve_controller_jsonpointer_requirement",
+    ]
+    payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
+    assert payload["families"][-1] == {
+        "id": promoted_family, "owner_target": OWNER, "node_kind": "pytest_node",
+        "node": node_selector, "full_gate_phase": "test",
+    }
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 181
+    assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
+    phase = next(item for item in payload["runtime_contract"]["phases"]
+                 if item["name"] == "pytest-runtime-compatibility")
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert len(payload["runtime_contract"]["phases"]) == 21
+    assert sum(item["max_seconds"] for item in payload["runtime_contract"]["phases"]) == 2850
+    assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True

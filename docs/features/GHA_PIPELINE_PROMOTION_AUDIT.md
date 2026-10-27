@@ -1,5 +1,44 @@
 # GHA pipeline and agentic promotion audit
 
+## Working U native archive contract repair
+
+Fixed pre-commit source snapshot,2026-10-27 UTC.
+Local T5f7e0bbfc506f373daca7a2e737c9bd371a03145 passes normal commit64.507s and
+fresh131370selected/131394collected,24deselected/0errors48.07s/native53.506s.
+Remote S Build40498498468 remains1FAIL/5PASS/13SKIP, with311 runtime124/90.5
+and strict archive2. SourceS Molecule40498817189 succeeds6; Pages40498943860
+succeeds3 validation jobs with deployment skipped. Those terminal results are
+native ledger observations, not deployment proof. The sourceS open combined
+runtime/archive family is d5b8783d8fa968c3eec9b4efff1a5ec84f632e5fb575e3d448ed3134ec349de4.
+
+The [U archive record](IMPORT_TIME_MEASUREMENT_INTEGRITY.md#native-lf-and-integer-archive-contract)
+owns actual original/type/early/routing REDs, native thirteen controls, the
+single child-free TAIL unit, original assertion preservation and SOURCE ONLY
+reviews. Exact integer/LF/raw-byte checks replace the mismatched visual count.
+The original producer, cleanup,90/60 and all180 predecessor families remain.
+Current family181 and MAIN139/HELP1/TAIL16 preserve all three native children.
+All eight promotion pins pass; no capacity or canonical-gate waiver follows.
+
+First full profile attempts retain573PASS/1FAIL EACH and no coverage result.
+Only the offending synthetic fixture's two LF metadata inputs were conformed;
+its malformed-import assertions are unchanged. Corrected whole startup+AST+
+original dot passes112 EACH,227events/112pairs/0issues. Full profile and remaining
+ordinary receiving remain pending; their deduplicated25-owner union keeps all
+four production sources and85/75 LINE AND BRANCH on both runtimes.
+
+Next: normal source checkpoint/fresh collection, clean-SHA combined native repair
+with inner90/60 then real terminal archive0 under one enclosing240/180 owner,
+then normal guarded exact-SHA publication and accepted Build plus parallel
+Molecule/Pages diagnostics. Diagnostic source can be published after focused
+acceptance while independent broader receiving continues. Actual hosted archive,
+terminal Build/all shards and each later promotion outcome must be observed.
+This source fixes diagnostic compatibility, with no hosted timeout-cause or
+speed claim. The failed311 raw envelope remains unavailable.
+
+Final focus132/128 HOLD and required combined333 are unchanged. No E/M object,
+canonical full gate, canonical push proof, master ZDD acceptance, signed artifact
+matrix or v0.1.2 release completion exists. Earlier fixed records retain scope.
+
 ## Fixed S hosted result and T fixture repair
 
 Published/remote-verified S b6530afbd41af2df9a3bcbdfa2c6b6511c8c647d has

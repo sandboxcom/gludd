@@ -1419,6 +1419,13 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_push_discipline_checks.py::TestVerifyRemoteAfterPush::test_verify_remote_compares_sha",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "runtime-archive-lf-counter-contract",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_runtime_startup_diagnostic.py::test_archive_unit_inputs_require_exact_integer_lf_counters",
+      "full_gate_phase": "test"
     }
   ]
 }

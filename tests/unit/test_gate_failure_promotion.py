@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 180
+EXPECTED_FAMILY_COUNT = 181
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -1832,6 +1832,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "presentation-hosted-apt-literal-mode", "git-status-native-index-readonly",
         "publication-native-command-envelope", "make-local-script-reference-boundary", "watchdog-bound-gate-waiter",
         "verify-remote-recipe-boundary",
+        "runtime-archive-lf-counter-contract",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (

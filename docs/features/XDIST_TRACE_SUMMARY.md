@@ -8,8 +8,8 @@ ASTs, the original eight-node promotion payload and30s child timeout.
 Production trace/summary behavior,90/60 admission and cleanup stay unchanged.
 
 The two direct session-start controls restored environment/config but leaked
-the active path/run ID. On both S765-pass runs,13 outer start/finish pairs
-were absent from the parent file. A separate real eight-pin Make child
+the active path/run ID. On both S765-pass runs,13 expected outer START events
+and13 expected outer FINISH events were absent. A real eight-pin Make child
 inherited the outer trace/run ID. The retained raw files contain752 outer
 starts plus8 nested starts; the strict reader correctly reports441 accepted
 pairs/320 issues/1 unfinished. These are separate routing/ownership defects;
