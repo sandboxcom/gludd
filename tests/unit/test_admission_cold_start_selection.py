@@ -268,6 +268,9 @@ def _run(
         "COLD_START_PROBE_LOG": str(events),
         "COLD_START_SNAPSHOT_ROOT": str(snapshots),
         "COLD_START_LIFECYCLE": str(lifecycle),
+        "GLUDD_XDIST_TRACE_LOG": str(tmp_path / f"pytest-trace-{run_id}.jsonl"),
+        "GLUDD_XDIST_TRACE_RUN_ID": "admission-cold-start-" + run_id,
+        "GLUDD_XDIST_TRACE_TRUNCATE": "0",
     }
     result = subprocess.run(
         [
@@ -442,3 +445,49 @@ def test_native_glob_is_derived_from_each_invocation_directory(
         assert str(rows[0]["flags"]).split().count(expected) == 1
         assert str(rows[2]["flags"]).split().count(expected) == 1
         assert "--ignore-glob" not in str(rows[1]["flags"])
+
+
+@pytest.mark.parametrize("candidate", [False, True])
+def test_native_cold_start_child_trace_does_not_write_parent_carriers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, candidate: bool,
+) -> None:
+    """Keep the real original/filtered two-node child out of its parent's trace."""
+    from dataclasses import dataclass, field
+
+    @dataclass(frozen=True)
+    class ParentEnvironment:
+        values: dict[str, str] = field(repr=False)
+
+    sentinel = tmp_path / "owned parent trace.sentinel"
+    sentinel.write_bytes(b"owned parent trace sentinel\n")
+    retained = sentinel.read_bytes()
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_LOG", str(sentinel))
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_RUN_ID", "v3-owned-parent")
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_TRUNCATE", "0")
+    parent = ParentEnvironment(os.environ.copy())
+    first, _second, _outside = _fixture_tree(tmp_path)
+    (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    run_id = "v3-candidate" if candidate else "v3-original"
+    result, snapshots, _calls = _run(
+        tmp_path, [str(first) + "::test_selected_a"], candidate=candidate, run_id=run_id,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert re.search(r"\b2 passed\b", result.stdout), result.stdout + result.stderr
+    parent_same = os.environ.copy() == parent.values
+    assert parent_same, "the native fixture changed its parent environment"
+    assert sentinel.read_bytes() == retained
+    assert len(snapshots) == 2
+    expected_nodes = {
+        str(row["nodeid"]) for row in cast(list[dict[str, object]], snapshots[0]["nodes"])
+    }
+    assert len(expected_nodes) == 2
+    assert all(
+        {str(row["nodeid"]) for row in cast(list[dict[str, object]], snapshot["nodes"])} == expected_nodes
+        for snapshot in snapshots
+    )
+    pids = scheduling._assert_v3_owned_native_child_trace(
+        tmp_path / f"pytest-trace-{run_id}.jsonl", "admission-cold-start-" + run_id,
+        {"test_selected_a[0]", "test_selected_a[1]"}, {"test_selected_a.py"},
+        workers=2, expected_nodes=expected_nodes,
+    )
+    assert pids == {str(snapshot["worker"]): cast(int, snapshot["pid"]) for snapshot in snapshots}

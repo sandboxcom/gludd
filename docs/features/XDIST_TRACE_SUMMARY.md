@@ -1,5 +1,50 @@
 # Durable xdist Trace Summaries
 
+## Native child trace input isolation (V3)
+
+Fixed working-source receipt,2026-10-27 UTC, at parent
+34a19fb775e6fcea97ee723a2b9a89b3f3ddd98e. Two existing fixture owners
+inherited the parent's trace log/run ID/truncation controls into native
+children. Prior complete ordinary13 traces mixed31 child protocol pairs
+with the outer781 cases. V3 copies the environment and gives each child
+only its three owned trace inputs; unrelated carriers and parent state
+remain exact. All54 original functions/393 assertions, original payloads,
+35/45-second child bounds and explicit compact-reporting inputs remain.
+
+Four new real native controls cover cold selection in both modes,
+shared-state pytest and the intentional fatal-warning child. Their copied
+environment fields use repr=False; failure assertions compare owned state
+without dumping ambient carriers. The original shared-state child retains
+its full native grouped node IDs. Initial RED retained two scheduling
+witnesses but two cold setup failures; correcting only the new cold
+workspace's pytest root then establishes both actual cold RED witnesses.
+Initial GREEN retains an incorrect new grouped-node oracle failure. Its
+correction conforms the new expectation to actual native IDs; no original
+payload or assertion changes.
+
+Final ordinary and traced controls plus logical AST pass5 EACH on311/312.
+Native ordinary durations are26.467/28.459 seconds; traced26.799/28.478.
+Both traced outer receipts contain13events/5pairs and zero issues, failures
+or unfinished nodes. Exact receipts use label v012-V3-trace-fixture and
+IDs v012-V3-trace-green-grouped-{ordinary,traced}{311,312}-34a19fb-20261027.
+
+Complete original ordinary13 owners plus logical AST then pass785 EACH:
+311273.16/native275.078 seconds;312286.65/native288.703. Both native
+statuses are inactive/passed/0, exact sessions drained; traces contain
+1573events/785pairs and zero issues, failures or unfinished nodes.
+Label v012-V3-ordinary13 uses IDs
+v012-V3-ordinary13-{311,312}-34a19fb-20261027. This removes the prior31
+mixed child pairs in this receiving scope. It proves no hosted runtime
+cause, speed benefit, canonical gate, global coverage or release success.
+
+Final source SHA256s are
+fc744c6191358988bd2713964f7f3983d09cde03e0a17e0d1439067165524ea0
+(cold) and85455d2be4fb03719499764a29909754e777f5fed47adfc37b4af23af8d24877
+(scheduling). Unchanged four-provider V2 coverage retains its actual
+576-EACH receipt; no project-wide coverage claim follows. Normal checkpoint
+and separate cheap early-admission repair remain next. Keep all seven S98
+items open and every final integration, exact-SHA, ZDD and artifact proof.
+
 ## Fixture trace isolation and ordinary entrypoint
 
 Fixed working-source snapshot,2026-10-27 UTC, before T's source commit.

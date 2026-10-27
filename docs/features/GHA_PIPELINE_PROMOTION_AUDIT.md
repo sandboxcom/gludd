@@ -1,5 +1,73 @@
 # GHA pipeline and agentic promotion audit
 
+## Comparative primary implementation review (2026-10-27 UTC)
+
+Earlier upstream research addressed individual CI/pytest failures; it did
+not establish an effective end-to-end agentic release strategy. This review
+reads pinned first-party implementations rather than treating another
+project's checklist or an open proposal as proven operating behavior.
+
+| Primary evidence | Finding and Gludd consequence |
+| --- | --- |
+| [OpenHands orchestrator](https://github.com/OpenHands/software-agent-sdk/blob/f7cbea4ff6210f8f665aacb166abfacfca6f8be0/.github/workflows/create-release.yml) and [publisher](https://github.com/OpenHands/software-agent-sdk/blob/f7cbea4ff6210f8f665aacb166abfacfca6f8be0/.github/workflows/pypi-release.yml) | Explicit publisher dispatch, tag checkout and requested-version validation make publication inputs concrete. Gludd's Build dispatch enforcement already implements part of this pattern; accepted Build still does not certify every publisher or terminal success. Use the existing release owners for remaining fan-out/fan-in. |
+| [OpenHands binary workflow](https://github.com/OpenHands/software-agent-sdk/blob/f7cbea4ff6210f8f665aacb166abfacfca6f8be0/.github/workflows/release-binaries.yml) | Five native binary builds run artifact startup/health checks; container smoke jobs inspect architecture manifests and boot images. Preserve Gludd's required fresh-byte/platform matrix and complete-matrix acceptance; another project's partial-publication policy is not Gludd's completion criterion. |
+| [OpenHands release documentation](https://github.com/OpenHands/software-agent-sdk/blob/f7cbea4ff6210f8f665aacb166abfacfca6f8be0/.github/workflows/README-RELEASE.md) and [release skill](https://github.com/OpenHands/software-agent-sdk/blob/f7cbea4ff6210f8f665aacb166abfacfca6f8be0/.agents/skills/sdk-release/SKILL.md) | At the same commit, documentation describes explicit dispatch while the skill still describes release-event chaining. Executable source and actual service responses must own claims. Another prose layer would not repair Gludd's missed early regressions. |
+| [SWE-agent CI](https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/.github/workflows/pytest.yaml) | Both Python3.11/3.12 are tested and trajectories upload with always(). Gludd already has both runtime lanes; V2 now actually uploads its failed311 admission archive. Diagnose that retained input before repeating a timeout. |
+| [Aider package](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/.github/workflows/release.yml) and [container workflows](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/.github/workflows/docker-release.yml) | Separate tag-triggered publishers are concise, but these files alone supply no Gludd-equivalent complete artifact fan-in. Trigger simplicity cannot substitute for required byte, signature, coverage or deployment proof. |
+
+Firsthand long-lived evidence includes the
+[OpenHands release automation request4162](https://github.com/OpenHands/software-agent-sdk/issues/4162)
+(open since July20) and
+[reported repeated enterprise bump403 failures5475](https://github.com/OpenHands/software-agent-sdk/issues/5475).
+The latter reports continue-on-error hiding failures across releases. These
+are issue reports, not independently reproduced Gludd causes. The
+[thin-controller proposal4637](https://github.com/OpenHands/software-agent-sdk/issues/4637)
+also explicitly reuses existing jobs and separates infrastructure/missing
+telemetry from evaluation outcomes; it remains an open proposal, not
+evidence of a shipped controller.
+
+Concrete status: normal Gludd publishers already require accepted exact-SHA
+Build signaling; separate Molecule/Pages dispatches remain separately owned.
+V3 isolates three real fixture child boundaries with native RED/GREEN and
+785-EACH whole receiving. Cheap caller-input/count regressions are being
+prepared for the existing early-admission owner; they are not implemented
+or timed by this research. No measured end-to-end release speed or release
+success is claimed. Retain existing final gates and avoid a second runner,
+observer, proof cache or prose-only certification path.
+
+## V3 hosted failure boundary
+
+Normal V2 checkpoint34a19fb775e6fcea97ee723a2b9a89b3f3ddd98e passed
+63.953 seconds with fresh131394 selected/131418 collected/24 deselected/0
+errors. New feature branch publication passed197.299 seconds through the
+normal guards and accepted Build40522919824. Separate diagnostic
+Molecule40523778932 passes all6jobs; Pages40523450015 passes both browsers
+and JavaScript coverage, with deployment skipped on this feature branch.
+
+Build40522919824 is terminal failure, attempt1:311 job122254627067 passes
+promotion then fails runtime;312 job122254627211 passes. Archive, summary
+and upload pass on both. Downloaded exact311 archive replays and verifies
+its stored roles/hashes: statusae27ec13b96c5cdf7a17a2af056434a0ee8e908e4ecee936970c3fa6694e87b8,
+log68414a990bd8a30821db4004700f5cc85d7489ca98aa8bf6a576a8ae6ed71631,
+trace74ca2a02ce8c58989d7592c09165c0a0d2d0774434512f541109cf8be361b072.
+It records124/90.566 seconds and5033events/2510pairs/0issues/failures/
+unfinished. These wall/protocol facts do not establish the timeout cause.
+The first local archive reader's sandbox cleanup failed; its escalated
+native0 replay passes0.608 seconds without launching runtime.
+
+Native ledger family16af6594e55238c36803e27791b640f9eb7275e6ed02e2346b7be44349c8678a
+is OPEN. The original U observer retains its5401.03-second timeout. A later
+native service reading is terminalFAIL:unit-1b job122227591467 andunit-2
+job122227591557. Exact unit-2 native context shows the old16==15 count
+assertion; V1 has separate full-owner local acceptance, not hosted repair
+proof. Unit-1b's cause remains unproved; an initial FAILED-token lookup
+matched successful parameter names and cannot establish its actual failure. V3 complete13 receiving is recorded in the
+[trace feature](XDIST_TRACE_SUMMARY.md#native-child-trace-input-isolation-v3).
+All eight V2 downstream shard intervals remain unknown behind the failed
+barrier. Final132/128 focus HOLD,333 combined replay, genuine integration,
+21600 canonical gate/global85/75 BOTH, canonical push, master ZDD and fresh
+complete signed artifacts remain pending; all seven S98 tasks stay open.
+
 ## V2 received archive replay security controls
 
 The [owning archive record](IMPORT_TIME_MEASUREMENT_INTEGRITY.md#native-archive-replay-security-coverage)

@@ -660,7 +660,12 @@ def test_existing_group_owner_isolates_shared_state_and_preserves_exact_once_out
         )
         result = _native_test_files(
             [shared, independent], workers,
-            environment={**os.environ, "GLUDD_RUNTIME_SCHEDULING_RECORD": str(record)},
+            environment={
+                **os.environ, "GLUDD_RUNTIME_SCHEDULING_RECORD": str(record),
+                "GLUDD_XDIST_TRACE_LOG": str(tmp_path / f"shared-state-{workers}.pytest.jsonl"),
+                "GLUDD_XDIST_TRACE_RUN_ID": f"runtime-shared-state-{workers}",
+                "GLUDD_XDIST_TRACE_TRUNCATE": "0",
+            },
         )
         assert result.returncode == 0, result.stdout + result.stderr
         assert "8 passed" in result.stdout
@@ -679,7 +684,12 @@ def test_two_worker_native_admission_keeps_warnings_fatal(tmp_path: Path) -> Non
         "    warnings.warn('runtime-admission-warning', UserWarning)\n",
         encoding="utf-8",
     )
-    result = _native_test_files([probe], 2)
+    result = _native_test_files([probe], 2, environment={
+        **os.environ,
+        "GLUDD_XDIST_TRACE_LOG": str(tmp_path / "warning-control.pytest.jsonl"),
+        "GLUDD_XDIST_TRACE_RUN_ID": "runtime-warning-control",
+        "GLUDD_XDIST_TRACE_TRUNCATE": "0",
+    })
     assert result.returncode != 0
     assert "FAILED" in result.stdout and "test_original_warning" in result.stdout
     assert "UserWarning: runtime-admission-warning" in result.stdout
@@ -1953,3 +1963,120 @@ def test_archive_counter_promotion_uses_one_existing_tail_slot(
     assert len(payload["runtime_contract"]["phases"]) == 21
     assert sum(item["max_seconds"] for item in payload["runtime_contract"]["phases"]) == 2850
     assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
+
+
+def _assert_v3_owned_native_child_trace(
+    path: Path, run_id: str, expected_suffixes: set[str], expected_files: set[str], *,
+    workers: int, failed: bool = False, expected_nodes: set[str] | None = None,
+) -> dict[str, int]:
+    """Assert native child identities and reuse the existing strict pair reader."""
+    from typing import cast
+
+    from scripts.summarize_xdist_trace import summarize_log
+
+    events: list[dict[str, object]] = [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert events and {event["run_id"] for event in events} == {run_id}
+    controller = [
+        event for event in events if event["event"] == "RUN_START" and event.get("role") == "controller"
+    ]
+    native_workers = [
+        event for event in events if event["event"] == "RUN_START" and event.get("role") == "worker"
+    ]
+    assert len(controller) == 1 and controller[0]["worker"] == "controller"
+    assert len(native_workers) == workers
+    pids = {str(event["worker"]): cast(int, event["pid"]) for event in native_workers}
+    assert set(pids) == {f"gw{index}" for index in range(workers)}
+    controller_pid = cast(int, controller[0]["pid"])
+    all_pids = [controller_pid, *pids.values()]
+    assert len(set(all_pids)) == workers + 1
+    assert all(type(pid) is int and pid > 0 and pid != os.getpid() for pid in all_pids)
+    finished_roles = [
+        event for event in events if event["event"] == "RUN_FINISH"
+    ]
+    assert {
+        (str(event["role"]), str(event["worker"]), cast(int, event["pid"]))
+        for event in finished_roles
+    } == {("controller", "controller", controller_pid), *(("worker", key, pid) for key, pid in pids.items())}
+    controller_finish = [event for event in finished_roles if event["role"] == "controller"]
+    assert len(controller_finish) == 1 and controller_finish[0]["exitstatus"] == (1 if failed else 0)
+    starts = [event for event in events if event["event"] == "START"]
+    finishes = [event for event in events if event["event"] == "FINISH"]
+    start_keys = Counter(
+        (str(event["run_id"]), str(event["worker"]), cast(int, event["pid"]), str(event["nodeid"]))
+        for event in starts
+    )
+    finish_keys = Counter(
+        (str(event["run_id"]), str(event["worker"]), cast(int, event["pid"]), str(event["nodeid"]))
+        for event in finishes
+    )
+    assert start_keys == finish_keys and set(start_keys.values()) == {1}
+    assert len(start_keys) == len(expected_suffixes)
+    assert {str(event["nodeid"]).split("::")[-1] for event in starts} == expected_suffixes
+    assert {Path(str(event["nodeid"]).split("::", 1)[0]).name for event in starts} == expected_files
+    assert all(str(event["worker"]) in pids and event["pid"] == pids[str(event["worker"])] for event in starts)
+    if expected_nodes is not None:
+        assert {str(event["nodeid"]) for event in starts} == expected_nodes
+    summary = summarize_log(path, run_id=run_id)
+    assert summary["started"] == summary["finished"] == len(expected_suffixes)
+    assert summary["timings"]["paired_count"] == len(expected_suffixes)
+    assert summary["timings"]["issue_count"] == 0 and summary["unfinished"] == []
+    if failed:
+        assert summary["failure_nodeid_count"] == 1 and summary["failure_report_count"] >= 1
+        reports = [
+            event for event in events
+            if event["event"] == "REPORT" and event.get("outcome") == "failed" and event.get("when") == "call"
+        ]
+        assert any(
+            str(event["worker"]) in pids and event["pid"] == pids[str(event["worker"])]
+            and str(event["nodeid"]).endswith("::test_original_warning") for event in reports
+        )
+    else:
+        assert summary["failure_report_count"] == 0
+    return pids
+
+
+@pytest.mark.parametrize("control", ["shared-state", "fatal-warning"])
+def test_existing_native_controls_own_trace_without_changing_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, control: str,
+) -> None:
+    """Keep actual shared-state and fatal-warning children in their owned traces."""
+    from dataclasses import dataclass, field
+
+    @dataclass(frozen=True)
+    class ParentEnvironment:
+        values: dict[str, str] = field(repr=False)
+
+    sentinel = tmp_path / "owned parent trace.sentinel"
+    sentinel.write_bytes(b"owned parent trace sentinel\n")
+    retained = sentinel.read_bytes()
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_LOG", str(sentinel))
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_RUN_ID", "v3-owned-parent")
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_TRUNCATE", "0")
+    parent = ParentEnvironment(os.environ.copy())
+    if control == "shared-state":
+        test_existing_group_owner_isolates_shared_state_and_preserves_exact_once_outcomes(tmp_path)
+    else:
+        test_two_worker_native_admission_keeps_warnings_fatal(tmp_path)
+    parent_same = os.environ.copy() == parent.values
+    assert parent_same, "the native control changed its parent environment"
+    assert sentinel.read_bytes() == retained
+    if control == "shared-state":
+        suffixes = {f"test_shared[{case}]@enforcement-shared-state" for case in range(4)} | {
+            f"test_independent[{case}]" for case in range(4)
+        }
+        for workers in (1, 2):
+            pids = _assert_v3_owned_native_child_trace(
+                tmp_path / f"shared-state-{workers}.pytest.jsonl", f"runtime-shared-state-{workers}",
+                suffixes, {"test_shared.py", "test_independent.py"}, workers=workers,
+            )
+            rows = [
+                json.loads(line) for line in (tmp_path / f"events-{workers}.jsonl").read_text().splitlines()
+            ]
+            assert pids == {str(row["worker"]): row["pid"] for row in rows}
+    else:
+        _assert_v3_owned_native_child_trace(
+            tmp_path / "warning-control.pytest.jsonl", "runtime-warning-control",
+            {"test_original_warning"}, {"test_warning.py"}, workers=2, failed=True,
+        )
