@@ -7,37 +7,43 @@ Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection 
 
 ## Current receiving record (2026-10-27 UTC)
 
-Current source checkpoint is f1aa82455ca1f78fc62ca7d09140af712dc37d70,
-with the approved four-path Node repair received but not yet committed.
-The first seven SESSION lines keep their fixed714 collection/source authority.
-Normal f1 hook collection passes131210/131234,24 deselected/0 errors;
-its clean Mac binary/DMG/tar/wheel/sdist builds and outside-checkout smokes pass.
-Those are fixedf1 diagnostic artifacts; the release inventory owns all hashes.
+Receiving starts from verified Main
+e7d814b263c15571f9c457f317a9b9c5ba422652, with privacy donor
+86ba8b8fd263a4acacbf709f04dacad5e97aeff8 and routing donor
+eed654ec2beefe8f8528241055f5e37616c9ba0c. The resulting cumulative source requires its own
+clean-SHA proofs. The first seven SESSION lines retain their fixed714 authority.
+The e7 source transaction passes68.647s; its fresh collection passes131246/
+131270,24 deselected/0 errors,49.32s/native55.386s. The privacy donor's normal
+transaction passes56.581s; its fresh collection passes131215/131239,24
+deselected/0 errors,44.15s/native49.789s. The release-status record retains exact
+receipts. Fixedf1 collection131210/131234 and five-artifact builds/smokes remain
+history. Checkpoint59e9c4292b8685076d98f2b4398c230ffd83cbe7 retains the six
+unapproved predecessor edits. The [privacy](docs/features/GIT_STATUS_READONLY.md) and
+[routing](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md) records own details.
 
-The operator approved unsafe TOML integer rejection and shared workflow scope.
-Native account-bound consent now verifies sandboxcom and workflow after the
-retained181.841s timeout. Authentication is not publication or CI evidence.
-The Node lock changes only TOML5.0.1/Zod4.6.7 under the plugin parent scope.
-All other pins, six original consumer cases and security assertions remain.
-Native relock5.357s/sync4.416s perform no audit. Unchanged security-floor RED
-is3FAIL/5PASS; complete23-owner receiving passes311490/312489 with1 original
-312 canonical-runtime skip and1 default hook-live deselection EACH.
-Actual native plugin E2E passes44 EACH. Independent review approves source only.
+Authentication/workflow scope and unsafe-TOML rejection are explicitly approved
+and resolved. All four Node families have local repairs; the narrow native
+audit at clean a403 reports zero vulnerabilities. The current native ledger has
+1 open family,11 repaired,50 resolved/167 runs. It supplies no hosted success.
 
-Fixed8d admission remains151.016s/original90-60 runtime86.989s; earlier124/125
-failures remain. The c7 feature-ci refusal is a workflow-baseline mismatch,
-before transport/hooks/Actions. Auth scope does not change that baseline check.
-Next normal Node commit/fresh collection, first repair-owned low-level audit,
-then native verify-state and normal guarded canonical publication/remote/CI.
-Four Node families remain open at this snapshot. All seven S98 tasks remain
-unchecked; checkpoint59e9 retains the six unapproved edits. Canonical21600
-gate/global85/75 BOTH, exact-SHA push CI, reviewed development/master promotion,
-ZDD, deployed-byte acceptance and complete signed stable artifacts stay open.
-Details: docs/releases/v0.1.2-implementation-status.md.
+Actual a403 Build40427263941 attempt1 fails gate312 job121936054995 at the
+original runtime90.5s/124; gate311 passes and all eight downstream shards stay
+unknown. Molecule40427577982 passes all six jobs. Pages40428095450 passes both
+browsers and JavaScript, with deployment skipped. All three are
+workflow_dispatch diagnostics, with no canonical push or deployment proof.
+
+Peer acceptance preserves original assertions/settings and has source-only
+approvals; exact scopes/counts remain in the implementation and feature records.
+Final clean cumulative90/60 repair-owned evidence, live admission, independent
+original-source review, genuine development integration/focus, canonical21600
+gate/global85aggregate-75per-file LINE AND BRANCH BOTH, canonical exact-SHA push
+CI, master ZDD and fresh signed stable all-assets release remain unproved.
+All seven S98 tasks stay unchecked;133 backlog items are excluded and ratchet0
+is unchanged. Details: [release status](docs/releases/v0.1.2-implementation-status.md).
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 
-Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;132 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. The active operator-directed wave permits six isolated implementation lanes and four local test cohorts only while native load and the eight-worker ceiling permit. Diagnostic GHA runs alongside independent source work; canonical runtime and final-proof settings retain their original bounds.
+Root owns S98.4 and Main/shared/Git/proof mutations on the candidate branch named below; development stays at the recorded base until integration acceptance. All seven S98.1-S98.7 stay unchecked;133 backlog items are excluded. Native worktree-state owns current HEAD/index; work-item/active-work-status, ci-failure-status and pipeline-status/ci-await own current observations. This manual handoff grants no gate/release authority. Model-agent names/status belong to the live conversation, never OS PIDs. The active operator-directed wave permits six isolated implementation lanes and four local test cohorts only while native load and the eight-worker ceiling permit. Diagnostic GHA runs alongside independent source work; canonical runtime and final-proof settings retain their original bounds.
 
 ## Current implementation and proof inventory
 

@@ -1365,3 +1365,156 @@ improvement follows. This establishes one actual original-bound admission pass.
 The later packaging hook is a separate release-required source change.
 Candidate sealing still requires its own coherent source and all authoritative
 combined/full-gate/exact-SHA hosted, reviewed promotion, ZDD and release proofs.
+
+## Profiled locked-consumer TAIL routing (2026-10-27 UTC)
+
+At published a403ed858bb561f7bbc8353c54ad057be4020f89, Build40427263941
+attempt1 gate3.12 job121936054995 retains native124 at90.5 seconds with MAIN
+unfinished. Root owns the live hosted observation and d506 repair family; a
+source change or local acceptance does not resolve that failure.
+
+The retained installed3.12.15 Darwin diagnostic keeps all140 MAIN selectors,
+two workers, literal ID= and original warning/filter/configuration inputs.
+It passes2390 in84.89s/native88.517s at
+v012-a403-main312-profile/v012-main312-profile-a403-20261026.json under300/60.
+The native receipt and log are read through the checkout that owns them.
+Root's profile-10218-5bba8eed03903d0d record counts52 complete locked-consumer
+protocols, with12.781149 summed protocol-wall seconds across two workers.
+Controller waiting and protocol-wall sums are neither worker CPU nor the cause
+of the hosted timeout. They forecast no serial TAIL duration or ninety-second fit.
+
+The source-reviewed candidate moves only the complete locked-consumer selector
+before the two observer modules already at TAIL's end. Its pytest-owned archives,
+contexts and native child controls supply no dependency on a preceding MAIN
+test. Existing foreign-owner/cache/thread refusal, diagnostic and cleanup
+assertions remain unchanged. The adjacent admission contract follows the
+complete owner to TAIL while its own contract check remains in MAIN.
+
+Implementation is based on committed
+b2db6ea285e5cde1a936d4cde1aa09763fae68ff, preserving the five typing-carrier
+repairs and restored shell continuation. Two token-complete singleton edits
+move the one selector; no old whole-file Make postimage is copied. The four
+test-owner postimages match the reviewed packet. Original155 unique selectors
+remain exactly once, now139/1/15; fresh HELP exclusion/barrier, original2/1/1
+widths, three literal ID= assignments, failure precedence, joins, descendant
+drain and final dependency-profile guard retain their meaning and order.
+The full locked-consumer test file is unchanged. Existing independent inventory
+and cold-start narrowing controls follow the same whole-file route.
+All180 families,21 phases/2850 ceiling,90/60 runtime, focus600/3600,
+coverage85/75 BOTH, fatal warnings, plugins, cleanup and promotion gates remain.
+
+### Actual same-entrypoint RED, GREEN and eight native pins
+
+All following paths are relative to this peer's .gate-logs/observed.
+The original logical-Makefile control first passes1 in19.61s/native21.647s:
+v012-locked-ee-tail-ast/v012-locked-ee-tail-ast311-b2db6ea-20261027.json.
+Its trace has5 events/1 pair, zero issues, unfinished cases or failure reports.
+
+With production unchanged, the new routing control reaches the native recorder,
+passes its original155-token union and three-child assertions, then fails only
+at observed locked-owner coverage[1,0,0] versus required[0,0,1]. The actual RED is
+1 failed in0.76s/native2.043s:
+v012-locked-ee-tail-red/v012-locked-ee-tail-red311-b2db6ea-20261027.json.
+The session drains and inactive/failed/exit2 is verified before production edits.
+Its trace retains6 events/1 pair, zero issues/unfinished and1 expected report.
+
+After the two moves and conforming independent inventories, the logical guard,
+same routing node and complete adjacent admission-contract owner pass3 in
+18.88s/native20.074s:
+v012-locked-ee-tail-green/v012-locked-ee-tail-green311-b2db6ea-20261027.json.
+The trace has9 events/3 pairs, zero issues/unfinished/failure reports; the exact
+session drains and inactive/passed/exit0 is verified.
+
+Ruff, strict typing on all four changed Python owners, the environment-write
+guard, working line limits,303 target contracts,1181-target layout/parity and
+five-path registration pass. No TASKS edit is needed. The unchanged full native
+check-gate-failure-promotions owner then passes all8 pins in1.76s/native3.567s:
+v012-locked-ee-tail-pins/v012-locked-ee-tail-pins311-b2db6ea-20261027.json.
+It retains180 families/21 phases/2850, then reaches native passed/exit0 after all
+eight children; its populated trace has19 events/8 pairs, zero issues,
+unfinished cases or failure reports. Manifest-only output is not substituted.
+
+### Complete34-owner receiving and remaining proof
+
+Root identifies the committed mypy owner as one additional direct consumer of
+the shared Make fragment. The original33 whole-file selectors remain intact;
+the complete29-case mypy file runs separately on the final routing bytes.
+The deduplicated acceptance union is therefore34 complete files, all listed
+below, with2264 passing cases and zero skips on each installed runtime.
+
+- Original33, installed3.11.14:2235 passed in612.78s/native621.049s;
+  v012-locked-ee-tail-receiving/v012-locked-ee-tail-receiving311-b2db6ea-20261027.json.
+- Additional mypy, installed3.11.14:29 passed in11.26s/native12.729s;
+  v012-locked-ee-tail-mypy/v012-locked-ee-tail-mypy311-b2db6ea-20261027.json.
+- Original33, installed3.12.15:2235 passed in652.69s/native660.387s;
+  v012-locked-ee-tail-receiving/v012-locked-ee-tail-receiving312-b2db6ea-20261027.json.
+- Additional mypy, installed3.12.15:29 passed in12.35s/native13.849s;
+  v012-locked-ee-tail-mypy/v012-locked-ee-tail-mypy312-b2db6ea-20261027.json.
+
+All four exact sessions drain and their native inactive/passed/exit0 receipts
+are verified before the next cohort starts. The original33 uses a serial
+outer pytest controller, fatal warnings, installed UV0.13.1 and the explicit
+selected runtime in both watcher and child CMD, literal ID= and checkout-owned
+ledger/observations. Its receiving observer uses1800/180; the mypy observer
+uses180/60. Native test timeouts and the production90/60 owner remain unchanged.
+
+Each33 trace has4649 events/2274 complete pairs, zero issues and unfinished
+tests, plus ten failure reports from three original nested selected-failure/
+warning controls. Each summary explicitly reports populated-with-failures;
+all2235 outer cases pass. Each mypy trace has61 events/29 complete pairs,
+zero issues, unfinished tests or failure reports. These traces and elapsed
+spans are receiving evidence, without a timeout-cause or speed claim.
+
+Independent live review of the frozen six-path change by
+/root/remaining_index_inventory gives APPROVE SOURCE ONLY before this
+receipt-only update. Native readbacks after all four profiles confirm that
+all five Make/test postimage hashes still match the pre-receiving snapshot.
+Both committed Make10 typing-carrier lines remain byte-preserved. The full
+locked-consumer owner is unchanged, and the production inventory remains155
+selectors with139/1/15 distribution. No task state or TASKS file is changed.
+
+```text
+tests/unit/test_admission_cold_start_selection.py
+tests/unit/test_ansible_ee_locked_consumer.py
+tests/unit/test_ansible_ee_locked_consumer_admission.py
+tests/unit/test_azure_containerapp_coverage_target.py
+tests/unit/test_canonical_release_gate.py
+tests/unit/test_ci_collect_all_stress.py
+tests/unit/test_ci_failure_ledger.py
+tests/unit/test_ci_workflow_integrity.py
+tests/unit/test_collection_hook_environment.py
+tests/unit/test_dependency_profiles.py
+tests/unit/test_ee_owned_collection_runtime_metadata.py
+tests/unit/test_gate_failure_promotion.py
+tests/unit/test_gate_preflight_aggregation.py
+tests/unit/test_gate_progress.py
+tests/unit/test_item_progress.py
+tests/unit/test_make_target_contract.py
+tests/unit/test_makefile_audit_deep.py
+tests/unit/test_makefile_layout.py
+tests/unit/test_makefile_targets_deep.py
+tests/unit/test_mcp_tool_gen.py
+tests/unit/test_no_sleep_subagent.py
+tests/unit/test_observed_command.py
+tests/unit/test_push_discipline_checks.py
+tests/unit/test_release_ee_collection_closure.py
+tests/unit/test_release_proof_admission_target.py
+tests/unit/test_reviewed_head_inputs.py
+tests/unit/test_run_watched_command_boundary.py
+tests/unit/test_runtime_admission_scheduling.py
+tests/unit/test_runtime_publish_admission.py
+tests/unit/test_runtime_startup_diagnostic.py
+tests/unit/test_runtime_startup_native_chain.py
+tests/unit/test_status_heartbeat_terminal.py
+tests/unit/test_task_watchdog.py
+tests/unit/test_mypy_worktree_source_identity.py
+```
+
+The one reserved pytest slot is released after final3.12 mypy status/trace
+verification. Root owns the final receipt-prose review, staged content guard
+and normal six-path collection/hooks/commit, followed by native integration.
+Root alone owns the eventual original unchanged90/60 runtime replay through
+the repair owner at a clean cumulative SHA, then exact-source hosted
+verification. The actual a403 hosted failure remains open until its real
+repair proof; local receiving supplies no performance improvement, hosted
+resolution, full gate, artifact/deployment, ZDD, promotion or release.
