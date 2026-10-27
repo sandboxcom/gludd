@@ -1,0 +1,26 @@
+{
+  "after": {
+    "transitive_count": 915,
+    "transitive_sha256": "f3ba54937639296ef135b1218f0c53a3cea6fc647f801b6927840eb26f4b1962",
+    "warning_sha256": "61bf17c1fb396b91d56e44e7029e24834967483a74deaee523fa080f401fad50"
+  },
+  "architecture": "x86_64",
+  "before": {
+    "transitive_count": 915,
+    "transitive_sha256": "628561c8b618e40d24eb8a18bc06e7853b5b13a61996b3a47c78b88887932b95",
+    "warning_sha256": "c4993714ffff3670bb200f1006d09296bbac4df31256af3e05e6ea74739456fe"
+  },
+  "delta": {
+    "added": [
+      "missing pyimod02_importers <- /home/runner/work/gludd/gludd/.venv/lib/python3.12/site-packages/PyInstaller/hooks/rthooks/pyi_rth_pkgutil.py (delayed)"
+    ],
+    "added_count": 1,
+    "removed": [
+      "missing pyimod02_importers <- /tmp/gludd-linux-native-build.J1fxKQ/lib/python3.12/site-packages/PyInstaller/hooks/rthooks/pyi_rth_pkgutil.py (delayed)"
+    ],
+    "removed_count": 1
+  },
+  "platform": "linux",
+  "pyinstaller_version": "6.22.3",
+  "schema_version": 1
+}

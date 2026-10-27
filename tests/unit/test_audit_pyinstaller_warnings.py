@@ -990,3 +990,130 @@ def test_optional_gcp_sdk_import_is_locally_guarded() -> None:
     source = _CLOUD_COMPUTE_SOURCE.read_text(encoding="utf-8")
 
     assert ("try:\n            from google.cloud import billing\n        except ImportError as exc:") in source
+
+
+@pytest.mark.parametrize(
+    ("architecture", "canonical", "foreign"),
+    [
+        ("x86_64", "x86_64", "aarch64"),
+        ("amd64", "x86_64", "aarch64"),
+        ("aarch64", "aarch64", "x86_64"),
+        ("arm64", "aarch64", "x86_64"),
+    ],
+)
+def test_foreign_architecture_alternate_cannot_authorize_selected_graph(
+    tmp_path: Path,
+    architecture: str,
+    canonical: str,
+    foreign: str,
+) -> None:
+    result = _run_audit(
+        tmp_path,
+        "",
+        architecture=architecture,
+        manifest_architecture_digests={canonical: "f" * 64, foreign: "e" * 64},
+        manifest_alternate_digests={foreign: [_EMPTY_TRANSITIVE_DIGEST]},
+    )
+
+    assert result.returncode == 1, result.stdout
+    assert "transitive warning digest mismatch" in result.stderr
+    assert f"found {_EMPTY_TRANSITIVE_DIGEST}" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("architecture", "canonical", "foreign"),
+    [
+        ("x86_64", "x86_64", "aarch64"),
+        ("amd64", "x86_64", "aarch64"),
+        ("aarch64", "aarch64", "x86_64"),
+        ("arm64", "aarch64", "x86_64"),
+    ],
+)
+def test_selected_architecture_alternate_retains_native_alias_acceptance(
+    tmp_path: Path,
+    architecture: str,
+    canonical: str,
+    foreign: str,
+) -> None:
+    result = _run_audit(
+        tmp_path,
+        "",
+        architecture=architecture,
+        manifest_architecture_digests={canonical: "f" * 64, foreign: "e" * 64},
+        manifest_alternate_digests={
+            canonical: [_EMPTY_TRANSITIVE_DIGEST],
+            foreign: ["d" * 64],
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert f"architecture={canonical}" in result.stdout
+    assert "0 baseline-pinned transitive edges" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("architecture", "foreign"),
+    [("x86_64", "aarch64"), ("aarch64", "x86_64")],
+)
+def test_unreviewed_graph_stays_refused_with_both_architecture_alternate_maps(
+    tmp_path: Path,
+    architecture: str,
+    foreign: str,
+) -> None:
+    result = _run_audit(
+        tmp_path,
+        "",
+        architecture=architecture,
+        manifest_architecture_digests={architecture: "f" * 64, foreign: "e" * 64},
+        manifest_alternate_digests={
+            architecture: ["c" * 64],
+            foreign: ["d" * 64],
+        },
+    )
+
+    assert result.returncode == 1
+    assert "transitive warning digest mismatch" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("foreign", "digests", "message"),
+    [
+        ("aarch64", ["not-a-sha256"], "alternate digests for architecture 'aarch64'"),
+        ("arm64", [_EMPTY_TRANSITIVE_DIGEST], "'arm64' should be 'aarch64'"),
+    ],
+)
+def test_foreign_architecture_alternate_map_is_still_fully_validated(
+    tmp_path: Path,
+    foreign: str,
+    digests: list[str],
+    message: str,
+) -> None:
+    result = _run_audit(
+        tmp_path,
+        "",
+        architecture="x86_64",
+        manifest_architecture_digests={"x86_64": _EMPTY_TRANSITIVE_DIGEST},
+        manifest_alternate_digests={foreign: digests},
+    )
+
+    assert result.returncode == 1
+    assert message in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("architecture", "accepted"),
+    [("x86_64", True), ("aarch64", False)],
+)
+def test_current_hosted_observer_graph_is_reviewed_only_for_its_architecture(
+    architecture: str,
+    accepted: bool,
+) -> None:
+    _, _, primary, alternates, _ = warning_audit._parse_allowlist(
+        _LINUX_POLICY,
+        platform="linux",
+        architecture=architecture,
+        pyinstaller_version="6.22.3",
+    )
+
+    hosted_digest = "f3ba54937639296ef135b1218f0c53a3cea6fc647f801b6927840eb26f4b1962"
+    assert (hosted_digest in {primary, *alternates}) is accepted
