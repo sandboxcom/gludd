@@ -17,10 +17,15 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 import shlex
 import subprocess
+import threading
+from collections.abc import Iterator
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "scripts"
@@ -70,6 +75,20 @@ class _PythonSleepInLoopVisitor(ast.NodeVisitor):
     def __init__(self) -> None:
         self.loop_depth = 0
         self.found = False
+
+    def generic_visit(self, node: ast.AST) -> None:
+        """Walk every native field without allocating iter_fields pairs."""
+        for field in node._fields:
+            try:
+                value = getattr(node, field)
+            except AttributeError:
+                continue
+            if isinstance(value, list):
+                for item in value:
+                    if isinstance(item, ast.AST):
+                        self.visit(item)
+            elif isinstance(value, ast.AST):
+                self.visit(value)
 
     def _visit_loop(self, node: ast.AST) -> None:
         self.loop_depth += 1
@@ -237,3 +256,258 @@ def test_shell_scan_detects_sleep_inside_loop(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert _has_sleep_in_loop(script) is True
+
+
+class _NoSleepNativeOrder(ast.NodeVisitor):
+    """Record the unmodified native traversal independently of the audit."""
+
+    def __init__(self) -> None:
+        self.nodes: list[ast.AST] = []
+
+    def visit(self, node: ast.AST) -> None:
+        self.nodes.append(node)
+        super().visit(node)
+
+
+class _NoSleepRecordedAudit(_PythonSleepInLoopVisitor):
+    def __init__(self) -> None:
+        super().__init__()
+        self.nodes: list[ast.AST] = []
+        self.depths: list[int] = []
+
+    def visit(self, node: ast.AST) -> None:
+        self.nodes.append(node)
+        self.depths.append(self.loop_depth)
+        super().visit(node)
+
+
+class _NoSleepNativeAudit(_NoSleepRecordedAudit):
+    # The semantic witness retains the actual stdlib traversal, not a copy.
+    generic_visit = ast.NodeVisitor.generic_visit
+
+
+def _no_sleep_native_field_work(
+    visitor: _NoSleepRecordedAudit,
+    tree: ast.AST,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[int, int]:
+    """Observe the real native generator while forwarding every native pair."""
+    native_fields = ast.iter_fields
+    owner_thread = threading.get_ident()
+    counts = [0, 0]
+    observing = False
+
+    def observed_fields(node: ast.AST) -> Iterator[tuple[str, object]]:
+        owned_call = observing and threading.get_ident() == owner_thread
+        if owned_call:
+            counts[0] += 1
+        for field, value in native_fields(node):
+            if owned_call:
+                counts[1] += 1
+            yield field, value
+
+    with monkeypatch.context() as scope:
+        scope.setattr(ast, "iter_fields", observed_fields)
+        observing = True
+        try:
+            visitor.visit(tree)
+        finally:
+            observing = False
+    return counts[0], counts[1]
+
+
+def _assert_no_sleep_native_equivalence(
+    tree: ast.AST,
+    expected: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    order = _NoSleepNativeOrder()
+    order.visit(tree)
+    native = _NoSleepNativeAudit()
+    native_work = _no_sleep_native_field_work(native, tree, monkeypatch)
+    actual = _NoSleepRecordedAudit()
+    actual_work = _no_sleep_native_field_work(actual, tree, monkeypatch)
+
+    # Keep the semantic and whole-order oracle ahead of the work assertion.
+    assert native.found is expected
+    assert actual.found is expected
+    assert native.nodes == actual.nodes == order.nodes
+    assert native.depths == actual.depths
+    assert native.loop_depth == actual.loop_depth == 0
+    assert native_work[0] > 0 and native_work[1] > 0, "the real native generator witness was inert"
+    assert actual_work == (0, 0), "the complete equivalent audit still performs native generator work"
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        pytest.param(
+            "for outer in ():\n    while False:\n        clock.sleep(0)\n",
+            True, id="nested-for-while",
+        ),
+        pytest.param(
+            "for item in ():\n    pass\nelse:\n    sleep(0)\n",
+            True, id="loop-orelse-retains-original-depth",
+        ),
+        pytest.param(
+            "def owned():\n    while False:\n        sleep(0)\n",
+            True, id="loop-in-function",
+        ),
+        pytest.param(
+            "for item in ():\n    def owned():\n        sleep(0)\n",
+            True, id="function-inside-loop-retains-original-depth",
+        ),
+        pytest.param(
+            "async def owned():\n    async for item in source:\n        await clock.sleep(0)\n",
+            True, id="async-for-and-await",
+        ),
+        pytest.param(
+            "values = [sleep(0) for item in ()]\n",
+            False, id="comprehension-retains-original-nonloop-recognition",
+        ),
+        pytest.param(
+            "for outer in ():\n    values = [clock.sleep(0) for item in ()]\n",
+            True, id="comprehension-in-recognized-loop",
+        ),
+        pytest.param(
+            "sleep(0)\nfor item in ():\n    pass\n",
+            False, id="sleep-outside-loop",
+        ),
+        pytest.param(
+            "for item in ():\n    clock.sleep(0)\n",
+            True, id="current-attribute-call-recognition",
+        ),
+        pytest.param(
+            "for item in ():\n    sleep(0)\n",
+            True, id="current-name-call-recognition",
+        ),
+        pytest.param(
+            "for item in ():\n    clock['sleep'](0)\n    getattr(clock, 'sleep')(0)\n",
+            False, id="current-indirect-call-nonrecognition",
+        ),
+        pytest.param(
+            "for item in ():\n    \uff53\uff4c\uff45\uff45\uff50(0)\n",
+            True, id="native-normalized-identifier",
+        ),
+    ],
+)
+def test_no_sleep_native_walk_keeps_semantics_order_and_removes_measured_generator_work(
+    source: str,
+    expected: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise the actual parser/audit plus an independent native-order oracle."""
+    assert _python_has_sleep_in_loop(source, Path(__file__)) is expected
+    tree = ast.parse(source, filename="owned-no-sleep-grammar.py")
+    _assert_no_sleep_native_equivalence(tree, expected, monkeypatch)
+
+
+class _NoSleepFieldError(RuntimeError):
+    pass
+
+
+class _NoSleepFieldProbe(ast.AST):
+    _fields = ("first", "missing", "last")
+
+    def __init__(self, *, fatal: bool) -> None:
+        self.fatal = fatal
+        self.accesses: list[str] = []
+        self._first = ast.parse("while False:\n    clock.sleep(0)\n").body[0]
+        self._last = ast.parse("outside = 1\n").body
+
+    @property
+    def first(self) -> ast.AST:
+        self.accesses.append("first")
+        return self._first
+
+    @property
+    def missing(self) -> ast.AST:
+        self.accesses.append("missing")
+        if self.fatal:
+            raise _NoSleepFieldError("owned no-sleep field fault")
+        raise AttributeError("owned absent optional field")
+
+    @property
+    def last(self) -> list[ast.stmt]:
+        self.accesses.append("last")
+        return self._last
+
+
+def test_no_sleep_native_walk_preserves_missing_field_and_getattr_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The native AST field contract includes absent fields and ordered getters."""
+    tree = _NoSleepFieldProbe(fatal=False)
+    _assert_no_sleep_native_equivalence(tree, True, monkeypatch)
+    assert tree.accesses == ["first", "missing", "last"] * 3
+
+
+def test_no_sleep_native_walk_propagates_field_error_after_a_positive_match() -> None:
+    """Finding a sleep must not suppress later native field-access failures."""
+    tree = _NoSleepFieldProbe(fatal=True)
+    order = _NoSleepNativeOrder()
+    with pytest.raises(_NoSleepFieldError, match="owned no-sleep field fault"):
+        order.visit(tree)
+    expected_order = list(order.nodes)
+    assert tree.accesses == ["first", "missing"]
+    tree.accesses.clear()
+
+    native = _NoSleepNativeAudit()
+    with pytest.raises(_NoSleepFieldError, match="owned no-sleep field fault"):
+        native.visit(tree)
+    assert tree.accesses == ["first", "missing"]
+    tree.accesses.clear()
+
+    actual = _NoSleepRecordedAudit()
+    with pytest.raises(_NoSleepFieldError, match="owned no-sleep field fault"):
+        actual.visit(tree)
+    assert tree.accesses == ["first", "missing"]
+    assert actual.nodes == native.nodes == expected_order
+    assert actual.depths == native.depths
+    assert actual.found is native.found is True
+    assert actual.loop_depth == native.loop_depth == 0
+
+
+def test_no_sleep_native_collection_keeps_fresh_inputs_and_parse_failure_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fresh same-size/same-mtime edits and every discovery/error remain live."""
+    owned = tmp_path / "owned-repository"
+    scripts = owned / "scripts"
+    scripts.mkdir(parents=True)
+    monkeypatch.setitem(globals(), "REPO_ROOT", owned)
+    monkeypatch.setitem(globals(), "SCRIPTS_DIR", scripts)
+    first = scripts / "a_first.py"
+    source = "while False:\n    clock.sleep(0)\n"
+    first.write_text(source, encoding="utf-8")
+    assert _collect_sleep_in_loop_files() == frozenset({"a_first.py"})
+
+    original = first.stat()
+    replacement = source.replace("sleep", "other")
+    assert len(replacement.encode()) == len(source.encode())
+    first.write_text(replacement, encoding="utf-8")
+    os.utime(first, ns=(original.st_atime_ns, original.st_mtime_ns))
+    assert first.stat().st_size == original.st_size
+    assert first.stat().st_mtime_ns == original.st_mtime_ns
+    assert _collect_sleep_in_loop_files() == frozenset()
+
+    shell = scripts / "owned.sh"
+    shell.write_text("while true; do\n    sleep 1\ndone\n", encoding="utf-8")
+    assert _collect_sleep_in_loop_files() == frozenset({"owned.sh"})
+    shell.unlink()
+    assert _collect_sleep_in_loop_files() == frozenset()
+
+    later = scripts / "b_later.py"
+    later.write_bytes(b"\xff")
+    first.write_text("def owned(:\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match="Source file is not valid Python") as invalid_python:
+        _collect_sleep_in_loop_files()
+    assert str(first.relative_to(owned)) in str(invalid_python.value)
+
+    first.write_text("owned = 1\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match="Source file is not valid UTF-8") as invalid_utf8:
+        _collect_sleep_in_loop_files()
+    assert str(later.relative_to(owned)) in str(invalid_utf8.value)
+    later.write_text("owned = 2\n", encoding="utf-8")
+    assert _collect_sleep_in_loop_files() == frozenset()

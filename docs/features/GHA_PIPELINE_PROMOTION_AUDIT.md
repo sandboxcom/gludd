@@ -1,5 +1,32 @@
 # GHA pipeline and agentic promotion audit
 
+## Marker runtime refusal and next measured source input (2026-10-28 UTC)
+
+At actual marker586088e27378bc3cc9e9bff451b50eecdd0dc1ad, both original90/60
+repair-owned runtimes fail124 (31190.54s;31290.512s). HELP1/TAIL193 complete in
+each; MAIN and final joins remain unproved. The failed owners ran simultaneously: six planned execution workers across
+four cohorts. They supply no isolated performance or CPU-cause proof.
+Normal guarded publication refuses0.744s/native2 with two open families lacking
+verified repairs; no Git transport or new GHA request starts. Exact receipts are
+recorded in the [runtime owner](RUNTIME_ADMISSION_CLEAN_SHA.md#measured-no-sleep-visitor-field-walk-2026-10-28-utc).
+Retain DC's earlier terminal Build failures/Molecule6/Pages3 with deployment
+skipped as fixed hosted evidence; they are not a marker or no-sleep hosted result.
+
+The existing two-node native profile identifies repeated visitor field-generator
+work; no speed, cause or deadline-fit claim follows. Reviewed no-cache source52a
+retains every original test/assertion and fresh whole input collection. Actual
+tests-only RED is13FAIL/2PASS/native1.801s,15pairs/0issues/unfinished. Complete affected-owner+AST receiving passes252 EACH (31163.09s/native64.338s;
+31266.83s/native68.248s),507events/252pairs/0failed reports/issues/unfinished EACH.
+The same original two-node command runs alone and passes2/4.29s/native5.653s
+(previous2/4.92s/native6.289s); the actual leaf has7events/2pairs and the separately
+allocated outer trace remainsEMPTY0. This one-sample diagnostic establishes no
+savings, CPU cause, deadline fit or hosted improvement. After the source
+checkpoint, the next original90/60 repair runs alone with no other local test
+cohorts; this does not claim contention was fixed in code or solely caused the
+timeouts. A new guarded publication/accepted GHA and every final proof remain
+separate; no local result grants hosted/gate/release authority.
+
+
 ## dc88 terminal hosted evidence and next diagnostic input
 
 All three manual diagnostic workflows select feature/v012-count-archive-20261027

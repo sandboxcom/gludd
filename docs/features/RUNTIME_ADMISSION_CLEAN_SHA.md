@@ -1,5 +1,61 @@
 # Clean-SHA runtime admission
 
+## Measured no-sleep visitor field walk (2026-10-28 UTC)
+
+Fixed diagnostic input: marker checkpoint586088e27378bc3cc9e9bff451b50eecdd0dc1ad.
+Its normal eight-file commit/fresh collection is separate from runtime proof.
+Both unchanged90/60 repair-owned runtimes fail124:31190.54s and31290.512s.
+Fresh HELP1 and TAIL193 complete in each, while MAIN and the final join remain
+unfinished/unproved. The failed runtime owners ran simultaneously: six planned execution workers
+across four cohorts. This is no isolated performance or CPU-cause proof. Their receipts
+are v012-marker-native-runtime/v012-marker-runtime{311,312}-586088e-20261028.json.
+Normal guarded publication then refuses in0.744s/native2 because the two open
+families have no verified repair. No transport or GHA request starts; retain
+v012-marker-normal-source-publication/v012-marker-source-586088e-20261028.json.
+Do not retry this unchanged input.
+
+The earlier native profile of both original no-sleep nodes passes2 in4.92s,
+native6.289s. Its actual profile leaf records two collector calls,856 fresh reads
+and838 Python visits. The visitor accumulates2.351s; ast.iter_fields resumes
+3,614,100 times/0.493s cumulative. Cumulative caller rows overlap. The populated
+leaf trace has7events/2pairs; the separately allocated outer trace isEMPTY0.
+These observations select source work; they forecast no savings or deadline fit.
+
+Reviewed source52a38dde83dcf8493e276f0c478ae33154d5e194efd3d1da03572a666396331c
+adds only the14-line stdlib-equivalent generic_visit field walk and15 controls.
+Both original test nodes, all16 functions/12 assertions and whole input discovery
+remain. Native ordered field access/list+AST recursion, ordinary dispatch, loop
+depth, call recognition and errors remain; every collector call still reads and
+parses fresh source. No AST/result/proof cache, scanner, worker, selector or
+deadline is added. Independent private source review is source-only.
+
+The tests-only native RED is13FAIL/2PASS0.64s/native1.801s:
+v012-no-sleep-fieldwalk/v012-no-sleep-red311-586088e-20261028.json. Its46events/
+15pairs/13 failed reports have0issues/unfinished. Preserve that actual failure.
+Complete logical-Make AST plus all three affected owners pass252 EACH:
+31163.09s/native64.338s and31266.83s/native68.248s. Exact drained receipts are
+v012-no-sleep-complete-receiving/v012-no-sleep-whole3-{311,312}-586088e-20261028.json;
+each records507events/252pairs/0failed reports/0issues/unfinished. Actual commands,
+selected interpreters and52a source bytes are verified; Ruff, strict typing BOTH
+and the environment-write guard pass. The same original two-node command then runs ALONE, passes2 in4.29s/native5.653s,
+and retains7 leaf events/2pairs/0failed reports/issues/unfinished. Its owned leaf
+is .gate-logs/test-files-cprofile/profile-42580-f326d5b9bc2e98bf/; its separately
+allocated outer trace isEMPTY0, not timing authority. Reading the actual old/new
+pstats gives18,188,826 and14,585,698 recorded calls. Both keep two collector calls
+and838 fresh Python parses; the new generic_visit has no ast.iter_fields caller
+edge;52 unrelated stdlib generic_visit generator resumptions remain. Cumulative
+values overlap; these two samples establish neither savings,
+deadline fit, CPU cause nor hosted improvement.
+
+Preserve all failed receipts. After this substantive checkpoint, the next original90/60
+repair runs ALONE with zero other local test cohorts, as the existing guide
+requires. This scheduling input is not a code fix for contention or proof that
+contention solely caused either timeout. Guarded publication/accepted diagnostic
+GHA remains a separate result. Complete gate/global85-75 LINE AND BRANCH,
+genuine E/M/C/N, focus132/128 HOLD,333 combined, canonical push, master ZDD and
+fresh complete signed artifacts remain pending.
+
+
 ## UV return and owned cleanup visibility (2026-10-27 UTC)
 
 Published diagnostic source dc88c23a924c13375c7611a655825418374010ec retains
