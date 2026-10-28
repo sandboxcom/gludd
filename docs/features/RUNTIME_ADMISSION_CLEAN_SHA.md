@@ -1,5 +1,100 @@
 # Clean-SHA runtime admission
 
+## UV return and owned cleanup visibility (2026-10-27 UTC)
+
+Published diagnostic source dc88c23a924c13375c7611a655825418374010ec retains
+[Build40564351671](https://github.com/sandboxcom/gludd/actions/runs/40564351671),
+attempt1. Both gate jobs pass the promotion prerequisite and fail the unchanged
+runtime deadline: Python3.11 native124/90.562s and Python3.12 native124/90.536s.
+All eight downstream shard intervals remain unknown after this failed barrier.
+
+The downloaded311 archive has2358 MAIN passes, fresh HELP1 and TAIL193 passes;
+its5118 events form2552 complete pairs with no failed reports or unfinished
+nodes. MAIN controller2970 records session finish at observer89.409996s;
+the last printed summary arrives at89.493786s. Neither event proves UV, the
+shell cleanup or recursive Make has returned before the deadline. The312
+archive has2325 observed MAIN nodes, HELP1 and TAIL193;33 MAIN nodes are
+unobserved. Its two final stress FINISH records after controller loss are not
+failed REPORTs or proof of passed calls. Neither archive prints the final
+runtime-cohort-join. Retain both failures and raw archive manifests.
+
+The existing test-files rule now prints three shell-builtin boundaries after
+its original UV command: uv-return with the saved native status, cleanup-start,
+and cleanup-return with the cleanup status. Each includes only the owned shell
+PID. The original pytest argv, PID-owned basetemp, rm scope and final pytest
+status remain; no clock process, deadline, selector, worker or gate changes.
+These markers provide diagnostic input, not a timeout cause or speed repair.
+
+Eight additive native cases retain the complete original16-function/67-assertion
+module prefix. Ordinary Make and -e each exercise real UV/pytest success and
+failure, with ordinary cleanup and an owned symlink to outside witness bytes.
+The native interpreter atexit witness precedes UV return; saved pytest0/1,
+Make0/2, marker order/PID and outside bytes remain asserted. All8 initially
+fail only for missing boundaries after those premises; the logical-Make AST
+node passes. RED9 selected is8FAIL/1PASS23.80s/native25.193s. GREEN9 selected
+passes EACH:31124.03s/native25.335s and31226.22s/native27.795s.
+
+Native receipts are .gate-logs/observed/v012-test-files-boundary/
+v012-boundary-red311-dc88c23-20261027.json,
+v012-boundary-green311-dc88c23-20261027.json and
+v012-boundary-green312-dc88c23-20261027.json. Each exact session is drained
+and its actual command/status verified. RED trace29events/9pairs/8failed
+reports and GREEN21events/9pairs/0failed reports EACH have no protocol issues
+or unfinished nodes. Test e3f95e990c101824b7a7c1249e43dac36161fe59c9c003572d465c68ea54b793
+and Make10 80ded532abfbafaa8a3fc950c923df87b3d25b0ebfa7d300cae1a5e3f6d2a637
+are the earlier focused postimages. Ruff, canonical strict typing BOTH,
+environment-write guard,303 target contracts,10896 tracked-file line checks
+and265 resource declarations pass. Initial registration refusal identifies the
+new test owner; its exact S98.4 scope is now registered without task closure.
+
+### Native dry-run compatibility repair
+
+Complete23-owner receiving then fails4/1267PASS459.98s/native463.975s,
+retaining v012-marker-complete-receiving/
+v012-marker-whole23-311-dc88c23-20261027.json. The three original
+reviewed-head UV token controls and its original watchdog-ownership control
+fail at shlex.split of the real make-n UV recipe line: No escaped character.
+The added post-RC physical continuation causes that incomplete line; no test
+parser or original assertion is weakened. The native outer pytest result is
+four failures. The full trace has2680events/1288pairs/0issues/0unfinished;
+its16 failed reports include the four outer failures and12 intentional native
+duration-control child reports. The complete duration owner checks those
+child statuses against assertion/warning/setup/import expectations. Keep the
+nested events and actual outer outcome distinct.
+
+The code correction folds only the four added post-RC continuations onto the
+original UV physical recipe line. Its argv, same-shell execution, saved status,
+three builtin markers and cleanup stay. No test changes accompany this repair.
+Make10 now hashes23823835ec8ddbd139372c51acaebcf66dbe317e9f5a949f52733c61e1361163;
+the teste3f95e99 bytes above remain exact. Independent source-only review
+approves this corrected postimage and retains the earlier80 review as
+insufficient for whole native compatibility.
+
+The logical-Make AST guard, all four original failed cases and all eight marker
+cases pass13 EACH after the code correction:31126.08s/native27.633s and
+31228.00s/native29.700s. Exact drained receipts are
+v012-marker-layout-repair/v012-marker-layout-green311-dc88c23-20261027.json
+and v012-marker-layout-repair/v012-marker-layout-green312-dc88c23-20261027.json.
+Both native traces have29events/13pairs/0issues/0failedreports/0unfinished.
+The complete required union retains23 source-reviewed owners and adds the
+whole watchdog owner for its native command classification boundary; no owner
+is removed to fit final focus. Complete24-owner receiving passes1479 EACH:311474.07s/native478.691s and
+312494.48s/native498.866s. Exact receipts are
+v012-marker-corrected-receiving/v012-marker-whole24-311-dc88c23-20261027.json
+and v012-marker-corrected-receiving/v012-marker-whole24-312-dc88c23-20261027.json.
+Both exact sessions are drained and native commands/status verified; code bytes
+remain238/e3. Each trace has3092events/1496pairs/0issues/0unfinished. Its12
+intentional native duration-control child failed reports retain their own
+node/PID/session identities; neither enclosing pytest run has a failed case.
+
+Independent source approval and narrow passes retain their actual scope.
+Normal collection/commit, exact-SHA hosted marker evidence, genuine E/M/C/N,
+combined acceptance, canonical21600/global85/75 LINE AND BRANCH, canonical push,
+master ZDD deployment and fresh signed complete artifacts remain required.
+The [signal handoff record](WATCHDOG_SECRETS_LIFECYCLE.md#owned-child-pid-handoff-2026-10-27-utc)
+retains the related first-hand signal reports; their examples do not establish
+this post-pytest timeout cause.
+
 ## Literal script-reference admission after fa50e0b
 
 Root retains Main/shared/Git/S98.4 ownership on the candidate branch. Frozen

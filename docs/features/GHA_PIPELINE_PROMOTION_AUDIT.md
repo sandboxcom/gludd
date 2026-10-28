@@ -1,5 +1,69 @@
 # GHA pipeline and agentic promotion audit
 
+## dc88 terminal hosted evidence and next diagnostic input
+
+All three manual diagnostic workflows select feature/v012-count-archive-20261027
+at dc88c23a924c13375c7611a655825418374010ec, attempt1. Normal guarded
+publication198.261s verifies the exact remote source and accepted Build request;
+its successful transport and earlier local runtime repair82.111s do not certify
+hosted runtime success.
+
+| Native owner | Actual terminal evidence | Missing authority |
+| --- | --- | --- |
+| [Build40564351671](https://github.com/sandboxcom/gludd/actions/runs/40564351671) | Both gate promotion prerequisites pass;311 runtime124/90.562s and312 runtime124/90.536s fail. Exact observer305.413s/exit2 is drained and inactive. | All eight downstream shard intervals are unknown/censored in the immutable native timing summary; artifact and canonical push proof remain absent. |
+| [Molecule40564817216](https://github.com/sandboxcom/gludd/actions/runs/40564817216) | All6 shards pass. Exact observer184.135s/exit0 is drained and inactive. | Diagnostic source/event only; no candidate promotion or release proof. |
+| [Pages40564536697](https://github.com/sandboxcom/gludd/actions/runs/40564536697) | Both browser validations and JavaScript coverage pass; deployment skips. Exact observer366.911s/exit0 is drained and inactive. Native terminal summary2 is retained for the skipped job. | No master Pages deployment or application ZDD proof. |
+
+Native ci-view ingests each terminal result. Current ledger keeps open2,
+repaired13/resolved59/runs189: family16af6594e55238c36803e27791b640f9eb7275e6ed02e2346b7be44349c8678a
+reopens at occurrence3; familyfaedf98c373b6c548e8d799c7167010de6b52ccf6043d306925847fff51e5b1d
+is open at occurrence1. Preserve all prior failures and local repair history.
+The old parent-only signal and ledger nodes finish without a failed report in
+both archives; this removes those observed node failures from this attempt,
+while the overall runtime deadline still fails. Neither the archive finish
+records nor the passed earlier prerequisite make the whole job green.
+
+Python311 records2358 MAIN passes and all2552 protocol pairs; its last pytest
+summary is still followed by no runtime-cohort-join before the deadline.
+Python312 records2325 of2358 MAIN nodes, leaving33 unobserved. Its final two
+stress FINISH records after controller loss are not passed-call evidence.
+The [existing test-files owner](RUNTIME_ADMISSION_CLEAN_SHA.md#uv-return-and-owned-cleanup-visibility-2026-10-27-utc)
+now exposes saved UV return, owned cleanup start and cleanup return. Eight
+RED cases and GREEN BOTH retain native failure/cleanup premises. Initial
+complete23-owner receiving catches four real native dry-run parsing failures
+(1267 other passes/native463.975s). Code folds only the new post-RC continuations
+onto the original UV physical line; original tests/assertions remain unchanged.
+The four failed cases, eight marker cases and logical-Make guard then pass13
+EACH/native27.633s and29.700s,29events/13pairs/0issues EACH. Corrected Make23823835
+and unchanged teste3f95e99 have independent source-only approval. Complete24-owner
+receiving passes1479 EACH/native478.691s and498.866s, with exact sessions
+fully drained/status verified. Both traces have3092events/1496pairs/0issues/
+0unfinished;12 controlled child reports remain separate from zero outer failures.
+Normal checkpoint/fresh collection and publication remain required. This is useful
+changed diagnostic input, not a performance fix or authority to rerun dc88.
+
+The genuine baseline branch has its own normal checkpoint
+f145737b22b32b17496b5f98111b160e1a3ab8f8, following156787d/development82db.
+Its reviewed native image refresh/check and complete4-owner199PASS EACH remain
+source receiving. Normal commit58.895s includes fresh128741selected/
+128765collected,24deselected0errors45.60s/native52.787. Its actual guarded
+publication passes all eight guards, exact EE availability and six promotion
+pins1.59s/native2.841. The serial121/1/9 runtime prints MAIN2355PASS87.22s
+but ends124/90.525s before complete later-phase proof; outer101.090s/exit2
+explicitly starts no Git transport. Thus no exact remote/source CI exists for
+this checkpoint. The legacy child receipt has no progress_identity field; its
+actual source/owner/log/native status remains bounded by the verified outer
+command, not an invented child command receipt. Its allocated trace produces
+EMPTY0events, which supplies no timing/cause/performance proof. Preserve
+.gludd checkout-owned ledger scope and the exact failed receipts. The existing
+Main cohort schedule is the next source repair input; no deadline increase,
+new runner or unchanged retry is authorized by this refusal.
+
+Root remains the sole bounded hosted observer. The next published source needs
+its own accepted run and attempt while independent receiving continues. Final
+E/M/C/N, focus132/128 HOLD,333 combined, canonical21600/global85/75 BOTH,
+canonical push, master ZDD and fresh complete signed artifacts remain pending.
+
 ## MC terminal hosted evidence and child handoff repair
 
 The three manual diagnostic workflows select feature/v012-count-archive-20261027

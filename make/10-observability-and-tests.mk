@@ -39,7 +39,7 @@ test-files:
 	@if [ -z "$(TESTFILES)" ]; then echo "Usage: make test-files TESTFILES='tests/unit/test_a.py tests/unit/test_b.py'"; exit 1; fi
 	@BT="/tmp/gludd-testfiles-$${ID:-$$$$}"; rm -rf "$$BT"; mkdir -p "$$BT/ansible-local"; \
 		if [ -n "$$UV_PROJECT_ENVIRONMENT" ]; then export VIRTUAL_ENV="$$UV_PROJECT_ENVIRONMENT"; fi; \
-		$(if $(filter 1,$(_TEST_FILES_CPROFILE)),_TEST_FILES_CPROFILE=1 )ANSIBLE_LOCAL_TEMP="$$BT/ansible-local" $(UV) run python -m pytest $(TESTFILES) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"$(if $(or $(filter 1,$(_TEST_FILES_CPROFILE)),$(value GLUDD_XDIST_TRACE_LOG)), -p scripts.xdist_trace_plugin); RC=$$?; rm -rf "$$BT"; exit $$RC
+		$(if $(filter 1,$(_TEST_FILES_CPROFILE)),_TEST_FILES_CPROFILE=1 )ANSIBLE_LOCAL_TEMP="$$BT/ansible-local" $(UV) run python -m pytest $(TESTFILES) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"$(if $(or $(filter 1,$(_TEST_FILES_CPROFILE)),$(value GLUDD_XDIST_TRACE_LOG)), -p scripts.xdist_trace_plugin); RC=$$?; printf 'test-files-boundary phase=uv-return shell_pid=%s status=%s\n' "$$$$" "$$RC"; printf 'test-files-boundary phase=cleanup-start shell_pid=%s\n' "$$$$"; rm -rf "$$BT"; CLEANUP_RC=$$?; printf 'test-files-boundary phase=cleanup-return shell_pid=%s status=%s\n' "$$$$" "$$CLEANUP_RC"; exit $$RC
 
 coverage-files:
 	@if [ -z "$(COVERAGE_TESTFILES)" ]; then echo "Usage: make coverage-files COVERAGE_TESTFILES='tests/unit/test_a.py' COVERAGE_CONFIG=config/coverage.ini COVERAGE_REPORT=.gate-logs/coverage-files.json COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 OBSERVED_QUIET_SECS=900 OBSERVED_MAX_SECS=3600 OBSERVED_RETAIN_RUNS=20"; exit 2; fi
