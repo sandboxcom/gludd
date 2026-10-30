@@ -1482,3 +1482,63 @@ substantive commit. A fresh genuine integration candidate, reviewed-head focus,
 canonical gate/85-75 line AND branch, exact-SHA hosted CI, ZDD and release proof
 remain pending. No interpreter-alias normalization, performance conclusion or
 retroactive green M1 result is claimed.
+
+## Workflow hook Git-local inputs and failure output (2026-10-30 UTC)
+
+Publication of `509520f95af85411e79a4c2049e85f5c10e4bf12` passed the pinned
+image, all eight prerequisite pins and the original 90/60 runtime owner
+(88.565 seconds). The pre-push workflow hook then returned 3; publication
+ended with Make status 2 after 196.064 seconds, and exact remote lookup returned
+2 for the absent branch. The hook discarded both pytest streams, so its original
+failure body remains unknown. Two direct runs passed all 42 structural tests;
+those runs did not reproduce Git's hook environment.
+
+A controlled invocation with this checkout's native Git directory reproduced
+pytest status 3 in 1.054 seconds: the enabled Ansible plugin started a subprocess
+whose inherited canonical-Main path violated the existing confinement guard.
+Two real Git pre-push cases then reproduced that same plugin/confinement frame
+in 3.85 seconds (5.1 seconds observed), with `GIT_DIR` and, in one case,
+`GIT_INDEX_FILE`. These establish the native input class; they do not recover the
+old discarded traceback. Separately, the output regression reached child status
+3 and verified its exact arguments and working directory before failing at the
+missing stdout marker (1.24 seconds; 2.4 seconds observed).
+
+The hook now validates Git's native local-variable inventory before clearing
+only those names in its child process. The bounds remain 8,192 characters and
+64 names; malformed discovery prevents pytest startup and retains native status.
+YAML/tag checks, canonical paths, the complete structural pytest invocation,
+parent state, unrelated carriers and enabled plugins remain intact. Child
+stdout/stderr flow through the existing pre-commit/publication capture.
+
+The first fixture revision lost virtual-environment packages through a relocated
+interpreter symlink; its YAML import failure is retained as invalid evidence.
+The corrected fixture execs the installed interpreter. The first full receiving
+run retained 104 passes and eight failures: the malformed-inventory controls had
+not selected their owned Git input. Their corrected child PATH now has an active
+exact-query argv/cwd witness before all original refusal assertions. Native
+narrow receiving passed all eight controls in 9.33 seconds (10.569 observed).
+The original assertions and missing-unset mutation control remain.
+
+[Git's hook contract](https://git-scm.com/docs/githooks) describes exported local
+repository variables and clearing its native inventory for another repository or
+worktree. A [2019 firsthand report](https://stackoverflow.com/questions/55627720/how-to-recognize-if-git-hook-script-is-really-run-as-a-hook)
+records a Git-version change breaking detection based on `GIT_DIR` presence.
+A [2010 firsthand report](https://stackoverflow.com/questions/4144853/from-command-line-ok-but-the-hook-git)
+records different behavior from a shell and a real hook. These reports support
+native-context controls; neither proves Gludd's repair. Root retrieved the raw
+sources under `/tmp/gludd-v012-hook-git-local-research-20261030/`.
+
+Complete four-owner receiving passed 112 tests on each installed runtime:
+Python 3.11 took 50.91 seconds (52.590 observed); Python 3.12 took 54.70 seconds
+(56.488 observed). Each trace has 227 events, 112 complete pairs and zero issues,
+failures or unfinished pairs. Native label: `v012-C39-hook-receiving`; run IDs:
+`v012-C39-hook-four-whole-native-discovery-311-20261030` and
+`v012-C39-hook-four-whole-312-20261030`. All exact sessions were drained and
+verified before this append; the unchanged canonical12 coverage receipts retain
+only their original four-provider/test/configuration scope.
+
+Normal collection/commit, changed-source canonical publication, exact-SHA hosted
+CI, the full 21,600-second gate, coverage of 85% aggregate/75% per file for lines
+and branches, ZDD promotion and release artifacts retain separate proof owners.
+The earlier failed publication and invalid/failed controls remain retained; no
+speed improvement or release completion follows from focused acceptance.

@@ -6,7 +6,9 @@ on the classes of YAML breakage that historically caused CI failures
 """
 from __future__ import annotations
 
+import json
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -184,6 +186,58 @@ class TestMakefileInstallTarget:
         assert "pre-commit-workflow-yaml" in makefile, (
             "install-workflow-hook target does not reference the hook script"
         )
+
+
+
+def test_canonical_child_failure_retains_native_output(
+    tmp_path: Path, valid_yml: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Run the same canonical hook and prove its failing child stays observable."""
+    owned_root = tmp_path / "owned-hook-root"
+    hook = owned_root / "scripts" / "hooks" / HOOK_PATH.name
+    hook.parent.mkdir(parents=True)
+    hook.write_bytes(HOOK_PATH.read_bytes())
+    hook.chmod(HOOK_PATH.stat().st_mode & 0o777)
+    canonical = owned_root / ".github" / "workflows" / "build.yml"
+    canonical.parent.mkdir(parents=True)
+    canonical.write_bytes(valid_yml.read_bytes())
+    bin_dir = tmp_path / "owned-bin"
+    bin_dir.mkdir()
+    python = bin_dir / "python3"
+    python.write_text(
+        "#!/bin/sh\nexec " + shlex.quote(sys.executable) + ' -P "$@"\n', encoding="utf-8"
+    )
+    python.chmod(0o755)
+    record = tmp_path / "owned-structural-child.json"
+    uv = bin_dir / "uv"
+    uv.write_text(
+        f"#!{sys.executable} -P\n"
+        "import json, sys\nfrom pathlib import Path\n"
+        f"Path({str(record)!r}).write_text(json.dumps({{'argv': sys.argv[1:], "
+        "'cwd': str(Path.cwd())}), encoding='utf-8')\n"
+        "print('owned-workflow-structure-stdout', flush=True)\n"
+        "print('owned-workflow-structure-stderr', file=sys.stderr, flush=True)\n"
+        "raise SystemExit(3)\n",
+        encoding="utf-8",
+    )
+    uv.chmod(0o755)
+    monkeypatch.setattr(sys.modules[__name__], "HOOK_PATH", hook)
+    monkeypatch.setattr(sys.modules[__name__], "ROOT", owned_root)
+    monkeypatch.setenv("PATH", str(bin_dir) + os.pathsep + os.environ.get("PATH", os.defpath))
+    result = _run_hook()
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert json.loads(record.read_text(encoding="utf-8")) == {
+        "argv": [
+            "run", "python", "-m", "pytest",
+            "tests/unit/test_release_pipeline_structure.py",
+            "-q", "--no-header", "--tb=short", "-p", "no:cacheprovider",
+        ],
+        "cwd": str(owned_root.resolve()),
+    }
+    assert "owned-workflow-structure-stdout" in result.stdout
+    assert "owned-workflow-structure-stderr" in result.stderr
+    assert "layer 2 (structural pytest) failed" in result.stderr
+    assert "workflow-yaml: OK" not in result.stdout + result.stderr
 
 
 if __name__ == "__main__":

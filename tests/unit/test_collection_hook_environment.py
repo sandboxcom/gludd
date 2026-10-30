@@ -547,3 +547,273 @@ def test_hook_fixture_repr_keeps_owned_environment_private(tmp_path: Path) -> No
     assert fixture.environment is environment
     assert str(fixture.main) in rendered and str(fixture.linked) in rendered
     assert str(fixture.hook_snapshot) in rendered and str(fixture.collection_snapshot) in rendered
+
+
+
+def _install_workflow_hook_on_native_fixture(
+    fixture: HookFixture,
+) -> tuple[Path, Path, Path]:
+    """Run the actual workflow hook inside the existing real Git fixture."""
+    # Remove only the opt-out installed by this existing controlled fixture.
+    assert fixture.environment.get("PYTEST_DISABLE_PLUGIN_AUTOLOAD") == "1"
+    fixture.environment.pop("PYTEST_DISABLE_PLUGIN_AUTOLOAD")
+    conftest = fixture.linked / "conftest.py"
+    source = conftest.read_text(encoding="utf-8")
+    manual = (
+        "    args = [sys.executable, '-c', 'pass']\n"
+        "    _WorktreeConfinement(active_root=LINKED, canonical_root=MAIN).audit(\n"
+        "        'subprocess.Popen', (sys.executable, args, str(LINKED), env))\n"
+        "    subprocess.run(args, env=env, check=True)\n"
+    )
+    assert source.count(manual) == 1
+    source = source.replace(
+        manual, "    sys.addaudithook(_WorktreeConfinement(\n"
+        "        active_root=LINKED, canonical_root=MAIN).audit)\n",
+    )
+    snapshot = "        'local_present': sorted(set(local) & env.keys()), 'canonical_keys': leaks,\n"
+    assert source.count(snapshot) == 1
+    source = source.replace(
+        snapshot, snapshot
+        + "        'ansible_plugin': any(getattr(plugin, '__name__', None) == "
+        "'pytest_ansible.plugin' for plugin in config.pluginmanager.get_plugins()),\n",
+    )
+    conftest.write_text(source, encoding="utf-8")
+    scripts = fixture.linked / "scripts"
+    assert scripts.is_symlink()
+    scripts.unlink()
+    hooks = scripts / "hooks"
+    hooks.mkdir(parents=True)
+    hook = hooks / "pre-commit-workflow-yaml"
+    hook.write_bytes((ROOT / "scripts/hooks/pre-commit-workflow-yaml").read_bytes())
+    hook.chmod(0o700)
+    workflow = fixture.linked / ".github/workflows/build.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        "name: Owned workflow boundary\non: [push]\njobs:\n"
+        "  owned:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n",
+        encoding="utf-8",
+    )
+    unit = fixture.linked / "tests/unit"
+    unit.mkdir()
+    (unit / "test_release_pipeline_structure.py").write_text(
+        "import os\n"
+        "def test_owned_structural_consumer():\n"
+        f"    assert os.getcwd() == {str(fixture.linked)!r}\n"
+        "    assert os.environ['WORKFLOW_BOUNDARY_CARRIER'] == 'owned unrelated workflow carrier'\n",
+        encoding="utf-8",
+    )
+    uv_snapshot = fixture.linked.parent / "workflow-uv.json"
+    plugin_snapshot = fixture.linked.parent / "workflow-plugin.json"
+    tools = fixture.linked.parent / "workflow-tools"
+    tools.mkdir()
+    (tools / "python3").write_text(
+        "#!/bin/sh\nexec " + shlex.quote(sys.executable) + ' -P "$@"\n',
+        encoding="utf-8",
+    )
+    (tools / "python3").chmod(0o700)
+    uv = tools / "uv"
+    uv.write_text(
+        f"#!{sys.executable}\nimport json, os, sys\nfrom pathlib import Path\n"
+        "args = sys.argv[1:]\n"
+        f"Path({str(uv_snapshot)!r}).write_text(json.dumps({{"
+        "'argv': args, 'cwd': os.getcwd()}), encoding='utf-8')\n"
+        "assert args == ['run', 'python', '-m', 'pytest', "
+        "'tests/unit/test_release_pipeline_structure.py', '-q', '--no-header', "
+        "'--tb=short', '-p', 'no:cacheprovider']\n"
+        "os.execv(sys.executable, [sys.executable, *args[2:]])\n",
+        encoding="utf-8",
+    )
+    uv.chmod(0o700)
+    (fixture.linked / "owned_workflow_probe_plugin.py").write_text(
+        "import json, os\nfrom pathlib import Path\n"
+        "def pytest_sessionstart(session):\n"
+        f"    Path({str(plugin_snapshot)!r}).write_text(json.dumps({{"
+        "'configured': session.config.pluginmanager.hasplugin('owned_workflow_probe_plugin'), "
+        "'carrier': os.environ.get('WORKFLOW_BOUNDARY_CARRIER'), "
+        "'autoload': os.environ.get('PYTEST_DISABLE_PLUGIN_AUTOLOAD'), "
+        "'trace_kept': os.environ.get('GLUDD_XDIST_TRACE_RUN_ID') == 'owned-workflow-hook'"
+        "}), encoding='utf-8')\n"
+        "def pytest_internalerror(excrepr, excinfo):\n"
+        f"    Path({str(fixture.linked / 'workflow-native-internalerror.txt')!r}).write_text("
+        "str(excrepr), encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    plugins = fixture.environment.get("PYTEST_PLUGINS", "")
+    fixture.environment.update({
+        "PATH": str(tools) + os.pathsep + fixture.environment.get("PATH", os.defpath),
+        "PYTHONPATH": fixture.environment["PYTHONPATH"] + os.pathsep + str(fixture.linked),
+        "PYTEST_PLUGINS": ",".join(filter(None, (plugins, "owned_workflow_probe_plugin"))),
+        "WORKFLOW_BOUNDARY_CARRIER": "owned unrelated workflow carrier",
+        "GLUDD_XDIST_TRACE_LOG": str(fixture.linked.parent / "workflow-trace.jsonl"),
+        "GLUDD_XDIST_TRACE_RUN_ID": "owned-workflow-hook",
+        "GLUDD_XDIST_TRACE_TRUNCATE": "0",
+    })
+    (fixture.main / ".git/hooks/pre-push").write_text(
+        f"#!{sys.executable}\nimport json, os, subprocess\nfrom pathlib import Path\n"
+        "before = dict(os.environ)\n"
+        f"local = subprocess.run([{fixture.native_git!r}, 'rev-parse', '--local-env-vars'], "
+        "check=True, capture_output=True, text=True).stdout.split()\n"
+        "child = dict(before)\n"
+        "if before.get('WORKFLOW_GIT_DISCOVERY_PATH'):\n"
+        "    child['PATH'] = before['WORKFLOW_GIT_DISCOVERY_PATH'] + os.pathsep + before['PATH']\n"
+        f"result = subprocess.run([{str(hook)!r}], env=child, check=False)\n"
+        f"canonical = {str(fixture.main)!r}\n"
+        f"Path({str(fixture.hook_snapshot)!r}).write_text(json.dumps({{"
+        "'canonical_keys': sorted(key for key, value in before.items() if canonical in value), "
+        "'local_present': sorted(set(local) & before.keys()), "
+        "'parent_unchanged': before == dict(os.environ), "
+        "'cwd': os.getcwd(), 'rc': result.returncode"
+        "}), encoding='utf-8')\nraise SystemExit(result.returncode)\n",
+        encoding="utf-8",
+    )
+    return hook, uv_snapshot, plugin_snapshot
+
+
+@pytest.mark.parametrize("workflow_parent_index", [False, True])
+def test_real_pre_push_workflow_isolates_only_native_git_local_environment(
+    local_hook: HookFixture, workflow_parent_index: bool,
+) -> None:
+    """A real Git hook must reach the configured pytest plugin and consumer."""
+    fixture = local_hook
+    _, uv_snapshot, plugin_snapshot = _install_workflow_hook_on_native_fixture(fixture)
+    temporary_index: Path | None = None
+    index_bytes: bytes | None = None
+    if workflow_parent_index:
+        discovered = fixture.git("rev-parse", "--git-path", "index")
+        assert discovered.returncode == 0
+        source = Path(discovered.stdout.strip())
+        if not source.is_absolute():
+            source = fixture.linked / source
+        temporary_index = fixture.main / ".git/workflow-parent-index"
+        index_bytes = source.read_bytes()
+        temporary_index.write_bytes(index_bytes)
+        fixture.environment["GIT_INDEX_FILE"] = str(temporary_index)
+    authority = _git_authority_bytes(fixture.main)
+    parent_fingerprint = hashlib.sha256(json.dumps(dict(os.environ), sort_keys=True).encode()).digest()
+    fixture_fingerprint = hashlib.sha256(json.dumps(fixture.environment, sort_keys=True).encode()).digest()
+    result = fixture.git("push", str(fixture.remote), "HEAD:refs/heads/workflow-fixture")
+    output = result.stdout + result.stderr
+    assert fixture.hook_snapshot.is_file(), output
+    before = json.loads(fixture.hook_snapshot.read_text(encoding="utf-8"))
+    assert fixture.collection_snapshot.is_file(), output
+    child = json.loads(fixture.collection_snapshot.read_text(encoding="utf-8"))
+    error_file = fixture.linked / "workflow-native-internalerror.txt"
+    if error_file.exists():
+        output += error_file.read_text(encoding="utf-8")
+    print("WORKFLOW_NATIVE_PLUGIN_CONTEXT " + json.dumps({
+        "ansible_plugin": child["ansible_plugin"], "native_status": before["rc"],
+        "ansible_failure_frame": "pytest_ansible/plugin.py" in output,
+        "hook_keys": before["canonical_keys"], "child_keys": child["canonical_keys"],
+    }, sort_keys=True))
+    assert result.returncode == 0 and before["rc"] == 0, output
+    assert child["ansible_plugin"] is True
+    assert not error_file.exists()
+    assert before["canonical_keys"] == (
+        ["GIT_DIR", "GIT_INDEX_FILE"] if workflow_parent_index else ["GIT_DIR"]
+    )
+    assert before["parent_unchanged"] is True
+    assert child["canonical_keys"] == [] and child["local_present"] == []
+    assert child["preserved"] == {key: fixture.environment.get(key) for key in PRESERVED_KEYS}
+    assert child["cwd"] == str(fixture.linked)
+    assert json.loads(uv_snapshot.read_text(encoding="utf-8")) == {
+        "argv": ["run", "python", "-m", "pytest", "tests/unit/test_release_pipeline_structure.py",
+                 "-q", "--no-header", "--tb=short", "-p", "no:cacheprovider"],
+        "cwd": str(fixture.linked),
+    }
+    assert json.loads(plugin_snapshot.read_text(encoding="utf-8")) == {
+        "configured": True, "carrier": "owned unrelated workflow carrier",
+        "autoload": fixture.environment.get("PYTEST_DISABLE_PLUGIN_AUTOLOAD"), "trace_kept": True,
+    }
+    assert _git_authority_bytes(fixture.main) == authority
+    assert hashlib.sha256(json.dumps(dict(os.environ), sort_keys=True).encode()).digest() == parent_fingerprint
+    assert hashlib.sha256(json.dumps(fixture.environment, sort_keys=True).encode()).digest() == fixture_fingerprint
+    if temporary_index is not None:
+        assert temporary_index.read_bytes() == index_bytes
+
+
+@pytest.mark.parametrize(("workflow_inventory", "workflow_inventory_status"), [
+    ("GIT_DIR", 7), ("", 0), (" \n", 0), ("HOME", 0), ("GIT_DIR;false", 0),
+    ("GIT_*", 0), ("GIT_DIR\n" * 65, 0), ("GIT_" + "A" * 8192, 0),
+], ids=("git-failure", "empty", "whitespace", "non-git-name", "shell-data", "glob", "count", "bytes"))
+def test_workflow_native_inventory_refusal_starts_zero_pytest_children(
+    local_hook: HookFixture, workflow_inventory: str, workflow_inventory_status: int,
+) -> None:
+    """Validate native names completely before any configured pytest child."""
+    fixture = local_hook
+    _, uv_snapshot, plugin_snapshot = _install_workflow_hook_on_native_fixture(fixture)
+    tools = fixture.linked.parent / "workflow-tools"
+    git = tools / "git"
+    discovery = fixture.linked.parent / "workflow-git-discovery.json"
+    git.write_text(
+        f"#!{sys.executable}\nimport json, os, sys\nfrom pathlib import Path\n"
+        "if sys.argv[1:] == ['rev-parse', '--local-env-vars']:\n"
+        f"    Path({str(discovery)!r}).write_text(json.dumps({{"
+        "'argv': sys.argv[1:], 'cwd': os.getcwd()}), encoding='utf-8')\n"
+        f"    print({workflow_inventory!r})\n    raise SystemExit({workflow_inventory_status})\n"
+        f"os.execv({fixture.native_git!r}, [{fixture.native_git!r}, *sys.argv[1:]])\n",
+        encoding="utf-8",
+    )
+    git.chmod(0o700)
+    fixture.environment["WORKFLOW_GIT_DISCOVERY_PATH"] = str(tools)
+    result = fixture.git("push", str(fixture.remote), "HEAD:refs/heads/workflow-refused")
+    output = result.stdout + result.stderr
+    assert fixture.hook_snapshot.is_file(), output
+    before = json.loads(fixture.hook_snapshot.read_text(encoding="utf-8"))
+    assert discovery.is_file(), output
+    assert json.loads(discovery.read_text(encoding="utf-8")) == {
+        "argv": ["rev-parse", "--local-env-vars"], "cwd": str(fixture.linked),
+    }
+    assert result.returncode != 0 and before["parent_unchanged"] is True
+    assert before["rc"] == (workflow_inventory_status or 2), output
+    assert not uv_snapshot.exists() and not plugin_snapshot.exists()
+    assert not fixture.collection_snapshot.exists()
+    if workflow_inventory_status == 0:
+        assert "workflow-yaml: Git-local environment" in output
+
+
+@pytest.mark.parametrize("workflow_unrelated_input", ["unrelated", "config-payload"])
+def test_workflow_preserves_unrelated_canonical_reference_refusal(
+    local_hook: HookFixture, workflow_unrelated_input: str,
+) -> None:
+    """Removing listed Git keys must never erase another confinement failure."""
+    fixture = local_hook
+    _, uv_snapshot, _ = _install_workflow_hook_on_native_fixture(fixture)
+    expected = "WORKFLOW_UNRELATED_CANONICAL"
+    if workflow_unrelated_input == "config-payload":
+        fixture.environment.update({
+            "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "safe.directory",
+            "GIT_CONFIG_VALUE_0": str(fixture.main),
+        })
+        expected = "GIT_CONFIG_VALUE_0"
+    else:
+        fixture.environment[expected] = str(fixture.main)
+    result = fixture.git("push", str(fixture.remote), "HEAD:refs/heads/workflow-unrelated")
+    output = result.stdout + result.stderr
+    assert fixture.hook_snapshot.is_file() and uv_snapshot.is_file(), output
+    before = json.loads(fixture.hook_snapshot.read_text(encoding="utf-8"))
+    child = json.loads(fixture.collection_snapshot.read_text(encoding="utf-8"))
+    assert result.returncode != 0 and before["rc"] == 3, output
+    assert before["parent_unchanged"] is True
+    assert child["local_present"] == [] and expected in child["canonical_keys"]
+    assert child["ansible_plugin"] is True
+    assert "pytest_ansible/plugin.py" in output
+    assert "pytest worktree confinement denied subprocess environment" in output
+
+
+def test_workflow_native_control_detects_missing_unset(local_hook: HookFixture) -> None:
+    """A private missing-unset mutant must expose the real injected Git-dir."""
+    hook, uv_snapshot, _ = _install_workflow_hook_on_native_fixture(local_hook)
+    source = hook.read_text(encoding="utf-8")
+    guarded = '    unset "${GIT_LOCAL_ENV_NAMES[@]}" || exit "$?"\n'
+    assert source.count(guarded) == 1
+    hook.write_text(source.replace(guarded, "", 1), encoding="utf-8")
+    result = local_hook.git("push", str(local_hook.remote), "HEAD:refs/heads/workflow-mutant")
+    output = result.stdout + result.stderr
+    assert uv_snapshot.is_file(), output
+    before = json.loads(local_hook.hook_snapshot.read_text(encoding="utf-8"))
+    child = json.loads(local_hook.collection_snapshot.read_text(encoding="utf-8"))
+    assert result.returncode != 0 and before["rc"] == 3, output
+    assert child["canonical_keys"] == ["GIT_DIR"]
+    assert child["ansible_plugin"] is True
+    assert "pytest_ansible/plugin.py" in output
+    assert "pytest worktree confinement denied subprocess environment" in output
