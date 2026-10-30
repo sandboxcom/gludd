@@ -806,3 +806,100 @@ Do not replay unchanged publication/startup/final admission because a diagnostic
 passes or HEAD changes. Fresh full gate/global coverage, all-shard exact-SHA CI,
 deployment acceptance and guarded promotion remain pending. All seven S98
 release items stay unchecked.
+
+
+## Native F focus child-trace ownership prerequisite (2026-10-30 UTC)
+
+This is a fixture-input repair for reviewed source
+`0a4a56a043590fb99d1e5c08bc1cefb36a0c6f83`. The genuine development merge
+M0, `dcbda6cb4bd8ac43d9f47bed6b6c3c600e5f8cf2`, has the same tree
+`c84336b42bbc5df31bf0bfd6b20311d859ce40a6` as F. Its normal collection and
+source receiving do not supply a native focused-proof receipt. The feature
+`feature/v012-m-focus-trace-20261030` is real; its eventual commit G and final
+integration M1 remain unproved here.
+
+The source audit identifies three ordinary fixture boundaries in the original
+128-owner focus set. Scheduling `_native_test_files` passes the inherited trace
+path/run/truncate fields to real two-worker children. Cold-start `_run` copies
+the same fields; scoped `_make` inherits them. The native focus stream sets
+truncate0, so these children append their actual START/terminal records to the
+parent file. This differs from the retained E truncation failure. The focus
+authenticator must require its native runtime/finish records for every executor;
+foreign child PIDs cannot be excused by role, marker or nested-session filters.
+
+The safe Scheduling RED preserves the entire F source prefix and uses a
+pytest-owned parent sentinel with truncate0. It executes the existing fatal-
+warning child, verifies all four original warning assertions, an actual child
+marker, an unrelated carrier and unchanged parent fields before comparing the
+sentinel. Root reports the native logical-AST-plus-control result as
+1FAIL/1PASS19.58s, terminal native2/about20.9s. The native warning premises pass
+and only sentinel invariance fails after a real child appends. The receipt is
+`v012-F-focus-trace-fixture-red/v012-F-scheduling-focus-trace-red311-20261030`
+under Main's `.gate-logs/observed/`; Root owns exact status/trace verification. This witness never gives the live focus trace to its child.
+
+The applied fixtures copy their selected environment and remove only
+`GLUDD_XDIST_TRACE_LOG`, `GLUDD_XDIST_TRACE_RUN_ID` and
+`GLUDD_XDIST_TRACE_TRUNCATE` before ordinary native children. Scheduling's
+compact-reporting caller explicitly supplies its own trace path/run tuple,
+retaining every original child event/order assertion. Scoped profiling still
+allocates the native immutable leaf; only the generated nested ordinary Make
+child drops that fresh leaf's three inherited fields. Added leaf assertions
+bind its actual PID, node and zero terminal. No production plugin, authenticator,
+runner, source adapter, profile backend, unrelated focus carrier or roster cap
+changes.
+
+The three files retain all69 original functions and433 original assert ASTs.
+Formatting is whole-module-AST-equivalent to the minimal changes and all three
+remain below2500lines. Native child deadlines15/35/45s and the inner profiled
+child's10s remain; the original commands, enabled plugins, warning failures,
+grouping, collection scope and original profile assertions remain.
+
+Independent source review approves only the exact three fixture postimages.
+Root applied them and completed the native checks below. Every receipt path
+is under Main's `.gate-logs/observed/`.
+
+| Native scope | Actual result | Receipt label/run ID |
+| --- | --- | --- |
+| Narrow three-boundary controls plus logical Makefile AST,3.11 | 5PASS22.67s/native0/24.016s;13events/5pairs/0issues,failures or unfinished | `v012-F-focus-trace-fixture-green/v012-F-focus-three-boundaries-green311-permitted-20261030` |
+| Complete Scheduling/Cold/Scoped owners plus logical Makefile AST,3.11 | 298PASS86.29s/native0/87.639s;599events/298pairs/0issues,failures or unfinished | `v012-F-focus-trace-fixture-receiving/v012-F-focus-three-owners311-20261030` |
+| Same complete owners,3.12 | 298PASS92.93s/native0/94.621s;599events/298pairs/0issues,failures or unfinished | `v012-F-focus-trace-fixture-receiving/v012-F-focus-three-owners312-20261030` |
+
+The earlier sandboxed narrow command has5PASS22.40s but terminal cleanup
+EPERM125/native23.561s. It remains a failed execution. The permitted command
+changes that process-permission input and supplies the actual narrow GREEN;
+the sandbox result is not relabeled as acceptance. The narrow five-case
+selection excludes the standalone nested-profile case; the complete298-case
+selection includes the entire scoped owner and its profiling controls.
+
+Root reports strict typing for all three files on both runtimes, Ruff,
+formatting and environment-write checks passed; the working line-limit check
+covers10896files and the target-contract check covers303targets. These checks
+do not supply a full gate or focused integration proof. Both completed native
+cohorts used actual trace1 with truncate0; allocated paths alone were not used
+as evidence. The original three owners remain in the exact128, with no new
+owner or cap exemption. No source G commit, M1 or native128 focus pass is
+claimed at this point.
+
+For final M1, the native two-head bundle must contain the actual F and G source
+pins. G's reviewed base is F, while actual F-to-M0-to-G ancestry and M0/F tree
+parity allow the source delta to be reviewed honestly. A genuine merge and
+the existing native128 focus retain their original one-worker,600quiet/
+3600maximum policy. No M0 focus, fake resolution, rewritten trusted receipt
+or copied acceptance closes that requirement. Combined acceptance, full gates,
+85/75 line-and-branch coverage, exact-SHA CI, ZDD, deployment and release proofs
+remain separate.
+
+Source publication is also pending its own canonical guards. Root's native
+remote verification finds the historical F branch now points to
+`4482072ab960426a91ab198a22ed1504900a28ad`. F is its ancestor; that advanced
+head is not an ancestor of F or this G base and has different Build workflow
+bytes. Root enumerated30remote heads and found no ancestor with F's workflow
+tree. No valid feature-ci baseline or G source publication is claimed.
+An older remote or substituted workflow is not used to bypass that guard.
+
+The retained practitioner reports [xdist#110](https://github.com/pytest-dev/pytest-xdist/issues/110)
+and [xdist#877](https://github.com/pytest-dev/pytest-xdist/issues/877) motivate
+durable trace identity and bounded diagnostics. They do not prove this copied-
+environment defect or the native focus repair; F source and the actual native
+controls own those conclusions. No new upstream retrieval or performance claim
+is attributed to this repair.

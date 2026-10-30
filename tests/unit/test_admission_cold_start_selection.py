@@ -84,8 +84,12 @@ def test_real_admission_filters_only_never_selected_main_siblings(tmp_path: Path
 
 @pytest.mark.parametrize(
     "promoted_selector",
-    (*APPROVED_PROMOTION_SELECTORS, *PLUGIN_ISOLATION_SELECTORS,
-     scheduling.PRESENTATION_MANIFEST_SELECTOR, *REVIEWED_FINALIZATION),
+    (
+        *APPROVED_PROMOTION_SELECTORS,
+        *PLUGIN_ISOLATION_SELECTORS,
+        scheduling.PRESENTATION_MANIFEST_SELECTOR,
+        *REVIEWED_FINALIZATION,
+    ),
 )
 @pytest.mark.parametrize("mutation", ("omission", "duplication", "widening"))
 @pytest.mark.parametrize(
@@ -207,7 +211,8 @@ def _fixture_tree(tmp_path: Path) -> tuple[Path, Path, Path]:
 
 
 def test_diagnostic_fixture_is_opt_in_and_accepts_absent_fixture_manager(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("COLD_START_PROBE_ROOT", raising=False)
     monkeypatch.delenv("COLD_START_SNAPSHOT_ROOT", raising=False)
@@ -269,6 +274,8 @@ def _run(
         "COLD_START_SNAPSHOT_ROOT": str(snapshots),
         "COLD_START_LIFECYCLE": str(lifecycle),
     }
+    for key in ("GLUDD_XDIST_TRACE_LOG", "GLUDD_XDIST_TRACE_RUN_ID", "GLUDD_XDIST_TRACE_TRUNCATE"):
+        environment.pop(key, None)
     result = subprocess.run(
         [
             "make",
@@ -360,7 +367,10 @@ def test_native_selected_failures_cannot_be_hidden_by_sibling_filter(tmp_path: P
 @pytest.mark.parametrize("child", (0, 2))
 @pytest.mark.parametrize("mutation", ("relative", "foreign-root", "widening", "omission", "duplication"))
 def test_native_glob_guard_refuses_changed_boundaries(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, child: int, mutation: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    child: int,
+    mutation: str,
 ) -> None:
     original_stanza = scheduling._stanza
     owner = original_stanza(scheduling.OWNER)
@@ -374,9 +384,10 @@ def test_native_glob_guard_refuses_changed_boundaries(
         "omission": "",
         "duplication": pattern + " " + pattern,
     }
-    mutated = owner[:position] + replacements[mutation] + owner[position + len(pattern):]
+    mutated = owner[:position] + replacements[mutation] + owner[position + len(pattern) :]
     monkeypatch.setattr(
-        scheduling, "_stanza",
+        scheduling,
+        "_stanza",
         lambda target: mutated if target == scheduling.OWNER else original_stanza(target),
     )
     with pytest.raises(AssertionError):
@@ -384,7 +395,9 @@ def test_native_glob_guard_refuses_changed_boundaries(
 
 
 def test_native_absolute_glob_avoids_repeated_cwd_resolution(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pytestconfig: pytest.Config,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    pytestconfig: pytest.Config,
 ) -> None:
     from _pytest.main import pytest_ignore_collect
 
@@ -392,7 +405,8 @@ def test_native_absolute_glob_avoids_repeated_cwd_resolution(
     assert result.returncode == 0, result.stdout + result.stderr
     actual = [
         flag.removeprefix("--ignore-glob=")
-        for flag in str(rows[0]["flags"]).split() if flag.startswith("--ignore-glob=")
+        for flag in str(rows[0]["flags"]).split()
+        if flag.startswith("--ignore-glob=")
     ]
     assert len(actual) == 1
     assert Path(actual[0]).is_absolute()
@@ -426,7 +440,8 @@ def test_native_absolute_glob_avoids_repeated_cwd_resolution(
 
 
 def test_native_glob_is_derived_from_each_invocation_directory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     owner = scheduling._stanza(scheduling.OWNER)
     first = tmp_path / "first-checkout"
@@ -442,3 +457,45 @@ def test_native_glob_is_derived_from_each_invocation_directory(
         assert str(rows[0]["flags"]).split().count(expected) == 1
         assert str(rows[2]["flags"]).split().count(expected) == 1
         assert "--ignore-glob" not in str(rows[1]["flags"])
+
+
+@pytest.mark.parametrize("candidate", (False, True))
+def test_native_cold_child_does_not_append_to_parent_focus_trace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    candidate: bool,
+) -> None:
+    """Keep both real cold-start variants out of the parent focus trace."""
+    parent_trace = tmp_path / "parent-trace.jsonl"
+    sentinel = b"owned-cold-parent-trace-sentinel\n"
+    parent_trace.write_bytes(sentinel)
+    trace_keys = ("GLUDD_XDIST_TRACE_LOG", "GLUDD_XDIST_TRACE_RUN_ID", "GLUDD_XDIST_TRACE_TRUNCATE")
+    parent_fields = (str(parent_trace), "owned-cold-parent-trace", "0")
+    for key, value in zip(trace_keys, parent_fields, strict=True):
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("GLUDD_NATIVE_COLD_TRACE_BOUNDARY_CONTROL", "owned-cold-carrier")
+    first, second, outside = _fixture_tree(tmp_path)
+    marker = tmp_path / "native-cold-carrier.txt"
+    plugin = tmp_path / "admission_fixture_plugin.py"
+    plugin.write_text(
+        plugin.read_text(encoding="utf-8") + "\nimport os\nfrom pathlib import Path\n"
+        "@pytest.fixture(autouse=True)\ndef native_trace_boundary_control():\n"
+        "    assert os.environ.get('GLUDD_NATIVE_COLD_TRACE_BOUNDARY_CONTROL') == 'owned-cold-carrier'\n"
+        f"    with Path({str(marker)!r}).open('a', encoding='utf-8') as stream:\n"
+        "        stream.write('native-cold-carrier\\n')\n",
+        encoding="utf-8",
+    )
+    result, snapshots, _calls = _run(
+        tmp_path,
+        [str(first), str(second) + "::TestExplicit::test_selected_b", str(outside)],
+        candidate=candidate,
+        run_id="owned-parent-trace",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "5 passed" in result.stdout
+    assert len(snapshots) == 2
+    assert all(len(cast(list[object], snapshot["nodes"])) == 5 for snapshot in snapshots)
+    assert marker.read_text(encoding="utf-8").splitlines() == ["native-cold-carrier"] * 5
+    assert os.environ.get("GLUDD_NATIVE_COLD_TRACE_BOUNDARY_CONTROL") == "owned-cold-carrier"
+    assert tuple(os.environ.get(key) for key in trace_keys) == parent_fields
+    assert parent_trace.read_bytes() == sentinel
