@@ -22,17 +22,18 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_combined_audit_parses_each_unique_path_once_and_releases_trees(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     paths = [tmp_path / "test_a.py", tmp_path / "test_b.py"]
     for path in paths:
         path.write_text(
-            'import pytest\n'
-            'class TestExample:\n'
+            "import pytest\n"
+            "class TestExample:\n"
             '    @pytest.fixture(scope="class")\n'
-            '    def shared(self): pass\n'
+            "    def shared(self): pass\n"
             '@pytest.mark.parametrize("base_url", ["example"])\n'
-            'def test_case(base_url): pass\n',
+            "def test_case(base_url): pass\n",
             encoding="utf-8",
         )
     original_parse = ast.parse
@@ -48,15 +49,14 @@ def test_combined_audit_parses_each_unique_path_once_and_releases_trees(
 
     monkeypatch.setattr(fixture_audit, "ast", SimpleNamespace(**{**vars(ast), "parse": tracked_parse}))
     report = fixture_audit.audit_pytest_sources(
-        [paths[1], paths[0], paths[0]], external_fixture_names={"base_url"},
+        [paths[1], paths[0], paths[0]],
+        external_fixture_names={"base_url"},
     )
 
     assert parsed == [str(path) for path in paths]
     assert all(reference() is None for reference in previous)
     assert report.external_fixture_names == frozenset({"base_url"})
-    assert [(item.path, item.name) for item in report.collisions] == [
-        (path, "base_url") for path in paths
-    ]
+    assert [(item.path, item.name) for item in report.collisions] == [(path, "base_url") for path in paths]
     assert [(item.path, item.class_name, item.name) for item in report.bindings] == [
         (path, "TestExample", "shared") for path in paths
     ]
@@ -66,26 +66,29 @@ def test_combined_audit_rebuilds_after_source_and_fixture_names_change(tmp_path:
     first = tmp_path / "test_a.py"
     second = tmp_path / "test_b.py"
     first.write_text(
-        'import pytest\n@pytest.mark.parametrize("base_url", [1])\n'
-        'def test_case(base_url): pass\n', encoding="utf-8",
+        'import pytest\n@pytest.mark.parametrize("base_url", [1])\ndef test_case(base_url): pass\n',
+        encoding="utf-8",
     )
     initial = fixture_audit.audit_pytest_sources([first], external_fixture_names={"base_url"})
     first.write_text(
-        'import pytest\n@pytest.mark.parametrize("adapter", [1])\n'
-        'def test_case(adapter): pass\n', encoding="utf-8",
+        'import pytest\n@pytest.mark.parametrize("adapter", [1])\ndef test_case(adapter): pass\n',
+        encoding="utf-8",
     )
     second.write_text(first.read_text(encoding="utf-8"), encoding="utf-8")
 
     changed = fixture_audit.audit_pytest_sources(
-        [first, second], external_fixture_names={"adapter"},
+        [first, second],
+        external_fixture_names={"adapter"},
     )
     removed = fixture_audit.audit_pytest_sources(
-        [first, second], external_fixture_names={"base_url"},
+        [first, second],
+        external_fixture_names={"base_url"},
     )
 
     assert [(item.path, item.name) for item in initial.collisions] == [(first, "base_url")]
     assert [(item.path, item.name) for item in changed.collisions] == [
-        (first, "adapter"), (second, "adapter"),
+        (first, "adapter"),
+        (second, "adapter"),
     ]
     assert not removed.collisions
     assert not changed.bindings
@@ -95,7 +98,8 @@ def test_combined_audit_preserves_late_aliases_nested_owners_and_provider_bounda
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "test_aliases.py"
-    path.write_text(dedent('''
+    path.write_text(
+        dedent("""
         class TestExample:
             if True:
                 @provide(scope="class", name="public_async")
@@ -114,7 +118,9 @@ def test_combined_audit_preserves_late_aliases_nested_owners_and_provider_bounda
             import pytest as pt
             from pytest import mark as cases
             from pytest_asyncio import fixture as provide, mark as async_cases
-    '''), encoding="utf-8")
+    """),
+        encoding="utf-8",
+    )
 
     report = fixture_audit.audit_pytest_sources([path], external_fixture_names={"base_url"})
 
@@ -123,7 +129,8 @@ def test_combined_audit_preserves_late_aliases_nested_owners_and_provider_bounda
         (4, "TestExample", "public_async"),
     ]
     assert list(report.collisions) == find_parametrized_fixture_collisions(
-        [path], external_fixture_names={"base_url"},
+        [path],
+        external_fixture_names={"base_url"},
     )
     assert list(report.bindings) == fixture_audit.find_class_scoped_instance_fixtures([path])
 
@@ -211,9 +218,7 @@ def test_scanner_reports_single_and_tuple_parametrize_collisions(tmp_path: Path)
         encoding="utf-8",
     )
 
-    collisions = find_parametrized_fixture_collisions(
-        [test_file], external_fixture_names={"base_url"}
-    )
+    collisions = find_parametrized_fixture_collisions([test_file], external_fixture_names={"base_url"})
 
     assert [(item.path, item.line, item.name) for item in collisions] == [
         (test_file, 4, "base_url"),
@@ -236,9 +241,7 @@ def test_scanner_ignores_parameters_not_owned_by_external_plugins(tmp_path: Path
         encoding="utf-8",
     )
 
-    assert not find_parametrized_fixture_collisions(
-        [test_file], external_fixture_names={"base_url"}
-    )
+    assert not find_parametrized_fixture_collisions([test_file], external_fixture_names={"base_url"})
 
 
 def test_scanner_supports_imported_marks_keywords_and_dynamic_fail_closed(
@@ -269,9 +272,7 @@ def test_scanner_supports_imported_marks_keywords_and_dynamic_fail_closed(
         encoding="utf-8",
     )
 
-    collisions = find_parametrized_fixture_collisions(
-        [test_file], external_fixture_names={"base_url"}
-    )
+    collisions = find_parametrized_fixture_collisions([test_file], external_fixture_names={"base_url"})
 
     assert [(item.line, item.name) for item in collisions] == [(7, "base_url")]
 
@@ -290,11 +291,7 @@ def test_repository_inventory_consumers_share_one_xdist_fixture_owner() -> None:
         test_repository_parameters_do_not_shadow_external_pytest_fixtures,
         test_repository_class_scoped_fixtures_use_supported_binding,
     ):
-        groups = [
-            mark.args
-            for mark in getattr(consumer, "pytestmark", ())
-            if mark.name == "xdist_group"
-        ]
+        groups = [mark.args for mark in getattr(consumer, "pytestmark", ()) if mark.name == "xdist_group"]
         assert groups == [("pytest-source-inventory",)]
 
 
@@ -316,68 +313,68 @@ def test_repository_parameters_do_not_shadow_external_pytest_fixtures(
     ("source", "expected"),
     [
         (
-            '''
+            """
             import pytest
             class TestExample:
                 @pytest.fixture(scope="class")
                 def shared(self):
                     return [1, 2, 3]
-            ''',
+            """,
             [("TestExample", "shared")],
         ),
         (
-            '''
+            """
             import pytest as pt
             class TestExample:
                 @pt.fixture(name="public_name", scope="class")
                 async def internal_name(self):
                     return [1, 2, 3]
-            ''',
+            """,
             [("TestExample", "public_name")],
         ),
         (
-            '''
+            """
             from pytest import fixture as provide
             class BaseExample:
                 @provide(autouse=True, scope="class")
                 def shared(instance):
                     instance.value = 1
-            ''',
+            """,
             [("BaseExample", "shared")],
         ),
         (
-            '''
+            """
             import pytest
             @pytest.fixture(scope="class")
             def shared():
                 return [1, 2, 3]
-            ''',
+            """,
             [],
         ),
         (
-            '''
+            """
             import pytest
             class TestExample:
                 @pytest.fixture(scope="class")
                 @staticmethod
                 def shared():
                     return [1, 2, 3]
-            ''',
+            """,
             [],
         ),
         (
-            '''
+            """
             import pytest
             class TestExample:
                 @pytest.fixture(scope="class")
                 @classmethod
                 def shared(cls):
                     cls.value = 1
-            ''',
+            """,
             [],
         ),
         (
-            '''
+            """
             import pytest
             class TestExample:
                 @pytest.fixture
@@ -389,29 +386,29 @@ def test_repository_parameters_do_not_shadow_external_pytest_fixtures(
                 @custom.fixture(scope="class")
                 def unrelated(self):
                     return [1, 2, 3]
-            ''',
+            """,
             [],
         ),
         (
-            '''
+            """
             import pytest
             class TestExample:
                 def test_local_fixture(self):
                     @pytest.fixture(scope="class")
                     def local_fixture():
                         return [1, 2, 3]
-            ''',
+            """,
             [],
         ),
         (
-            '''
+            """
             import pytest
             class TestExample:
                 if True:
                     @pytest.fixture(scope="class")
                     def conditional(self):
                         return [1, 2, 3]
-            ''',
+            """,
             [("TestExample", "conditional")],
         ),
     ],
@@ -433,11 +430,11 @@ def test_class_fixture_bindings_have_stable_source_locations(tmp_path: Path) -> 
     first = tmp_path / "test_a.py"
     second = tmp_path / "test_b.py"
     source = (
-        'import pytest\n'
-        'class TestExample:\n'
+        "import pytest\n"
+        "class TestExample:\n"
         '    @pytest.fixture(scope="class")\n'
-        '    def shared(self):\n'
-        '        return 1\n'
+        "    def shared(self):\n"
+        "        return 1\n"
     )
     for path in (first, second):
         path.write_text(source, encoding="utf-8")
@@ -452,7 +449,7 @@ def test_class_fixture_bindings_have_stable_source_locations(tmp_path: Path) -> 
 
 def test_class_fixture_bindings_understand_pytest_asyncio_aliases(tmp_path: Path) -> None:
     source = dedent(
-        '''
+        """
         import pytest_asyncio as pa
         from pytest_asyncio import fixture as provide_async
         class TestExample:
@@ -466,7 +463,7 @@ def test_class_fixture_bindings_understand_pytest_asyncio_aliases(tmp_path: Path
             @staticmethod
             async def supported_static():
                 return 3
-        '''
+        """
     )
     test_file = tmp_path / "test_async_binding.py"
     test_file.write_text(source, encoding="utf-8")
@@ -494,21 +491,26 @@ def test_repository_class_scoped_fixtures_use_supported_binding(
 
 @pytest.mark.parametrize("statement_count", [1, 256])
 def test_declaration_type_resolution_is_bounded_per_traversal(
-    monkeypatch: pytest.MonkeyPatch, statement_count: int,
+    monkeypatch: pytest.MonkeyPatch,
+    statement_count: int,
 ) -> None:
     tree = ast.parse(
         "import pytest as pt\n"
         "pytest_plugins = ('plugin.owner',)\n"
         "@pt.mark.parametrize('base_url', [1])\n"
-        "def test_case(base_url):\n"
-        + "    pass\n" * statement_count
-        + "class TestExample:\n"
+        "def test_case(base_url):\n" + "    pass\n" * statement_count + "class TestExample:\n"
         "    @pt.fixture(scope='class')\n"
         "    def shared(self): pass\n",
     )
     tracked = {
-        "Import", "ImportFrom", "FunctionDef", "AsyncFunctionDef",
-        "AnnAssign", "Module", "ClassDef", "stmt",
+        "Import",
+        "ImportFrom",
+        "FunctionDef",
+        "AsyncFunctionDef",
+        "AnnAssign",
+        "Module",
+        "ClassDef",
+        "stmt",
     }
     lookups: dict[str, int] = {}
 
@@ -525,10 +527,10 @@ def test_declaration_type_resolution_is_bounded_per_traversal(
     assert set(lookups) == tracked
     assert all(count == 1 for count in lookups.values()), lookups
     assert [ast.unparse(node) for node in declarations.imports] == ["import pytest as pt"]
-    assert [
-        (node.name, getattr(owner, "name", "<module>"))
-        for node, owner in declarations.functions
-    ] == [("shared", "TestExample"), ("test_case", "<module>")]
+    assert [(node.name, getattr(owner, "name", "<module>")) for node, owner in declarations.functions] == [
+        ("shared", "TestExample"),
+        ("test_case", "<module>"),
+    ]
     assert [ast.literal_eval(value) for value in declarations.plugin_values] == [("plugin.owner",)]
     function = tree.body[2]
     assert isinstance(function, ast.FunctionDef)
@@ -561,10 +563,10 @@ def test_declaration_field_values_avoid_python_field_pair_iterator(
     declarations = fixture_audit._source_declarations(tree)
 
     assert len(declarations.imports) == 1
-    assert [
-        (node.name, getattr(owner, "name", "<module>"))
-        for node, owner in declarations.functions
-    ] == [("shared", "TestExample"), ("test_case", "<module>")]
+    assert [(node.name, getattr(owner, "name", "<module>")) for node, owner in declarations.functions] == [
+        ("shared", "TestExample"),
+        ("test_case", "<module>"),
+    ]
     assert [ast.literal_eval(value) for value in declarations.plugin_values] == [
         ("plugin.owner",),
     ]
@@ -605,15 +607,13 @@ def test_field_values_preserve_lazy_once_order_and_attribute_error_defaults() ->
 
 @pytest.mark.parametrize("kind", ["native-module", "custom-module", "custom-statement"])
 def test_field_values_preserve_modified_and_custom_declaration_fields(
-    monkeypatch: pytest.MonkeyPatch, kind: str,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
 ) -> None:
     from collections.abc import Iterator
 
     body = ast.parse(
-        "import pytest as pt\n"
-        "pytest_plugins = ('plugin.body',)\n"
-        "@pt.fixture\n"
-        "def body_fixture(): pass\n"
+        "import pytest as pt\npytest_plugins = ('plugin.body',)\n@pt.fixture\ndef body_fixture(): pass\n"
     ).body
     extra = ast.parse(
         "from pytest import fixture as provide\n"
@@ -635,7 +635,8 @@ def test_field_values_preserve_modified_and_custom_declaration_fields(
         tree = ast.Module(body=[*body, statement], type_ignores=[])
     else:
         tree = (CustomModule if kind == "custom-module" else ast.Module)(
-            body=body, type_ignores=[],
+            body=body,
+            type_ignores=[],
         )
         monkeypatch.setattr(tree, "_fields", (*tree._fields, "extra", "missing"))
         monkeypatch.setattr(tree, "extra", extra, raising=False)
@@ -651,13 +652,16 @@ def test_field_values_preserve_modified_and_custom_declaration_fields(
 
     assert actual == expected
     assert [node.name for node, _owner in actual.functions] == [
-        "extra_fixture", "body_fixture",
+        "extra_fixture",
+        "body_fixture",
     ]
     assert [ast.literal_eval(value) for value in actual.plugin_values] == [
-        ("plugin.extra",), ("plugin.body",),
+        ("plugin.extra",),
+        ("plugin.body",),
     ]
     assert fixture_audit._declared_fixture_names(actual) == {
-        "body_fixture", "extra_fixture",
+        "body_fixture",
+        "extra_fixture",
     }
 
 
@@ -688,7 +692,9 @@ def test_field_values_release_nodes_and_rebuild_after_field_changes(
     monkeypatch.setattr(tree, "_fields", ("type_ignores", "body", "fresh"))
     monkeypatch.setattr(tree, "fresh", ["new value"], raising=False)
     assert list(fixture_audit._field_values(tree)) == [
-        tree.type_ignores, tree.body, ["new value"],
+        tree.type_ignores,
+        tree.body,
+        ["new value"],
     ]
     # Undo the fixture's own strong references before checking the iterator's lifetime.
     monkeypatch.undo()
@@ -718,13 +724,13 @@ def test_declaration_traversal_visits_statements_once_without_payload_growth(
             f"    def shared(self, {parameters}): pass\n"
         )
         tree = ast.parse(source)
-        expected_nodes = {
-            id(node) for node in ast.walk(tree) if isinstance(node, (ast.Module, ast.stmt))
-        }
+        expected_nodes = {id(node) for node in ast.walk(tree) if isinstance(node, (ast.Module, ast.stmt))}
         visited: list[int] = []
 
         def statement_fields(
-            node: ast.AST, *, expected_nodes: set[int] = expected_nodes,
+            node: ast.AST,
+            *,
+            expected_nodes: set[int] = expected_nodes,
             visited: list[int] = visited,
         ) -> Iterator[object]:
             assert id(node) in expected_nodes, (
@@ -743,10 +749,10 @@ def test_declaration_traversal_visits_statements_once_without_payload_growth(
         visit_counts.append(len(visited))
         assert len(declarations.imports) == 1
         assert len(declarations.imports[0].names) == width + 1
-        assert [
-            (node.name, getattr(owner, "name", "<module>"))
-            for node, owner in declarations.functions
-        ] == [("shared", "TestExample"), ("test_case", "<module>")]
+        assert [(node.name, getattr(owner, "name", "<module>")) for node, owner in declarations.functions] == [
+            ("shared", "TestExample"),
+            ("test_case", "<module>"),
+        ]
         assert [ast.literal_eval(value) for value in declarations.plugin_values] == [
             ("plugin.one",),
         ]
@@ -788,30 +794,39 @@ def _nested_statement_payload(label: str) -> str:
         ),
         pytest.param(
             "for item in items:\n{body}\nelse:\n{orelse}\n",
-            (("body", 4), ("orelse", 4)), ("orelse", "body"), id="for-else",
+            (("body", 4), ("orelse", 4)),
+            ("orelse", "body"),
+            id="for-else",
         ),
         pytest.param(
             "async for item in items:\n{body}\nelse:\n{orelse}\n",
-            (("body", 4), ("orelse", 4)), ("orelse", "body"), id="async-for-else",
+            (("body", 4), ("orelse", 4)),
+            ("orelse", "body"),
+            id="async-for-else",
         ),
         pytest.param(
             "while condition:\n{body}\nelse:\n{orelse}\n",
-            (("body", 4), ("orelse", 4)), ("orelse", "body"), id="while-else",
+            (("body", 4), ("orelse", 4)),
+            ("orelse", "body"),
+            id="while-else",
         ),
         pytest.param(
             "with manager() as resource:\n{body}\n",
-            (("body", 4),), ("body",), id="with",
+            (("body", 4),),
+            ("body",),
+            id="with",
         ),
         pytest.param(
             "async with manager() as resource:\n{body}\n",
-            (("body", 4),), ("body",), id="async-with",
+            (("body", 4),),
+            ("body",),
+            id="async-with",
         ),
         pytest.param(
             "try:\n{body}\nexcept ValueError as first:\n{first_handler}\n"
             "except TypeError as second:\n{second_handler}\n"
             "else:\n{orelse}\nfinally:\n{finalbody}\n",
-            (("body", 4), ("first_handler", 4), ("second_handler", 4),
-             ("orelse", 4), ("finalbody", 4)),
+            (("body", 4), ("first_handler", 4), ("second_handler", 4), ("orelse", 4), ("finalbody", 4)),
             ("finalbody", "orelse", "second_handler", "first_handler", "body"),
             id="try-except-else-finally",
         ),
@@ -819,15 +834,15 @@ def _nested_statement_payload(label: str) -> str:
             "try:\n{body}\nexcept* ValueError as first:\n{first_handler}\n"
             "except* TypeError as second:\n{second_handler}\n"
             "else:\n{orelse}\nfinally:\n{finalbody}\n",
-            (("body", 4), ("first_handler", 4), ("second_handler", 4),
-             ("orelse", 4), ("finalbody", 4)),
+            (("body", 4), ("first_handler", 4), ("second_handler", 4), ("orelse", 4), ("finalbody", 4)),
             ("finalbody", "orelse", "second_handler", "first_handler", "body"),
             id="try-star-except-else-finally",
         ),
         pytest.param(
-            'match subject:\n    case {"value": value} if accepted(value):\n{body}\n'
-            "    case _:\n{otherwise}\n",
-            (("body", 8), ("otherwise", 8)), ("otherwise", "body"), id="match-cases",
+            'match subject:\n    case {"value": value} if accepted(value):\n{body}\n    case _:\n{otherwise}\n',
+            (("body", 8), ("otherwise", 8)),
+            ("otherwise", "body"),
+            id="match-cases",
         ),
     ],
 )
@@ -842,7 +857,8 @@ def test_declarations_preserve_every_statement_container_order_and_owner(
     statement = statement_template
     for label, depth in statement_slots:
         statement = statement.replace(
-            "{" + label + "}", indent(_nested_statement_payload(label), " " * depth),
+            "{" + label + "}",
+            indent(_nested_statement_payload(label), " " * depth),
         )
     source = "async def container():\n" + indent(statement, "    ")
     declarations = fixture_audit._source_declarations(ast.parse(source))
@@ -851,23 +867,29 @@ def test_declarations_preserve_every_statement_container_order_and_owner(
     expected_imports: list[str] = []
     expected_plugins: list[object] = []
     for label in reverse_statement_slots:
-        expected_functions.extend([
-            (f"case_{label}", "container"),
-            ("supported", f"Test_{label}"),
-            ("shared", f"Test_{label}"),
-            ("nested", "shared"),
-        ])
-        expected_imports.extend([
-            f"import pytest as pt_{label}",
-            f"from pytest import fixture as provide_{label}, mark as cases_{label}",
-        ])
-        expected_plugins.extend([
-            (f"plugin.{label}.annotated",), f"plugin.{label}.assigned",
-        ])
+        expected_functions.extend(
+            [
+                (f"case_{label}", "container"),
+                ("supported", f"Test_{label}"),
+                ("shared", f"Test_{label}"),
+                ("nested", "shared"),
+            ]
+        )
+        expected_imports.extend(
+            [
+                f"import pytest as pt_{label}",
+                f"from pytest import fixture as provide_{label}, mark as cases_{label}",
+            ]
+        )
+        expected_plugins.extend(
+            [
+                (f"plugin.{label}.annotated",),
+                f"plugin.{label}.assigned",
+            ]
+        )
 
     assert [
-        (node.name, getattr(owner, "name", "<module>"))
-        for node, owner in declarations.functions
+        (node.name, getattr(owner, "name", "<module>")) for node, owner in declarations.functions
     ] == expected_functions
     assert [ast.unparse(node) for node in declarations.imports] == expected_imports
     assert [ast.literal_eval(value) for value in declarations.plugin_values] == expected_plugins
@@ -886,17 +908,22 @@ def test_declarations_preserve_every_statement_container_order_and_owner(
 @pytest.mark.parametrize("initial_enabled", [True, False])
 @pytest.mark.parametrize("outcome", ["return", "runtime-error", "interrupt", "syntax-error"])
 def test_source_audit_restores_exact_gc_state_after_native_work(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, initial_enabled: bool, outcome: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    initial_enabled: bool,
+    outcome: str,
 ) -> None:
     path = tmp_path / "test_gc_scope.py"
     path.write_text(
-        "def invalid(:\n" if outcome == "syntax-error" else (
-            'import pytest\n'
-            'class TestExample:\n'
+        "def invalid(:\n"
+        if outcome == "syntax-error"
+        else (
+            "import pytest\n"
+            "class TestExample:\n"
             '    @pytest.fixture(scope="class")\n'
-            '    def shared(self): pass\n'
+            "    def shared(self): pass\n"
             '@pytest.mark.parametrize("base_url", [1])\n'
-            'def test_case(base_url): pass\n'
+            "def test_case(base_url): pass\n"
         ),
         encoding="utf-8",
     )
@@ -907,7 +934,9 @@ def test_source_audit_restores_exact_gc_state_after_native_work(
     parse_states: list[bool] = []
     declaration_states: list[bool] = []
     expected_errors: dict[str, type[BaseException]] = {
-        "runtime-error": RuntimeError, "interrupt": KeyboardInterrupt, "syntax-error": SyntaxError,
+        "runtime-error": RuntimeError,
+        "interrupt": KeyboardInterrupt,
+        "syntax-error": SyntaxError,
     }
 
     def tracked_read(source_path: Path, *args: object, **kwargs: object) -> str:
@@ -959,12 +988,14 @@ def test_source_audit_restores_exact_gc_state_after_native_work(
 
 @pytest.mark.parametrize("initial_enabled", [True, False])
 def test_source_audit_preserves_gc_behavior_on_unsupported_build(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, initial_enabled: bool,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    initial_enabled: bool,
 ) -> None:
     path = tmp_path / "test_fallback.py"
     path.write_text(
-        'import pytest\n@pytest.mark.parametrize("base_url", [1])\n'
-        'def test_case(base_url): pass\n', encoding="utf-8",
+        'import pytest\n@pytest.mark.parametrize("base_url", [1])\ndef test_case(base_url): pass\n',
+        encoding="utf-8",
     )
     original_parse = ast.parse
     parsed: list[str] = []
@@ -977,11 +1008,14 @@ def test_source_audit_preserves_gc_behavior_on_unsupported_build(
 
     monkeypatch.setattr(fixture_audit, "_BOUND_SOURCE_GC", False, raising=False)
     monkeypatch.setattr(
-        fixture_audit, "gc", SimpleNamespace(
+        fixture_audit,
+        "gc",
+        SimpleNamespace(
             isenabled=gc.isenabled,
             disable=lambda: policy_calls.append("disable"),
             enable=lambda: policy_calls.append("enable"),
-        ), raising=False,
+        ),
+        raising=False,
     )
     monkeypatch.setattr(fixture_audit, "ast", SimpleNamespace(**{**vars(ast), "parse": tracked_parse}))
     process_enabled = gc.isenabled()
@@ -999,7 +1033,10 @@ def test_source_audit_preserves_gc_behavior_on_unsupported_build(
 @pytest.mark.parametrize("initial_enabled", [True, False])
 @pytest.mark.parametrize("bad_source", ["missing", "invalid-utf8"])
 def test_source_audit_reads_before_changing_gc(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, initial_enabled: bool, bad_source: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    initial_enabled: bool,
+    bad_source: str,
 ) -> None:
     path = tmp_path / "test_unreadable.py"
     if bad_source == "invalid-utf8":
@@ -1007,11 +1044,14 @@ def test_source_audit_reads_before_changing_gc(
     policy_calls: list[str] = []
     monkeypatch.setattr(fixture_audit, "_BOUND_SOURCE_GC", True, raising=False)
     monkeypatch.setattr(
-        fixture_audit, "gc", SimpleNamespace(
+        fixture_audit,
+        "gc",
+        SimpleNamespace(
             isenabled=gc.isenabled,
             disable=lambda: policy_calls.append("disable"),
             enable=lambda: policy_calls.append("enable"),
-        ), raising=False,
+        ),
+        raising=False,
     )
     process_enabled = gc.isenabled()
     try:
@@ -1027,17 +1067,20 @@ def test_source_audit_reads_before_changing_gc(
 
 @pytest.mark.parametrize("retain_first_tree", [False, True])
 def test_source_audit_releases_file_owned_nodes_with_retention_negative_witness(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, retain_first_tree: bool,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    retain_first_tree: bool,
 ) -> None:
     paths = [tmp_path / "test_a.py", tmp_path / "test_b.py"]
     for path in paths:
         path.write_text(
-            'import pytest\n'
-            'class TestExample:\n'
+            "import pytest\n"
+            "class TestExample:\n"
             '    @pytest.fixture(scope="class")\n'
-            '    def shared(self): pass\n'
+            "    def shared(self): pass\n"
             '@pytest.mark.parametrize("base_url", [1])\n'
-            'def test_case(base_url): pass\n', encoding="utf-8",
+            "def test_case(base_url): pass\n",
+            encoding="utf-8",
         )
     original_parse = ast.parse
     previous: list[weakref.ReferenceType[ast.AST]] = []
@@ -1049,7 +1092,8 @@ def test_source_audit_releases_file_owned_nodes_with_retention_negative_witness(
         assert all(reference() is None for reference in previous), "previous source retained"
         tree = original_parse(source, filename=filename)
         previous.extend(
-            weakref.ref(node) for node in ast.walk(tree)
+            weakref.ref(node)
+            for node in ast.walk(tree)
             if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef))
         )
         parsed.append(filename)
@@ -1072,9 +1116,7 @@ def test_source_audit_releases_file_owned_nodes_with_retention_negative_witness(
             report = fixture_audit.audit_pytest_sources(paths, external_fixture_names={"base_url"})
             assert parsed == [str(path) for path in paths]
             assert all(reference() is None for reference in previous)
-            assert [(item.path, item.name) for item in report.collisions] == [
-                (path, "base_url") for path in paths
-            ]
+            assert [(item.path, item.name) for item in report.collisions] == [(path, "base_url") for path in paths]
             assert [(item.path, item.class_name, item.name) for item in report.bindings] == [
                 (path, "TestExample", "shared") for path in paths
             ]
@@ -1083,3 +1125,136 @@ def test_source_audit_releases_file_owned_nodes_with_retention_negative_witness(
     finally:
         retained.clear()
         (gc.enable if process_enabled else gc.disable)()
+
+
+@pytest.mark.parametrize("statement_count", [1, 256])
+def test_negative_declaration_classification_is_one_check_per_statement(
+    monkeypatch: pytest.MonkeyPatch,
+    statement_count: int,
+) -> None:
+    """Bound classification work while preserving every native statement visit."""
+    source = (
+        "import pytest as pt\n"
+        "pytest_plugins = ('plugin.before',)\n"
+        "@pt.mark.parametrize('base_url', [1])\n"
+        "def test_case(base_url):\n" + "    pass\n" * statement_count + "class TestOwner:\n"
+        "    @pt.fixture(scope='class')\n"
+        "    def shared(self): pass\n"
+    )
+    tree = ast.parse(source)
+    target = tree.body[2]
+    assert isinstance(target, ast.FunctionDef)
+
+    class OwnedPass(ast.Pass):
+        pass
+
+    target.body.append(OwnedPass())
+    assert all(isinstance(node, ast.Pass) for node in target.body)
+    checks = {id(node): 0 for node in target.body}
+    declaration_types = {
+        ast.Import,
+        ast.ImportFrom,
+        ast.Assign,
+        ast.AnnAssign,
+        ast.Module,
+        ast.ClassDef,
+        ast.FunctionDef,
+        ast.AsyncFunctionDef,
+    }
+    native_isinstance = isinstance
+
+    def observed_isinstance(
+        value: object,
+        classes: type[object] | tuple[type[object], ...],
+    ) -> bool:
+        if (
+            id(value) in checks
+            and isinstance(classes, tuple)
+            and any(candidate in declaration_types for candidate in classes)
+        ):
+            checks[id(value)] += 1
+        return native_isinstance(value, classes)
+
+    monkeypatch.setattr(fixture_audit, "isinstance", observed_isinstance, raising=False)
+    declarations = fixture_audit._source_declarations(tree)
+
+    assert len(target.body) == statement_count + 1
+    assert checks and set(checks.values()) == {1}, checks
+    assert [(item.name, item.asname) for item in declarations.imports[0].names] == [
+        ("pytest", "pt"),
+    ]
+    assert [(node.name, getattr(owner, "name", "<module>")) for node, owner in declarations.functions] == [
+        ("shared", "TestOwner"),
+        ("test_case", "<module>"),
+    ]
+    assert [ast.literal_eval(value) for value in declarations.plugin_values] == [
+        ("plugin.before",),
+    ]
+    assert fixture_audit._declared_fixture_names(declarations) == {"shared"}
+
+
+def test_declaration_classification_retains_custom_fields_and_subclasses() -> None:
+    """Custom statement fields and native declaration subclasses remain visible."""
+    parsed = ast.parse(
+        "import pytest as pt\n"
+        "pytest_plugins: tuple[str, ...] = ('plugin.owned',)\n"
+        "class TestOwned:\n"
+        "    @pt.fixture(scope='class')\n"
+        "    def shared(self): pass\n",
+    )
+    original_import, original_assignment, original_class = parsed.body
+    assert isinstance(original_import, ast.Import)
+    assert isinstance(original_assignment, ast.AnnAssign)
+    assert isinstance(original_class, ast.ClassDef)
+    original_function = original_class.body[0]
+    assert isinstance(original_function, ast.FunctionDef)
+
+    class OwnedImport(ast.Import):
+        pass
+
+    class OwnedAssignment(ast.AnnAssign):
+        pass
+
+    class OwnedFunction(ast.FunctionDef):
+        pass
+
+    class OwnedClass(ast.ClassDef):
+        pass
+
+    class OwnedModule(ast.Module):
+        _fields = (*ast.Module._fields, "owned_statements")
+        owned_statements: list[ast.stmt]
+
+    owned_import = OwnedImport(names=original_import.names)
+    owned_assignment = OwnedAssignment(
+        target=original_assignment.target,
+        annotation=original_assignment.annotation,
+        value=original_assignment.value,
+        simple=original_assignment.simple,
+    )
+    owned_function = OwnedFunction(
+        name=original_function.name,
+        args=original_function.args,
+        body=original_function.body,
+        decorator_list=original_function.decorator_list,
+        returns=original_function.returns,
+        type_comment=original_function.type_comment,
+    )
+    owned_class = OwnedClass(
+        name=original_class.name,
+        bases=original_class.bases,
+        keywords=original_class.keywords,
+        body=[owned_function],
+        decorator_list=original_class.decorator_list,
+    )
+    tree = OwnedModule(body=[owned_import, owned_assignment], type_ignores=[])
+    tree.owned_statements = [owned_class]
+
+    declarations = fixture_audit._source_declarations(tree)
+
+    assert declarations.imports == (owned_import,)
+    assert declarations.functions == ((owned_function, owned_class),)
+    assert declarations.plugin_values == (original_assignment.value,)
+    assert fixture_audit._declared_fixture_names(declarations) == {"shared"}
+    assert tree.body == [owned_import, owned_assignment]
+    assert tree.owned_statements == [owned_class]

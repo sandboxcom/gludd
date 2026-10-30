@@ -72,6 +72,7 @@ def _source_declarations(tree: ast.Module) -> _SourceDeclarations:
     assignment_types = (ast.Assign, ast.AnnAssign)
     owner_types = (ast.Module, ast.ClassDef, *function_types)
     statement_type = ast.stmt
+    declaration_types = (*import_types, *assignment_types, *owner_types)
     imports: list[ast.Import | ast.ImportFrom] = []
     functions: list[
         tuple[
@@ -80,23 +81,24 @@ def _source_declarations(tree: ast.Module) -> _SourceDeclarations:
         ]
     ] = []
     plugin_values: list[ast.expr] = []
-    pending: list[
-        tuple[ast.Module | ast.stmt, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef]
-    ] = [(tree, tree)]
+    pending: list[tuple[ast.Module | ast.stmt, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef]] = [
+        (tree, tree)
+    ]
     while pending:
         node, owner = pending.pop()
-        if isinstance(node, import_types):
-            imports.append(node)
-        elif isinstance(node, function_types):
-            functions.append((node, owner))
-        elif isinstance(node, assignment_types):
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            if node.value is not None and any(
-                isinstance(target, ast.Name) and target.id == "pytest_plugins" for target in targets
-            ):
-                plugin_values.append(node.value)
-        if isinstance(node, owner_types):
-            owner = node
+        if isinstance(node, declaration_types):
+            if isinstance(node, import_types):
+                imports.append(node)
+            elif isinstance(node, function_types):
+                functions.append((node, owner))
+            elif isinstance(node, assignment_types):
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                if node.value is not None and any(
+                    isinstance(target, ast.Name) and target.id == "pytest_plugins" for target in targets
+                ):
+                    plugin_values.append(node.value)
+            if isinstance(node, owner_types):
+                owner = node
         # Only statement lists can hold declarations. Non-statement wrappers
         # (exception handlers and match cases) expose their statements as body.
         # Preserve native field/list order for the existing LIFO traversal.
@@ -110,8 +112,7 @@ def _source_declarations(tree: ast.Module) -> _SourceDeclarations:
                     body = getattr(child, "body", None)
                     if isinstance(body, list):
                         pending.extend(
-                            (statement, owner) for statement in body
-                            if isinstance(statement, statement_type)
+                            (statement, owner) for statement in body if isinstance(statement, statement_type)
                         )
     return _SourceDeclarations(tuple(imports), tuple(functions), tuple(plugin_values))
 
@@ -124,7 +125,9 @@ class _PytestAliases:
 
 
 def _pytest_aliases(
-    imports: Iterable[ast.Import | ast.ImportFrom], *, include_asyncio: bool = False,
+    imports: Iterable[ast.Import | ast.ImportFrom],
+    *,
+    include_asyncio: bool = False,
 ) -> _PytestAliases:
     providers = {"pytest", "pytest_asyncio"} if include_asyncio else {"pytest"}
     modules = set(providers)
@@ -163,9 +166,7 @@ def _fixture_name(
     is_fixture = isinstance(target, ast.Name) and target.id in aliases.fixture_decorators
     if isinstance(target, ast.Attribute):
         is_fixture = (
-            target.attr == "fixture"
-            and isinstance(target.value, ast.Name)
-            and target.value.id in aliases.modules
+            target.attr == "fixture" and isinstance(target.value, ast.Name) and target.value.id in aliases.modules
         )
     if not is_fixture:
         return None
@@ -246,9 +247,7 @@ def external_pytest_fixture_names() -> set[str]:
         source, filename = _module_source(module_name)
         declarations = _source_declarations(ast.parse(source, filename=filename))
         fixture_names.update(_declared_fixture_names(declarations))
-        pending.extend(
-            sorted(_declared_plugin_modules(declarations) - visited)
-        )
+        pending.extend(sorted(_declared_plugin_modules(declarations) - visited))
         del declarations
     return fixture_names
 
@@ -304,7 +303,8 @@ def find_parametrized_fixture_collisions(
 
 
 def _source_findings(
-    path: Path, external_fixture_names: set[str],
+    path: Path,
+    external_fixture_names: set[str],
 ) -> tuple[list[ParametrizedFixtureCollision], list[ClassScopedInstanceFixture]]:
     source = path.read_text(encoding="utf-8")
     if not _BOUND_SOURCE_GC:
@@ -323,7 +323,9 @@ def _source_findings(
 
 
 def _parsed_source_findings(
-    path: Path, source: str, external_fixture_names: set[str],
+    path: Path,
+    source: str,
+    external_fixture_names: set[str],
 ) -> tuple[list[ParametrizedFixtureCollision], list[ClassScopedInstanceFixture]]:
     declarations = _source_declarations(ast.parse(source, filename=str(path)))
     aliases = _pytest_aliases(declarations.imports)
@@ -334,9 +336,7 @@ def _parsed_source_findings(
         for decorator in node.decorator_list:
             for name in _parametrize_names(decorator, aliases=aliases):
                 if name in external_fixture_names:
-                    collisions.append(
-                        ParametrizedFixtureCollision(path=path, line=decorator.lineno, name=name)
-                    )
+                    collisions.append(ParametrizedFixtureCollision(path=path, line=decorator.lineno, name=name))
         if not isinstance(owner, ast.ClassDef):
             continue
         if any(
@@ -351,21 +351,24 @@ def _parsed_source_findings(
             if fixture_name is None:
                 continue
             if any(
-                keyword.arg == "scope"
-                and isinstance(keyword.value, ast.Constant)
-                and keyword.value.value == "class"
+                keyword.arg == "scope" and isinstance(keyword.value, ast.Constant) and keyword.value.value == "class"
                 for keyword in decorator.keywords
             ):
                 bindings.append(
                     ClassScopedInstanceFixture(
-                        path=path, line=decorator.lineno, class_name=owner.name, name=fixture_name,
+                        path=path,
+                        line=decorator.lineno,
+                        class_name=owner.name,
+                        name=fixture_name,
                     )
                 )
     return collisions, bindings
 
 
 def audit_pytest_sources(
-    paths: Iterable[Path], *, external_fixture_names: set[str],
+    paths: Iterable[Path],
+    *,
+    external_fixture_names: set[str],
 ) -> PytestSourceAudit:
     """Parse each unique path once, releasing its AST before the next source."""
     collisions: list[ParametrizedFixtureCollision] = []
