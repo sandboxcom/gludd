@@ -51,18 +51,29 @@ ROSTER = (
     "test_main_checkpoint_passes_peer_native_guard_with_all_saved_bytes_intact",
     "tests/unit/test_precommit_quality_guards.py::"
     "test_real_project_make_refuses_engine_expression_before_parse_or_export_execution",
-    "tests/unit/test_session_start_crash_recovery.py", "tests/unit/test_hook_runtime_split_compat.py",
-    "tests/unit/test_gate_async.py", "tests/unit/test_session_persistence_integration.py",
+    "tests/unit/test_session_start_crash_recovery.py",
+    "tests/unit/test_hook_runtime_split_compat.py",
+    "tests/unit/test_gate_async.py",
+    "tests/unit/test_session_persistence_integration.py",
     "tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::test_primary_objective_mentions_ci",
-    "tests/unit/test_start_gate_background.py", "tests/unit/test_gate_run_lock.py",
-    "tests/unit/test_bulkhead_deep.py", "tests/unit/test_bulkhead_admission.py",
-    "tests/unit/test_enhancement_ratio_plugin.py", "tests/unit/test_pytest_param_fixture_collisions.py",
-    "tests/unit/test_ansible_runtime_artifacts.py", "tests/unit/test_ansible_ee_full_warm_acceptance.py",
-    "tests/unit/test_ansible_ee_searx_acceptance.py", "tests/unit/test_beta4_python_runtime_boundary.py",
-    "tests/unit/test_ansible_searxng_source_inspection.py", "tests/unit/test_integration_admission_target.py",
-    "tests/unit/test_ci_failure_ledger.py", "tests/unit/test_ci_failure_ledger_concurrency.py",
-    "tests/unit/test_proof_observations.py", "tests/unit/test_ci_await_exact.py",
-    "tests/unit/test_ci_verdict_all_required.py", "tests/unit/test_ci_verdict_structural_repair.py",
+    "tests/unit/test_start_gate_background.py",
+    "tests/unit/test_gate_run_lock.py",
+    "tests/unit/test_bulkhead_deep.py",
+    "tests/unit/test_bulkhead_admission.py",
+    "tests/unit/test_enhancement_ratio_plugin.py",
+    "tests/unit/test_pytest_param_fixture_collisions.py",
+    "tests/unit/test_ansible_runtime_artifacts.py",
+    "tests/unit/test_ansible_ee_full_warm_acceptance.py",
+    "tests/unit/test_ansible_ee_searx_acceptance.py",
+    "tests/unit/test_beta4_python_runtime_boundary.py",
+    "tests/unit/test_ansible_searxng_source_inspection.py",
+    "tests/unit/test_integration_admission_target.py",
+    "tests/unit/test_ci_failure_ledger.py",
+    "tests/unit/test_ci_failure_ledger_concurrency.py",
+    "tests/unit/test_proof_observations.py",
+    "tests/unit/test_ci_await_exact.py",
+    "tests/unit/test_ci_verdict_all_required.py",
+    "tests/unit/test_ci_verdict_structural_repair.py",
     "tests/unit/test_secrets_baseline_compaction.py",
     "tests/unit/test_pipeline_status_exact_sha.py",
     "tests/unit/test_pipeline_status_job_progress.py",
@@ -74,8 +85,7 @@ ROSTER = (
     "test_summary_public_inputs_never_execute_make_or_shell_data[backticks-LOG-False]",
     "tests/unit/test_cache_resource_policy.py::"
     "test_prohibited_home_roots_refuse_before_measurement[library-caches-inventory]",
-    "tests/unit/test_run_watched_trace.py::"
-    "test_native_trace_option_preserves_default_off_and_exact_on_argv[enabled]",
+    "tests/unit/test_run_watched_trace.py::test_native_trace_option_preserves_default_off_and_exact_on_argv[enabled]",
     "tests/unit/test_observability_guardrails.py::test_disk_and_native_temp_owner_keep_largest_entries[disk]",
     "tests/unit/test_ci_named_shard_files.py::"
     "test_coverage_files_exports_physical_checkout_to_changed_cwd_children[False-command-line]",
@@ -86,22 +96,17 @@ ROSTER = (
     "tests/unit/test_clean_ci_shard_scratch.py::test_stale_scratch_nested_symlink_preserves_external_target_modes[file]",
     "tests/unit/test_detect_secrets_full_scan.py::"
     "test_successful_full_scan_rejects_added_identity_or_occurrence[new-digest]",
-    "tests/unit/test_audit_coverage_suite_provenance.py::"
-    "test_imported_cobertura_never_proves_e2e_execution",
+    "tests/unit/test_audit_coverage_suite_provenance.py::test_imported_cobertura_never_proves_e2e_execution",
     "tests/unit/test_make_uv_cache_sandbox.py::test_native_prune_preserves_real_child_status[native-failure]",
     "tests/unit/test_make_uv_cache_sandbox.py::test_native_prune_target_policy_refuses_invalid[UV_CACHE_PRUNE_TIMEOUT=0]",
     "tests/unit/test_cache_resource_policy.py::test_shared_uv_inventory_reports_complete_without_mutation",
-    "tests/unit/test_git_automation_locking_handoff.py::"
-    "test_live_task_handoff_cannot_allow_critical_section_overlap",
-    "tests/unit/test_git_automation_locking_handoff.py::"
-    "test_wait_for_result_binds_nested_use_to_consuming_task",
+    "tests/unit/test_git_automation_locking_handoff.py::test_live_task_handoff_cannot_allow_critical_section_overlap",
+    "tests/unit/test_git_automation_locking_handoff.py::test_wait_for_result_binds_nested_use_to_consuming_task",
     "tests/unit/test_git_merge_nc_safety.py::test_full_make_dirty_refusal_keeps_the_staged_source_test[command]",
     "tests/unit/test_git_merge_nc_safety.py::"
     "test_full_make_branch_data_stays_literal_before_startup[make-expression-command]",
-    "tests/unit/test_make_result_guidance.py::"
-    "test_promotion_make_guidance_waits_for_all_required_children[validator]",
-    "tests/unit/test_make_checker_guidance.py::"
-    "test_contract_native_input_error_guidance_retains_exit_one[include]",
+    "tests/unit/test_make_result_guidance.py::test_promotion_make_guidance_waits_for_all_required_children[validator]",
+    "tests/unit/test_make_checker_guidance.py::test_contract_native_input_error_guidance_retains_exit_one[include]",
     "tests/unit/test_development_merge_forward_targets.py::"
     "test_merge_forward_plan_guidance_does_not_admit_integration[True-content]",
     "tests/unit/test_development_merge_forward_targets.py::test_merge_forward_guidance_runs_despite_namesake_file",
@@ -110,10 +115,8 @@ ROSTER = (
     "tests/unit/test_human_todo_make_target.py::test_human_todo_guidance_uses_actual_native_outcome[0-1]",
     "tests/unit/test_run_watched_result_guidance.py::"
     "test_native_status_drives_one_result_prompt_without_changing_argv[7]",
-    "tests/unit/test_run_watched_result_guidance.py::"
-    "test_namesake_file_cannot_suppress_native_observation_or_guidance",
-    "tests/unit/test_run_watched_command_boundary.py::"
-    "test_compound_tail_is_running_inside_one_terminal_receipt[7-0]",
+    "tests/unit/test_run_watched_result_guidance.py::test_namesake_file_cannot_suppress_native_observation_or_guidance",
+    "tests/unit/test_run_watched_command_boundary.py::test_compound_tail_is_running_inside_one_terminal_receipt[7-0]",
     "tests/unit/test_make_uv_execution_boundary.py::"
     "test_guarded_multi_goal_refusal_teaches_both_input_repairs_before_any_body[quoted-markdown]",
     "tests/unit/test_item_progress.py::test_native_work_item_status_guidance_preserves_owned_json[True]",
@@ -123,9 +126,12 @@ ROSTER = (
     "tests/unit/test_presentation_browser_apt_source.py::test_apt_mode_is_literal_at_real_make_startup[environment-override]",
     "tests/unit/test_git_status_readonly.py::test_status_never_refreshes_native_index[inherited-one]",
     "tests/unit/test_task_ledger_validation.py",
-    "tests/unit/test_make_readonly_version.py", "tests/unit/test_make_help_audit.py",
-    "tests/unit/test_clean_stale_resource_namespaces.py", "tests/unit/test_native_temp_artifact_target.py",
-    "tests/unit/test_ci_run_summary_script.py", "tests/unit/test_ci_run_summary_target.py",
+    "tests/unit/test_make_readonly_version.py",
+    "tests/unit/test_make_help_audit.py",
+    "tests/unit/test_clean_stale_resource_namespaces.py",
+    "tests/unit/test_native_temp_artifact_target.py",
+    "tests/unit/test_ci_run_summary_script.py",
+    "tests/unit/test_ci_run_summary_target.py",
     "tests/unit/test_ci_workflow_integrity.py",
     "tests/unit/test_plugin_manifest_deep.py::TestHookValidity::test_no_duplicate_hooks_within_single_plugin",
     "tests/unit/test_plugin_session_start_deadlock.py::TestSessionStartNoDeadlock::"
@@ -146,8 +152,7 @@ ROSTER = (
     "tests/unit/test_ci_shards_log_context_bounds.py",
     "tests/unit/test_makefile_syntax.py",
     "tests/unit/test_makefile_layout.py::test_each_invocation_reads_each_validated_source_once",
-    "tests/unit/test_makefile_layout.py::"
-    "test_composition_emits_validated_bytes_and_revalidates_next_invocation",
+    "tests/unit/test_makefile_layout.py::test_composition_emits_validated_bytes_and_revalidates_next_invocation",
     "tests/unit/test_makefile_targets_deep.py",
     "tests/unit/test_azure_containerapp_coverage_target.py",
     "tests/unit/test_ee_owned_collection_runtime_metadata.py",
@@ -174,36 +179,28 @@ ROSTER = (
     "tests/unit/test_branch_discipline_checks.py::TestWorktreeCleanupAfterMerge::test_agent_cu_removes_worktree",
     "tests/unit/test_branch_discipline_checks.py::"
     "TestWorktreeCleanupAfterMerge::test_agent_cu_preserves_branch_and_release_evidence",
-    "tests/unit/test_execution_adapter_protocols.py::"
-    "test_core_protocols_do_not_claim_data_member_validation",
-    "tests/unit/test_status_snapshot.py::TestStatusSnapshot::"
-    "test_session_md_has_markers",
+    "tests/unit/test_execution_adapter_protocols.py::test_core_protocols_do_not_claim_data_member_validation",
+    "tests/unit/test_status_snapshot.py::TestStatusSnapshot::test_session_md_has_markers",
     "tests/unit/test_status_snapshot.py::TestStatusSnapshot::"
     "test_validation_refuses_invalid_session_structure_without_writes",
     "tests/unit/test_status_snapshot.py::TestStatusSnapshot::"
     "test_repeated_native_rewrite_keeps_one_header_and_surrounding_handoff[absent]",
-    "tests/unit/test_active_work_status.py::"
-    "test_process_inventory_does_not_promote_resource_directory_names[pytest]",
+    "tests/unit/test_active_work_status.py::test_process_inventory_does_not_promote_resource_directory_names[pytest]",
     "tests/unit/test_agent_watchdog_lifecycle.py::"
     "test_native_sigterm_during_acquisition_releases_the_actual_lease[fsync]",
-    "tests/unit/test_agent_watchdog_lifecycle.py::"
-    "test_native_start_acknowledges_one_child_and_stop_drains",
+    "tests/unit/test_agent_watchdog_lifecycle.py::test_native_start_acknowledges_one_child_and_stop_drains",
     "tests/unit/test_agent_worktree_targets.py::TestAgentWorktreeRecipeShape::"
     "test_agent_cleanup_delegates_to_registered_native_retirement",
-    "tests/unit/test_agent_worktree_targets.py::TestAgentWorktreeLifecycle::"
-    "test_agent_cleanup_removes_worktree[False]",
-    "tests/unit/test_task_watchdog.py::"
-    "test_watchdog_absence_refusal_names_the_exact_pid_and_cwd[True]",
-    "tests/unit/test_active_work_status.py::"
-    "test_process_inventory_preserves_python_module_argument_forms",
+    "tests/unit/test_agent_worktree_targets.py::TestAgentWorktreeLifecycle::test_agent_cleanup_removes_worktree[False]",
+    "tests/unit/test_task_watchdog.py::test_watchdog_absence_refusal_names_the_exact_pid_and_cwd[True]",
+    "tests/unit/test_active_work_status.py::test_process_inventory_preserves_python_module_argument_forms",
     "tests/unit/test_code_intelligence_import_boundary.py::"
     "test_extractor_import_does_not_load_introspection_or_database",
     "tests/unit/test_list_files_target.py::test_listing_missing_input_preserves_native_failure",
     "tests/unit/test_import_time_deep.py::test_measurement_contract_parses_native_numeric_rows",
     "tests/unit/test_import_time_deep.py::test_measurement_contract_rejects_failed_children",
     "tests/unit/test_import_time_deep.py::test_measurement_contract_consumers_fail_for_missing_data",
-    "tests/unit/test_runtime_publish_admission.py::"
-    "test_green_runtime_owner_runs_once_before_normal_transport[False]",
+    "tests/unit/test_runtime_publish_admission.py::test_green_runtime_owner_runs_once_before_normal_transport[False]",
 )
 
 
@@ -260,7 +257,10 @@ def _capture_owner(tmp_path: Path, fail_phase: str) -> tuple[subprocess.Complete
     )
     result = subprocess.run(
         ["make", "--no-print-directory", "-f", str(owner), OWNER],
-        cwd=ROOT, text=True, capture_output=True, timeout=10,
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        timeout=10,
     )
     rows = [json.loads(line) for line in record.read_text(encoding="utf-8").splitlines()]
     # Canonical phase order compares the unchanged inventories, not entry timing.
@@ -312,13 +312,12 @@ def test_locked_ee_whole_owner_uses_existing_tail_with_original_inventory(tmp_pa
     assert len(original_inventory) == len(set(original_inventory)) == 155
     assert Counter(node for files in selections for node in files) == Counter(original_inventory)
     locked = "tests/unit/test_ansible_ee_locked_consumer.py"
-    coverage = [
-        sum(node == locked or node.startswith(locked + "::") for node in files)
-        for files in selections
-    ]
+    coverage = [sum(node == locked or node.startswith(locked + "::") for node in files) for files in selections]
     assert coverage == [0, 0, 1], (locked, coverage)
     assert selections[2][-4:] == [
-        locked, "tests/unit/test_observed_command.py", "tests/unit/test_status_heartbeat_terminal.py",
+        locked,
+        "tests/unit/test_observed_command.py",
+        "tests/unit/test_status_heartbeat_terminal.py",
         "tests/unit/test_dependency_profiles.py::"
         "test_selected_profile_locks_preserve_controller_jsonpointer_requirement",
     ]
@@ -331,10 +330,8 @@ def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp
     original_selectors = (
         "tests/unit/test_ci_batch_receipts.py::test_receipt_validation_refuses_unsafe_artifact_mode[2432]",
         "tests/unit/test_env_var_audit_deep.py::TestGLUDDNamingConvention::test_no_trailing_underscore",
-        "tests/unit/test_env_var_audit_deep.py::TestGLUDDDocumentation::test_config_reference_documents_"
-        "live_vars",
-        "tests/unit/test_env_var_audit_deep.py::TestGLUDDDefaultConsistency::test_default_values_"
-        "consistent",
+        "tests/unit/test_env_var_audit_deep.py::TestGLUDDDocumentation::test_config_reference_documents_live_vars",
+        "tests/unit/test_env_var_audit_deep.py::TestGLUDDDefaultConsistency::test_default_values_consistent",
         "tests/unit/test_backlog_audit_target.py::test_backlog_target_is_public_registered_and_documented",
         "tests/unit/test_canonical_release_gate.py::test_actual_local_release_recipe_collects_later_"
         "failures_in_one_invocation",
@@ -349,8 +346,7 @@ def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp
         "tests/unit/test_hook_runtime_split_compat.py",
         "tests/unit/test_gate_async.py",
         "tests/unit/test_session_persistence_integration.py",
-        "tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::test_primary_objective_"
-        "mentions_ci",
+        "tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::test_primary_objective_mentions_ci",
         "tests/unit/test_start_gate_background.py",
         "tests/unit/test_gate_run_lock.py",
         "tests/unit/test_bulkhead_deep.py",
@@ -382,47 +378,37 @@ def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp
         "measurement[library-caches-inventory]",
         "tests/unit/test_run_watched_trace.py::test_native_trace_option_preserves_default_off_and_exact_"
         "on_argv[enabled]",
-        "tests/unit/test_observability_guardrails.py::test_disk_and_native_temp_owner_keep_largest_"
-        "entries[disk]",
+        "tests/unit/test_observability_guardrails.py::test_disk_and_native_temp_owner_keep_largest_entries[disk]",
         "tests/unit/test_ci_named_shard_files.py::test_coverage_files_exports_physical_checkout_to_"
         "changed_cwd_children[False-command-line]",
         "tests/unit/test_watchdog_secrets_lifecycle.py::test_native_scan_owns_terminal_receipt_and_"
         "descendants[timeout-124-timed_out]",
         "tests/unit/test_watchdog.py::test_watchdog_fixture_confines_command_workspace",
-        "tests/unit/test_task_watchdog.py::test_terminal_status_cap_preserves_native_gate_"
-        "protection[absent-64]",
+        "tests/unit/test_task_watchdog.py::test_terminal_status_cap_preserves_native_gate_protection[absent-64]",
         "tests/unit/test_clean_ci_shard_scratch.py::test_stale_scratch_nested_symlink_preserves_external_"
         "target_modes[file]",
         "tests/unit/test_detect_secrets_full_scan.py::test_successful_full_scan_rejects_added_identity_"
         "or_occurrence[new-digest]",
-        "tests/unit/test_audit_coverage_suite_provenance.py::test_imported_cobertura_never_proves_e2e_"
-        "execution",
-        "tests/unit/test_make_uv_cache_sandbox.py::test_native_prune_preserves_real_child_"
-        "status[native-failure]",
+        "tests/unit/test_audit_coverage_suite_provenance.py::test_imported_cobertura_never_proves_e2e_execution",
+        "tests/unit/test_make_uv_cache_sandbox.py::test_native_prune_preserves_real_child_status[native-failure]",
         "tests/unit/test_make_uv_cache_sandbox.py::test_native_prune_target_policy_refuses_invalid[UV_"
         "CACHE_PRUNE_TIMEOUT=0]",
-        "tests/unit/test_cache_resource_policy.py::test_shared_uv_inventory_reports_complete_without_"
-        "mutation",
+        "tests/unit/test_cache_resource_policy.py::test_shared_uv_inventory_reports_complete_without_mutation",
         "tests/unit/test_git_automation_locking_handoff.py::test_live_task_handoff_cannot_allow_critical_"
         "section_overlap",
-        "tests/unit/test_git_automation_locking_handoff.py::test_wait_for_result_binds_nested_use_to_"
-        "consuming_task",
-        "tests/unit/test_git_merge_nc_safety.py::test_full_make_dirty_refusal_keeps_the_staged_source_"
-        "test[command]",
+        "tests/unit/test_git_automation_locking_handoff.py::test_wait_for_result_binds_nested_use_to_consuming_task",
+        "tests/unit/test_git_merge_nc_safety.py::test_full_make_dirty_refusal_keeps_the_staged_source_test[command]",
         "tests/unit/test_git_merge_nc_safety.py::test_full_make_branch_data_stays_literal_before_"
         "startup[make-expression-command]",
         "tests/unit/test_make_result_guidance.py::test_promotion_make_guidance_waits_for_all_required_"
         "children[validator]",
-        "tests/unit/test_make_checker_guidance.py::test_contract_native_input_error_guidance_retains_"
-        "exit_one[include]",
+        "tests/unit/test_make_checker_guidance.py::test_contract_native_input_error_guidance_retains_exit_one[include]",
         "tests/unit/test_development_merge_forward_targets.py::test_merge_forward_plan_guidance_does_not_"
         "admit_integration[True-content]",
-        "tests/unit/test_development_merge_forward_targets.py::test_merge_forward_guidance_runs_despite_"
-        "namesake_file",
+        "tests/unit/test_development_merge_forward_targets.py::test_merge_forward_guidance_runs_despite_namesake_file",
         "tests/unit/test_gludd_human_todo_module.py::test_success_without_usable_id_never_verifies_"
         "write[missing-present-200]",
-        "tests/unit/test_human_todo_make_target.py::test_human_todo_guidance_uses_actual_native_"
-        "outcome[0-1]",
+        "tests/unit/test_human_todo_make_target.py::test_human_todo_guidance_uses_actual_native_outcome[0-1]",
         "tests/unit/test_run_watched_result_guidance.py::test_native_status_drives_one_result_prompt_"
         "without_changing_argv[7]",
         "tests/unit/test_run_watched_result_guidance.py::test_namesake_file_cannot_suppress_native_"
@@ -431,8 +417,7 @@ def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp
         "terminal_receipt[7-0]",
         "tests/unit/test_make_uv_execution_boundary.py::test_guarded_multi_goal_refusal_teaches_both_"
         "input_repairs_before_any_body[quoted-markdown]",
-        "tests/unit/test_item_progress.py::test_native_work_item_status_guidance_preserves_owned_"
-        "json[True]",
+        "tests/unit/test_item_progress.py::test_native_work_item_status_guidance_preserves_owned_json[True]",
         "tests/unit/test_release_pipeline_structure.py::TestReleaseCandidateHostedValidation::test_"
         "candidate_push_filters_preserve_existing_routes",
         "tests/unit/test_test_files_native_trace.py::test_observer_trace_contains_real_matching_protocol_"
@@ -451,22 +436,17 @@ def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp
         "tests/unit/test_ci_run_summary_script.py",
         "tests/unit/test_ci_run_summary_target.py",
         "tests/unit/test_ci_workflow_integrity.py",
-        "tests/unit/test_plugin_manifest_deep.py::TestHookValidity::test_no_duplicate_hooks_within_"
-        "single_plugin",
+        "tests/unit/test_plugin_manifest_deep.py::TestHookValidity::test_no_duplicate_hooks_within_single_plugin",
         "tests/unit/test_plugin_session_start_deadlock.py::TestSessionStartNoDeadlock::test_no_plugin_"
         "denies_reads_at_session_start",
         "tests/unit/test_process_overhead.py::TestProcessTokenOverhead::test_anti_stop_plugins_are_lean",
-        "tests/unit/test_enforcement_executable_modes.py::test_enforcement_runtime_surfaces_have_"
-        "executable_git_mode",
+        "tests/unit/test_enforcement_executable_modes.py::test_enforcement_runtime_surfaces_have_executable_git_mode",
         "tests/unit/test_subagent_output_clean.py::TestSubagentOutputClean::test_all_tool_execute_before_"
         "hooks_have_subagent_guard",
-        "tests/unit/test_no_idle_monitoring_plugin.py::test_fallback_subagent_guard_precedes_delegated_"
-        "handler",
-        "tests/unit/test_v011_exact_gate_repair_contract.py::test_all_six_exact_gate_repairs_remain_"
-        "green_together",
+        "tests/unit/test_no_idle_monitoring_plugin.py::test_fallback_subagent_guard_precedes_delegated_handler",
+        "tests/unit/test_v011_exact_gate_repair_contract.py::test_all_six_exact_gate_repairs_remain_green_together",
         "tests/unit/test_secrets_scan_resources.py",
-        "tests/unit/test_css_lint_target.py::test_lint_css_dependency_config_and_contract_are_exactly_"
-        "pinned",
+        "tests/unit/test_css_lint_target.py::test_lint_css_dependency_config_and_contract_are_exactly_pinned",
         "tests/unit/test_gate_status_attestation.py::test_repository_identity_batches_only_fresh_"
         "metadata_with_equivalent_digests",
         "tests/unit/test_ci_stylelint_workflow.py",
@@ -477,8 +457,7 @@ def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp
         "tests/unit/test_ci_shards_log_context_bounds.py",
         "tests/unit/test_makefile_syntax.py",
         "tests/unit/test_makefile_layout.py::test_each_invocation_reads_each_validated_source_once",
-        "tests/unit/test_makefile_layout.py::test_composition_emits_validated_bytes_and_revalidates_next_"
-        "invocation",
+        "tests/unit/test_makefile_layout.py::test_composition_emits_validated_bytes_and_revalidates_next_invocation",
         "tests/unit/test_makefile_targets_deep.py",
         "tests/unit/test_azure_containerapp_coverage_target.py",
         "tests/unit/test_ee_owned_collection_runtime_metadata.py",
@@ -489,8 +468,7 @@ def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp
         "tests/unit/test_ansible_ee_locked_consumer_admission.py",
         "tests/unit/test_release_asset_matrix.py",
         "tests/unit/test_release_ee_collection_closure.py",
-        "tests/unit/test_mcp_topics_manifest.py::test_independent_topic_sizing_has_one_native_dump_per_"
-        "topic",
+        "tests/unit/test_mcp_topics_manifest.py::test_independent_topic_sizing_has_one_native_dump_per_topic",
         "tests/unit/test_mcp_tool_gen.py",
         "tests/unit/test_observed_command.py",
         "tests/unit/test_observer_retention_concurrency.py",
@@ -505,12 +483,10 @@ def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp
         "explicit_worker_environment[1-command-line-None-GLUDD_XDIST_WORKERS]",
         "tests/unit/test_markdown_docs_deep.py::test_all_internal_links_resolve",
         "tests/unit/test_markdown_docs_deep.py::test_relative_links_do_not_escape_repo",
-        "tests/unit/test_branch_discipline_checks.py::TestWorktreeCleanupAfterMerge::test_agent_cu_"
-        "removes_worktree",
+        "tests/unit/test_branch_discipline_checks.py::TestWorktreeCleanupAfterMerge::test_agent_cu_removes_worktree",
         "tests/unit/test_branch_discipline_checks.py::TestWorktreeCleanupAfterMerge::test_agent_cu_"
         "preserves_branch_and_release_evidence",
-        "tests/unit/test_execution_adapter_protocols.py::test_core_protocols_do_not_claim_data_member_"
-        "validation",
+        "tests/unit/test_execution_adapter_protocols.py::test_core_protocols_do_not_claim_data_member_validation",
         "tests/unit/test_status_snapshot.py::TestStatusSnapshot::test_session_md_has_markers",
         "tests/unit/test_status_snapshot.py::TestStatusSnapshot::test_validation_refuses_invalid_session_"
         "structure_without_writes",
@@ -520,16 +496,13 @@ def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp
         "directory_names[pytest]",
         "tests/unit/test_agent_watchdog_lifecycle.py::test_native_sigterm_during_acquisition_releases_"
         "the_actual_lease[fsync]",
-        "tests/unit/test_agent_watchdog_lifecycle.py::test_native_start_acknowledges_one_child_and_stop_"
-        "drains",
+        "tests/unit/test_agent_watchdog_lifecycle.py::test_native_start_acknowledges_one_child_and_stop_drains",
         "tests/unit/test_agent_worktree_targets.py::TestAgentWorktreeRecipeShape::test_agent_cleanup_"
         "delegates_to_registered_native_retirement",
         "tests/unit/test_agent_worktree_targets.py::TestAgentWorktreeLifecycle::test_agent_cleanup_"
         "removes_worktree[False]",
-        "tests/unit/test_task_watchdog.py::test_watchdog_absence_refusal_names_the_exact_pid_and_"
-        "cwd[True]",
-        "tests/unit/test_active_work_status.py::test_process_inventory_preserves_python_module_argument_"
-        "forms",
+        "tests/unit/test_task_watchdog.py::test_watchdog_absence_refusal_names_the_exact_pid_and_cwd[True]",
+        "tests/unit/test_active_work_status.py::test_process_inventory_preserves_python_module_argument_forms",
         "tests/unit/test_code_intelligence_import_boundary.py::test_extractor_import_does_not_load_"
         "introspection_or_database",
         "tests/unit/test_list_files_target.py::test_listing_missing_input_preserves_native_failure",
@@ -541,20 +514,16 @@ def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp
         "tests/unit/test_makefile_audit_deep.py::TestHelpNoDupTargets::test_no_duplicate_help_entries",
         "tests/unit/test_reviewed_head_inputs.py::test_historical_focus_binds_candidate_adapter_blobs_"
         "not_inspecting_files",
-        "tests/unit/test_reviewed_head_inputs.py::test_finalization_accepts_actual_native_background_"
-        "producer_command",
+        "tests/unit/test_reviewed_head_inputs.py::test_finalization_accepts_actual_native_background_producer_command",
         "tests/unit/test_reviewed_head_inputs.py::test_native_focus_commands_preserve_watchdog_ownership",
-        "tests/unit/test_task_watchdog.py::test_watchdog_destructive_boundary_requires_registered_"
-        "ownership",
+        "tests/unit/test_task_watchdog.py::test_watchdog_destructive_boundary_requires_registered_ownership",
         "tests/unit/test_task_watchdog.py::test_watchdog_handoff_confirms_exit_after_metadata_changes",
         "tests/unit/test_task_watchdog.py::test_native_watchdog_start_requires_child_acknowledgement",
         "tests/unit/test_task_watchdog.py::test_native_start_serializes_existing_acknowledgement",
         "tests/unit/test_task_watchdog.py::test_unit_watchdog_fault_logs_belong_to_the_test_namespace",
         "tests/unit/test_makefile_audit_deep.py::TestScriptReferencesExist::test_all_scripts_exist",
-        "tests/unit/test_task_watchdog.py::test_live_gate_bound_waiter_protects_the_complete_"
-        "tree[make-pid]",
-        "tests/unit/test_push_discipline_checks.py::TestVerifyRemoteAfterPush::test_verify_remote_"
-        "compares_sha",
+        "tests/unit/test_task_watchdog.py::test_live_gate_bound_waiter_protects_the_complete_tree[make-pid]",
+        "tests/unit/test_push_discipline_checks.py::TestVerifyRemoteAfterPush::test_verify_remote_compares_sha",
         "tests/unit/test_dependency_profiles.py::test_selected_profile_locks_preserve_controller_"
         "jsonpointer_requirement",
     )
@@ -574,10 +543,7 @@ def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp
         "tests/unit/test_status_heartbeat_terminal.py",
     )
     for file in moved:
-        coverage = [
-            sum(node == file or node.startswith(file + "::") for node in files)
-            for files in selections
-        ]
+        coverage = [sum(node == file or node.startswith(file + "::") for node in files) for files in selections]
         assert coverage == [0, 0, 1], (file, coverage)
         assert selections[2].count(file) == 1
     assert [len(files) for files in selections] == [139, 1, 15]
@@ -594,11 +560,12 @@ def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp
 
 @pytest.mark.parametrize(
     ("fail_phase", "expected_phases"),
-    [("full", ["full", "help", "reviewed"]), ("help", ["full", "help"]),
-     ("reviewed", ["full", "help", "reviewed"])],
+    [("full", ["full", "help", "reviewed"]), ("help", ["full", "help"]), ("reviewed", ["full", "help", "reviewed"])],
 )
 def test_runtime_admission_propagates_each_owner_failure_without_replay(
-    tmp_path: Path, fail_phase: str, expected_phases: list[str],
+    tmp_path: Path,
+    fail_phase: str,
+    expected_phases: list[str],
 ) -> None:
     result, rows = _capture_owner(tmp_path, fail_phase)
     assert result.returncode != 0
@@ -607,28 +574,52 @@ def test_runtime_admission_propagates_each_owner_failure_without_replay(
 
 
 def _native_test_files(
-    paths: list[Path], workers: int, *, environment: dict[str, str] | None = None,
+    paths: list[Path],
+    workers: int,
+    *,
+    environment: dict[str, str] | None = None,
     extra_pytest_args: str = "",
+    owned_trace: tuple[Path, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     flags = f"-W error -q -n {workers} --maxprocesses {workers}"
     if extra_pytest_args:
         flags += " " + extra_pytest_args
+    child_environment = dict(os.environ if environment is None else environment)
+    for key in ("GLUDD_XDIST_TRACE_LOG", "GLUDD_XDIST_TRACE_RUN_ID", "GLUDD_XDIST_TRACE_TRUNCATE"):
+        child_environment.pop(key, None)
+    if owned_trace is not None:
+        trace_path, run_id = owned_trace
+        child_environment.update(
+            {
+                "GLUDD_XDIST_TRACE_LOG": str(trace_path),
+                "GLUDD_XDIST_TRACE_RUN_ID": run_id,
+                "GLUDD_XDIST_TRACE_TRUNCATE": "1",
+            }
+        )
     return subprocess.run(
         [
-            "make", "--no-print-directory", "test-files",
+            "make",
+            "--no-print-directory",
+            "test-files",
             "TESTFILES=" + " ".join(str(path) for path in paths),
-            f"NPROC={workers}", f"GLUDD_XDIST_WORKERS={workers}",
+            f"NPROC={workers}",
+            f"GLUDD_XDIST_WORKERS={workers}",
             "PYTEST_ARGS=" + flags,
             "UV_PROJECT_ENVIRONMENT=" + os.environ.get("VIRTUAL_ENV", str(ROOT / ".venv")),
         ],
-        cwd=ROOT, text=True, capture_output=True, timeout=45, env=environment,
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        timeout=45,
+        env=child_environment,
     )
 
 
 def test_existing_group_owner_isolates_shared_state_and_preserves_exact_once_outcomes(tmp_path: Path) -> None:
     """Exercise real xdist with the repository's existing shared-state grouping hook."""
     (tmp_path / "conftest.py").write_text(
-        "from tests.conftest import pytest_collection_modifyitems\n", encoding="utf-8",
+        "from tests.conftest import pytest_collection_modifyitems\n",
+        encoding="utf-8",
     )
     outcomes: list[Counter[str]] = []
     for workers in (1, 2):
@@ -657,7 +648,8 @@ def test_existing_group_owner_isolates_shared_state_and_preserves_exact_once_out
             encoding="utf-8",
         )
         result = _native_test_files(
-            [shared, independent], workers,
+            [shared, independent],
+            workers,
             environment={**os.environ, "GLUDD_RUNTIME_SCHEDULING_RECORD": str(record)},
         )
         assert result.returncode == 0, result.stdout + result.stderr
@@ -673,8 +665,7 @@ def test_existing_group_owner_isolates_shared_state_and_preserves_exact_once_out
 def test_two_worker_native_admission_keeps_warnings_fatal(tmp_path: Path) -> None:
     probe = tmp_path / "test_warning.py"
     probe.write_text(
-        "import warnings\ndef test_original_warning():\n"
-        "    warnings.warn('runtime-admission-warning', UserWarning)\n",
+        "import warnings\ndef test_original_warning():\n    warnings.warn('runtime-admission-warning', UserWarning)\n",
         encoding="utf-8",
     )
     result = _native_test_files([probe], 2)
@@ -727,57 +718,86 @@ def test_compact_native_reporting_preserves_inventory_failures_and_terminal_tota
         paths = [Path(str(probe) + "::" + node)]
     expected_nodes = 0 if mode in {"import", "missing"} else 1 if mode == "setup" else 25
     expected_footer = (
-        "no tests ran" if mode == "missing" else "2 errors" if mode == "import" else "1 error" if mode == "setup"
-        else "25 passed" if mode == "success" else "1 failed, 24 passed"
+        "no tests ran"
+        if mode == "missing"
+        else "2 errors"
+        if mode == "import"
+        else "1 error"
+        if mode == "setup"
+        else "25 passed"
+        if mode == "success"
+        else "1 failed, 24 passed"
     )
     outputs: list[subprocess.CompletedProcess[str]] = []
     snapshots_by_variant: list[list[dict[str, object]]] = []
     node_orders: list[list[str]] = []
     failure_reports: list[Counter[tuple[str, str, str]]] = []
-    plugins = ",".join(dict.fromkeys(filter(None, (
-        *os.environ.get("PYTEST_PLUGINS", "").split(","),
-        "scripts.xdist_trace_plugin", "tests.fixtures.admission_cold_start.snapshot_plugin",
-    ))))
+    plugins = ",".join(
+        dict.fromkeys(
+            filter(
+                None,
+                (
+                    *os.environ.get("PYTEST_PLUGINS", "").split(","),
+                    "scripts.xdist_trace_plugin",
+                    "tests.fixtures.admission_cold_start.snapshot_plugin",
+                ),
+            )
+        )
+    )
     for variant in ("ordinary", "compact"):
         trace = tmp_path / f"{variant}.jsonl"
         snapshots = tmp_path / f"snapshots-{variant}"
         environment = {
-            **os.environ, "UV_NO_SYNC": "1", "UV_PYTHON_DOWNLOADS": "never",
-            "PYTHONDONTWRITEBYTECODE": "1", "PYTEST_PLUGINS": plugins,
-            "GLUDD_COMPACT_REPORT_MODE": mode, "GLUDD_XDIST_TRACE_LOG": str(trace),
+            **os.environ,
+            "UV_NO_SYNC": "1",
+            "UV_PYTHON_DOWNLOADS": "never",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTEST_PLUGINS": plugins,
+            "GLUDD_COMPACT_REPORT_MODE": mode,
+            "GLUDD_XDIST_TRACE_LOG": str(trace),
             "GLUDD_COMPACT_REPORT_VARIANT": variant,
-            "GLUDD_XDIST_TRACE_RUN_ID": variant, "COLD_START_SNAPSHOT_ROOT": str(snapshots),
+            "GLUDD_XDIST_TRACE_RUN_ID": variant,
+            "COLD_START_SNAPSHOT_ROOT": str(snapshots),
         }
         options = [
-            "-c", str(ROOT / "pyproject.toml"),
-            "--rootdir", str(tmp_path.resolve()), "--confcutdir", str(tmp_path.resolve()),
+            "-c",
+            str(ROOT / "pyproject.toml"),
+            "--rootdir",
+            str(tmp_path.resolve()),
+            "--confcutdir",
+            str(tmp_path.resolve()),
         ]
         if variant == "compact":
             options.extend(("-o", "verbosity_test_cases=-2"))
         result = _native_test_files(
-            paths, 2, environment=environment,
+            paths,
+            2,
+            environment=environment,
             extra_pytest_args=shlex.join(options),
+            owned_trace=(trace, variant),
         )
         outputs.append(result)
         assert (result.returncode == 0) == (mode == "success"), result.stdout + result.stderr
         assert expected_footer in result.stdout, result.stdout + result.stderr
         events: list[dict[str, object]] = [json.loads(line) for line in trace.read_text().splitlines()]
         assert {event["run_id"] for event in events} == {variant}
-        assert {
-            event["worker"] for event in events if event["event"] == "RUN_START" and event["role"] == "worker"
-        } == {"gw0", "gw1"}
+        assert {event["worker"] for event in events if event["event"] == "RUN_START" and event["role"] == "worker"} == {
+            "gw0",
+            "gw1",
+        }
         started = [str(event["nodeid"]) for event in events if event["event"] == "START"]
         finished = [str(event["nodeid"]) for event in events if event["event"] == "FINISH"]
         assert started == finished and len(started) == expected_nodes
         assert set(Counter(started).values()) <= {1}
-        assert len({event["worker"] for event in events if event["event"] == "START"}) == (
-            1 if expected_nodes else 0
-        )
+        assert len({event["worker"] for event in events if event["event"] == "START"}) == (1 if expected_nodes else 0)
         node_orders.append(started)
-        failure_reports.append(Counter(
-            (str(event["nodeid"]), str(event["when"]), str(event["outcome"]))
-            for event in events if event["event"] == "REPORT"
-        ))
+        failure_reports.append(
+            Counter(
+                (str(event["nodeid"]), str(event["when"]), str(event["outcome"]))
+                for event in events
+                if event["event"] == "REPORT"
+            )
+        )
         captured: list[dict[str, object]] = [
             json.loads(path.read_text()) for path in sorted(snapshots.glob("gw*.json"))
         ]
@@ -820,10 +840,17 @@ def test_compact_dot_bytes_keep_existing_observer_live_without_newlines(tmp_path
             tmp_path,
             "import sys,time\nfor _ in range(20):\n    sys.stdout.write('.')\n"
             "    sys.stdout.flush()\n    time.sleep(0.06)\n",
-            "--heartbeat-secs", "0.05", "--quiet-secs", "0.4", "--max-secs", "4",
+            "--heartbeat-secs",
+            "0.05",
+            "--quiet-secs",
+            "0.4",
+            "--max-secs",
+            "4",
             run_id="compact-dot-progress",
         ),
-        capture_output=True, check=False, timeout=6,
+        capture_output=True,
+        check=False,
+        timeout=6,
     )
     status = _current_status(tmp_path)
     assert completed.returncode == 0, completed.stdout + completed.stderr
@@ -835,7 +862,8 @@ def test_compact_dot_bytes_keep_existing_observer_live_without_newlines(tmp_path
 
 
 def _assert_native_git_metadata_query_count_route(
-    payload: dict[str, object], rows: list[dict[str, object]],
+    payload: dict[str, object],
+    rows: list[dict[str, object]],
 ) -> None:
     """Require the whole four-case guard as one exact first-cohort selector."""
     family_id = "native-git-metadata-query-count"
@@ -843,13 +871,15 @@ def _assert_native_git_metadata_query_count_route(
     node = f"{file}::test_repository_identity_batches_only_fresh_metadata_with_equivalent_digests"
     families = payload["families"]
     assert isinstance(families, list)
-    assert [family for family in families if family["id"] == family_id] == [{
-        "id": family_id,
-        "owner_target": OWNER,
-        "node_kind": "pytest_node",
-        "node": node,
-        "full_gate_phase": "test",
-    }]
+    assert [family for family in families if family["id"] == family_id] == [
+        {
+            "id": family_id,
+            "owner_target": OWNER,
+            "node_kind": "pytest_node",
+            "node": node,
+            "full_gate_phase": "test",
+        }
+    ]
     assert len(families) == EXPECTED_FAMILY_COUNT
     assert len(rows) == 3
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
@@ -862,7 +892,9 @@ def _assert_native_git_metadata_query_count_route(
         assert isinstance(later_selectors, list)
         assert not any(selector.split("::", 1)[0] == file for selector in later_selectors)
     assert [(row["nproc"], row["workers"]) for row in rows] == [
-        ("2", "2"), ("1", "1"), ("1", "1"),
+        ("2", "2"),
+        ("1", "1"),
+        ("1", "1"),
     ]
     assert [row["flags"] for row in rows] == [
         EXPECTED_MAIN_PYTEST_FLAGS,
@@ -891,12 +923,21 @@ def test_native_git_metadata_query_count_executes_once_in_first_cohort(tmp_path:
 @pytest.mark.parametrize(
     "mutation",
     (
-        "missing", "whole-file", "partial-case", "duplicate", "later-only",
-        "later-duplicate", "missing-family", "wrong-owner", "wrong-node", "budget",
+        "missing",
+        "whole-file",
+        "partial-case",
+        "duplicate",
+        "later-only",
+        "later-duplicate",
+        "missing-family",
+        "wrong-owner",
+        "wrong-node",
+        "budget",
     ),
 )
 def test_native_git_metadata_query_count_routing_rejects_contract_mutations(
-    tmp_path: Path, mutation: str,
+    tmp_path: Path,
+    mutation: str,
 ) -> None:
     result, captured = _capture_owner(tmp_path, "")
     assert result.returncode == 0, result.stdout + result.stderr
@@ -949,10 +990,8 @@ _ADMISSION_SUPPORT_ROUTES = (
     ),
     (
         "makefile-validated-byte-composition",
-        "tests/unit/test_makefile_layout.py::"
-        "test_composition_emits_validated_bytes_and_revalidates_next_invocation",
-        "tests/unit/test_makefile_layout.py::"
-        "test_composition_emits_validated_bytes_and_revalidates_next_invocation",
+        "tests/unit/test_makefile_layout.py::test_composition_emits_validated_bytes_and_revalidates_next_invocation",
+        "tests/unit/test_makefile_layout.py::test_composition_emits_validated_bytes_and_revalidates_next_invocation",
     ),
     (
         "mcp-independent-topic-native-dump-budget",
@@ -969,20 +1008,25 @@ _ADMISSION_SUPPORT_ROUTES = (
 
 
 def _assert_admission_support_routes(
-    payload: dict[str, object], rows: list[dict[str, object]],
+    payload: dict[str, object],
+    rows: list[dict[str, object]],
 ) -> None:
     families = payload["families"]
     assert isinstance(families, list)
     selectors = rows[0]["files"]
     assert isinstance(selectors, list)
     for family_id, node, _selector in _ADMISSION_SUPPORT_ROUTES:
-        assert [family for family in families if family["id"] == family_id] == [{
-            "id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
-            "node": node, "full_gate_phase": "test",
-        }]
+        assert [family for family in families if family["id"] == family_id] == [
+            {
+                "id": family_id,
+                "owner_target": OWNER,
+                "node_kind": "pytest_node",
+                "node": node,
+                "full_gate_phase": "test",
+            }
+        ]
     for file in {node.split("::", 1)[0] for _, node, _ in _ADMISSION_SUPPORT_ROUTES}:
-        expected = [selector for _, _, selector in _ADMISSION_SUPPORT_ROUTES
-                    if selector.split("::", 1)[0] == file]
+        expected = [selector for _, _, selector in _ADMISSION_SUPPORT_ROUTES if selector.split("::", 1)[0] == file]
         assert [selector for selector in selectors if selector.split("::", 1)[0] == file] == expected
         for row in rows[1:]:
             later = row["files"]
@@ -1003,13 +1047,23 @@ def test_new_admission_support_guards_execute_without_widening_files(tmp_path: P
 @pytest.mark.parametrize(
     "mutation",
     (
-        "missing", "whole-file", "partial-case", "duplicate", "later-only",
-        "later-duplicate", "missing-family", "wrong-owner", "wrong-node", "budget",
-        "missing-reader", "duplicate-gc",
+        "missing",
+        "whole-file",
+        "partial-case",
+        "duplicate",
+        "later-only",
+        "later-duplicate",
+        "missing-family",
+        "wrong-owner",
+        "wrong-node",
+        "budget",
+        "missing-reader",
+        "duplicate-gc",
     ),
 )
 def test_admission_support_routing_rejects_contract_mutations(
-    tmp_path: Path, mutation: str,
+    tmp_path: Path,
+    mutation: str,
 ) -> None:
     result, captured = _capture_owner(tmp_path, "")
     assert result.returncode == 0, result.stdout + result.stderr
@@ -1061,13 +1115,15 @@ def test_watchdog_handoff_exit_control_is_routed_once_in_third_child(tmp_path: P
     assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
     node = "tests/unit/test_task_watchdog.py::test_watchdog_handoff_confirms_exit_after_metadata_changes"
-    assert [family for family in payload["families"] if family["id"] == "watchdog-handoff-exit-confirmation"] == [{
-        "id": "watchdog-handoff-exit-confirmation",
-        "owner_target": OWNER,
-        "node_kind": "pytest_node",
-        "node": node,
-        "full_gate_phase": "test",
-    }]
+    assert [family for family in payload["families"] if family["id"] == "watchdog-handoff-exit-confirmation"] == [
+        {
+            "id": "watchdog-handoff-exit-confirmation",
+            "owner_target": OWNER,
+            "node_kind": "pytest_node",
+            "node": node,
+            "full_gate_phase": "test",
+        }
+    ]
     assert len(payload["families"]) == EXPECTED_FAMILY_COUNT
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
@@ -1079,12 +1135,15 @@ def test_native_watchdog_start_control_is_routed_once_in_third_child(tmp_path: P
     assert result.returncode == 0, result.stdout + result.stderr
     assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
-    assert [family for family in payload["families"] if family["id"] == "watchdog-native-start-acknowledgement"] == [{
-        "id": "watchdog-native-start-acknowledgement", "owner_target": OWNER,
-        "node_kind": "pytest_node",
-        "node": "tests/unit/test_task_watchdog.py::test_native_watchdog_start_requires_child_acknowledgement",
-        "full_gate_phase": "test",
-    }]
+    assert [family for family in payload["families"] if family["id"] == "watchdog-native-start-acknowledgement"] == [
+        {
+            "id": "watchdog-native-start-acknowledgement",
+            "owner_target": OWNER,
+            "node_kind": "pytest_node",
+            "node": "tests/unit/test_task_watchdog.py::test_native_watchdog_start_requires_child_acknowledgement",
+            "full_gate_phase": "test",
+        }
+    ]
     assert len(payload["families"]) == EXPECTED_FAMILY_COUNT
 
 
@@ -1096,7 +1155,8 @@ def test_native_start_serialization_is_admitted_once_with_unchanged_prior_order(
     assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
     expected = {
-        "id": "watchdog-native-start-serialized-acknowledgement", "owner_target": OWNER,
+        "id": "watchdog-native-start-serialized-acknowledgement",
+        "owner_target": OWNER,
         "node_kind": "pytest_node",
         "node": "tests/unit/test_task_watchdog.py::test_native_start_serializes_existing_acknowledgement",
         "full_gate_phase": "test",
@@ -1124,8 +1184,11 @@ def test_watchdog_unit_log_namespace_guard_is_the_exact_new_third_child_node(tmp
     assert rows[2]["workers"] == "1"
     manifest = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
     assert manifest["families"][109] == {
-        "id": "watchdog-unit-log-namespace", "owner_target": OWNER,
-        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+        "id": "watchdog-unit-log-namespace",
+        "owner_target": OWNER,
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     assert len(manifest["families"]) == EXPECTED_FAMILY_COUNT
 
@@ -1141,10 +1204,15 @@ def test_profile_composition_guard_is_once_in_third_child_with_original_bounds(t
     selections = [row["files"] for row in rows]
     assert all(isinstance(files, list) for files in selections)
     assert sum(files.count(node) for files in selections if isinstance(files, list)) == 1
-    assert sum(
-        selection == node or node.startswith(selection + "::")
-        for files in selections if isinstance(files, list) for selection in files
-    ) == 1, "composition node executes once, including whole-owner selections"
+    assert (
+        sum(
+            selection == node or node.startswith(selection + "::")
+            for files in selections
+            if isinstance(files, list)
+            for selection in files
+        )
+        == 1
+    ), "composition node executes once, including whole-owner selections"
     assert selections[0] == list(ROSTER) and selections[1] == [HELP]
     assert isinstance(selections[2], list) and selections[2][-1] == node
     assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
@@ -1164,14 +1232,22 @@ def test_descendant_symlink_cleanup_is_selected_once_by_original_whole_owner(tmp
         "test_ordinary_descendant_symlink_unlinks_without_following_target"
     )
     selections = [row["files"] for row in rows]
-    assert sum(
-        selection == node or node.startswith(selection + "::")
-        for files in selections if isinstance(files, list) for selection in files
-    ) == 1
+    assert (
+        sum(
+            selection == node or node.startswith(selection + "::")
+            for files in selections
+            if isinstance(files, list)
+            for selection in files
+        )
+        == 1
+    )
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
     assert payload["families"][111] == {
-        "id": "ordinary-descendant-symlink-unlink", "owner_target": OWNER,
-        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+        "id": "ordinary-descendant-symlink-unlink",
+        "owner_target": OWNER,
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     assert len(payload["families"]) == EXPECTED_FAMILY_COUNT
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
@@ -1180,18 +1256,19 @@ def test_descendant_symlink_cleanup_is_selected_once_by_original_whole_owner(tmp
 
 
 def _assert_native_setuid_input_first_route(
-    payload: dict[str, object], rows: list[dict[str, object]],
+    payload: dict[str, object],
+    rows: list[dict[str, object]],
 ) -> None:
-    node = (
-        "tests/unit/test_ci_batch_receipts.py::"
-        "test_receipt_validation_refuses_unsafe_artifact_mode[2432]"
-    )
+    node = "tests/unit/test_ci_batch_receipts.py::test_receipt_validation_refuses_unsafe_artifact_mode[2432]"
     file = node.split("::", 1)[0]
     families = payload["families"]
     assert isinstance(families, list)
     expected = {
-        "id": "native-setuid-input-realization", "owner_target": OWNER,
-        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+        "id": "native-setuid-input-realization",
+        "owner_target": OWNER,
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     assert len(families) == EXPECTED_FAMILY_COUNT and families[112] == expected
     assert [family for family in families if family["id"] == expected["id"]] == [expected]
@@ -1205,7 +1282,9 @@ def _assert_native_setuid_input_first_route(
         selected.extend(selector for selector in files if selector.split("::", 1)[0] == file)
     assert selected == [node], "only the exact setuid case may be selected, once in MAIN"
     assert [(row["nproc"], row["workers"]) for row in rows] == [
-        ("2", "2"), ("1", "1"), ("1", "1"),
+        ("2", "2"),
+        ("1", "1"),
+        ("1", "1"),
     ]
     assert [row["flags"] for row in rows] == [
         EXPECTED_MAIN_PYTEST_FLAGS,
@@ -1239,10 +1318,7 @@ def test_native_setuid_input_routing_rejects_contract_mutations(tmp_path: Path, 
     original = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
     _assert_native_setuid_input_first_route(original, captured)
     payload, rows = deepcopy(original), deepcopy(captured)
-    node = (
-        "tests/unit/test_ci_batch_receipts.py::"
-        "test_receipt_validation_refuses_unsafe_artifact_mode[2432]"
-    )
+    node = "tests/unit/test_ci_batch_receipts.py::test_receipt_validation_refuses_unsafe_artifact_mode[2432]"
     selectors = rows[0]["files"]
     assert isinstance(selectors, list)
     if mutation == "missing":
@@ -1298,8 +1374,7 @@ def test_scratch_symlink_permission_failure_has_one_exact_native_route(
     assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
     phase = next(
-        item for item in payload["runtime_contract"]["phases"]
-        if item["name"] == "pytest-runtime-compatibility"
+        item for item in payload["runtime_contract"]["phases"] if item["name"] == "pytest-runtime-compatibility"
     )
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert len(payload["runtime_contract"]["phases"]) == 21
@@ -1311,10 +1386,7 @@ def test_coverage_suite_provenance_failure_has_one_exact_native_route(tmp_path: 
     """Route one imported-report witness without changing native proof bounds."""
     result, rows = _capture_owner(tmp_path, "")
     assert result.returncode == 0, result.stdout + result.stderr
-    node = (
-        "tests/unit/test_audit_coverage_suite_provenance.py::"
-        "test_imported_cobertura_never_proves_e2e_execution"
-    )
+    node = "tests/unit/test_audit_coverage_suite_provenance.py::test_imported_cobertura_never_proves_e2e_execution"
     assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     first = rows[0]["files"]
     assert isinstance(first, list) and first.count(node) == 1
@@ -1329,13 +1401,14 @@ def test_coverage_suite_provenance_failure_has_one_exact_native_route(tmp_path: 
     assert payload["families"][149]["id"] == "native-full-scan-success-inventory"
     assert payload["families"][150] == {
         "id": "coverage-native-suite-provenance",
-        "owner_target": OWNER, "node_kind": "pytest_node",
-        "node": node, "full_gate_phase": "test",
+        "owner_target": OWNER,
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
     phase = next(
-        item for item in payload["runtime_contract"]["phases"]
-        if item["name"] == "pytest-runtime-compatibility"
+        item for item in payload["runtime_contract"]["phases"] if item["name"] == "pytest-runtime-compatibility"
     )
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert len(payload["runtime_contract"]["phases"]) == 21
@@ -1354,8 +1427,10 @@ def test_full_scan_success_inventory_failure_has_one_exact_native_route(
     )
     expected = {
         "id": "native-full-scan-success-inventory",
-        "owner_target": OWNER, "node_kind": "pytest_node",
-        "node": node, "full_gate_phase": "test",
+        "owner_target": OWNER,
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     assert payload["families"][149] == expected
     assert payload["families"][148]["id"] == "scratch-nested-symlink-permissions"
@@ -1371,15 +1446,11 @@ def test_full_scan_success_inventory_failure_has_one_exact_native_route(
     assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
 
 
-
 def test_uv_prune_native_failure_has_one_exact_native_route(tmp_path: Path) -> None:
     """Route the actual hidden-failure witness once with every prior bound."""
     result, rows = _capture_owner(tmp_path, "")
     assert result.returncode == 0, result.stdout + result.stderr
-    node = (
-        "tests/unit/test_make_uv_cache_sandbox.py::"
-        "test_native_prune_preserves_real_child_status[native-failure]"
-    )
+    node = "tests/unit/test_make_uv_cache_sandbox.py::test_native_prune_preserves_real_child_status[native-failure]"
     assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     counts = []
     for row in rows:
@@ -1393,19 +1464,19 @@ def test_uv_prune_native_failure_has_one_exact_native_route(tmp_path: Path) -> N
     assert payload["families"][150]["id"] == "coverage-native-suite-provenance"
     assert payload["families"][151] == {
         "id": "uv-prune-native-failure-status",
-        "owner_target": OWNER, "node_kind": "pytest_node",
-        "node": node, "full_gate_phase": "test",
+        "owner_target": OWNER,
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
     phase = next(
-        item for item in payload["runtime_contract"]["phases"]
-        if item["name"] == "pytest-runtime-compatibility"
+        item for item in payload["runtime_contract"]["phases"] if item["name"] == "pytest-runtime-compatibility"
     )
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert len(payload["runtime_contract"]["phases"]) == 21
     assert sum(item["max_seconds"] for item in payload["runtime_contract"]["phases"]) == 2850
     assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
-
 
 
 def test_uv_prune_inherited_policy_has_one_exact_native_route(tmp_path: Path) -> None:
@@ -1428,13 +1499,15 @@ def test_uv_prune_inherited_policy_has_one_exact_native_route(tmp_path: Path) ->
     assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
     assert payload["families"][151]["id"] == "uv-prune-native-failure-status"
     assert payload["families"][152] == {
-        "id": "uv-prune-inherited-policy-context", "owner_target": OWNER,
-        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+        "id": "uv-prune-inherited-policy-context",
+        "owner_target": OWNER,
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
     phase = next(
-        item for item in payload["runtime_contract"]["phases"]
-        if item["name"] == "pytest-runtime-compatibility"
+        item for item in payload["runtime_contract"]["phases"] if item["name"] == "pytest-runtime-compatibility"
     )
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert len(payload["runtime_contract"]["phases"]) == 21
@@ -1459,13 +1532,15 @@ def test_shared_uv_inventory_has_one_exact_native_route(tmp_path: Path) -> None:
     assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
     assert payload["families"][152]["id"] == "uv-prune-inherited-policy-context"
     assert payload["families"][153] == {
-        "id": "shared-uv-cache-inventory-exposure", "owner_target": OWNER,
-        "node_kind": "pytest_node", "node": node, "full_gate_phase": "test",
+        "id": "shared-uv-cache-inventory-exposure",
+        "owner_target": OWNER,
+        "node_kind": "pytest_node",
+        "node": node,
+        "full_gate_phase": "test",
     }
     assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
     phase = next(
-        item for item in payload["runtime_contract"]["phases"]
-        if item["name"] == "pytest-runtime-compatibility"
+        item for item in payload["runtime_contract"]["phases"] if item["name"] == "pytest-runtime-compatibility"
     )
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert len(payload["runtime_contract"]["phases"]) == 21
@@ -1473,16 +1548,25 @@ def test_shared_uv_inventory_has_one_exact_native_route(tmp_path: Path) -> None:
     assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
 
 
-@pytest.mark.parametrize(("promoted_family", "node_selector"), (
-    ("git-async-live-owner-handoff",
-     "tests/unit/test_git_automation_locking_handoff.py::"
-     "test_live_task_handoff_cannot_allow_critical_section_overlap"),
-    ("git-async-completed-owner-adoption",
-     "tests/unit/test_git_automation_locking_handoff.py::"
-     "test_wait_for_result_binds_nested_use_to_consuming_task"),
-))
+@pytest.mark.parametrize(
+    ("promoted_family", "node_selector"),
+    (
+        (
+            "git-async-live-owner-handoff",
+            "tests/unit/test_git_automation_locking_handoff.py::"
+            "test_live_task_handoff_cannot_allow_critical_section_overlap",
+        ),
+        (
+            "git-async-completed-owner-adoption",
+            "tests/unit/test_git_automation_locking_handoff.py::"
+            "test_wait_for_result_binds_nested_use_to_consuming_task",
+        ),
+    ),
+)
 def test_git_handoff_failures_have_exact_native_routes(
-    tmp_path: Path, promoted_family: str, node_selector: str,
+    tmp_path: Path,
+    promoted_family: str,
+    node_selector: str,
 ) -> None:
     """Fail before fanout if either independently exposed handoff regresses."""
     result, rows = _capture_owner(tmp_path, "")
@@ -1499,21 +1583,31 @@ def test_git_handoff_failures_have_exact_native_routes(
     assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
     assert payload["families"][153]["id"] == "shared-uv-cache-inventory-exposure"
     assert payload["families"][154:156] == [
-        {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
-         "node": selected_node, "full_gate_phase": "test"}
+        {
+            "id": family_id,
+            "owner_target": OWNER,
+            "node_kind": "pytest_node",
+            "node": selected_node,
+            "full_gate_phase": "test",
+        }
         for family_id, selected_node in (
-            ("git-async-live-owner-handoff",
-             "tests/unit/test_git_automation_locking_handoff.py::"
-             "test_live_task_handoff_cannot_allow_critical_section_overlap"),
-            ("git-async-completed-owner-adoption",
-             "tests/unit/test_git_automation_locking_handoff.py::"
-             "test_wait_for_result_binds_nested_use_to_consuming_task"),
+            (
+                "git-async-live-owner-handoff",
+                "tests/unit/test_git_automation_locking_handoff.py::"
+                "test_live_task_handoff_cannot_allow_critical_section_overlap",
+            ),
+            (
+                "git-async-completed-owner-adoption",
+                "tests/unit/test_git_automation_locking_handoff.py::"
+                "test_wait_for_result_binds_nested_use_to_consuming_task",
+            ),
         )
     ]
     assert any(family["id"] == promoted_family for family in payload["families"][154:156])
     assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
-    phase = next(item for item in payload["runtime_contract"]["phases"]
-                 if item["name"] == "pytest-runtime-compatibility")
+    phase = next(
+        item for item in payload["runtime_contract"]["phases"] if item["name"] == "pytest-runtime-compatibility"
+    )
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert len(payload["runtime_contract"]["phases"]) == 21
     assert sum(item["max_seconds"] for item in payload["runtime_contract"]["phases"]) == 2850
@@ -1521,91 +1615,147 @@ def test_git_handoff_failures_have_exact_native_routes(
 
 
 MAKE_GUIDANCE_PROMOTIONS = (
-    ("git-merge-no-commit-dirty-preservation",
-     "tests/unit/test_git_merge_nc_safety.py::test_full_make_dirty_refusal_keeps_the_staged_source_test[command]"),
-    ("git-merge-no-commit-literal-branch",
-     "tests/unit/test_git_merge_nc_safety.py::test_full_make_branch_data_stays_literal_before_startup[make-expression-command]"),
-    ("make-promotion-terminal-result-guidance",
-     "tests/unit/test_make_result_guidance.py::test_promotion_make_guidance_waits_for_all_required_children[validator]"),
-    ("make-contract-layout-error-guidance",
-     "tests/unit/test_make_checker_guidance.py::test_contract_native_input_error_guidance_retains_exit_one[include]"),
+    (
+        "git-merge-no-commit-dirty-preservation",
+        "tests/unit/test_git_merge_nc_safety.py::test_full_make_dirty_refusal_keeps_the_staged_source_test[command]",
+    ),
+    (
+        "git-merge-no-commit-literal-branch",
+        "tests/unit/test_git_merge_nc_safety.py::test_full_make_branch_data_stays_literal_before_startup[make-expression-command]",
+    ),
+    (
+        "make-promotion-terminal-result-guidance",
+        "tests/unit/test_make_result_guidance.py::test_promotion_make_guidance_waits_for_all_required_children[validator]",
+    ),
+    (
+        "make-contract-layout-error-guidance",
+        "tests/unit/test_make_checker_guidance.py::test_contract_native_input_error_guidance_retains_exit_one[include]",
+    ),
 )
 
 
 INTEGRATION_GUIDANCE_PROMOTIONS = (
-    ("development-merge-forward-plan-guidance",
-     "tests/unit/test_development_merge_forward_targets.py::"
-     "test_merge_forward_plan_guidance_does_not_admit_integration[True-content]"),
-    ("development-merge-forward-namesake",
-     "tests/unit/test_development_merge_forward_targets.py::test_merge_forward_guidance_runs_despite_namesake_file"),
+    (
+        "development-merge-forward-plan-guidance",
+        "tests/unit/test_development_merge_forward_targets.py::"
+        "test_merge_forward_plan_guidance_does_not_admit_integration[True-content]",
+    ),
+    (
+        "development-merge-forward-namesake",
+        "tests/unit/test_development_merge_forward_targets.py::test_merge_forward_guidance_runs_despite_namesake_file",
+    ),
 )
 
 
 HUMAN_TODO_PROMOTIONS = (
-    ("human-todo-response-identity",
-     "tests/unit/test_gludd_human_todo_module.py::"
-     "test_success_without_usable_id_never_verifies_write[missing-present-200]"),
-    ("human-todo-check-mode-guidance",
-     "tests/unit/test_human_todo_make_target.py::test_human_todo_guidance_uses_actual_native_outcome[0-1]"),
+    (
+        "human-todo-response-identity",
+        "tests/unit/test_gludd_human_todo_module.py::"
+        "test_success_without_usable_id_never_verifies_write[missing-present-200]",
+    ),
+    (
+        "human-todo-check-mode-guidance",
+        "tests/unit/test_human_todo_make_target.py::test_human_todo_guidance_uses_actual_native_outcome[0-1]",
+    ),
 )
 
 
 WATCHED_COMMAND_PROMOTIONS = (
-    ("run-watched-native-outcome-guidance",
-     "tests/unit/test_run_watched_result_guidance.py::"
-     "test_native_status_drives_one_result_prompt_without_changing_argv[7]"),
-    ("run-watched-namesake-execution",
-     "tests/unit/test_run_watched_result_guidance.py::"
-     "test_namesake_file_cannot_suppress_native_observation_or_guidance"),
-    ("run-watched-complete-command",
-     "tests/unit/test_run_watched_command_boundary.py::"
-     "test_compound_tail_is_running_inside_one_terminal_receipt[7-0]"),
+    (
+        "run-watched-native-outcome-guidance",
+        "tests/unit/test_run_watched_result_guidance.py::"
+        "test_native_status_drives_one_result_prompt_without_changing_argv[7]",
+    ),
+    (
+        "run-watched-namesake-execution",
+        "tests/unit/test_run_watched_result_guidance.py::"
+        "test_namesake_file_cannot_suppress_native_observation_or_guidance",
+    ),
+    (
+        "run-watched-complete-command",
+        "tests/unit/test_run_watched_command_boundary.py::"
+        "test_compound_tail_is_running_inside_one_terminal_receipt[7-0]",
+    ),
 )
 
 
 GUARDED_GOAL_PROMOTIONS = (
-    ("make-guarded-goal-outcome-guidance",
-     "tests/unit/test_make_uv_execution_boundary.py::"
-     "test_guarded_multi_goal_refusal_teaches_both_input_repairs_before_any_body[quoted-markdown]"),
+    (
+        "make-guarded-goal-outcome-guidance",
+        "tests/unit/test_make_uv_execution_boundary.py::"
+        "test_guarded_multi_goal_refusal_teaches_both_input_repairs_before_any_body[quoted-markdown]",
+    ),
 )
 
 
 CANDIDATE_PROOF_PROMOTIONS = (
-    ("release-candidate-push-workflow-triggers",
-     "tests/unit/test_release_pipeline_structure.py::TestReleaseCandidateHostedValidation::"
-     "test_candidate_push_filters_preserve_existing_routes"),
-    ("pytest-native-trace-protocol", "tests/unit/test_test_files_native_trace.py::"
-     "test_observer_trace_contains_real_matching_protocol_pairs[pass-serial]"),
-    ("trace-summary-result-guidance", "tests/unit/test_xdist_trace_diagnostics.py::"
-     "test_native_summary_cli_keeps_json_status_and_emits_guidance[trace_guidance_native_rows0-empty]"),
-    ("presentation-hosted-apt-literal-mode", "tests/unit/test_presentation_browser_apt_source.py::"
-     "test_apt_mode_is_literal_at_real_make_startup[environment-override]"),
-    ("git-status-native-index-readonly", "tests/unit/test_git_status_readonly.py::"
-     "test_status_never_refreshes_native_index[inherited-one]"),
-    ("publication-native-command-envelope", "tests/unit/test_runtime_publish_admission.py::"
-     "test_green_runtime_owner_runs_once_before_normal_transport[False]"),
-    ("make-local-script-reference-boundary", "tests/unit/test_makefile_audit_deep.py::"
-     "TestScriptReferencesExist::test_all_scripts_exist"),
-    ("watchdog-bound-gate-waiter", "tests/unit/test_task_watchdog.py::"
-     "test_live_gate_bound_waiter_protects_the_complete_tree[make-pid]"),
-    ("verify-remote-recipe-boundary", "tests/unit/test_push_discipline_checks.py::"
-     "TestVerifyRemoteAfterPush::test_verify_remote_compares_sha"),
+    (
+        "release-candidate-push-workflow-triggers",
+        "tests/unit/test_release_pipeline_structure.py::TestReleaseCandidateHostedValidation::"
+        "test_candidate_push_filters_preserve_existing_routes",
+    ),
+    (
+        "pytest-native-trace-protocol",
+        "tests/unit/test_test_files_native_trace.py::"
+        "test_observer_trace_contains_real_matching_protocol_pairs[pass-serial]",
+    ),
+    (
+        "trace-summary-result-guidance",
+        "tests/unit/test_xdist_trace_diagnostics.py::"
+        "test_native_summary_cli_keeps_json_status_and_emits_guidance[trace_guidance_native_rows0-empty]",
+    ),
+    (
+        "presentation-hosted-apt-literal-mode",
+        "tests/unit/test_presentation_browser_apt_source.py::"
+        "test_apt_mode_is_literal_at_real_make_startup[environment-override]",
+    ),
+    (
+        "git-status-native-index-readonly",
+        "tests/unit/test_git_status_readonly.py::test_status_never_refreshes_native_index[inherited-one]",
+    ),
+    (
+        "publication-native-command-envelope",
+        "tests/unit/test_runtime_publish_admission.py::"
+        "test_green_runtime_owner_runs_once_before_normal_transport[False]",
+    ),
+    (
+        "make-local-script-reference-boundary",
+        "tests/unit/test_makefile_audit_deep.py::TestScriptReferencesExist::test_all_scripts_exist",
+    ),
+    (
+        "watchdog-bound-gate-waiter",
+        "tests/unit/test_task_watchdog.py::test_live_gate_bound_waiter_protects_the_complete_tree[make-pid]",
+    ),
+    (
+        "verify-remote-recipe-boundary",
+        "tests/unit/test_push_discipline_checks.py::TestVerifyRemoteAfterPush::test_verify_remote_compares_sha",
+    ),
 )
 
 WORK_ITEM_PROMOTIONS = (
-    ("work-item-administrative-result-guidance",
-     "tests/unit/test_item_progress.py::test_native_work_item_status_guidance_preserves_owned_json[True]"),
+    (
+        "work-item-administrative-result-guidance",
+        "tests/unit/test_item_progress.py::test_native_work_item_status_guidance_preserves_owned_json[True]",
+    ),
 )
 
 
 @pytest.mark.parametrize(
     ("promoted_family", "node_selector"),
-    (MAKE_GUIDANCE_PROMOTIONS + INTEGRATION_GUIDANCE_PROMOTIONS
-     + HUMAN_TODO_PROMOTIONS + WATCHED_COMMAND_PROMOTIONS + GUARDED_GOAL_PROMOTIONS + WORK_ITEM_PROMOTIONS
-     + CANDIDATE_PROOF_PROMOTIONS),
+    (
+        MAKE_GUIDANCE_PROMOTIONS
+        + INTEGRATION_GUIDANCE_PROMOTIONS
+        + HUMAN_TODO_PROMOTIONS
+        + WATCHED_COMMAND_PROMOTIONS
+        + GUARDED_GOAL_PROMOTIONS
+        + WORK_ITEM_PROMOTIONS
+        + CANDIDATE_PROOF_PROMOTIONS
+    ),
 )
 def test_make_safety_and_guidance_have_exact_native_routes(
-    tmp_path: Path, promoted_family: str, node_selector: str,
+    tmp_path: Path,
+    promoted_family: str,
+    node_selector: str,
 ) -> None:
     """Keep each witnessed cheap failure in its exact existing cohort."""
     result, rows = _capture_owner(tmp_path, "")
@@ -1615,40 +1765,73 @@ def test_make_safety_and_guidance_have_exact_native_routes(
         selection = row["files"]
         assert isinstance(selection, list)
         selections.append(selection)
-    expected = [0, 0, 1] if promoted_family in {
-        "make-local-script-reference-boundary", "watchdog-bound-gate-waiter", "verify-remote-recipe-boundary",
-    } else [1, 0, 0]
+    expected = (
+        [0, 0, 1]
+        if promoted_family
+        in {
+            "make-local-script-reference-boundary",
+            "watchdog-bound-gate-waiter",
+            "verify-remote-recipe-boundary",
+        }
+        else [1, 0, 0]
+    )
     assert [selection.count(node_selector) for selection in selections] == expected
     assert all(node_selector.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
     assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
     assert [family["id"] for family in payload["families"][154:156]] == [
-        "git-async-live-owner-handoff", "git-async-completed-owner-adoption",
+        "git-async-live-owner-handoff",
+        "git-async-completed-owner-adoption",
     ]
     assert payload["families"][156:160] == [
-        {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
-         "node": selected_node, "full_gate_phase": "test"}
+        {
+            "id": family_id,
+            "owner_target": OWNER,
+            "node_kind": "pytest_node",
+            "node": selected_node,
+            "full_gate_phase": "test",
+        }
         for family_id, selected_node in MAKE_GUIDANCE_PROMOTIONS
     ]
     assert payload["families"][162:164] == [
-        {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
-         "node": selected_node, "full_gate_phase": "test"}
+        {
+            "id": family_id,
+            "owner_target": OWNER,
+            "node_kind": "pytest_node",
+            "node": selected_node,
+            "full_gate_phase": "test",
+        }
         for family_id, selected_node in INTEGRATION_GUIDANCE_PROMOTIONS
     ]
     assert payload["families"][164:166] == [
-        {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
-         "node": selected_node, "full_gate_phase": "test"}
+        {
+            "id": family_id,
+            "owner_target": OWNER,
+            "node_kind": "pytest_node",
+            "node": selected_node,
+            "full_gate_phase": "test",
+        }
         for family_id, selected_node in HUMAN_TODO_PROMOTIONS
     ]
     assert payload["families"][166:169] == [
-        {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
-         "node": selected_node, "full_gate_phase": "test"}
+        {
+            "id": family_id,
+            "owner_target": OWNER,
+            "node_kind": "pytest_node",
+            "node": selected_node,
+            "full_gate_phase": "test",
+        }
         for family_id, selected_node in WATCHED_COMMAND_PROMOTIONS
     ]
     assert payload["families"][169:] == [
-        {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
-         "node": selected_node, "full_gate_phase": "test"}
+        {
+            "id": family_id,
+            "owner_target": OWNER,
+            "node_kind": "pytest_node",
+            "node": selected_node,
+            "full_gate_phase": "test",
+        }
         for family_id, selected_node in GUARDED_GOAL_PROMOTIONS + WORK_ITEM_PROMOTIONS + CANDIDATE_PROOF_PROMOTIONS
     ]
     if (promoted_family, node_selector) in CANDIDATE_PROOF_PROMOTIONS:
@@ -1667,8 +1850,9 @@ def test_make_safety_and_guidance_have_exact_native_routes(
         family_slice = slice(156, 160)
     assert any(family["id"] == promoted_family for family in payload["families"][family_slice])
     assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
-    phase = next(item for item in payload["runtime_contract"]["phases"]
-                 if item["name"] == "pytest-runtime-compatibility")
+    phase = next(
+        item for item in payload["runtime_contract"]["phases"] if item["name"] == "pytest-runtime-compatibility"
+    )
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     assert len(payload["runtime_contract"]["phases"]) == 21
     assert sum(item["max_seconds"] for item in payload["runtime_contract"]["phases"]) == 2850
@@ -1759,7 +1943,10 @@ def _overlap_rows(path: Path) -> list[dict[str, object]]:
 
 
 def _overlap_fixture(
-    tmp_path: Path, mode: str, *, owner_body: str | None = None,
+    tmp_path: Path,
+    mode: str,
+    *,
+    owner_body: str | None = None,
 ) -> tuple[Path, Path, dict[str, str]]:
     root = tmp_path.resolve()
     uv = root / "uv fixture.py"
@@ -1776,33 +1963,44 @@ def _overlap_fixture(
         f".PHONY: {OWNER}\n{OWNER}:\n{owner_body or _stanza(OWNER)}\n",
         encoding="utf-8",
     )
-    environment = {key: value for key, value in os.environ.items()
-                   if key not in {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "ID"}}
-    environment.update({
-        "ID": "overlap-fixture-" + root.name,
-        "GLUDD_OVERLAP_FIXTURE_ROOT": str(root),
-        "GLUDD_OVERLAP_MODE": mode,
-        "GLUDD_OVERLAP_HELP": HELP,
-        "GLUDD_OVERLAP_TAIL": REVIEWED_FINALIZATION[0],
-    })
+    environment = {
+        key: value for key, value in os.environ.items() if key not in {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "ID"}
+    }
+    environment.update(
+        {
+            "ID": "overlap-fixture-" + root.name,
+            "GLUDD_OVERLAP_FIXTURE_ROOT": str(root),
+            "GLUDD_OVERLAP_MODE": mode,
+            "GLUDD_OVERLAP_HELP": HELP,
+            "GLUDD_OVERLAP_TAIL": REVIEWED_FINALIZATION[0],
+        }
+    )
     return owner, root / "events.jsonl", environment
 
 
 def _overlap_run(
-    tmp_path: Path, mode: str, *, owner_body: str | None = None,
+    tmp_path: Path,
+    mode: str,
+    *,
+    owner_body: str | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], list[dict[str, object]]]:
     owner, record, environment = _overlap_fixture(tmp_path, mode, owner_body=owner_body)
     result = subprocess.run(
         ["make", "--no-print-directory", "-f", str(owner), OWNER],
-        cwd=tmp_path.resolve(), env=environment, capture_output=True, text=True,
-        check=False, timeout=10,
+        cwd=tmp_path.resolve(),
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
     )
     return result, _overlap_rows(record)
 
 
 @pytest.mark.parametrize("overlap_native_mode", ["pass", "fail-main", "fail-help", "fail-tail"])
 def test_native_overlap_joins_main_and_preserves_each_side_status(
-    tmp_path: Path, overlap_native_mode: str,
+    tmp_path: Path,
+    overlap_native_mode: str,
 ) -> None:
     result, rows = _overlap_run(tmp_path, overlap_native_mode)
     expected_phases = {"full", "help"} if overlap_native_mode == "fail-help" else {"full", "help", "reviewed"}
@@ -1820,7 +2018,7 @@ def test_native_overlap_joins_main_and_preserves_each_side_status(
         arguments = row["args"]
         assert isinstance(arguments, list) and all(isinstance(argument, str) for argument in arguments)
         expected = list(ROSTER) if phase == "full" else [HELP] if phase == "help" else list(REVIEWED_FINALIZATION)
-        assert arguments[4:4 + len(expected)] == expected
+        assert arguments[4 : 4 + len(expected)] == expected
         assert "-W" in arguments and arguments[arguments.index("-W") + 1] == "error"
     # Barriers require actual overlap; no wall-time threshold claims a speedup.
     assert _overlap_time(starts["full"]) < _overlap_time(finishes["help"])
@@ -1864,7 +2062,8 @@ def test_native_overlap_rejects_shared_basetemp_mutation(tmp_path: Path) -> None
 
 @pytest.mark.parametrize("overlap_observer_end", ["timeout", "signal"])
 def test_existing_observer_drains_both_overlap_branches_and_descendants(
-    tmp_path: Path, overlap_observer_end: str,
+    tmp_path: Path,
+    overlap_observer_end: str,
 ) -> None:
     import signal
     import time
@@ -1872,14 +2071,24 @@ def test_existing_observer_drains_both_overlap_branches_and_descendants(
     owner, record, environment = _overlap_fixture(tmp_path, "hold")
     # Reuse the existing native helper, replacing only its test child command.
     command = _command(
-        tmp_path, "", "--heartbeat-secs", "0.1", "--quiet-secs", "0",
-        "--max-secs", "1.5" if overlap_observer_end == "timeout" else "8",
+        tmp_path,
+        "",
+        "--heartbeat-secs",
+        "0.1",
+        "--quiet-secs",
+        "0",
+        "--max-secs",
+        "1.5" if overlap_observer_end == "timeout" else "8",
         run_id="native-overlap-" + overlap_observer_end,
     )
     boundary = command.index("--")
-    command[boundary + 1:] = ["make", "--no-print-directory", "-f", str(owner), OWNER]
+    command[boundary + 1 :] = ["make", "--no-print-directory", "-f", str(owner), OWNER]
     with subprocess.Popen(
-        command, cwd=tmp_path.resolve(), env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        command,
+        cwd=tmp_path.resolve(),
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     ) as process:
         if overlap_observer_end == "signal":
             deadline = time.monotonic() + 4
@@ -1901,6 +2110,43 @@ def test_existing_observer_drains_both_overlap_branches_and_descendants(
     for pid in owned:
         inspected = subprocess.run(
             ["/bin/ps", "-p", str(pid), "-o", "pid="],
-            capture_output=True, text=True, check=False, timeout=5,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
         )
         assert inspected.returncode == 1 and not inspected.stdout.strip(), inspected.stderr
+
+
+def test_native_warning_child_does_not_append_to_parent_focus_trace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep the real two-worker warning child out of its parent's trace."""
+    parent_trace = tmp_path / "parent-trace.jsonl"
+    sentinel = b"owned-parent-trace-sentinel\n"
+    parent_trace.write_bytes(sentinel)
+    parent_fields = (str(parent_trace), "owned-parent-trace", "0")
+    trace_keys = ("GLUDD_XDIST_TRACE_LOG", "GLUDD_XDIST_TRACE_RUN_ID", "GLUDD_XDIST_TRACE_TRUNCATE")
+    for key, value in zip(trace_keys, parent_fields, strict=True):
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("GLUDD_NATIVE_TRACE_BOUNDARY_CONTROL", "owned-carrier")
+    marker = tmp_path / "native-warning-executed.txt"
+    probe = tmp_path / "test_warning.py"
+    probe.write_text(
+        "import os\nfrom pathlib import Path\nimport warnings\n"
+        "def test_original_warning():\n"
+        "    assert os.environ.get('GLUDD_NATIVE_TRACE_BOUNDARY_CONTROL') == 'owned-carrier'\n"
+        f"    Path({str(marker)!r}).write_text('native-warning-executed\\n', encoding='utf-8')\n"
+        "    warnings.warn('runtime-admission-warning', UserWarning)\n",
+        encoding="utf-8",
+    )
+    result = _native_test_files([probe], 2)
+    assert result.returncode != 0
+    assert "FAILED" in result.stdout and "test_original_warning" in result.stdout
+    assert "UserWarning: runtime-admission-warning" in result.stdout
+    assert re.search(r"\b1 failed\b", result.stdout)
+    assert marker.read_text(encoding="utf-8") == "native-warning-executed\n"
+    assert os.environ.get("GLUDD_NATIVE_TRACE_BOUNDARY_CONTROL") == "owned-carrier"
+    assert tuple(os.environ.get(key) for key in trace_keys) == parent_fields
+    assert parent_trace.read_bytes() == sentinel

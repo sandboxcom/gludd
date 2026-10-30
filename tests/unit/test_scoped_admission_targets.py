@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import secrets
 import subprocess
 import sys
@@ -15,6 +17,9 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def _make(*arguments: str) -> subprocess.CompletedProcess[str]:
+    environment = dict(os.environ)
+    for key in ("GLUDD_XDIST_TRACE_LOG", "GLUDD_XDIST_TRACE_RUN_ID", "GLUDD_XDIST_TRACE_TRUNCATE"):
+        environment.pop(key, None)
     return subprocess.run(
         ["make", "--no-print-directory", *arguments],
         cwd=ROOT,
@@ -22,13 +27,15 @@ def _make(*arguments: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
         timeout=15,
+        env=environment,
     )
 
 
 def test_scoped_secrets_target_reuses_readonly_native_owner() -> None:
     """Keep both explicit input paths and the canonical baseline unmodified."""
     result = _make(
-        "-n", "check-secrets-files",
+        "-n",
+        "check-secrets-files",
         "SECRETS_FILES=tests/unit/test_ansible_ee_searx_acceptance.py scripts/check_clean_tree.py",
         "SECRETS_BASELINE_FILE=.secrets.baseline",
     )
@@ -85,7 +92,8 @@ def test_native_scoped_scan_rejects_a_new_finding_without_mutating_baseline(tmp_
     fixture = tmp_path / "keyword.py"
     fixture.write_text(f"password = {secrets.token_hex(32)!r}\n", encoding="utf-8")
     result = _make(
-        "check-secrets-files", f"SECRETS_FILES={fixture}",
+        "check-secrets-files",
+        f"SECRETS_FILES={fixture}",
         "SECRETS_BASELINE_FILE=.secrets.baseline",
     )
     assert result.returncode != 0
@@ -94,7 +102,8 @@ def test_native_scoped_scan_rejects_a_new_finding_without_mutating_baseline(tmp_
 
 
 def test_nested_test_files_uses_declared_environment_without_uv_mismatch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Run real nested UV/pytest without inheriting an unrelated active env."""
     probe = tmp_path / "test_runtime_identity.py"
@@ -107,8 +116,12 @@ def test_nested_test_files_uses_declared_environment_without_uv_mismatch(
     )
     monkeypatch.setenv("VIRTUAL_ENV", str(tmp_path / "unrelated-active-environment"))
     result = _make(
-        "test-files", f"TESTFILES={probe}", "PYTEST_ARGS=-q",
-        "NPROC=1", "GLUDD_XDIST_WORKERS=1", f"UV_PROJECT_ENVIRONMENT={sys.prefix}",
+        "test-files",
+        f"TESTFILES={probe}",
+        "PYTEST_ARGS=-q",
+        "NPROC=1",
+        "GLUDD_XDIST_WORKERS=1",
+        f"UV_PROJECT_ENVIRONMENT={sys.prefix}",
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "does not match the project environment" not in result.stdout + result.stderr
@@ -116,13 +129,19 @@ def test_nested_test_files_uses_declared_environment_without_uv_mismatch(
 
 
 def _native_cprofile_probe(
-    tmp_path: Path, source: str, *, arguments: str = "-q -W error -n 0",
+    tmp_path: Path,
+    source: str,
+    *,
+    arguments: str = "-q -W error -n 0",
 ) -> subprocess.CompletedProcess[str]:
     probe = tmp_path / "test_native_profile_probe.py"
     probe.write_text(source, encoding="utf-8")
     return _make(
-        "test-files-cprofile", f"TESTFILES={probe}",
-        f"PYTEST_ARGS={arguments}", "NPROC=1", "GLUDD_XDIST_WORKERS=1",
+        "test-files-cprofile",
+        f"TESTFILES={probe}",
+        f"PYTEST_ARGS={arguments}",
+        "NPROC=1",
+        "GLUDD_XDIST_WORKERS=1",
         f"UV_PROJECT_ENVIRONMENT={sys.prefix}",
     )
 
@@ -157,20 +176,30 @@ def test_native_cprofile_alias_publishes_real_full_path_stats(tmp_path: Path) ->
 @pytest.mark.parametrize(
     ("source", "arguments", "expected", "exitstatus"),
     [
-        ("def test_original_failure():\n    assert False, 'native-profile-assertion'\n",
-         "-q -W error -n 0", "native-profile-assertion", 1),
-        ("import warnings\ndef test_original_warning():\n"
-         "    warnings.warn('native-profile-warning', UserWarning)\n",
-         "-q -W error -n 0", "UserWarning: native-profile-warning", 1),
+        (
+            "def test_original_failure():\n    assert False, 'native-profile-assertion'\n",
+            "-q -W error -n 0",
+            "native-profile-assertion",
+            1,
+        ),
+        (
+            "import warnings\ndef test_original_warning():\n    warnings.warn('native-profile-warning', UserWarning)\n",
+            "-q -W error -n 0",
+            "UserWarning: native-profile-warning",
+            1,
+        ),
         ("def test_broken(:\n    pass\n", "-q -W error -n 0", "SyntaxError", 2),
         ("def test_pass():\n    pass\n", "-q -W error -n 0 --native-profile-unknown", "unrecognized arguments", 4),
         ("VALUE = 'no native tests'\n", "-q -W error -n 0", "no tests ran", 5),
-        ("def test_interrupt():\n    raise KeyboardInterrupt\n",
-         "-q -W error -n 0", "KeyboardInterrupt", 2),
+        ("def test_interrupt():\n    raise KeyboardInterrupt\n", "-q -W error -n 0", "KeyboardInterrupt", 2),
     ],
 )
 def test_native_cprofile_keeps_real_pytest_failure_nonzero(
-    tmp_path: Path, source: str, arguments: str, expected: str, exitstatus: int,
+    tmp_path: Path,
+    source: str,
+    arguments: str,
+    expected: str,
+    exitstatus: int,
 ) -> None:
     result = _native_cprofile_probe(tmp_path, source, arguments=arguments)
     assert result.returncode != 0, result.stdout + result.stderr
@@ -181,7 +210,10 @@ def test_native_cprofile_keeps_real_pytest_failure_nonzero(
 @pytest.mark.parametrize("carrier", ["command-line", "environment"])
 @pytest.mark.parametrize("value", ["1", "0", "literal"])
 def test_native_cprofile_refuses_external_internal_mode(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, carrier: str, value: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    carrier: str,
+    value: str,
 ) -> None:
     tripwire = tmp_path / "expanded-internal-mode"
     literal = f"$(file >{tripwire},unexpected)" if value == "literal" else value
@@ -207,9 +239,13 @@ def test_native_cprofile_off_preserves_original_recipe(monkeypatch: pytest.Monke
     assert "_TEST_FILES_CPROFILE=1" not in ordinary.stdout
     assert "-p scripts.xdist_trace_plugin" not in ordinary.stdout
     assert "run python -m pytest fixture.py" in ordinary.stdout
-    assert profiled.stdout.replace("_TEST_FILES_CPROFILE=1 ", "").replace(
-        " -p scripts.xdist_trace_plugin", "",
-    ) == ordinary.stdout
+    assert (
+        profiled.stdout.replace("_TEST_FILES_CPROFILE=1 ", "").replace(
+            " -p scripts.xdist_trace_plugin",
+            "",
+        )
+        == ordinary.stdout
+    )
 
 
 class _ProfileHooks(Protocol):
@@ -243,8 +279,12 @@ def _native_cprofile_active(system: _ProfileHooks = sys) -> bool:
     events = monitoring.events
     # CALL controls ancillary C_RETURN/C_RAISE, which get_events does not report.
     required = (
-        events.PY_START | events.PY_RESUME | events.PY_THROW
-        | events.PY_RETURN | events.PY_YIELD | events.PY_UNWIND
+        events.PY_START
+        | events.PY_RESUME
+        | events.PY_THROW
+        | events.PY_RETURN
+        | events.PY_YIELD
+        | events.PY_UNWIND
         | events.CALL
     )
     return (
@@ -260,7 +300,8 @@ def _native_cprofile_active(system: _ProfileHooks = sys) -> bool:
     ids=("disabled", "enabled"),
 )
 def test_native_cprofile_activity_uses_legacy_hook_without_monitoring(
-    hook: object | None, expected: bool,
+    hook: object | None,
+    expected: bool,
 ) -> None:
     system = SimpleNamespace(getprofile=lambda: hook)
     assert _native_cprofile_active(system) is expected
@@ -277,7 +318,10 @@ def test_native_cprofile_activity_uses_legacy_hook_without_monitoring(
         pytest.param("cProfile", 511, object(), False, id="unrelated-legacy-hook"),
         *[
             pytest.param(
-                "cProfile", 511 ^ (1 << bit), None, bit >= 7,
+                "cProfile",
+                511 ^ (1 << bit),
+                None,
+                bit >= 7,
                 id=f"missing-independent-event-{bit}" if bit < 7 else f"ancillary-event-{bit}",
             )
             for bit in range(9)
@@ -285,14 +329,25 @@ def test_native_cprofile_activity_uses_legacy_hook_without_monitoring(
     ],
 )
 def test_native_cprofile_activity_requires_owned_monitoring_and_every_event(
-    tool: str | None, event_mask: int, legacy_hook: object | None, expected: bool,
+    tool: str | None,
+    event_mask: int,
+    legacy_hook: object | None,
+    expected: bool,
 ) -> None:
     events = SimpleNamespace(
-        PY_START=1, PY_RESUME=2, PY_THROW=4, PY_RETURN=8, PY_YIELD=16,
-        PY_UNWIND=32, CALL=64, C_RETURN=128, C_RAISE=256,
+        PY_START=1,
+        PY_RESUME=2,
+        PY_THROW=4,
+        PY_RETURN=8,
+        PY_YIELD=16,
+        PY_UNWIND=32,
+        CALL=64,
+        C_RETURN=128,
+        C_RAISE=256,
     )
     monitoring = SimpleNamespace(
-        PROFILER_ID=2, events=events,
+        PROFILER_ID=2,
+        events=events,
         get_tool=lambda tool_id: tool if tool_id == 2 else "wrong-id",
         get_events=lambda tool_id: event_mask if tool_id == 2 else 0,
     )
@@ -322,10 +377,13 @@ def test_native_cprofile_request_is_consumed_before_collection_and_nested_make(t
         "    if not hasattr(sys, 'monitoring'):\n"
         "        assert sys.getprofile() is not None\n"
         "    assert _native_cprofile_active()\n"
+        "    child_environment = dict(os.environ)\n"
+        "    for key in ('GLUDD_XDIST_TRACE_LOG', 'GLUDD_XDIST_TRACE_RUN_ID', 'GLUDD_XDIST_TRACE_TRUNCATE'):\n"
+        "        child_environment.pop(key, None)\n"
         f"    result = subprocess.run(['make', '--no-print-directory', 'test-files', 'TESTFILES={child}', "
         "'PYTEST_ARGS=-q -W error -n 0', 'NPROC=1', 'GLUDD_XDIST_WORKERS=1', "
         f"'UV_PROJECT_ENVIRONMENT={sys.prefix}'], cwd={str(ROOT)!r}, "
-        "capture_output=True, text=True, timeout=10, check=False)\n"
+        "capture_output=True, text=True, timeout=10, check=False, env=child_environment)\n"
         "    assert result.returncode == 0, result.stdout + result.stderr\n"
         "    assert 'pytest-cprofile: directory=' not in result.stdout\n"
     )
@@ -338,6 +396,24 @@ def test_native_cprofile_request_is_consumed_before_collection_and_nested_make(t
     functions = pstats.Stats(str(directory / "pytest.pstats")).get_stats_profile().func_profiles
     assert "test_nested_native_make" in functions
     assert Path(functions["test_nested_native_make"].file_name) == tmp_path / "test_native_profile_probe.py"
+
+    events: list[dict[str, object]] = [
+        json.loads(line) for line in (directory / "trace.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    profile_pid = int(directory.name.split("-", 2)[1])
+    assert {event["run_id"] for event in events} == {directory.name}
+    assert {event["pid"] for event in events if event["event"] in {"RUN_START", "START", "FINISH", "RUN_FINISH"}} == {
+        profile_pid
+    }
+    started = [str(event["nodeid"]) for event in events if event["event"] == "START"]
+    finished = [str(event["nodeid"]) for event in events if event["event"] == "FINISH"]
+    assert len(started) == 1 and started[0].endswith(
+        "test_native_profile_probe.py::test_nested_native_make",
+    )
+    assert finished == started
+    assert [(event["pid"], event["exitstatus"]) for event in events if event["event"] == "RUN_FINISH"] == [
+        (profile_pid, 0)
+    ]
 
 
 def test_native_cprofile_does_not_profile_xdist_workers(tmp_path: Path) -> None:
@@ -355,3 +431,41 @@ def test_native_cprofile_does_not_profile_xdist_workers(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.count("pytest-cprofile: directory=") == 1
+
+
+def test_native_scoped_child_does_not_append_to_parent_focus_trace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise the actual ordinary Make child without sharing its trace."""
+    parent_trace = tmp_path / "parent-trace.jsonl"
+    sentinel = b"owned-scoped-parent-trace-sentinel\n"
+    parent_trace.write_bytes(sentinel)
+    trace_keys = ("GLUDD_XDIST_TRACE_LOG", "GLUDD_XDIST_TRACE_RUN_ID", "GLUDD_XDIST_TRACE_TRUNCATE")
+    parent_fields = (str(parent_trace), "owned-scoped-parent-trace", "0")
+    for key, value in zip(trace_keys, parent_fields, strict=True):
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("GLUDD_NATIVE_SCOPED_TRACE_BOUNDARY_CONTROL", "owned-scoped-carrier")
+    marker = tmp_path / "native-scoped-carrier.txt"
+    probe = tmp_path / "test_scoped_trace.py"
+    probe.write_text(
+        "import os\nfrom pathlib import Path\n"
+        "def test_original_scoped_child():\n"
+        "    assert os.environ.get('GLUDD_NATIVE_SCOPED_TRACE_BOUNDARY_CONTROL') == 'owned-scoped-carrier'\n"
+        f"    Path({str(marker)!r}).write_text('native-scoped-carrier\\n', encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    result = _make(
+        "test-files",
+        f"TESTFILES={probe}",
+        "PYTEST_ARGS=-q -W error -n 0",
+        "NPROC=1",
+        "GLUDD_XDIST_WORKERS=1",
+        f"UV_PROJECT_ENVIRONMENT={sys.prefix}",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "1 passed" in result.stdout
+    assert marker.read_text(encoding="utf-8") == "native-scoped-carrier\n"
+    assert os.environ.get("GLUDD_NATIVE_SCOPED_TRACE_BOUNDARY_CONTROL") == "owned-scoped-carrier"
+    assert tuple(os.environ.get(key) for key in trace_keys) == parent_fields
+    assert parent_trace.read_bytes() == sentinel
