@@ -903,3 +903,66 @@ durable trace identity and bounded diagnostics. They do not prove this copied-
 environment defect or the native focus repair; F source and the actual native
 controls own those conclusions. No new upstream retrieval or performance claim
 is attributed to this repair.
+
+
+## M1 native trace cache and promotion-child boundaries (2026-10-30 UTC)
+
+Fixed M1 source is73a8501a378696ccef6a7b77f24b031d03b0b109. Its native
+128-owner focus, run
+focus-9efbbd87381bcc2a6e0a65630ac37fa84b1a71c4bec6a32fbdc2de73cc6dd0d7,
+fails native2/1991.240s with pytest1FAIL/6326PASS/13SKIP1971.95s.
+The HTTPS fixture's inherited SYSTEM_PYTHON under environment-override Make
+is a separate body failure. That failure and every earlier F/G receipt remain
+unchanged; this trace analysis does not repair or relabel them.
+
+The exact native trace has12683events,6335starts/6335finishes, but only2593
+accepted pairs,3743 timing issues, one unfinished protocol and two failure
+reports for the single HTTPS node. Equal start/finish totals do not establish
+trace integrity. The first raw routing gap is at lines5175-5176: PID56999/gw0
+starts test_controller_sessionstart_truncates_trace_once, then the next
+retained row is the FINISH of test_trace_path_is_stable_after_session_start.
+The former FINISH and intervening STARTs are absent from the parent stream.
+Both original controller/worker RUN_START records remain; this is not evidence
+of blanket parent-file truncation or a worker-role change.
+
+The pinned direct-hook cases expose the cause. pytest_sessionstart assigns the
+module's cached _ACTIVE_TRACE_PATH and _ACTIVE_RUN_ID. The controller fixture
+restores its environment and config, but does not register those two cached
+fields with monkeypatch. Subsequent outer protocol events therefore retain
+the private test path. The stable-path fixture's raw finally reset to None
+later returns routing to the inherited parent path, leaving only that test's
+FINISH in the parent stream. The summary's unmatched finish and later
+overlapping starts are cascading diagnostics;3743 is not3743 independently
+established root causes. Missing intervals remain unproved.
+
+A second boundary is independently visible at lines7369-7389. During the
+promotion-contract test, child PID58092/controller records a complete8-case
+native session in the same parent file and focus run ID, before PID56999's
+outer FINISH. The original subprocess call inherits its trace environment.
+An eight-case foreign session must not be filtered into valid focus proof.
+
+The private H proposal ports only the already identified D65 fixture repairs:
+register both cached fields with monkeypatch in each direct-hook case, retain
+the existing config and profile cleanup, and give the promotion child an
+explicit copied environment with pytest-owned promotion-trace.jsonl,
+run ID promotion-probe and truncate1. Its actual Make argv, cwd,30-second
+bound and all original assertions remain. Unrelated environment fields stay
+in the copy. Production tracing, native roles, profile restoration,
+authentication, proof filters, literal rosters and caps do not change.
+
+Structural comparison over the pinned M1 inputs preserves all49 trace-module
+functions/183 assertions and all53 promotion-module functions/336 assertions.
+Every other function and module roster remains AST-identical except the
+required Callable import. The resulting trace module is byte-identical to
+the existing D65/C1 source578b4ad435c4a0402f9ba4d869a9d12dc5fc966468eeb18ae2014eaa9230f8bb.
+Only the narrow child fixture is ported into M1's promotion module; its original
+roster is retained. The D65 native controls preserve the actual parent binding
+around both original cases and check an inherited witness around the original
+promotion child. No test bodies or new profiles were executed by the private
+source/trace audit; its structural checks are not runtime acceptance.
+
+Root owns independent H source review and focused receiving with the separate
+HTTPS caller repair. The exact M2 complete128-owner native focus remains
+pending, followed by the unchanged integration, canonical gate, coverage85/75
+for lines and branches, exact-SHA CI, ZDD, deployment and release requirements.
+No new green focus, task completion or production fix is claimed.

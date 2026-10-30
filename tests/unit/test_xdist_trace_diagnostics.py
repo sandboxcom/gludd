@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import cast
@@ -207,6 +207,8 @@ def test_controller_sessionstart_truncates_trace_once(tmp_path: Path, monkeypatc
     monkeypatch.setenv("GLUDD_XDIST_TRACE_LOG", str(log_path))
     monkeypatch.setenv("GLUDD_XDIST_TRACE_TRUNCATE", "1")
 
+    monkeypatch.setattr(trace, "_ACTIVE_TRACE_PATH", None)
+    monkeypatch.setattr(trace, "_ACTIVE_RUN_ID", None)
     monkeypatch.setattr(trace, "_ACTIVE_TRACE_CONFIG", None)
     session = SimpleNamespace(config=SimpleNamespace(workerinput=None))
     trace.pytest_sessionstart(cast(pytest.Session, session))
@@ -603,7 +605,8 @@ def test_trace_path_is_stable_after_session_start(tmp_path: Path, monkeypatch: p
     monkeypatch.setenv("GLUDD_XDIST_TRACE_LOG", str(first_log))
     monkeypatch.setenv("GLUDD_XDIST_TRACE_TRUNCATE", "1")
     monkeypatch.setattr(trace, "_ACTIVE_TRACE_CONFIG", None)
-    trace._ACTIVE_TRACE_PATH = None
+    monkeypatch.setattr(trace, "_ACTIVE_TRACE_PATH", None)
+    monkeypatch.setattr(trace, "_ACTIVE_RUN_ID", None)
 
     try:
         session = SimpleNamespace(config=SimpleNamespace(workerinput=None))
@@ -1488,3 +1491,63 @@ def test_summary_recipe_retains_native_quoted_run_and_log_arguments(
     result = _run(tmp_path, values, trace_environment_overrides=trace_guidance_make_e)
     assert result.returncode == 0, result.stdout + result.stderr
     _assert_call(tmp_path, values)
+
+
+@pytest.mark.parametrize("trace_isolation_case", ["controller", "stable"])
+def test_sessionstart_control_restores_the_live_native_trace_binding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest,
+    trace_isolation_case: str,
+) -> None:
+    """The original direct-hook cases must return ownership to actual pytest."""
+    from scripts import xdist_trace_plugin as trace
+
+    assert trace._ACTIVE_TRACE_CONFIG is (
+        request.config if request.config.pluginmanager.is_registered(trace) else None
+    )
+    names = ("_ACTIVE_TRACE_PATH", "_ACTIVE_RUN_ID", "_ACTIVE_TRACE_CONFIG")
+    previous = tuple(getattr(trace, name) for name in names)
+    worker = trace._worker_id()
+    for name in names:
+        monkeypatch.setattr(trace, name, getattr(trace, name))
+    cases: dict[str, Callable[[Path, pytest.MonkeyPatch], None]] = {
+        "controller": test_controller_sessionstart_truncates_trace_once,
+        "stable": test_trace_path_is_stable_after_session_start,
+    }
+
+    with monkeypatch.context() as owned:
+        cases[trace_isolation_case](tmp_path, owned)
+
+    assert tuple(getattr(trace, name) for name in names) == previous
+    assert trace._worker_id() == worker
+
+
+def test_native_promotion_child_owns_trace_without_writing_inherited_witness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest,
+) -> None:
+    """Run the original native producer; inherited trace storage stays untouched."""
+    from scripts import xdist_trace_plugin as trace
+    from scripts.summarize_xdist_trace import summarize_log
+
+    from tests.unit import test_gate_failure_promotion as promotions
+
+    assert trace._ACTIVE_TRACE_CONFIG is (
+        request.config if request.config.pluginmanager.is_registered(trace) else None
+    )
+    witness = tmp_path / "inherited-trace-witness.txt"
+    witness.write_text("owned inherited trace carrier witness\n", encoding="utf-8")
+    retained = witness.read_bytes()
+    child = tmp_path / "promotion-child"
+    child.mkdir()
+    with monkeypatch.context() as owned:
+        owned.setenv("GLUDD_XDIST_TRACE_LOG", str(witness))
+        owned.setenv("GLUDD_XDIST_TRACE_RUN_ID", "owned-inherited-trace-witness")
+        owned.setenv("GLUDD_XDIST_TRACE_TRUNCATE", "0")
+        promotions.test_target_and_feature_document_preserve_full_gate_boundary(child)
+
+    assert witness.read_bytes() == retained
+    summary = summarize_log(child / "promotion-trace.jsonl", run_id="promotion-probe")
+    expected = len(promotions.STRUCTURAL_PROMOTION_NODES)
+    assert summary["started"] == summary["finished"] == expected
+    assert summary["timings"]["paired_count"] == expected
+    assert summary["timings"]["issue_count"] == 0
+    assert summary["unfinished"] == [] and summary["failure_report_count"] == 0

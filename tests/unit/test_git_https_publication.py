@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -145,9 +146,10 @@ def https_publication_repo(tmp_path: Path) -> HttpsFixture:
     environment = {
         key: value for key, value in os.environ.items()
         if not key.startswith(("GIT_", "GH_", "GITHUB_"))
-        and key not in {"MAKEFLAGS", "MFLAGS", "MAKELEVEL"}
+        and key not in {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES"}
     }
     environment.update({
+        "SYSTEM_PYTHON": sys.executable,
         "HOME": str(home), "XDG_CONFIG_HOME": str(home),
         "GH_CONFIG_DIR": str(home / "gh"), "GIT_CONFIG_GLOBAL": str(global_config),
         "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_SYSTEM": os.devnull,
@@ -717,3 +719,73 @@ def test_actual_main_keeps_fixed_system_python_without_cli(
     ]
     assert fixture.rows() == []
     assert (fixture.root / ".git/config").read_bytes() == before_config
+
+
+@pytest.mark.parametrize("https_fixture_carrier_e", [False, True])
+def test_https_fixture_owns_recursive_make_carriers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest,
+    https_fixture_carrier_e: bool,
+) -> None:
+    """Own fixture Make inputs without replacing parent or unrelated carriers."""
+    def environment_fingerprint() -> bytes:
+        return hashlib.sha256(json.dumps(dict(os.environ), sort_keys=True).encode()).digest()
+
+    parent_before = environment_fingerprint()
+    alternate = tmp_path / "owned-inherited-python"
+    alternate.symlink_to(sys.executable)
+    carrier_value = "owned unrelated recursive Make carrier"
+    with monkeypatch.context() as controlled:
+        controlled.setenv("MAKEFLAGS", "--warn-undefined-variables")
+        controlled.setenv("MFLAGS", "--warn-undefined-variables")
+        controlled.setenv("MAKELEVEL", "29")
+        controlled.setenv("MAKEOVERRIDES", f"SYSTEM_PYTHON={sys.executable}")
+        controlled.setenv("SYSTEM_PYTHON", str(alternate))
+        controlled.setenv("HTTPS_FIXTURE_RECURSIVE_CARRIER", carrier_value)
+        controlled_parent = environment_fingerprint()
+        fixture = cast(HttpsFixture, request.getfixturevalue("https_publication_repo"))
+        record = tmp_path / "native-fixture-carrier.json"
+        program = (
+            "import json, os, sys; from pathlib import Path; "
+            "Path(sys.argv[1]).write_text(json.dumps({"
+            "'argv': sys.orig_argv, "
+            "'carrier': os.environ['HTTPS_FIXTURE_RECURSIVE_CARRIER']"
+            "}), encoding='utf-8')"
+        )
+        probe = tmp_path / "native-fixture-carrier.mk"
+        probe.write_text(
+            fixture.makefile.read_text(encoding="utf-8")
+            + "\n.PHONY: owned-https-fixture-carriers\n"
+            "owned-https-fixture-carriers:\n"
+            '\t@"$(SYSTEM_PYTHON)" -P -c ' + shlex.quote(program)
+            + " " + shlex.quote(str(record)) + "\n",
+            encoding="utf-8",
+        )
+        # The same native entrypoint must select the alternate path under -e.
+        unguarded_environment = {**fixture.environment, "SYSTEM_PYTHON": str(alternate)}
+        witness = fixture.invoke(
+            "owned-https-fixture-carriers", makefile=probe,
+            environment=unguarded_environment, early_environment=True,
+        )
+        assert witness.returncode == 0, witness.stdout + witness.stderr
+        witness_data = json.loads(record.read_text(encoding="utf-8"))
+        assert witness_data == {
+            "argv": [str(alternate), "-P", "-c", program, str(record)],
+            "carrier": carrier_value,
+        }
+        record.unlink()
+
+        result = fixture.invoke(
+            "owned-https-fixture-carriers", makefile=probe,
+            early_environment=https_fixture_carrier_e,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert json.loads(record.read_text(encoding="utf-8")) == {
+            "argv": [sys.executable, "-P", "-c", program, str(record)],
+            "carrier": carrier_value,
+        }
+        assert fixture.environment["SYSTEM_PYTHON"] == sys.executable
+        assert fixture.environment["HTTPS_FIXTURE_RECURSIVE_CARRIER"] == carrier_value
+        assert not {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES"} & fixture.environment.keys()
+        assert fixture.rows() == []
+        assert environment_fingerprint() == controlled_parent
+    assert environment_fingerprint() == parent_before
