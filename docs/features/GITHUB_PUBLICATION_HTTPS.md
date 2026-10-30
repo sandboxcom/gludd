@@ -1439,3 +1439,46 @@ The original90/60 publication admission, full21600 gate,85aggregate/75per-file
 line and branch coverage on both runtimes, ZDD and all promotion guards remain.
 Normal collection/commit, exact Main intake and fresh exact-SHA hosted/deployment
 proofs plus the complete signed v0.1.2 artifact set remain separate required work.
+
+
+## Confined HTTPS fixture Make carriers after M1 (2026-10-30 UTC)
+
+The native reviewed-head focus at fixed
+`73a8501a378696ccef6a7b77f24b031d03b0b109` ends with1FAIL/6326PASS/13SKIP
+(pytest1971.95s/native1991.240s, native2). Its exact receipt is
+`reviewed-head-focus/focus-9efbbd87381bcc2a6e0a65630ac37fa84b1a71c4bec6a32fbdc2de73cc6dd0d7`.
+The sole body failure is
+`test_https_auth_bootstrap_ignores_implicit_cwd_and_preserves_carriers[True]`:
+the captured native bootstrap argv names the inherited installed `python3`
+instead of the fixture's exact `sys.executable` spelling ending in `python`.
+This focus receipt remains failed; partial trace diagnostics have a separate
+owner and are not resolved by this fixture change.
+
+The confined fixture removed MAKEFLAGS/MFLAGS/MAKELEVEL but retained
+MAKEOVERRIDES and the ambient SYSTEM_PYTHON. Its Makefile assignment alone
+cannot bind the fixture interpreter under GNU Make `-e`: the inherited
+environment value takes precedence. Removing MAKEOVERRIDES alone does not fix
+that independent environment precedence. The fixture now removes that last
+recursive Make carrier from its private copy and sets the copied SYSTEM_PYTHON
+to the same `sys.executable` it already writes in the owned Makefile. Parent
+state and unrelated carriers remain intact; no application interpreter,
+authentication owner, production recipe or argv assertion changes.
+
+The additive ordinary/`-e` controls use the real Make executable, complete
+existing fixture Make context and real installed Python. An owned alternate
+interpreter path is first selected by the same native probe under an explicit
+unsafe environment and `-e`; the guarded fixture must then select the exact
+original interpreter and retain an unrelated child carrier. Only the owned
+witness file is removed. Synthetic inherited MAKEOVERRIDES/SYSTEM_PYTHON inputs
+and parent fingerprints exercise the copy boundary without recording ambient
+environment contents. The original unsafe shlex import witness, guarded
+no-evaluation assertion, all original tests and their exact argv checks remain.
+
+This section records the failed input and source repair design. The private
+proposal has not run either new control or whole-owner acceptance. Root must
+receive the exact source, run the complete HTTPS owner on both installed
+runtimes with explicit outer and child runtime carriers, and perform the normal
+substantive commit. A fresh genuine integration candidate, reviewed-head focus,
+canonical gate/85-75 line AND branch, exact-SHA hosted CI, ZDD and release proof
+remain pending. No interpreter-alias normalization, performance conclusion or
+retroactive green M1 result is claimed.
