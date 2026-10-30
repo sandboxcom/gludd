@@ -397,7 +397,9 @@ def test_pre_push_receives_explicit_ledger_makeflags_carrier(
     uv_line = source.splitlines()[0]
     assert uv_line.startswith("UV := ")
     source += (
-        "\n.PHONY: owned-ledger-publication\nowned-ledger-publication:\n\t@"
+        "\n.PHONY: owned-ledger-publication collect-check\n"
+        "owned-ledger-publication collect-check: override MAKEFLAGS = $(MFLAGS) -- $(MAKEOVERRIDES)\n"
+        "owned-ledger-publication:\n\t@"
         + shlex.quote(sys.executable) + " " + shlex.quote(str(recorder))
         + ' "$(origin MAKEFLAGS)" "$(origin CI_FAILURE_LEDGER)"\n\t@'
         + shlex.quote(fixture.native_git) + " push "
@@ -431,6 +433,9 @@ def test_pre_push_receives_explicit_ledger_makeflags_carrier(
     assert hook["parent_unchanged"] is True
     assert collected["preserved"] == {key: fixture.environment.get(key) for key in PRESERVED_KEYS}
     assert result.returncode != 0 and "pytest worktree confinement denied subprocess environment" in output
+    assert received["MAKEFLAGS_origin"] == "override", (
+        "the deliberate duplicate must be an explicit native fixture input"
+    )
 
 
 @pytest.mark.parametrize("collection_ledger_location", ["canonical", "active"])
@@ -468,7 +473,9 @@ def test_pre_push_collection_retains_ledger_path_confinement_with_real_ansible(
     uv_line = source.splitlines()[0]
     assert uv_line.startswith("UV := ")
     source += (
-        "\n.PHONY: owned-ledger-publication\nowned-ledger-publication:\n\t@"
+        "\n.PHONY: owned-ledger-publication collect-check\n"
+        "owned-ledger-publication collect-check: override MAKEFLAGS = $(MFLAGS) -- $(MAKEOVERRIDES)\n"
+        "owned-ledger-publication:\n\t@"
         + shlex.quote(fixture.native_git) + " push "
         + shlex.quote(str(fixture.remote)) + " HEAD:refs/heads/ledger-probe\n"
     )

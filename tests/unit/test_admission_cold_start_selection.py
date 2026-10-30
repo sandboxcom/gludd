@@ -253,29 +253,34 @@ def _run(
     flags = "-W error -q -n 2 --maxprocesses 2"
     if candidate:
         flags += " --ignore-glob=" + str(tmp_path / "admission_native_package" / "*")
-    environment = {
-        **os.environ,
-        "UV_NO_SYNC": "1",
-        "UV_PYTHON_DOWNLOADS": "never",
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PYTHONPATH": os.pathsep.join([str(tmp_path), str(ROOT), str(ROOT / "src")]),
-        "PYTEST_PLUGINS": ",".join(
-            filter(
-                None,
-                (
-                    os.environ.get("PYTEST_PLUGINS", ""),
-                    "tests.fixtures.admission_cold_start.snapshot_plugin",
-                    "admission_fixture_plugin",
-                ),
-            )
-        ),
-        "COLD_START_PROBE_ROOT": str(tmp_path / "admission_native_package"),
-        "COLD_START_PROBE_LOG": str(events),
-        "COLD_START_SNAPSHOT_ROOT": str(snapshots),
-        "COLD_START_LIFECYCLE": str(lifecycle),
-    }
+    environment = dict(os.environ)
     for key in ("GLUDD_XDIST_TRACE_LOG", "GLUDD_XDIST_TRACE_RUN_ID", "GLUDD_XDIST_TRACE_TRUNCATE"):
         environment.pop(key, None)
+    environment.update(
+        {
+            "UV_NO_SYNC": "1",
+            "UV_PYTHON_DOWNLOADS": "never",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONPATH": os.pathsep.join([str(tmp_path), str(ROOT), str(ROOT / "src")]),
+            "PYTEST_PLUGINS": ",".join(
+                filter(
+                    None,
+                    (
+                        os.environ.get("PYTEST_PLUGINS", ""),
+                        "tests.fixtures.admission_cold_start.snapshot_plugin",
+                        "admission_fixture_plugin",
+                    ),
+                )
+            ),
+            "COLD_START_PROBE_ROOT": str(tmp_path / "admission_native_package"),
+            "COLD_START_PROBE_LOG": str(events),
+            "COLD_START_SNAPSHOT_ROOT": str(snapshots),
+            "COLD_START_LIFECYCLE": str(lifecycle),
+            "GLUDD_XDIST_TRACE_LOG": str(tmp_path / f"pytest-trace-{run_id}.jsonl"),
+            "GLUDD_XDIST_TRACE_RUN_ID": "admission-cold-start-" + run_id,
+            "GLUDD_XDIST_TRACE_TRUNCATE": "0",
+        }
+    )
     result = subprocess.run(
         [
             "make",
@@ -457,6 +462,157 @@ def test_native_glob_is_derived_from_each_invocation_directory(
         assert str(rows[0]["flags"]).split().count(expected) == 1
         assert str(rows[2]["flags"]).split().count(expected) == 1
         assert "--ignore-glob" not in str(rows[1]["flags"])
+
+
+@pytest.mark.parametrize("candidate", [False, True])
+def test_native_cold_start_child_trace_does_not_write_parent_carriers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    candidate: bool,
+) -> None:
+    """Keep the real original/filtered two-node child out of its parent's trace."""
+    from dataclasses import dataclass, field
+
+    @dataclass(frozen=True)
+    class ParentEnvironment:
+        values: dict[str, str] = field(repr=False)
+
+    sentinel = tmp_path / "owned parent trace.sentinel"
+    sentinel.write_bytes(b"owned parent trace sentinel\n")
+    retained = sentinel.read_bytes()
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_LOG", str(sentinel))
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_RUN_ID", "v3-owned-parent")
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_TRUNCATE", "0")
+    parent = ParentEnvironment(os.environ.copy())
+    first, _second, _outside = _fixture_tree(tmp_path)
+    (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    run_id = "v3-candidate" if candidate else "v3-original"
+    result, snapshots, _calls = _run(
+        tmp_path,
+        [str(first) + "::test_selected_a"],
+        candidate=candidate,
+        run_id=run_id,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert re.search(r"\b2 passed\b", result.stdout), result.stdout + result.stderr
+    parent_same = os.environ.copy() == parent.values
+    assert parent_same, "the native fixture changed its parent environment"
+    assert sentinel.read_bytes() == retained
+    assert len(snapshots) == 2
+    expected_nodes = {str(row["nodeid"]) for row in cast(list[dict[str, object]], snapshots[0]["nodes"])}
+    assert len(expected_nodes) == 2
+    assert all(
+        {str(row["nodeid"]) for row in cast(list[dict[str, object]], snapshot["nodes"])} == expected_nodes
+        for snapshot in snapshots
+    )
+    pids = scheduling._assert_v3_owned_native_child_trace(
+        tmp_path / f"pytest-trace-{run_id}.jsonl",
+        "admission-cold-start-" + run_id,
+        {"test_selected_a[0]", "test_selected_a[1]"},
+        {"test_selected_a.py"},
+        workers=2,
+        expected_nodes=expected_nodes,
+    )
+    assert pids == {str(snapshot["worker"]): cast(int, snapshot["pid"]) for snapshot in snapshots}
+
+
+@pytest.mark.parametrize("candidate", [False, True])
+def test_cold_start_call_owns_trace_inputs_without_starting_a_child(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    candidate: bool,
+) -> None:
+    """Inspect the real caller's inputs and stop at its process boundary."""
+    from dataclasses import dataclass, field
+    from typing import NoReturn
+
+    @dataclass(frozen=True)
+    class PrivateEnvironment:
+        values: dict[str, str] = field(repr=False)
+
+    @dataclass(frozen=True)
+    class BoundaryInputs:
+        argv: object = field(repr=False)
+        options: dict[str, object] = field(repr=False)
+
+    class Captured(Exception):
+        """The actual native command was captured before execution."""
+
+    captured: list[BoundaryInputs] = []
+
+    def capture(argv: object, **options: object) -> NoReturn:
+        captured.append(BoundaryInputs(argv, options))
+        raise Captured
+
+    def forbidden(*_args: object, **_options: object) -> NoReturn:
+        pytest.fail("the cheap caller-input control started a process")
+
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_LOG", str(tmp_path / "owned parent trace.sentinel"))
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_RUN_ID", "cheap-parent")
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_TRUNCATE", "0")
+    monkeypatch.setenv("GLUDD_V4_UNRELATED_CARRIER", "owned-unrelated-value")
+    parent = PrivateEnvironment(os.environ.copy())
+    probe = tmp_path / "test_caller_probe.py"
+    probe.write_text("def test_caller_probe():\n    pass\n", encoding="utf-8")
+    files = [str(probe) + "::test_caller_probe"]
+    run_id = "cheap-candidate" if candidate else "cheap-original"
+    with monkeypatch.context() as boundary:
+        boundary.setattr(subprocess, "run", capture)
+        boundary.setattr(subprocess, "Popen", forbidden)
+        with pytest.raises(Captured):
+            _run(tmp_path, files, candidate=candidate, run_id=run_id)
+    assert len(captured) == 1
+    inputs = captured[0]
+    environment_is_dict = isinstance(inputs.options.get("env"), dict)
+    assert environment_is_dict, "the real caller must supply its copied environment"
+    child = PrivateEnvironment(cast(dict[str, str], inputs.options["env"]))
+    trace_inputs_owned = (
+        child.values.get("GLUDD_XDIST_TRACE_LOG"),
+        child.values.get("GLUDD_XDIST_TRACE_RUN_ID"),
+        child.values.get("GLUDD_XDIST_TRACE_TRUNCATE"),
+    ) == (str(tmp_path / f"pytest-trace-{run_id}.jsonl"), "admission-cold-start-" + run_id, "0")
+    assert trace_inputs_owned, "the actual child inputs must own all three trace carriers"
+    owned = {
+        "UV_NO_SYNC",
+        "UV_PYTHON_DOWNLOADS",
+        "PYTHONDONTWRITEBYTECODE",
+        "PYTHONPATH",
+        "PYTEST_PLUGINS",
+        "COLD_START_PROBE_ROOT",
+        "COLD_START_PROBE_LOG",
+        "COLD_START_SNAPSHOT_ROOT",
+        "COLD_START_LIFECYCLE",
+        "GLUDD_XDIST_TRACE_LOG",
+        "GLUDD_XDIST_TRACE_RUN_ID",
+        "GLUDD_XDIST_TRACE_TRUNCATE",
+    }
+    unrelated_child = PrivateEnvironment({key: value for key, value in child.values.items() if key not in owned})
+    unrelated_parent = PrivateEnvironment({key: value for key, value in parent.values.items() if key not in owned})
+    carriers_preserved = unrelated_child.values == unrelated_parent.values
+    assert carriers_preserved, "the native caller must retain unrelated carriers"
+    flags = "-W error -q -n 2 --maxprocesses 2"
+    if candidate:
+        flags += " --ignore-glob=" + str(tmp_path / "admission_native_package" / "*")
+    argv_preserved = inputs.argv == [
+        "make",
+        "--no-print-directory",
+        "test-files",
+        "TESTFILES=" + " ".join(files),
+        "PYTEST_ARGS=" + flags,
+        "NPROC=2",
+        "GLUDD_XDIST_WORKERS=2",
+        "UV_PROJECT_ENVIRONMENT=" + parent.values.get("VIRTUAL_ENV", str(ROOT / ".venv")),
+    ]
+    assert argv_preserved, "the existing native command and selected runtime must stay intact"
+    native_options_preserved = (
+        inputs.options.get("cwd"),
+        inputs.options.get("timeout"),
+        inputs.options.get("capture_output"),
+        inputs.options.get("text"),
+    ) == (ROOT, 35, True, True)
+    assert native_options_preserved, "the original native CWD and subprocess bound must stay intact"
+    parent_preserved = os.environ.copy() == parent.values
+    assert parent_preserved, "the input control must preserve its parent environment"
 
 
 @pytest.mark.parametrize("candidate", (False, True))

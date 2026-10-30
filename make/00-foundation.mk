@@ -1,3 +1,9 @@
+# Keep the selected Markdown environment literal before native startup exports.
+ifneq ($(filter lint-markdown,$(MAKECMDGOALS)),)
+override UV_PROJECT_ENVIRONMENT := $(value UV_PROJECT_ENVIRONMENT)
+export UV_PROJECT_ENVIRONMENT
+endif
+
 # Keep expected publication identity literal before startup/export expansion.
 PUBLISH_EXPECTED_BRANCH ?=
 PUBLISH_EXPECTED_SHA ?=
@@ -1854,11 +1860,13 @@ lint-markdown:
 		echo "ERROR: inline Markdown lint directives are forbidden; configure the tracked Rumdl policy instead"; \
 		exit 2; \
 	fi; \
-	if [ ! -x ".venv/bin/rumdl" ]; then \
+	rumdl_root="$${UV_PROJECT_ENVIRONMENT:-.venv}"; \
+	rumdl_executable="$$rumdl_root/bin/rumdl"; \
+	if [ ! -x "$$rumdl_executable" ]; then \
 		echo "ERROR: locked Rumdl executable not found. Run: make sync DEPENDENCY_PROFILE_SET=development DEPENDENCY_PROFILE_ENVIRONMENT=.venv DEPENDENCY_PROFILE_PYTHON= DEPENDENCY_PROFILE_VALIDATE_ONLY=0"; \
 		exit 2; \
 	fi; \
-	.venv/bin/rumdl check --config "$$config_path" $(MARKDOWN_FILES)
+	"$$rumdl_executable" check --config "$$config_path" $(MARKDOWN_FILES)
 
 lint-css:
 	@if [ -z "$(CSS_FILES)" ] || [ -z "$(ESLINT_CSS_CONFIG)" ]; then \

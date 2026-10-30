@@ -5,36 +5,18 @@ Published/remote-VERIFIED: release-candidate/v012-git-mutex-20261022 eb772a658a0
 Previously recorded development publication: 2f6ad0d5c8f2df3f0ca2c389b9592fa846ad9b83.
 Total tests: 129357 selected / 129381 collected, 24 deselected, zero collection errors in47.54s/native54.341s during the native guarded714ce2d65e3dbeec9d3dbbadced9f983c13c2a3d source commit preflight. Native receipt: .gate-logs/observed/test-count/20261022T234100Z-13723-e7e319e7.json. This is fixed714 evidence, not a later handoff-commit measurement; lock duration54.257s is distinct. Earlier23b/638/ef41/64 collections keep their actual refs/receipts. Collection is separate from runtime, full gate, hosted and deployment proof. Keep normal fresh collection per commit without repeating accepted source tests for a handoff alone.
 
-## Current receiving record (2026-10-27 UTC)
+## Current declaration-classification receiving (2026-10-30 UTC)
 
-Fixed receiving snapshot (2026-10-27 UTC): Main
-8eb3e5fb29fc298be259b6b3ca1dbbd0929a7843 contains the normal-publisher requirement
-for an accepted exact-source Build run after remote verification. Its Main narrow
-passes49 on each installed runtime; native receipts are listed in release status.
-Git fixture donor5e343834edf863e866138c546c15a75e26ca47ad is staged in this snapshot,
-with13 Main narrow passes on each runtime; its receiving commit and full22-owner
-acceptance remain pending here. These are fixed pre-commit facts, not a future SHA.
+Fixed final-formatted declaration receiving (2026-10-30 UTC), at parent cf87c943b8c5f2cf60e4172ad57c82852ad4a7a7 before a new normal checkpoint: script778bfbf3/test278eeadc have whole-module ASTs equal to the reviewed pre-format a4/9ee input. Current complete-owner coverage passes62 EACH (3117.51s/native9.518s;3127.79s/native10.679s),127events/62pairs/0issues, unfinished or failed reports EACH;97.8% line/94.1% branch passes unchanged85aggregate/75each LINE AND BRANCH. The original test byte-prefix proof and earlier62-case receipts remain fixed pre-format history. Original tests-only RED2FAIL/1PASS/native2.029s and corrected GREEN3PASS/native1.966s remain. Both original-node profiles retain their actual source pins: the a4/9ee postprofile1PASS6.58s/native7.926s records fewer classification checks but nearly identical durations, proving no latency, hosted CPU cause or deadline fit. Root's two-code staged guard passes6.080s; later document/final4path checks remain required. Parent Build40736678390 fails3.11 runtime124/90.537s;3.12 runtime/whole gate passes76.570s, Molecule40736774119 passes6, Pages40736777934 passes3/deploymentSKIP. Next: final review/normal4path checkpoint/fresh collection, then clean-source original90/60 repair alone and guarded exact-source publication/hosted observation. All328taskstates/seven open S98, E/M/C/N final objects, focus132/128 HOLD,333combined, canonical21600/global85/75 LINE AND BRANCH BOTH, master ZDD and signed release remain pending. The old586snapshot below is unmodified. Details: [classification evidence](docs/features/PYTEST_PARAMETER_FIXTURE_COLLISION_GUARD.md#measured-declaration-classification-receiving-2026-10-30-utc).
+
+## Current Make-carrier receiving (2026-10-27 UTC)
+
+Fixed no-sleep receiving snapshot (2026-10-28 UTC), before checkpoint, at parent586088e27378bc3cc9e9bff451b50eecdd0dc1ad: its reviewed eight marker postimages and normal commit/fresh collection remain source evidence. Both original90/60 repair-owned runtimes fail124 (31190.54s;31290.512s); HELP1/TAIL193 complete in each, MAIN/final join remain unproved. The failed owners ran simultaneously, with six planned execution workers across four cohorts; they supply no isolated performance or CPU-cause proof. Normal guarded publication refuses0.744s/native2: two open families lack verified repair, with no transport or GHA request. Retain earlier DC Build failures/Molecule6/Pages3 deploySKIP and genuine E f145's separate checkpoint/refused publication as fixed history. The measured original two-node profile2PASS4.92s/native6.289s identifies visitor field-generator work, not forecast savings; its populated leaf trace and EMPTY outer trace stay distinct. Reviewed no-cache source52a adds the14-line stdlib-equivalent field walk and15 controls, preserving all16 original functions/9 tests/12 assertions, fresh reads/parses and whole source scope. Native tests-only RED13FAIL/2PASS0.64s/native1.801s retains46events/15pairs/13 failed reports/0issues/unfinished. Complete3-owner+logical-AST receiving passes252 EACH (31163.09s/native64.338s;31266.83s/native68.248s),507events/252pairs/0failed reports/issues/unfinished EACH, with exact drained commands/source verified. The same original two-node profile then runs alone and passes2/4.29s/native5.653s; its leaf7events/2pairs and EMPTY outer trace remain distinct. The two profile samples prove no savings, CPU cause, deadline fit or hosted improvement. Next: normal checkpoint/fresh collection, clean-source original90/60 repair ALONE with zero other local test cohorts, then guarded publication/accepted exact-SHA diagnostic GHA with parallel Molecule/Pages. This schedules the existing owner, without a code-fix or sole-cause claim about contention. Preserve every earlier failure. Genuine E/M/C/N, focus132/128 HOLD,333 combined, canonical21600/global85aggregate75every-file LINE AND BRANCH BOTH, canonical push, master ZDD and fresh complete signed artifacts remain pending. All328 checkbox states/seven open S98,133 excluded backlog and ratchet0 remain. Details: [field walk](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md#measured-no-sleep-visitor-field-walk-2026-10-28-utc), [pipeline](docs/features/GHA_PIPELINE_PROMOTION_AUDIT.md) and [release status](docs/releases/v0.1.2-implementation-status.md).
+
 The first seven SESSION lines retain their fixed714 source/collection authority.
-
-D9b01c6296f2a24d39a95e0c6194bd118ac8824f8 retains APPROVE ORIGINAL SOURCE for its
-242-path original diff. Diagnostic attempt1 Build40448994419 ended8FAIL/19PASS/
-3SKIP; both runtime gates passed. Molecule40449089000 passed all6 jobs; Pages
-40449154482 passed3 validations and skipped deployment. Root's original observer
-timed out; a renewed observer followed actual additional completed jobs and
-retained the terminal failure. These workflow_dispatch results certify no deployment.
-Native Linux/comparison/private-policy/jobserver repair receipts are local evidence;
-the remaining four hosted failure families still require their native repair run.
-No newer hosted request is active at this fixed snapshot.
-
-Focus128 is at its unchanged128 cap; combined329 remains321 ordinary plus the same
-8 E2E. Both final plans are unexecuted. Independent final-source review, live
-admission, genuine development integration, canonical21600/global85aggregate-
-75per-file LINE AND BRANCH BOTH, canonical exact-SHA push CI, master ZDD deployment
-and fresh signed stable all-assets release remain pending. All seven S98 tasks
-stay unchecked;133 backlog items stay excluded and ratchet0 is unchanged.
-Earlier failed sources, receipts, protected checkpoints and fixedf1 artifacts
-retain their historical authority. Details:
-[release status](docs/releases/v0.1.2-implementation-status.md).
+Earlier fixed8eb and D receiving records remain in immutable
+0a4a56a043590fb99d1e5c08bc1cefb36a0c6f83:SESSION.md. Native current producers own
+live source, ownership and CI state; this manual snapshot grants no release proof.
 
 ## PRIMARY OBJECTIVE: GREEN CI on development and verifiable v0.1.2 release readiness
 

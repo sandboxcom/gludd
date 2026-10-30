@@ -244,3 +244,167 @@ namespace evidence; the corrected command uses .gate-logs/observed without
 changing ownership policy. Original31290.5s failure, missing repair receipt,
 full-gate/exact-SHA hosted/deployment proof and task closures remain unchanged.
 This diagnostic supplies no runtime speed attribution or release authority.
+
+## Measured declaration-classification receiving (2026-10-30 UTC)
+
+The initial, pre-format receiving snapshot is at parent
+`cf87c943b8c5f2cf60e4172ad57c82852ad4a7a7`, before a new normal checkpoint.
+The approved script is
+`a4a289ea8c02a3655dde0aed841945a19cc759821db1ef31d980c5fec1342422`;
+the conformed new regression owner is
+`9ee3b8e941dfc9b967de57d491e18e8755da64719836c06180410673af1a91cf`.
+In that pre-format snapshot all1085 original test lines remain byte-exact;
+41 original module statements,43 qualified functions and96 original assertions
+remain. The recorded spy style/typing conformance affects only the new controls.
+The later formatter and its current receiving are recorded separately below.
+
+Actual Build40736678390 attempt1 at that published parent fails the3.11 runtime
+owner at124/90.537s. Its5147 trace events contain2567 complete protocol pairs
+without failed reports, issues or unfinished tests, but Main controller3021 has
+no session finish, UV-return or final join. The latest worker's session hook
+finishes at+89.804s; a hook is not an OS-process exit. The3.12 runtime passes0
+in76.570s and its whole gate passes; that does not certify the failed Build or
+eight downstream shards. Molecule40736774119 passes all6 jobs;
+Pages40736777934 passes3 validation jobs with deployment skipped.
+
+Before the guard change, the retained one-node profile uses the actual Root Make entrypoint,
+installed3.11, original fixture payload and run-watched45/30. It passes1/6.67s,
+native8.154s. Its generated profile
+`.gate-logs/test-files-cprofile/profile-29772-4ecafb9e0096c42f` has5 events,
+one matching controller29772 protocol pair and no issues, unfinished tests or
+failed reports. The profile records14468756 calls/6.599s: the one repository
+audit is5.385s cumulative,4204 fresh source parses remain, and declaration
+traversal is1.583s cumulative/0.954s self across4216 calls. Cumulative rows overlap;
+this sample establishes neither hosted CPU cause nor forecast deadline fit.
+
+The source change combines four negative declaration-type checks into one local
+union guard. Original positive classification branches, subclass acceptance,
+custom fields, field/list/LIFO order and owner context remain. Every input is
+still freshly parsed; no cache, path/field filter, skipped statement, parser/GC
+change, plugin disabling or runtime bound change is introduced. Two native-AST
+work-count cases use1/256 statements plus a Pass subclass; a separate positive
+control preserves custom Module fields and Import/AnnAssign/FunctionDef/ClassDef
+subclasses. This is a counted-work contract, not a timing assertion.
+
+| Native scope | Actual outcome | Proof boundary |
+| --- | --- | --- |
+| New tests-only RED, installed3.11 | 2FAIL/1PASS0.64s; native2.029s | 11events/3pairs/2failed reports/0issues |
+| First proposed GREEN test bytes | 3PASS0.56s; native1.925s | Subsequent Ruff SIM102 and spy union-typing failures remain recorded |
+| Corrected new spy, installed3.11 | 3PASS0.61s; native1.966s | 9events/3pairs/0issues/unfinished/failures |
+| Pre-format unchanged profile, installed3.11 | 62PASS6.98s; native8.882s | Native85aggregate/75every-file line AND branch audit passes |
+| Pre-format unchanged profile, installed3.12 | 62PASS8.10s; native10.839s | Same native line AND branch floors pass |
+| Same original-node profile after source repair | 1PASS6.58s; native7.926s | 5events/1controller pair/0issues; no speed/deadline-fit claim |
+
+The first sandbox RED has2FAIL/0.74s but native125/2.113s; the corrected sandbox
+GREEN has3PASS/0.58s but native125/about1.9s. These process-permission failures
+remain distinct from the separately admitted native RED/GREEN above. They do
+not supply successful wrapper evidence. The first GREEN's new spy alone was
+conformed to Ruff and strict typing by combining its owned predicates and
+using a narrowing builtin tuple check; no old assertion or production semantic
+was changed to obtain a pass. Ruff, both configured strict source/test scopes,
+environment-write guard, registration2 and whole-worktree10896-file line check
+pass for the corrected two code paths.
+
+The complete pre-format owner on both runtimes is
+`tests/unit/test_pytest_param_fixture_collisions.py`;
+its unchanged `config/coverage_pytest_fixture_audit.ini` measures only the
+production auditor. Native receipt:
+`.gate-logs/observed/coverage-files/20261030T001434Z-45884-49c1b9ef.json`.
+Published raw report:
+`.gate-logs/coverage-cf87-declaration-classification311-20261029.json`.
+The actual audit covers224/229 statements (97.8%) and111/118 branches (94.1%);
+there are5 missing statements and7 missing branches. These are separate line
+and branch measures; the tool's combined96.5% display does not replace either
+unchanged floor. The3.12 native receipt is
+`.gate-logs/observed/coverage-files/20261030T001613Z-47691-53eb084d.json`.
+Its published raw report is
+`.gate-logs/coverage-cf87-declaration-classification312-20261029.json`;
+native audit `.gate-logs/coverage-20261030T001623Z.json` passes the same
+224/229 statement and111/118 branch counts. The3.11 native audit is
+`.gate-logs/coverage-20261030T001443Z.json`. Both exact sessions and native
+statuses are terminal and verified; these are whole-owner focus, not full-gate proofs.
+
+
+The pre-format changed-input profile at a4/9ee uses the same original node and
+actual Root Make/installed3.11
+entrypoint, explicit runtime carriers, ID= and45/30 bounds. Exact terminal receipt:
+`.gate-logs/observed/v012-declaration-repaired-fixture-profile/v012-declaration-profile311-a4a289e-20261029.json`.
+It is passed0/native7.926s, with all UV/cleanup statuses0. Its native leaf is
+`.gate-logs/test-files-cprofile/profile-50870-d01220babe09bdec`:
+5 events, one matching controller50870/PPID50869 protocol pair, session exit0
+and no failed reports, issues or unfinished nodes. The generated profile run ID
+is separate from the enclosing observer identity.
+
+Actual pstats records13826596 total/13756441 primitive calls in6.513s, versus
+14468756/14398721 in6.599s before repair. Both samples retain4204 source-findings
+and parsed-source calls,4231 native ast.parse calls and4216 declaration walks.
+Declaration traversal is1.564s cumulative/0.934s self versus1.583/0.954;
+audit_pytest_sources is5.350s cumulative versus5.385.
+Builtin isinstance calls are7033140 versus7680297. This records reduced
+classification work; cumulative profile rows overlap, instrumented durations
+are nearly the same, and two samples establish no latency improvement,
+hosted CPU cause, original90/60 deadline fit or release proof.
+
+Verified postprofile SHA256s:
+trace `47e6f8163ed2535ebb2d204dfde5533454cda66fa901e43ab53bea391a841289`;
+pstats `bbd19e8e9f9e308d47053a019dcb905aa42def4abc0b6b4380e17664c648f6b4`;
+report `87aa115834a7f9ff8ce8ce47b09f00786cd865bdb02b8f11870320e3e3a8f770`.
+
+The [firsthand CPython123373 discussion](https://github.com/python/cpython/issues/123373)
+and earlier pytest fixture-shadowing reports above remain context for preserving
+native field/order and fixture semantics. They establish neither this hosted
+timeout's cause nor a speed gain from this change. All previous source samples,
+declined proposals and failed receipts remain at their original scope.
+
+
+### Final format-conforming source and receiving
+
+A later native format-check prerequisite refuses both owned code files, including
+legacy layout. Applying the actual project formatter changes source bytes to
+`778bfbf39d95a00f8ac5b3863a4fa0b87e3be34361ac9384b7ab1f95a205f16b`
+for the391-line production script and
+`278eeadcf1f5344c9354a41153ce72c4f36a8ca1daee7e0d5cb5b92ac1859c78`
+for the1260-line test owner. Entire module ASTs are equal to a4/9ee, respectively,
+as verified by the native
+`/tmp/gludd-v012-classification-formatted-identity-20261029.mk` owner and private
+source rebinding. All original41 module statements,43 functions and96 assertions
+remain semantically exact. The original1085-line byte-prefix claim belongs to
+the pre-format snapshot; final formatting also normalizes old layout.
+
+Current Ruff format/check, script docstrings and configured strict source/test
+scopes on both runtimes pass. Root's two-code-path staged-content guard passes0
+in6.080s:
+`.gate-logs/observed/v012-declaration-staged-content/v012-declaration-code2-content-778bfbf-20261029.json`.
+It changes no source bytes; its EOF/whitespace/secrets/line/zero-new-clone checks
+cover the two code paths, not these later document edits.
+
+The final formatted files receive the same complete owner and unchanged
+`config/coverage_pytest_fixture_audit.ini` exactly once on each runtime:
+
+| Current formatted owner | Actual terminal | Native trace and coverage |
+| --- | --- | --- |
+| Installed3.11 | 62PASS7.51s; native9.518s | 127events/62pairs/0issues/unfinished/failures |
+| Installed3.12 | 62PASS7.79s; native10.679s | 127events/62pairs/0issues/unfinished/failures |
+
+Both native audits pass unchanged85aggregate/75every-file line AND branch:
+224/229 statements (97.8%) and111/118 branches (94.1%), with no file below either
+floor. Exact coverage-files receipts are
+`.gate-logs/observed/coverage-files/20261030T002538Z-55962-71b604c1.json` and
+`.gate-logs/observed/coverage-files/20261030T002621Z-57105-b412fb4e.json`.
+Published raw reports are
+`.gate-logs/coverage-declaration-formatted311-20261029.json` and
+`.gate-logs/coverage-declaration-formatted312-20261029.json`;
+native audits are `.gate-logs/coverage-20261030T002547Z.json` and
+`.gate-logs/coverage-20261030T002631Z.json`. Exact sessions and statuses are
+terminal and verified. These new receipts bind formatted bytes; the earlier
+a4/9ee receipts remain historical. Neither original-node profile is repeated or
+reattributed to the formatted input. The two recorded profile samples supply
+no measured latency improvement, hosted CPU cause or90/60 deadline-fit proof.
+
+Next: review the final two code/two document postimages, then normal checkpoint/fresh
+collection and a clean-source original90/60 repair alone before guarded
+publication and exact-source hosted observation. Existing E/M/C/N final objects,
+focus132/128 HOLD,333 combined, canonical21600 gate, global85/75 line AND branch
+on both runtimes, canonical push, master ZDD and fresh signed artifacts/release
+proof remain pending. All328 task states and seven open S98 criteria remain;
+this receiving paragraph closes none.

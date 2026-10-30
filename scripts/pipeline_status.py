@@ -32,14 +32,25 @@ if TYPE_CHECKING:
 else:
     if __package__ in {None, ""}:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from scripts import (
-        active_work_status,
-        automatic_disk_cleanup,
-        check_disk_usage,
-        ci_check_cooldown,
-        ci_failure_ledger,
-    )
+    from scripts import ci_check_cooldown, ci_failure_ledger
     from scripts.proof_observations import write_snapshot
+
+
+def _load_snapshot_providers() -> None:
+    """Bind snapshot APIs without replacing existing library provider overrides."""
+    global active_work_status, automatic_disk_cleanup, check_disk_usage
+    if not TYPE_CHECKING:
+        if "active_work_status" not in globals():
+            from scripts import active_work_status
+        if "automatic_disk_cleanup" not in globals():
+            from scripts import automatic_disk_cleanup
+        if "check_disk_usage" not in globals():
+            from scripts import check_disk_usage
+
+
+# Preserve imported-module APIs; standalone verdicts need no snapshot providers.
+if not TYPE_CHECKING and __name__ != "__main__":
+    _load_snapshot_providers()
 
 DEFAULT_REPO = "sandboxcom/gludd"
 DEFAULT_BRANCH = "development"
@@ -512,6 +523,7 @@ def _publish_snapshot(
     """Generate the current handoff from authorities, never from agent notes."""
     if args.snapshot_output is None:
         return True
+    _load_snapshot_providers()
     errors = [error] if error is not None else []
     if args.ledger_observation_exit_code:
         errors.append(f"failure-ledger observation failed rc={args.ledger_observation_exit_code}")

@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 180
+EXPECTED_FAMILY_COUNT = 182
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -41,81 +41,27 @@ STRUCTURAL_PROMOTION_NODES = (
 )
 
 EXPECTED_RUNTIME_PHASES = [
-    ("worktree-guard", "worktree-guard", "fast", 90, 60),
-    ("check-gate-failure-promotions", "check-gate-failure-promotions", "fast", 90, 60),
-    ("check-duplicate-code", "check-duplicate-code", "standard", 180, 120),
-    (
-        "pytest-runtime-compatibility",
-        "_pytest-runtime-compatibility-admission",
-        "fast",
-        90,
-        60,
-    ),
-    ("ansible-role-variable-prefix", "_ansible-role-variable-prefix", "fast", 90, 60),
-    ("cloud-iam-generation-parity", "_cloud-iam-generation-parity", "fast", 90, 60),
-    (
-        "_dead-code-baseline-refresh",
-        "_dead-code-baseline-refresh",
-        "fast",
-        90,
-        60,
-    ),
-    ("check-coverage-gaps", "check-coverage-gaps", "fast", 90, 60),
-    (
-        "check-resource-ownership",
-        "check-resource-ownership",
-        "fast",
-        90,
-        60,
-    ),
-    ("validate-task-ledger", "validate-task-ledger", "fast", 90, 60),
-    ("check-task-registration", "check-task-registration", "fast", 90, 60),
-    ("check-task-integrity", "check-task-integrity", "fast", 90, 60),
-    (
-        "check-generated-artifact-hygiene",
-        "check-generated-artifact-hygiene",
-        "fast",
-        90,
-        60,
-    ),
-    ("lint-markdown", "lint-markdown", "fast", 90, 60),
-    (
-        "check-make-target-contract",
-        "check-make-target-contract",
-        "fast",
-        90,
-        60,
-    ),
-    ("yaml-lint", "yaml-lint", "standard", 180, 120),
-    (
-        "project-dispatch-integration",
-        "_project-dispatch-integration",
-        "standard",
-        180,
-        120,
-    ),
-    (
-        "mcp-workspace-jail-integration",
-        "_mcp-workspace-jail-integration",
-        "standard",
-        180,
-        120,
-    ),
-    (
-        "module-graph-classification",
-        "_module-graph-classification",
-        "fast",
-        90,
-        60,
-    ),
-    (
-        "presentation-browser-test",
-        "presentation-browser-test",
-        "standard",
-        180,
-        120,
-    ),
-    ("pre-commit-check", "pre-commit-check", "slow", 600, 300),
+    ('worktree-guard', 'worktree-guard', 'fast', 90, 60),
+    ('check-gate-failure-promotions', 'check-gate-failure-promotions', 'fast', 90, 60),
+    ('check-duplicate-code', 'check-duplicate-code', 'standard', 180, 120),
+    ('pytest-runtime-compatibility', '_pytest-runtime-compatibility-admission', 'fast', 90, 60),
+    ('ansible-role-variable-prefix', '_ansible-role-variable-prefix', 'fast', 90, 60),
+    ('cloud-iam-generation-parity', '_cloud-iam-generation-parity', 'fast', 90, 60),
+    ('_dead-code-baseline-refresh', '_dead-code-baseline-refresh', 'fast', 90, 60),
+    ('check-coverage-gaps', 'check-coverage-gaps', 'fast', 90, 60),
+    ('check-resource-ownership', 'check-resource-ownership', 'fast', 90, 60),
+    ('validate-task-ledger', 'validate-task-ledger', 'fast', 90, 60),
+    ('check-task-registration', 'check-task-registration', 'fast', 90, 60),
+    ('check-task-integrity', 'check-task-integrity', 'fast', 90, 60),
+    ('check-generated-artifact-hygiene', 'check-generated-artifact-hygiene', 'fast', 90, 60),
+    ('lint-markdown', 'lint-markdown', 'fast', 90, 60),
+    ('check-make-target-contract', 'check-make-target-contract', 'fast', 90, 60),
+    ('yaml-lint', 'yaml-lint', 'standard', 180, 120),
+    ('project-dispatch-integration', '_project-dispatch-integration', 'standard', 180, 120),
+    ('mcp-workspace-jail-integration', '_mcp-workspace-jail-integration', 'standard', 180, 120),
+    ('module-graph-classification', '_module-graph-classification', 'fast', 90, 60),
+    ('presentation-browser-test', 'presentation-browser-test', 'standard', 180, 120),
+    ('pre-commit-check', 'pre-commit-check', 'slow', 600, 300),
 ]
 
 
@@ -229,7 +175,7 @@ def test_native_reviewed_finalization_executes_in_bounded_early_admission(test_n
     recipes = executable.split("$(MAKE) --no-print-directory test-files")
     assert len(recipes) == 4
     selectors = recipes[3].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
-    assert len(selectors) == 15 and selectors.count(node) == 1
+    assert len(selectors) == 19 and selectors.count(node) == 1
     assert selectors[-4] == "tests/unit/test_ansible_ee_locked_consumer.py"
     assert selectors[-3:-1] == ["tests/unit/test_observed_command.py", "tests/unit/test_status_heartbeat_terminal.py"]
     assert node not in recipes[1] and node not in recipes[2]
@@ -1832,6 +1778,8 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "presentation-hosted-apt-literal-mode", "git-status-native-index-readonly",
         "publication-native-command-envelope", "make-local-script-reference-boundary", "watchdog-bound-gate-waiter",
         "verify-remote-recipe-boundary",
+        "runtime-archive-lf-counter-contract",
+        "runtime-fixture-input-and-tail-count",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2186,18 +2134,17 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     assert "GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json" in admission_contract["behavior"]
 
 
-def test_target_and_feature_document_preserve_full_gate_boundary() -> None:
+def test_target_and_feature_document_preserve_full_gate_boundary(tmp_path: Path) -> None:
     result = subprocess.run(
         [
             "make",
             "check-gate-failure-promotions",
             "GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json",
         ],
-        cwd=ROOT,
-        capture_output=True,
-        check=False,
-        text=True,
-        timeout=30,
+        cwd=ROOT, capture_output=True, check=False, text=True, timeout=30,
+        env={**os.environ, "GLUDD_XDIST_TRACE_TRUNCATE": "1",
+             "GLUDD_XDIST_TRACE_LOG": str(tmp_path / "promotion-trace.jsonl"),
+             "GLUDD_XDIST_TRACE_RUN_ID": "promotion-probe"},
     )
     content = FEATURE_DOC.read_text(encoding="utf-8")
 
@@ -2497,3 +2444,28 @@ def test_trace_summary_literal_guard_keeps_one_native_case_before_fanout() -> No
     assert len(payload["runtime_contract"]["phases"]) == 21
     assert sum(item["max_seconds"] for item in payload["runtime_contract"]["phases"]) == 2850
     assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
+
+
+def test_runtime_fixture_inputs_and_tail_count_share_one_promoted_family() -> None:
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    nodes = (
+        "tests/unit/test_admission_cold_start_selection.py::"
+        "test_cold_start_call_owns_trace_inputs_without_starting_a_child",
+        "tests/unit/test_runtime_admission_scheduling.py::"
+        "test_scheduling_calls_own_trace_inputs_without_starting_a_child",
+        "tests/unit/test_gate_failure_promotion.py::"
+        "test_native_reviewed_finalization_executes_in_bounded_early_admission",
+    )
+    assert len(manifest["families"]) == EXPECTED_FAMILY_COUNT == 182
+    assert manifest["families"][181] == {
+        "id": "runtime-fixture-input-and-tail-count",
+        "owner_target": "_pytest-runtime-compatibility-admission", "node_kind": "pytest_node",
+        "node": nodes[0], "full_gate_phase": "test",
+    }
+    owner = _target_stanza(compose_makefile(ROOT / "Makefile"), "_pytest-runtime-compatibility-admission")
+    executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
+    recipes = executable.split("$(MAKE) --no-print-directory test-files")
+    assert len(recipes) == 4
+    selectors = recipes[3].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
+    assert len(selectors) == 19 and selectors[-7:-4] == list(nodes)
+    assert all(selectors.count(node) == 1 and node not in recipes[1] and node not in recipes[2] for node in nodes)

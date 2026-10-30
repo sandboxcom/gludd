@@ -18,7 +18,7 @@ from scripts import makefile_layout
 from tests.unit.test_observed_command import _command, _current_status
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 180
+EXPECTED_FAMILY_COUNT = 182
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 EXPECTED_MAIN_PYTEST_FLAGS = (
@@ -216,6 +216,11 @@ REVIEWED_FINALIZATION = (
     "tests/unit/test_makefile_audit_deep.py::TestScriptReferencesExist::test_all_scripts_exist",
     "tests/unit/test_task_watchdog.py::test_live_gate_bound_waiter_protects_the_complete_tree[make-pid]",
     "tests/unit/test_push_discipline_checks.py::TestVerifyRemoteAfterPush::test_verify_remote_compares_sha",
+    "tests/unit/test_runtime_startup_diagnostic.py::test_archive_unit_inputs_require_exact_integer_lf_counters",
+    "tests/unit/test_admission_cold_start_selection.py::"
+    "test_cold_start_call_owns_trace_inputs_without_starting_a_child",
+    "tests/unit/test_runtime_admission_scheduling.py::test_scheduling_calls_own_trace_inputs_without_starting_a_child",
+    "tests/unit/test_gate_failure_promotion.py::test_native_reviewed_finalization_executes_in_bounded_early_admission",
     "tests/unit/test_ansible_ee_locked_consumer.py",
     "tests/unit/test_observed_command.py",
     "tests/unit/test_status_heartbeat_terminal.py",
@@ -252,15 +257,10 @@ def _capture_owner(tmp_path: Path, fail_phase: str) -> tuple[subprocess.Complete
     )
     owner = tmp_path / "owner.mk"
     owner.write_text(
-        f"MAKE := make --no-print-directory -f {child}\n.PHONY: {OWNER}\n{OWNER}:\n{_stanza(OWNER)}\n",
-        encoding="utf-8",
+        f"MAKE := make --no-print-directory -f {child}\n.PHONY: {OWNER}\n{OWNER}:\n{_stanza(OWNER)}\n", encoding="utf-8"
     )
     result = subprocess.run(
-        ["make", "--no-print-directory", "-f", str(owner), OWNER],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-        timeout=10,
+        ["make", "--no-print-directory", "-f", str(owner), OWNER], cwd=ROOT, text=True, capture_output=True, timeout=10
     )
     rows = [json.loads(line) for line in record.read_text(encoding="utf-8").splitlines()]
     # Canonical phase order compares the unchanged inventories, not entry timing.
@@ -275,7 +275,7 @@ def test_runtime_admission_retains_entire_roster_and_fresh_help(tmp_path: Path) 
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
     assert "tests/unit/test_makefile_audit_deep.py" not in str(rows[0]["files"])
     tail = rows[2]["files"]
-    assert isinstance(tail, list) and len(tail) == 15
+    assert isinstance(tail, list) and len(tail) == 19
     assert tail[-1] == (
         "tests/unit/test_dependency_profiles.py::"
         "test_selected_profile_locks_preserve_controller_jsonpointer_requirement"
@@ -309,7 +309,7 @@ def test_locked_ee_whole_owner_uses_existing_tail_with_original_inventory(tmp_pa
         assert isinstance(files, list) and all(isinstance(node, str) for node in files)
         selections.append(files)
     original_inventory = (*ROSTER, HELP, *REVIEWED_FINALIZATION)
-    assert len(original_inventory) == len(set(original_inventory)) == 155
+    assert len(original_inventory) == len(set(original_inventory)) == 159
     assert Counter(node for files in selections for node in files) == Counter(original_inventory)
     locked = "tests/unit/test_ansible_ee_locked_consumer.py"
     coverage = [sum(node == locked or node.startswith(locked + "::") for node in files) for files in selections]
@@ -321,7 +321,7 @@ def test_locked_ee_whole_owner_uses_existing_tail_with_original_inventory(tmp_pa
         "tests/unit/test_dependency_profiles.py::"
         "test_selected_profile_locks_preserve_controller_jsonpointer_requirement",
     ]
-    assert [len(files) for files in selections] == [139, 1, 15]
+    assert [len(files) for files in selections] == [139, 1, 19]
     assert rows[2]["phase"] == "reviewed"
 
 
@@ -524,6 +524,13 @@ def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp
         "tests/unit/test_makefile_audit_deep.py::TestScriptReferencesExist::test_all_scripts_exist",
         "tests/unit/test_task_watchdog.py::test_live_gate_bound_waiter_protects_the_complete_tree[make-pid]",
         "tests/unit/test_push_discipline_checks.py::TestVerifyRemoteAfterPush::test_verify_remote_compares_sha",
+        "tests/unit/test_runtime_startup_diagnostic.py::test_archive_unit_inputs_require_exact_integer_lf_counters",
+        "tests/unit/test_admission_cold_start_selection.py::"
+        "test_cold_start_call_owns_trace_inputs_without_starting_a_child",
+        "tests/unit/test_runtime_admission_scheduling.py::"
+        "test_scheduling_calls_own_trace_inputs_without_starting_a_child",
+        "tests/unit/test_gate_failure_promotion.py::"
+        "test_native_reviewed_finalization_executes_in_bounded_early_admission",
         "tests/unit/test_dependency_profiles.py::test_selected_profile_locks_preserve_controller_"
         "jsonpointer_requirement",
     )
@@ -535,7 +542,7 @@ def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp
         files = row["files"]
         assert isinstance(files, list) and all(isinstance(node, str) for node in files)
         selections.append(files)
-    assert len(original_selectors) == len(set(original_selectors)) == 155
+    assert len(original_selectors) == len(set(original_selectors)) == 159
     assert Counter(node for files in selections for node in files) == Counter(original_selectors)
     moved = (
         "tests/unit/test_ansible_ee_locked_consumer.py",
@@ -546,11 +553,11 @@ def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp
         coverage = [sum(node == file or node.startswith(file + "::") for node in files) for files in selections]
         assert coverage == [0, 0, 1], (file, coverage)
         assert selections[2].count(file) == 1
-    assert [len(files) for files in selections] == [139, 1, 15]
+    assert [len(files) for files in selections] == [139, 1, 19]
     assert selections[0] == [node for node in original_selectors[:142] if node not in moved]
     assert selections[1] == [original_selectors[142]]
     original_tail = list(original_selectors[143:])
-    assert len(original_tail) == 12
+    assert len(original_tail) == 16
     assert selections[2] == original_tail[:-1] + list(moved) + original_tail[-1:]
     assert selections[2][-1] == (
         "tests/unit/test_dependency_profiles.py::"
@@ -563,9 +570,7 @@ def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp
     [("full", ["full", "help", "reviewed"]), ("help", ["full", "help"]), ("reviewed", ["full", "help", "reviewed"])],
 )
 def test_runtime_admission_propagates_each_owner_failure_without_replay(
-    tmp_path: Path,
-    fail_phase: str,
-    expected_phases: list[str],
+    tmp_path: Path, fail_phase: str, expected_phases: list[str]
 ) -> None:
     result, rows = _capture_owner(tmp_path, fail_phase)
     assert result.returncode != 0
@@ -580,6 +585,7 @@ def _native_test_files(
     environment: dict[str, str] | None = None,
     extra_pytest_args: str = "",
     owned_trace: tuple[Path, str] | None = None,
+    owned_trace_truncate: str = "1",
 ) -> subprocess.CompletedProcess[str]:
     flags = f"-W error -q -n {workers} --maxprocesses {workers}"
     if extra_pytest_args:
@@ -593,7 +599,7 @@ def _native_test_files(
             {
                 "GLUDD_XDIST_TRACE_LOG": str(trace_path),
                 "GLUDD_XDIST_TRACE_RUN_ID": run_id,
-                "GLUDD_XDIST_TRACE_TRUNCATE": "1",
+                "GLUDD_XDIST_TRACE_TRUNCATE": owned_trace_truncate,
             }
         )
     return subprocess.run(
@@ -618,8 +624,7 @@ def _native_test_files(
 def test_existing_group_owner_isolates_shared_state_and_preserves_exact_once_outcomes(tmp_path: Path) -> None:
     """Exercise real xdist with the repository's existing shared-state grouping hook."""
     (tmp_path / "conftest.py").write_text(
-        "from tests.conftest import pytest_collection_modifyitems\n",
-        encoding="utf-8",
+        "from tests.conftest import pytest_collection_modifyitems\n", encoding="utf-8"
     )
     outcomes: list[Counter[str]] = []
     for workers in (1, 2):
@@ -650,7 +655,15 @@ def test_existing_group_owner_isolates_shared_state_and_preserves_exact_once_out
         result = _native_test_files(
             [shared, independent],
             workers,
-            environment={**os.environ, "GLUDD_RUNTIME_SCHEDULING_RECORD": str(record)},
+            environment={
+                **os.environ,
+                "GLUDD_RUNTIME_SCHEDULING_RECORD": str(record),
+                "GLUDD_XDIST_TRACE_LOG": str(tmp_path / f"shared-state-{workers}.pytest.jsonl"),
+                "GLUDD_XDIST_TRACE_RUN_ID": f"runtime-shared-state-{workers}",
+                "GLUDD_XDIST_TRACE_TRUNCATE": "0",
+            },
+            owned_trace=(tmp_path / f"shared-state-{workers}.pytest.jsonl", f"runtime-shared-state-{workers}"),
+            owned_trace_truncate="0",
         )
         assert result.returncode == 0, result.stdout + result.stderr
         assert "8 passed" in result.stdout
@@ -668,7 +681,18 @@ def test_two_worker_native_admission_keeps_warnings_fatal(tmp_path: Path) -> Non
         "import warnings\ndef test_original_warning():\n    warnings.warn('runtime-admission-warning', UserWarning)\n",
         encoding="utf-8",
     )
-    result = _native_test_files([probe], 2)
+    result = _native_test_files(
+        [probe],
+        2,
+        environment={
+            **os.environ,
+            "GLUDD_XDIST_TRACE_LOG": str(tmp_path / "warning-control.pytest.jsonl"),
+            "GLUDD_XDIST_TRACE_RUN_ID": "runtime-warning-control",
+            "GLUDD_XDIST_TRACE_TRUNCATE": "0",
+        },
+        owned_trace=(tmp_path / "warning-control.pytest.jsonl", "runtime-warning-control"),
+        owned_trace_truncate="0",
+    )
     assert result.returncode != 0
     assert "FAILED" in result.stdout and "test_original_warning" in result.stdout
     assert "UserWarning: runtime-admission-warning" in result.stdout
@@ -770,11 +794,7 @@ def test_compact_native_reporting_preserves_inventory_failures_and_terminal_tota
         if variant == "compact":
             options.extend(("-o", "verbosity_test_cases=-2"))
         result = _native_test_files(
-            paths,
-            2,
-            environment=environment,
-            extra_pytest_args=shlex.join(options),
-            owned_trace=(trace, variant),
+            paths, 2, environment=environment, extra_pytest_args=shlex.join(options), owned_trace=(trace, variant)
         )
         outputs.append(result)
         assert (result.returncode == 0) == (mode == "success"), result.stdout + result.stderr
@@ -861,10 +881,7 @@ def test_compact_dot_bytes_keep_existing_observer_live_without_newlines(tmp_path
     assert Path(status["log_path"]).read_bytes() == b"." * 20
 
 
-def _assert_native_git_metadata_query_count_route(
-    payload: dict[str, object],
-    rows: list[dict[str, object]],
-) -> None:
+def _assert_native_git_metadata_query_count_route(payload: dict[str, object], rows: list[dict[str, object]]) -> None:
     """Require the whole four-case guard as one exact first-cohort selector."""
     family_id = "native-git-metadata-query-count"
     file = "tests/unit/test_gate_status_attestation.py"
@@ -872,13 +889,7 @@ def _assert_native_git_metadata_query_count_route(
     families = payload["families"]
     assert isinstance(families, list)
     assert [family for family in families if family["id"] == family_id] == [
-        {
-            "id": family_id,
-            "owner_target": OWNER,
-            "node_kind": "pytest_node",
-            "node": node,
-            "full_gate_phase": "test",
-        }
+        {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node", "node": node, "full_gate_phase": "test"}
     ]
     assert len(families) == EXPECTED_FAMILY_COUNT
     assert len(rows) == 3
@@ -891,11 +902,7 @@ def _assert_native_git_metadata_query_count_route(
         later_selectors = row["files"]
         assert isinstance(later_selectors, list)
         assert not any(selector.split("::", 1)[0] == file for selector in later_selectors)
-    assert [(row["nproc"], row["workers"]) for row in rows] == [
-        ("2", "2"),
-        ("1", "1"),
-        ("1", "1"),
-    ]
+    assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
     assert [row["flags"] for row in rows] == [
         EXPECTED_MAIN_PYTEST_FLAGS,
         "-W error -q -n 0 --maxprocesses 1",
@@ -935,10 +942,7 @@ def test_native_git_metadata_query_count_executes_once_in_first_cohort(tmp_path:
         "budget",
     ),
 )
-def test_native_git_metadata_query_count_routing_rejects_contract_mutations(
-    tmp_path: Path,
-    mutation: str,
-) -> None:
+def test_native_git_metadata_query_count_routing_rejects_contract_mutations(tmp_path: Path, mutation: str) -> None:
     result, captured = _capture_owner(tmp_path, "")
     assert result.returncode == 0, result.stdout + result.stderr
     original = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
@@ -1007,10 +1011,7 @@ _ADMISSION_SUPPORT_ROUTES = (
 )
 
 
-def _assert_admission_support_routes(
-    payload: dict[str, object],
-    rows: list[dict[str, object]],
-) -> None:
+def _assert_admission_support_routes(payload: dict[str, object], rows: list[dict[str, object]]) -> None:
     families = payload["families"]
     assert isinstance(families, list)
     selectors = rows[0]["files"]
@@ -1061,10 +1062,7 @@ def test_new_admission_support_guards_execute_without_widening_files(tmp_path: P
         "duplicate-gc",
     ),
 )
-def test_admission_support_routing_rejects_contract_mutations(
-    tmp_path: Path,
-    mutation: str,
-) -> None:
+def test_admission_support_routing_rejects_contract_mutations(tmp_path: Path, mutation: str) -> None:
     result, captured = _capture_owner(tmp_path, "")
     assert result.returncode == 0, result.stdout + result.stderr
     original = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
@@ -1255,10 +1253,7 @@ def test_descendant_symlink_cleanup_is_selected_once_by_original_whole_owner(tmp
     assert payload["full_gate_required"] is True
 
 
-def _assert_native_setuid_input_first_route(
-    payload: dict[str, object],
-    rows: list[dict[str, object]],
-) -> None:
+def _assert_native_setuid_input_first_route(payload: dict[str, object], rows: list[dict[str, object]]) -> None:
     node = "tests/unit/test_ci_batch_receipts.py::test_receipt_validation_refuses_unsafe_artifact_mode[2432]"
     file = node.split("::", 1)[0]
     families = payload["families"]
@@ -1281,11 +1276,7 @@ def _assert_native_setuid_input_first_route(
         assert isinstance(files, list)
         selected.extend(selector for selector in files if selector.split("::", 1)[0] == file)
     assert selected == [node], "only the exact setuid case may be selected, once in MAIN"
-    assert [(row["nproc"], row["workers"]) for row in rows] == [
-        ("2", "2"),
-        ("1", "1"),
-        ("1", "1"),
-    ]
+    assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
     assert [row["flags"] for row in rows] == [
         EXPECTED_MAIN_PYTEST_FLAGS,
         "-W error -q -n 0 --maxprocesses 1",
@@ -1309,8 +1300,7 @@ def test_native_setuid_input_is_first_once_in_main_child(tmp_path: Path) -> None
 
 
 @pytest.mark.parametrize(
-    "mutation",
-    ("missing", "whole-file", "wrong-case", "duplicate", "later-only", "not-first", "wrong-family-node"),
+    "mutation", ("missing", "whole-file", "wrong-case", "duplicate", "later-only", "not-first", "wrong-family-node")
 )
 def test_native_setuid_input_routing_rejects_contract_mutations(tmp_path: Path, mutation: str) -> None:
     result, captured = _capture_owner(tmp_path, "")
@@ -1343,9 +1333,7 @@ def test_native_setuid_input_routing_rejects_contract_mutations(tmp_path: Path, 
         _assert_native_setuid_input_first_route(payload, rows)
 
 
-def test_scratch_symlink_permission_failure_has_one_exact_native_route(
-    tmp_path: Path,
-) -> None:
+def test_scratch_symlink_permission_failure_has_one_exact_native_route(tmp_path: Path) -> None:
     """Retain the real permission witness once before the existing fanout."""
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
     node = (
@@ -1397,7 +1385,7 @@ def test_coverage_suite_provenance_failure_has_one_exact_native_route(tmp_path: 
         if index:
             assert node not in selection
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 182
     assert payload["families"][149]["id"] == "native-full-scan-success-inventory"
     assert payload["families"][150] == {
         "id": "coverage-native-suite-provenance",
@@ -1416,9 +1404,7 @@ def test_coverage_suite_provenance_failure_has_one_exact_native_route(tmp_path: 
     assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
 
 
-def test_full_scan_success_inventory_failure_has_one_exact_native_route(
-    tmp_path: Path,
-) -> None:
+def test_full_scan_success_inventory_failure_has_one_exact_native_route(tmp_path: Path) -> None:
     """Route the real successful-scan finding witness once before fanout."""
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
     node = (
@@ -1460,7 +1446,7 @@ def test_uv_prune_native_failure_has_one_exact_native_route(tmp_path: Path) -> N
         assert node.split("::", 1)[0] not in selection
     assert counts == [1, 0, 0]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 182
     assert payload["families"][150]["id"] == "coverage-native-suite-provenance"
     assert payload["families"][151] == {
         "id": "uv-prune-native-failure-status",
@@ -1496,7 +1482,7 @@ def test_uv_prune_inherited_policy_has_one_exact_native_route(tmp_path: Path) ->
     assert counts == [1, 0, 0]
     assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 182
     assert payload["families"][151]["id"] == "uv-prune-native-failure-status"
     assert payload["families"][152] == {
         "id": "uv-prune-inherited-policy-context",
@@ -1529,7 +1515,7 @@ def test_shared_uv_inventory_has_one_exact_native_route(tmp_path: Path) -> None:
     assert all(node.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 182
     assert payload["families"][152]["id"] == "uv-prune-inherited-policy-context"
     assert payload["families"][153] == {
         "id": "shared-uv-cache-inventory-exposure",
@@ -1564,9 +1550,7 @@ def test_shared_uv_inventory_has_one_exact_native_route(tmp_path: Path) -> None:
     ),
 )
 def test_git_handoff_failures_have_exact_native_routes(
-    tmp_path: Path,
-    promoted_family: str,
-    node_selector: str,
+    tmp_path: Path, promoted_family: str, node_selector: str
 ) -> None:
     """Fail before fanout if either independently exposed handoff regresses."""
     result, rows = _capture_owner(tmp_path, "")
@@ -1580,7 +1564,7 @@ def test_git_handoff_failures_have_exact_native_routes(
     assert all(node_selector.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 182
     assert payload["families"][153]["id"] == "shared-uv-cache-inventory-exposure"
     assert payload["families"][154:156] == [
         {
@@ -1730,6 +1714,15 @@ CANDIDATE_PROOF_PROMOTIONS = (
         "verify-remote-recipe-boundary",
         "tests/unit/test_push_discipline_checks.py::TestVerifyRemoteAfterPush::test_verify_remote_compares_sha",
     ),
+    (
+        "runtime-archive-lf-counter-contract",
+        "tests/unit/test_runtime_startup_diagnostic.py::test_archive_unit_inputs_require_exact_integer_lf_counters",
+    ),
+    (
+        "runtime-fixture-input-and-tail-count",
+        "tests/unit/test_admission_cold_start_selection.py::"
+        "test_cold_start_call_owns_trace_inputs_without_starting_a_child",
+    ),
 )
 
 WORK_ITEM_PROMOTIONS = (
@@ -1753,9 +1746,7 @@ WORK_ITEM_PROMOTIONS = (
     ),
 )
 def test_make_safety_and_guidance_have_exact_native_routes(
-    tmp_path: Path,
-    promoted_family: str,
-    node_selector: str,
+    tmp_path: Path, promoted_family: str, node_selector: str
 ) -> None:
     """Keep each witnessed cheap failure in its exact existing cohort."""
     result, rows = _capture_owner(tmp_path, "")
@@ -1772,6 +1763,8 @@ def test_make_safety_and_guidance_have_exact_native_routes(
             "make-local-script-reference-boundary",
             "watchdog-bound-gate-waiter",
             "verify-remote-recipe-boundary",
+            "runtime-archive-lf-counter-contract",
+            "runtime-fixture-input-and-tail-count",
         }
         else [1, 0, 0]
     )
@@ -1779,7 +1772,7 @@ def test_make_safety_and_guidance_have_exact_native_routes(
     assert all(node_selector.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 182
     assert [family["id"] for family in payload["families"][154:156]] == [
         "git-async-live-owner-handoff",
         "git-async-completed-owner-adoption",
@@ -1942,12 +1935,7 @@ def _overlap_rows(path: Path) -> list[dict[str, object]]:
     return rows
 
 
-def _overlap_fixture(
-    tmp_path: Path,
-    mode: str,
-    *,
-    owner_body: str | None = None,
-) -> tuple[Path, Path, dict[str, str]]:
+def _overlap_fixture(tmp_path: Path, mode: str, *, owner_body: str | None = None) -> tuple[Path, Path, dict[str, str]]:
     root = tmp_path.resolve()
     uv = root / "uv fixture.py"
     uv.write_text(_OVERLAP_UV_FIXTURE, encoding="utf-8")
@@ -1979,10 +1967,7 @@ def _overlap_fixture(
 
 
 def _overlap_run(
-    tmp_path: Path,
-    mode: str,
-    *,
-    owner_body: str | None = None,
+    tmp_path: Path, mode: str, *, owner_body: str | None = None
 ) -> tuple[subprocess.CompletedProcess[str], list[dict[str, object]]]:
     owner, record, environment = _overlap_fixture(tmp_path, mode, owner_body=owner_body)
     result = subprocess.run(
@@ -1998,10 +1983,7 @@ def _overlap_run(
 
 
 @pytest.mark.parametrize("overlap_native_mode", ["pass", "fail-main", "fail-help", "fail-tail"])
-def test_native_overlap_joins_main_and_preserves_each_side_status(
-    tmp_path: Path,
-    overlap_native_mode: str,
-) -> None:
+def test_native_overlap_joins_main_and_preserves_each_side_status(tmp_path: Path, overlap_native_mode: str) -> None:
     result, rows = _overlap_run(tmp_path, overlap_native_mode)
     expected_phases = {"full", "help"} if overlap_native_mode == "fail-help" else {"full", "help", "reviewed"}
     starts = {row["phase"]: row for row in rows if row["event"] == "start"}
@@ -2062,8 +2044,7 @@ def test_native_overlap_rejects_shared_basetemp_mutation(tmp_path: Path) -> None
 
 @pytest.mark.parametrize("overlap_observer_end", ["timeout", "signal"])
 def test_existing_observer_drains_both_overlap_branches_and_descendants(
-    tmp_path: Path,
-    overlap_observer_end: str,
+    tmp_path: Path, overlap_observer_end: str
 ) -> None:
     import signal
     import time
@@ -2084,11 +2065,7 @@ def test_existing_observer_drains_both_overlap_branches_and_descendants(
     boundary = command.index("--")
     command[boundary + 1 :] = ["make", "--no-print-directory", "-f", str(owner), OWNER]
     with subprocess.Popen(
-        command,
-        cwd=tmp_path.resolve(),
-        env=environment,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        command, cwd=tmp_path.resolve(), env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     ) as process:
         if overlap_observer_end == "signal":
             deadline = time.monotonic() + 4
@@ -2109,18 +2086,346 @@ def test_existing_observer_drains_both_overlap_branches_and_descendants(
     owned.update(int(str(row["child_pid"])) for row in rows if "child_pid" in row)
     for pid in owned:
         inspected = subprocess.run(
-            ["/bin/ps", "-p", str(pid), "-o", "pid="],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=5,
+            ["/bin/ps", "-p", str(pid), "-o", "pid="], capture_output=True, text=True, check=False, timeout=5
         )
         assert inspected.returncode == 1 and not inspected.stdout.strip(), inspected.stderr
 
 
+@pytest.mark.parametrize(
+    ("promoted_family", "node_selector"),
+    [
+        pytest.param(
+            "runtime-archive-lf-counter-contract",
+            "tests/unit/test_runtime_startup_diagnostic.py::test_archive_unit_inputs_require_exact_integer_lf_counters",
+            id="runtime-archive-lf-counter-contract",
+        )
+    ],
+)
+def test_archive_counter_promotion_uses_one_existing_tail_slot(
+    tmp_path: Path, promoted_family: str, node_selector: str
+) -> None:
+    """Bind the literal archive predicate once without another native child."""
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    selections: list[list[str]] = []
+    for row in rows:
+        selection = row["files"]
+        assert isinstance(selection, list) and all(isinstance(node, str) for node in selection)
+        selections.append(selection)
+    assert [selection.count(node_selector) for selection in selections] == [0, 0, 1]
+    assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
+    assert [len(selection) for selection in selections] == [139, 1, 19]
+    assert selections[2][-4:] == [
+        "tests/unit/test_ansible_ee_locked_consumer.py",
+        "tests/unit/test_observed_command.py",
+        "tests/unit/test_status_heartbeat_terminal.py",
+        "tests/unit/test_dependency_profiles.py::"
+        "test_selected_profile_locks_preserve_controller_jsonpointer_requirement",
+    ]
+    payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
+    assert payload["families"][180] == {
+        "id": promoted_family,
+        "owner_target": OWNER,
+        "node_kind": "pytest_node",
+        "node": node_selector,
+        "full_gate_phase": "test",
+    }
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 182
+    assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
+    phase = next(
+        item for item in payload["runtime_contract"]["phases"] if item["name"] == "pytest-runtime-compatibility"
+    )
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert len(payload["runtime_contract"]["phases"]) == 21
+    assert sum(item["max_seconds"] for item in payload["runtime_contract"]["phases"]) == 2850
+    assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
+
+
+def _assert_v3_owned_native_child_trace(
+    path: Path,
+    run_id: str,
+    expected_suffixes: set[str],
+    expected_files: set[str],
+    *,
+    workers: int,
+    failed: bool = False,
+    expected_nodes: set[str] | None = None,
+) -> dict[str, int]:
+    """Assert native child identities and reuse the existing strict pair reader."""
+    from typing import cast
+
+    from scripts.summarize_xdist_trace import summarize_log
+
+    events: list[dict[str, object]] = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert events and {event["run_id"] for event in events} == {run_id}
+    controller = [event for event in events if event["event"] == "RUN_START" and event.get("role") == "controller"]
+    native_workers = [event for event in events if event["event"] == "RUN_START" and event.get("role") == "worker"]
+    assert len(controller) == 1 and controller[0]["worker"] == "controller"
+    assert len(native_workers) == workers
+    pids = {str(event["worker"]): cast(int, event["pid"]) for event in native_workers}
+    assert set(pids) == {f"gw{index}" for index in range(workers)}
+    controller_pid = cast(int, controller[0]["pid"])
+    all_pids = [controller_pid, *pids.values()]
+    assert len(set(all_pids)) == workers + 1
+    assert all(type(pid) is int and pid > 0 and pid != os.getpid() for pid in all_pids)
+    finished_roles = [event for event in events if event["event"] == "RUN_FINISH"]
+    assert {(str(event["role"]), str(event["worker"]), cast(int, event["pid"])) for event in finished_roles} == {
+        ("controller", "controller", controller_pid),
+        *(("worker", key, pid) for key, pid in pids.items()),
+    }
+    controller_finish = [event for event in finished_roles if event["role"] == "controller"]
+    assert len(controller_finish) == 1 and controller_finish[0]["exitstatus"] == (1 if failed else 0)
+    starts = [event for event in events if event["event"] == "START"]
+    finishes = [event for event in events if event["event"] == "FINISH"]
+    start_keys = Counter(
+        (str(event["run_id"]), str(event["worker"]), cast(int, event["pid"]), str(event["nodeid"])) for event in starts
+    )
+    finish_keys = Counter(
+        (str(event["run_id"]), str(event["worker"]), cast(int, event["pid"]), str(event["nodeid"]))
+        for event in finishes
+    )
+    assert start_keys == finish_keys and set(start_keys.values()) == {1}
+    assert len(start_keys) == len(expected_suffixes)
+    assert {str(event["nodeid"]).split("::")[-1] for event in starts} == expected_suffixes
+    assert {Path(str(event["nodeid"]).split("::", 1)[0]).name for event in starts} == expected_files
+    assert all(str(event["worker"]) in pids and event["pid"] == pids[str(event["worker"])] for event in starts)
+    if expected_nodes is not None:
+        assert {str(event["nodeid"]) for event in starts} == expected_nodes
+    summary = summarize_log(path, run_id=run_id)
+    assert summary["started"] == summary["finished"] == len(expected_suffixes)
+    assert summary["timings"]["paired_count"] == len(expected_suffixes)
+    assert summary["timings"]["issue_count"] == 0 and summary["unfinished"] == []
+    if failed:
+        assert summary["failure_nodeid_count"] == 1 and summary["failure_report_count"] >= 1
+        reports = [
+            event
+            for event in events
+            if event["event"] == "REPORT" and event.get("outcome") == "failed" and event.get("when") == "call"
+        ]
+        assert any(
+            str(event["worker"]) in pids
+            and event["pid"] == pids[str(event["worker"])]
+            and str(event["nodeid"]).endswith("::test_original_warning")
+            for event in reports
+        )
+    else:
+        assert summary["failure_report_count"] == 0
+    return pids
+
+
+@pytest.mark.parametrize("control", ["shared-state", "fatal-warning"])
+def test_existing_native_controls_own_trace_without_changing_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, control: str
+) -> None:
+    """Keep actual shared-state and fatal-warning children in their owned traces."""
+    from dataclasses import dataclass, field
+
+    @dataclass(frozen=True)
+    class ParentEnvironment:
+        values: dict[str, str] = field(repr=False)
+
+    sentinel = tmp_path / "owned parent trace.sentinel"
+    sentinel.write_bytes(b"owned parent trace sentinel\n")
+    retained = sentinel.read_bytes()
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_LOG", str(sentinel))
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_RUN_ID", "v3-owned-parent")
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_TRUNCATE", "0")
+    parent = ParentEnvironment(os.environ.copy())
+    if control == "shared-state":
+        test_existing_group_owner_isolates_shared_state_and_preserves_exact_once_outcomes(tmp_path)
+    else:
+        test_two_worker_native_admission_keeps_warnings_fatal(tmp_path)
+    parent_same = os.environ.copy() == parent.values
+    assert parent_same, "the native control changed its parent environment"
+    assert sentinel.read_bytes() == retained
+    if control == "shared-state":
+        suffixes = {f"test_shared[{case}]@enforcement-shared-state" for case in range(4)} | {
+            f"test_independent[{case}]" for case in range(4)
+        }
+        for workers in (1, 2):
+            pids = _assert_v3_owned_native_child_trace(
+                tmp_path / f"shared-state-{workers}.pytest.jsonl",
+                f"runtime-shared-state-{workers}",
+                suffixes,
+                {"test_shared.py", "test_independent.py"},
+                workers=workers,
+            )
+            rows = [json.loads(line) for line in (tmp_path / f"events-{workers}.jsonl").read_text().splitlines()]
+            assert pids == {str(row["worker"]): row["pid"] for row in rows}
+    else:
+        _assert_v3_owned_native_child_trace(
+            tmp_path / "warning-control.pytest.jsonl",
+            "runtime-warning-control",
+            {"test_original_warning"},
+            {"test_warning.py"},
+            workers=2,
+            failed=True,
+        )
+
+
+@pytest.mark.parametrize("control", ["shared-state", "fatal-warning"])
+def test_scheduling_calls_own_trace_inputs_without_starting_a_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, control: str
+) -> None:
+    """Capture each real caller before its original native helper can execute."""
+    from dataclasses import dataclass, field
+    from typing import NoReturn, cast
+
+    @dataclass(frozen=True)
+    class PrivateEnvironment:
+        values: dict[str, str] = field(repr=False)
+
+    @dataclass(frozen=True)
+    class BoundaryInputs:
+        paths: tuple[Path, ...] = field(repr=False)
+        workers: int
+        environment: dict[str, str] | None = field(repr=False)
+        extra_pytest_args: str = field(repr=False)
+        owned_trace: tuple[Path, str] | None = field(repr=False)
+        owned_trace_truncate: str = field(repr=False)
+
+    class Captured(Exception):
+        """The actual native helper call was captured before execution."""
+
+    captured: list[BoundaryInputs] = []
+
+    def capture(
+        paths: list[Path],
+        workers: int,
+        *,
+        environment: dict[str, str] | None = None,
+        extra_pytest_args: str = "",
+        owned_trace: tuple[Path, str] | None = None,
+        owned_trace_truncate: str = "1",
+    ) -> NoReturn:
+        captured.append(
+            BoundaryInputs(tuple(paths), workers, environment, extra_pytest_args, owned_trace, owned_trace_truncate)
+        )
+        raise Captured
+
+    def forbidden(*_args: object, **_options: object) -> NoReturn:
+        pytest.fail("the cheap caller-input control started a process")
+
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_LOG", str(tmp_path / "owned parent trace.sentinel"))
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_RUN_ID", "cheap-parent")
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_TRUNCATE", "0")
+    monkeypatch.setenv("GLUDD_V4_UNRELATED_CARRIER", "owned-unrelated-value")
+    parent = PrivateEnvironment(os.environ.copy())
+    with monkeypatch.context() as boundary:
+        boundary.setattr(sys.modules[__name__], "_native_test_files", capture)
+        boundary.setattr(subprocess, "run", forbidden)
+        boundary.setattr(subprocess, "Popen", forbidden)
+        with pytest.raises(Captured):
+            if control == "shared-state":
+                test_existing_group_owner_isolates_shared_state_and_preserves_exact_once_outcomes(tmp_path)
+            else:
+                test_two_worker_native_admission_keeps_warnings_fatal(tmp_path)
+    assert len(captured) == 1
+    inputs = captured[0]
+    environment_is_dict = isinstance(inputs.environment, dict)
+    assert environment_is_dict, "the actual native caller must supply its copied environment"
+    child = PrivateEnvironment(cast(dict[str, str], inputs.environment))
+    if control == "shared-state":
+        expected = PrivateEnvironment(
+            {
+                **parent.values,
+                "GLUDD_RUNTIME_SCHEDULING_RECORD": str(tmp_path / "events-1.jsonl"),
+                "GLUDD_XDIST_TRACE_LOG": str(tmp_path / "shared-state-1.pytest.jsonl"),
+                "GLUDD_XDIST_TRACE_RUN_ID": "runtime-shared-state-1",
+                "GLUDD_XDIST_TRACE_TRUNCATE": "0",
+            }
+        )
+        arguments_preserved = (inputs.paths, inputs.workers, inputs.extra_pytest_args) == (
+            (tmp_path / "test_shared.py", tmp_path / "test_independent.py"),
+            1,
+            "",
+        )
+    else:
+        expected = PrivateEnvironment(
+            {
+                **parent.values,
+                "GLUDD_XDIST_TRACE_LOG": str(tmp_path / "warning-control.pytest.jsonl"),
+                "GLUDD_XDIST_TRACE_RUN_ID": "runtime-warning-control",
+                "GLUDD_XDIST_TRACE_TRUNCATE": "0",
+            }
+        )
+        arguments_preserved = (inputs.paths, inputs.workers, inputs.extra_pytest_args) == (
+            (tmp_path / "test_warning.py",),
+            2,
+            "",
+        )
+    trace_inputs_and_carriers_preserved = child.values == expected.values
+    assert trace_inputs_and_carriers_preserved, "the real caller must own trace inputs and preserve other carriers"
+    assert arguments_preserved, "the original native helper inputs must stay intact"
+    parent_preserved = os.environ.copy() == parent.values
+    assert parent_preserved, "the input control must preserve its parent environment"
+    expected_owned_trace = (
+        (tmp_path / "shared-state-1.pytest.jsonl", "runtime-shared-state-1")
+        if control == "shared-state"
+        else (tmp_path / "warning-control.pytest.jsonl", "runtime-warning-control")
+    )
+    assert (inputs.owned_trace, inputs.owned_trace_truncate) == (expected_owned_trace, "0")
+
+
+def test_cheap_fixture_inputs_and_original_tail_guard_run_once_before_last_four(tmp_path: Path) -> None:
+    """Bind the actual three-command recipe to the independent cheap guard group."""
+    promoted = (
+        "tests/unit/test_admission_cold_start_selection.py::"
+        "test_cold_start_call_owns_trace_inputs_without_starting_a_child",
+        "tests/unit/test_runtime_admission_scheduling.py::"
+        "test_scheduling_calls_own_trace_inputs_without_starting_a_child",
+        "tests/unit/test_gate_failure_promotion.py::"
+        "test_native_reviewed_finalization_executes_in_bounded_early_admission",
+    )
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    selections: list[list[str]] = []
+    for row in rows:
+        selection = row["files"]
+        assert isinstance(selection, list) and all(isinstance(node, str) for node in selection)
+        selections.append(selection)
+    assert [[selection.count(node) for selection in selections] for node in promoted] == [[0, 0, 1]] * 3
+    assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
+    assert [len(selection) for selection in selections] == [139, 1, 19]
+    assert selections[2][-7:-4] == list(promoted)
+    assert selections[2][-4:] == [
+        "tests/unit/test_ansible_ee_locked_consumer.py",
+        "tests/unit/test_observed_command.py",
+        "tests/unit/test_status_heartbeat_terminal.py",
+        "tests/unit/test_dependency_profiles.py::"
+        "test_selected_profile_locks_preserve_controller_jsonpointer_requirement",
+    ]
+    assert not any(
+        node in selection
+        for node in (
+            "tests/unit/test_admission_cold_start_selection.py::"
+            "test_native_cold_start_child_trace_does_not_write_parent_carriers",
+            "tests/unit/test_runtime_admission_scheduling.py::"
+            "test_existing_native_controls_own_trace_without_changing_parent",
+        )
+        for selection in selections
+    )
+    payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 182
+    assert payload["families"][181] == {
+        "id": "runtime-fixture-input-and-tail-count",
+        "owner_target": OWNER,
+        "node_kind": "pytest_node",
+        "node": promoted[0],
+        "full_gate_phase": "test",
+    }
+    phase = next(
+        item for item in payload["runtime_contract"]["phases"] if item["name"] == "pytest-runtime-compatibility"
+    )
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
+    assert len(payload["runtime_contract"]["phases"]) == 21
+    assert sum(item["max_seconds"] for item in payload["runtime_contract"]["phases"]) == 2850
+    assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
+
+
 def test_native_warning_child_does_not_append_to_parent_focus_trace(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Keep the real two-worker warning child out of its parent's trace."""
     parent_trace = tmp_path / "parent-trace.jsonl"

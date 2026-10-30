@@ -1,5 +1,64 @@
 # Watchdog Secrets Scan Lifecycle
 
+## Owned child PID handoff (2026-10-27 UTC)
+
+MC11adaa4080de17f47be0bd10e54176dddba3eb3d Build40553611733 attempt1
+gate311 job122363699191 passes its prerequisite, then ends runtime admission
+124/90.537s. Its retained trace records the parent-only shutdown test's10s
+TimeoutExpired and a later ledger unraisable ExceptionGroup whose subtype is
+clipped. Gate312 passes; the failed barrier prevents all eight shards.
+The exact hosted signal instant and the later warning's cause remain unproved.
+
+The existing launcher forks before assigning GATE_CHILD_PID. A signal in that
+interval can invoke cleanup with an empty child field. The new control uses an
+owned BASH_ENV/DEBUG hook at that actual assignment, a real child's readiness
+FD, exact PID/group/session/carrier witnesses and parent-only TERM. Production
+stays unchanged for RED. Both controls reach their active witness and fail the
+original communicate(timeout=10):2FAIL/1PASS with logical AST in39.59s,
+native41.133s. The control's finally drains its entire owned session even when
+the wrapper is already reaped. Every existing helper/function/assertion remains.
+
+The same launcher now retains the first pending INT/TERM through fork/PID
+assignment, then invokes original cleanup after the PID is owned. A later INT
+after the launch flag clears preserves queued TERM143. The inherited-signal
+bootstrap, gate command, locks, status/exit behavior, cleanup,90/60 admission
+and coverage/ZDD/promotion policy remain intact. Script
+407a785021219e429321ca914b93598e049b77beaa787d1d7491a25122788caf and test
+6b2f27091101e7ddf0587d750b8418ab887ff3475d646486732fdebe89b971f9 have
+independent source-only approval. All34 original functions/126 assertions and
+the complete original test prefix remain exact.
+
+The3-case focus passes EACH runtime:31119.32s/native20.701s and
+31220.88s/native22.417s,9events/3pairs/0issues/failures/unfinished each.
+Complete18 affected owners plus logical AST pass1465 EACH:311345.60s/
+native349.738s and312360.73s/native364.545s,2933events/1465pairs with zero
+issues, failures or unfinished protocols each. All exact sessions are drained
+and native status/source bytes verified. Receipts under
+.gate-logs/observed/v012-gate-child-handoff/ use IDs
+v012-handoff-red311-11adaa4-20261027,
+v012-handoff-green311-11adaa4-20261027,
+v012-handoff-green312-11adaa4-20261027,
+v012-handoff-whole311-11adaa4-20261027 and
+v012-handoff-whole312-11adaa4-20261027.
+These bind working postimages at fixed parent11adaa, never committed-SHA hosted,
+global coverage, deployment or runtime-speed proof.
+
+The [2019 firsthand trap-race report](https://unix.stackexchange.com/questions/538678/bash-trap-handler-race-condition)
+and [2016 parent/child signal report](https://unix.stackexchange.com/questions/327478/bash-parent-and-child-signal-handling)
+describe surprising signal outcomes in different examples. They support active
+parent-only and repeated-signal controls; they prove neither Gludd's cause nor
+a Bash defect. Root's initial exact forum query returned0; a less restrictive
+changed query found these sources. Raw public evidence remains at
+/tmp/gludd-v012-gate-handoff-forum-research-broad-20261027.json.
+
+Private V1's overescaped control was rejected before execution. Revision2
+corrects embedded-language inputs and first-pending priority. Syntax checks
+alone grant no behavior proof; actual Main RED/GREEN above supplies that scope.
+Normal fresh collection/checkpoint, clean-SHA native family16af repair, guarded
+publication/new exact-SHA CI and all final release proofs remain pending.
+MC Molecule6PASS and Pages3validationPASS/deploySKIP stay scoped to MC; native
+Pages summary2 remains retained. All seven S98 items remain open.
+
 ## Native async-gate inherited-signal boundary (2026-10-27 UTC)
 
 Independent review of published a403ed858bb561f7bbc8353c54ad057be4020f89
@@ -1024,3 +1083,50 @@ reports show recurring operator confusion. Primary
 its resolved pipe-hang fix from continuing grandchildren. Reuse the mature
 native boundary; those answer snippets are not replacement implementations
 or proof that installed311 has the historical resolved hang.
+
+## Native Bash startup identity in the handoff fixture (2026-10-30 UTC)
+
+C1 Source37 complete32 on installed311 ends native2/458.190s with
+2FAIL/1541PASS in454.95s. Both failures are the original False/True cases of
+test_parent_term_at_native_child_pid_handoff_drains_owned_pipes in test
+6b2f27091101e7ddf0587d750b8418ab887ff3475d646486732fdebe89b971f9:
+the five-second readiness witness is absent. The native trace is intact:
+3091events/1543pairs/0issues/0unfinished/2failure reports. Preserve that failed
+cohort; it is separate from the earlier M1 trace-routing defects.
+
+The retained private captures under
+/tmp/gludd-v012-C1-async-handoff-capture-20261030/ preserve their native failures.
+The first caller was refused before tests for a Main-owned ancestor trace;
+the corrected C1 caller reached both original failures. V3 startup metadata
+records /bin/bash3.2.57(1)-release, the owned BASH_ENV, and parent/child startup
+$0=bash. POSIXLY_CORRECT is absent; posix and extdebug are false. The fixture
+checked $0 against the full gate script path during BASH_ENV startup, so neither
+process installed its DEBUG trap. Empty stderr and RUNNING alone had not proved
+this cause. Literal-only AST inspection separately confirms the payload's
+trailing readiness byte is LF (hex0a); no newline repair is warranted.
+
+The proposed fixture installs its owned DEBUG trap at startup and evaluates
+the same exact quoted script-path predicate inside the callback, around both
+unchanged probes. This retains script identity and excludes the child -c body.
+The original module prefix (34functions/126assertions), all141 current assertions,
+eight witness fields, PID/group/session/carrier checks, TERM/optional INT, and
+5/10/5-second readiness/communicate/cleanup bounds are retained. Production
+gate_async.sh is unchanged. The existing practitioner references above explain
+the broader pipe/session boundary; none establishes this Bash startup premise.
+
+The [official Bash startup manual](https://www.gnu.org/software/bash/manual/html_node/Bash-Startup-Files.html)
+describes the noninteractive BASH_ENV input. The
+[2020 firsthand cron report](https://unix.stackexchange.com/questions/613604/bash-env-being-ignored-in-aws-ubuntu-20-04-crontab)
+and [2016 SSH report](https://unix.stackexchange.com/questions/309682/sourcing-bash-env-for-non-interactive-ssh-commands)
+describe startup expectations that did not produce the intended behavior in
+different environments. They motivate checking an active native witness instead
+of inferring execution from a configured variable; neither proves Gludd's
+startup identity or an upstream defect. Root retrieved those question bodies
+through the bounded public API; raw inputs remain under
+/tmp/gludd-v012-C1-bash-startup-targeted-20261030/. The initial mirror404 and
+upstream TLS timeout remain failed retrievals, with no upstream fix inferred.
+
+This is a private source proposal: the two original native controls, complete
+affected receiving on both runtimes, complete source review, full gate,
+exact-SHA hosted and release proofs remain pending. No speed, hosted-platform cause or release claim
+follows from these diagnostic captures.

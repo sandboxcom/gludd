@@ -1,5 +1,161 @@
 # Import-Time Measurement Integrity
 
+## Native archive replay security coverage
+
+At fixed parent V1 76f5245edf43f5ad43b02578467df9689780c23c, V2 appends only one
+parameterized function/two cases to the existing startup owner. Every original
+1135-line byte prefix,61 functions and107 assertions remains exact. Reviewed
+postimage4daf054a784c39cf76ed5bf35a3aae8e0efcc2d848b5fcd527bc9f06e73f6fb6
+has1191 lines; no production source, coverage setting or runtime limit changes.
+
+Both original complete12-owner profiles passed574 tests but failed aggregate
+branch85:311726/856 and312727/856. Their native failed audits remain
+`.gate-logs/coverage-20261027T134053Z.json` and
+`.gate-logs/coverage-20261027T134103Z.json`. Existing archive path/missing-file
+controls stopped at earlier canonical-status/file-list guards. New controls
+retain valid canonical status and three exact file entries. One changes only
+the log path to an owned outside witness with the exact native bytes; another
+renames the log role without removing its regular file or digest metadata.
+Each first creates an actual native124 envelope/archive and successful replay,
+then requires the intended public refusal without launching another command.
+Original source/archive/witness bytes remain exact after the negative replay.
+
+Two-case native acceptance passed2 in1.92/native3.280 seconds, label
+`v012-V-archive-replay`, ID
+`v012-V-archive-replay-two311-76f5245-20261027`; trace7events/2pairs/zero issues,
+failures or unfinished. The existing original twelve complete owners and four
+complete production sources were then received on BOTH installed runtimes,
+retaining300/60,85 aggregate and75 EVERY-file LINE AND BRANCH requirements.
+311 passes576 in105.47/native108.173 seconds, native coverage-files ID
+`20261027T140850Z-9401-08022942`;312 passes576 in115.20/native118.393 seconds,
+ID `20261027T140850Z-9402-482572c5`. Both traces retain1155events/576pairs and
+zero issues/failures/unfinished. Both exact sessions were drained and terminal
+statuses verified. Reports remain diagnostic component acceptance, not release.
+
+Native passing audits are `.gate-logs/coverage-20261027T141038Z.json` and
+`.gate-logs/coverage-20261027T141048Z.json`. They measure the unchanged four
+providers:311 line89.4% and728/856 branches85.04672897196261%;312 line89.5%
+and729/856 branches85.16355140186917%. All four per-file rows pass both75
+floors; no source is omitted. Missing-arc lists no longer contain1511-to1512
+or1517-to1518 in stream_command. The earlier failed audits stay failed; no
+rounding, guard mutation, new runner/cache or threshold exception is used.
+
+Independent source review approves the exact append; Ruff, configured strict
+typing, test-environment writes,10896-file line guard and265-resource ownership
+checks pass. Normal source checkpoint, fresh exact-SHA diagnostic publication,
+complete25-owner receiving and separate native child-trace fixture controls
+remain next required actions. Current four-source coverage is not global
+project coverage, canonical full gate, exact-SHA CI or deployment acceptance.
+Keep focus132-versus128 HOLD, combined333, genuine development/master ZDD,
+canonical21600/global85/75 LINE AND BRANCH and complete fresh signed artifacts.
+All seven S98 release tasks remain open.
+
+## Native LF and integer archive contract
+
+Fixed working U snapshot,2026-10-27 UTC, before source commit.
+Actual published S b6530afbd41af2df9a3bcbdfa2c6b6511c8c647d Build40498498468,
+attempt1, fails311 job122169983377 at original runtime124/90.5s and then archive2:
+startup log size/count differs from its terminal status. Native312
+job122169983214 passes, including archive/summary/upload. The failed311 raw
+envelope was not uploaded; its exact mismatch subtype and timeout cause remain
+unknown. The312 manifest declares S and retains status/log/trace/report hashes.
+
+The native producer counts chunk LF bytes. Its original scheduling control
+requires twenty unterminated dots to mean20 bytes/zero complete LF records.
+The archive reader used splitlines, which also counts an unfinished tail or CR.
+The strict correction matches native raw LF count and exact byte length, and
+requires exact int types for both counters. Booleans/floats are refused without
+conversion. Every other identity/path/link/size/freshness/hash/publication/
+replay check and the producer's signal/PID/reap/drain/sync behavior remain.
+
+Actual original-guard RED is4FAIL/5PASS23.62s/native24.925s, including logical
+Make AST, at .gate-logs/observed/v012-U-archive-contract/
+v012-U-archive-contract-red311-5f7e0bb-20261027.json.
+Three real timeout envelopes with partial/CR output were refused; a forged
+visual count was accepted. Its25events/9pairs/0issues retain4 failure reports.
+Intermediate LF-only source132f308a adds a false/0.0 equality hole: the four
+actual malformed-counter cases fail against it,4FAIL/1PASS21.18s/native22.626s,
+at .gate-logs/observed/v012-U-archive-counter-types/
+v012-U-archive-counter-types-red311-5f7e0bb-20261027.json.
+All four are real native envelopes, including valid zero-byte output; only
+pytest-owned status fields are deliberately altered.
+
+Strict source b02483a86b42ead5e225dd29d87df40cc46fb78bc38029bc22bb3e555e35a54e
+then passes thirteen native timeout/archive/tamper controls plus AST/original
+dot contract:15PASS28.66s/native30.023s,33events/15pairs/0issues.
+The separate early unit uses the actual public archive reader on owned unit
+inputs and guards both subprocess launch interfaces. It fails original source
+1FAIL/1PASS18.57s/native19.886s, then passes2/18.93s/native20.275s including AST:
+.gate-logs/observed/v012-U-early-unit/v012-U-early-unit-{red,green}311-5f7e0bb-20261027.json.
+Its unit fixtures supply no native execution or release certificate; the full
+thirteen real producer controls remain whole-owner receiving obligations.
+
+The new independent native recipe-capture case observes missing[0,0,0] versus
+required[0,0,1]:1FAIL/1PASS18.50s/native19.794s. After the sole TAIL addition it
+passes2/18.59s/native19.962s,7events/2pairs/0issues:
+.gate-logs/observed/v012-U-promotion-routing/
+v012-U-promotion-routing-{red,green}311-5f7e0bb-20261027.json.
+Manifest181 preserves all180 predecessors. MAIN139/HELP1 remain; TAIL15 becomes16
+before the original last four. Worker2/1/1,90/60,21 phases/2850 and the full gate
+stay. The gate test remains2499 lines. New unit adds no child executionworker.
+All eight unchanged native promotion pins pass1.84s/native3.756s before broad
+receiving. Source review retains the initial new-tuple E501 and exact AST-only
+wrap, rather than weakening formatting or inventory assertions.
+
+First complete12-owner coverage attempts fail the same existing malformed-import
+fixture on each runtime:573PASS/1FAIL,311103.96s/native105.970s and
+312113.05s/native115.751s. Exact native coverage-files runIDs are
+20261027T130854Z-85705-e23f86c3 and20261027T130854Z-85706-8ebd428e.
+No coverage audit ran. That fixture removed the final LF but fabricated a visual
+line count. Only its two metadata expressions now count actual raw LF bytes;
+all61 functions/107 assertions, original malformed inputs and expected incomplete
+analysis remain. No parser assertion or coverage source was removed.
+
+Final whole startup owner plus AST/original dot passes112 EACH:
+31131.28s/native32.732s and31232.48s/native33.923s, with227events/
+112pairs/0issues/unfinished/failures EACH. Exact receipts are
+.gate-logs/observed/v012-U-startup-owner-focus/
+v012-U-startup-owner-focus{311,312}-5f7e0bb-20261027.json.
+Actual final startup SHA256 is
+0a7863cecb34d4e65865a4cd63a201323422172fb666f731c056df7d5b5fd3c4.
+Independent source decisions retain strict counter, early unit, two-fixture
+conformance and all four route postimages separately. Native resource ownership
+passes265. Ruff, strict typing, test-env and file-line checks pass.
+
+### Firsthand completion reports
+
+Bounded public GitHub issue research on2026-10-27 retrieved
+[pytest7250](https://github.com/pytest-dev/pytest/issues/7250), whose author
+reported Linux/Windows remaining alive after test results and teardown output,
+and [pytest8643](https://github.com/pytest-dev/pytest/issues/8643), whose author
+reported a Windows CI process remaining alive after its summary while Linux
+completed. These firsthand reports support retaining process termination and
+descendant evidence after visible completion. Their platforms/versions and
+causes do not establish this job's failure cause. No capture, timeout, warning,
+cleanup or platform-proof workaround is adopted from them. Raw native research
+receipts are .gate-logs/observed/v012-U-public-research/
+v012-U-pytest-{exit,completion}-research-20261027.json.
+
+### Next native owners and proof limits
+
+Complete current receiving is the deduplicated25 whole owners: registered
+twelve-owner/four-source coverage and thirteen remaining ordinary consumers,
+both installed runtimes. Preserve original300/60 profile,900/180 ordinary,
+85aggregate/75EVERY-file LINE AND BRANCH. Prior failed coverage remains failed.
+After focused acceptance and normal fresh collection, diagnostic publication
+may proceed while this broader receiving continues; its outcomes stay separate.
+
+The combined local repair owner must bind the actual clean U SHA, run the
+original90/60 native runtime inside its own watched owner, then archive that
+exact terminal receipt with native mode0. One enclosing240/180 repair scope
+owns both operations; runtime failure skips archive, archive failure prevents
+repair recording. The archive source field is a declaration, not standalone
+Git proof. No unchanged hosted rerun or local receipt can supply hosted success.
+
+Final focus132 versus128 remains HOLD and combined333 remains unexecuted.
+All canonical21600/global coverage, exact-SHA push CI, genuine development/master
+promotion, ZDD, fresh signed complete artifacts and all seven S98 proofs remain.
+
 ## Trigger and scope (2026-10-21 UTC)
 
 S98.4's broader import-boundary acceptance exposes two skipped cold-start checks:

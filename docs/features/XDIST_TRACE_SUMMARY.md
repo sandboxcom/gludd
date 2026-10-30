@@ -1,5 +1,171 @@
 # Durable xdist Trace Summaries
 
+## Cheap fixture input and count guards (V4)
+
+At fixed V3 parentf78253494d85f6bf4d58816d45b25409be93cc23, V4 adds two
+cheap parameterized functions which call the actual existing fixture bodies
+and raise owned Captured at the real subprocess/helper boundary. No original
+success is synthesized and unexpected process execution refuses. Copied and
+captured environments remain repr=False with boolean-only comparisons.
+
+The controlled RED restores only the three historical child-input defects:
+4FAIL/1PASS18.59s/native19.902s, label v012-V4-cheap-guard,
+ID v012-V4-known-input-red311-f782534-20261027. This is an intentional
+regression control, not a claim that immutable V3 is broken. The three exact
+fixture-input corrections then pass5 ordinary cases EACH, including logical
+Make AST:31118.37/native19.604s,31219.96/native21.304s. The same four new cheap
+cases pass with real tracing on both runtimes:3110.58/native1.953s,
+3120.75/native2.142s,11events/4pairs/zero issues/failures/unfinished.
+These cheap controls supplement V3's retained real native controls.
+
+An additive routing control first fails1/1PASS19.50/native20.790 seconds
+because all three intended selectors occur zero times. Final implementation
+adds the two cheap selectors and existing three-case count guard once to
+TAIL before its original last four. MAIN139/HELP1 stay exact; TAIL19 yields
+159 unique selectors. Family182 appends to181 exact predecessors. Original
+three children/flags/barrier/join/status/drain,90/60 and21phases2850 remain.
+Seventeen numeric literals, nine inventory elements and the strict archive
+predecessor index conform together. Gate's21-phase literal has identical AST
+under a more compact layout,2471lines under the original2500 guard.
+Independent review retains all760 V3 assertions and the prior54/393 boundary.
+
+Final focused acceptance passes9 EACH:31118.51/native19.875s and
+31220.34/native21.735s,21events/9pairs/zero issues/failures/unfinished.
+Canonical check-gate-failure-promotions validates182 families then finishes
+all eight pins:8PASS1.73/native3.693s,19events/8pairs/zero issues. Its receipt
+is v012-V4-canonical-promotion-pins/v012-V4-eight-pins311-f782534-20261027.
+
+The complete sixteen-owner union passes864 EACH:311276.29/native278.233s;
+312285.26/native287.273s. Both exact sessions are drained and observed statuses
+inactive/passed/0. Each trace contains1731events/864pairs and zero issues,
+failure reports or unfinished nodes. Label v012-V4-complete-sixteen uses
+v012-V4-complete16-{311,312}-f782534-20261027. Ruff, strict typing on both
+runtimes, environment writes,303 target contracts and10896-file line guard
+pass. Exact five-file source approval is retained in
+/tmp/gludd-v012-V4-independent-source-review-20261027/VERDICT.md.
+
+These results certify this receiving scope only. They do not clear the
+hosted runtime timeout, prove a speed improvement or replace global85/75
+LINE AND BRANCH, final gate, exact-SHA push, genuine integration/master ZDD
+or fresh complete signed assets. Normal V4 checkpoint and separate carrier
+fixture receiving remain next; all seven S98 tasks stay open.
+
+## Native child trace input isolation (V3)
+
+Fixed working-source receipt,2026-10-27 UTC, at parent
+34a19fb775e6fcea97ee723a2b9a89b3f3ddd98e. Two existing fixture owners
+inherited the parent's trace log/run ID/truncation controls into native
+children. Prior complete ordinary13 traces mixed31 child protocol pairs
+with the outer781 cases. V3 copies the environment and gives each child
+only its three owned trace inputs; unrelated carriers and parent state
+remain exact. All54 original functions/393 assertions, original payloads,
+35/45-second child bounds and explicit compact-reporting inputs remain.
+
+Four new real native controls cover cold selection in both modes,
+shared-state pytest and the intentional fatal-warning child. Their copied
+environment fields use repr=False; failure assertions compare owned state
+without dumping ambient carriers. The original shared-state child retains
+its full native grouped node IDs. Initial RED retained two scheduling
+witnesses but two cold setup failures; correcting only the new cold
+workspace's pytest root then establishes both actual cold RED witnesses.
+Initial GREEN retains an incorrect new grouped-node oracle failure. Its
+correction conforms the new expectation to actual native IDs; no original
+payload or assertion changes.
+
+Final ordinary and traced controls plus logical AST pass5 EACH on311/312.
+Native ordinary durations are26.467/28.459 seconds; traced26.799/28.478.
+Both traced outer receipts contain13events/5pairs and zero issues, failures
+or unfinished nodes. Exact receipts use label v012-V3-trace-fixture and
+IDs v012-V3-trace-green-grouped-{ordinary,traced}{311,312}-34a19fb-20261027.
+
+Complete original ordinary13 owners plus logical AST then pass785 EACH:
+311273.16/native275.078 seconds;312286.65/native288.703. Both native
+statuses are inactive/passed/0, exact sessions drained; traces contain
+1573events/785pairs and zero issues, failures or unfinished nodes.
+Label v012-V3-ordinary13 uses IDs
+v012-V3-ordinary13-{311,312}-34a19fb-20261027. This removes the prior31
+mixed child pairs in this receiving scope. It proves no hosted runtime
+cause, speed benefit, canonical gate, global coverage or release success.
+
+Final source SHA256s are
+fc744c6191358988bd2713964f7f3983d09cde03e0a17e0d1439067165524ea0
+(cold) and85455d2be4fb03719499764a29909754e777f5fed47adfc37b4af23af8d24877
+(scheduling). Unchanged four-provider V2 coverage retains its actual
+576-EACH receipt; no project-wide coverage claim follows. Normal checkpoint
+and separate cheap early-admission repair remain next. Keep all seven S98
+items open and every final integration, exact-SHA, ZDD and artifact proof.
+
+## Fixture trace isolation and ordinary entrypoint
+
+Fixed working-source snapshot,2026-10-27 UTC, before T's source commit.
+The two changed test owners retain all110 original functions/519 assertion
+ASTs, the original eight-node promotion payload and30s child timeout.
+Production trace/summary behavior,90/60 admission and cleanup stay unchanged.
+
+The two direct session-start controls restored environment/config but leaked
+the active path/run ID. On both S765-pass runs,13 expected outer START events
+and13 expected outer FINISH events were absent. A real eight-pin Make child
+inherited the outer trace/run ID. The retained raw files contain752 outer
+starts plus8 nested starts; the strict reader correctly reports441 accepted
+pairs/320 issues/1 unfinished. These are separate routing/ownership defects;
+the retained parent trace was not truncated. Original failed/partial receipts
+remain under v012-S-complete-diagnostic-receiving.
+
+The additive controls invoke the actual original bodies and real Make child.
+Traced RED is3FAIL/1PASS21.76s/native23.117s at
+.gate-logs/observed/v012-T-trace-isolation/
+v012-T-trace-isolation-red311-b6530af-20261027.json.
+Its parent retains4 protocol pairs/0 issues but only2 failure reports; native
+pytest's3 failures remain authoritative. InitialGREEN7 passes24.73s/native26.032s.
+The two original controls now register all three module latches with monkeypatch;
+the child receives copied environment with only its three owned trace inputs.
+
+InitialGREEN complete14+AST passes768 EACH:
+311216.10s/native218.045s and312220.58s/native222.680s, with1539events/
+768pairs/0 issues/unfinished/failures EACH. Exact receipts are
+.gate-logs/observed/v012-T-complete-trace-receiving/
+v012-T-complete-trace-receiving311-b6530af-20261027.json and the312 counterpart.
+These results retain their prior two-file bytes.
+
+Independent review then catches the ordinary optional-plugin boundary.
+Actual ordinary RED is3FAIL/1PASS18.41s/native19.776s at
+.gate-logs/observed/v012-T-ordinary-entrypoint/
+v012-T-ordinary-entrypoint-red311-b6530af-20261027.json.
+The corrected setup consults actual native plugin registration: registered
+tracing requires request.config; ordinary unregistered pytest requires None.
+The same original restoration and real-child witnesses follow, without skips.
+
+Final corrected complete two owners+AST pass228 EACH through ordinary test-files:
+31130.71s/native32.102s and31234.74s/native36.239s at
+.gate-logs/observed/v012-T-final-changed-owner-receiving/
+v012-T-final-changed-owner-receiving311-b6530af-20261027.json and312.
+Final traced controls+three originals+AST pass7 EACH:
+31124.35s/native25.720s and31226.00s/native27.367s at
+.gate-logs/observed/v012-T-trace-isolation/
+v012-T-trace-isolation-final311-b6530af-20261027.json and312.
+Each final trace has17events/7pairs/0 issues/unfinished/failures.
+All exact sessions are drained and native terminal status verified.
+
+Independent actual-byte source approval is retained at
+/tmp/gludd-v012-T-trace-isolation-independent-review-20261027/
+ACTUAL-TWO-FILE-APPROVAL.md. Current SHA256s are
+578b4ad435c4a0402f9ba4d869a9d12dc5fc966468eeb18ae2014eaa9230f8bb and
+2d4655cbd7f19a6dda24b76859c2ce13406d870e0d9e218dd26103c3fb9fcbf0
+for diagnostics and gate-promotion respectively. Ruff, canonical strict typing,
+environment-write and native file-line checks pass. The unchanged other12
+owners retain their initialGREEN scope; no full14/current immutable-SHA claim
+follows. This fixture repair establishes no hosted timeout cause or speed gain.
+
+Published S Build40498498468 independently fails311 runtime124/90.5 and archive2
+with strict terminal log-size/count mismatch;312 and its diagnostic upload pass.
+The original producer LF-count contract and archive comparison require separate
+native failing-first repair. Final focus128 remains HOLD; current required
+combined333 is unexecuted. Normal collection, exact-SHA runtime/hosted/full gate,
+global85/75 line AND branch BOTH, genuine promotion, ZDD and fresh signed
+complete artifacts remain required. All seven S98 tasks stay open.
+
+## Retained diagnostic feature record
+
 Status: implemented for the beta4 diagnostic workflow. Last reviewed:
 2026-10-22.
 
@@ -807,6 +973,99 @@ passes or HEAD changes. Fresh full gate/global coverage, all-shard exact-SHA CI,
 deployment acceptance and guarded promotion remain pending. All seven S98
 release items stay unchecked.
 
+## Deterministic EOF heartbeat fixture receiving (2026-10-30 UTC)
+
+Build40981019192 attempt1 at
+`6c5b690dda7d6dec7ea82e98ab16b0770b5b9411` fails3.12 job123820853490:
+TAIL has1FAIL/192PASS55.71s. The original EOF-monitoring test expects two
+heartbeat banners but receives one despite native child exit0. This is not an
+outer90-second timeout. The3.11 whole gate/runtime passes; all eight downstream
+shard intervals remain unknown/censored behind the failed barrier.
+
+The unchanged producer loops while a pipe registration or live child exists;
+EOF only unregisters the pipe. Each heartbeat publishes its native sequence
+before printing. A0.15-second child sleep lacks a scheduling premise for two
+cycles; the exact hosted delay or production cause remains unproved.
+The fixture now preserves the original three assertion ASTs,0.03s heartbeat,
+2s maximum and5s parent timeout while waiting for two NEW real sequence advances
+after closing1/2, verifying EBADF and binding its own native PID/owner/run status.
+
+New controls reject spoofed child console banners with native heartbeat0 and
+no release/timeout124, and prove a same-payload unguarded JSON-shadow marker
+before the native-P positive. Plain focus passes3 EACH
+(3115.45s/native6.642s;3125.78s/native7.299s),9events/3pairs/0issues each.
+The first whole13 coverage instead fails that new import-shadow control:
+1FAIL/672PASS285.81s/native287.649s,1350events/673pairs/1failed report.
+Its unguarded child produces no marker or output; the native observer continues
+31heartbeats and times out124/2.563s. Marker absence proves no shadow execution,
+not a measured module-cache cause. That failed receipt is retained.
+
+The common child now records a per-PID entry-cache boolean and performs one fresh
+child-local JSON import for BOTH unsafe/guarded paths. Coverage, PYTHONPATH,
+unrelated carriers and parent state remain. No native ticks/status are forged.
+Root-context Ruff/format/strict BOTH pass; an earlier private-path import grouping
+miss is retained and corrected by one AST-identical blank line. Current source
+pins are test1f30e751, helperbb4fc4a3 and registrationab857e25; all original53
+functions/301assertions remain, with only the EOF fixture body changing.
+Canonical formatting preserves other function ASTs and unchanged line caps.
+
+The supplemental real coverage/subprocess control passes3 EACH
+(3116.17s/native8.189s;3126.67s/native9.361s),9events/3pairs/0issues each.
+It measures the ENTIRE new fixture module:66/66lines,0measured branches,
+native85aggregate/75each audit passed. Generated child behavior is native control
+evidence, not measured helper branches or canonical four-provider coverage.
+The original Main12-owner profile retains its300/60 bound and all four complete
+production providers. Whole runtime publication admission retains600/180.
+Together those partitions preserve the same13completeowners without a duplicate
+full replay. Canonical12 now passes581 EACH on the frozen1f30/bb4/ab857 input:
+311107.61s/native109.938s and312118.42s/native121.413s, each
+1165events/581pairs/0failed reports/issues/unfinished. Both native exact statuses
+are terminal and verified.
+
+The unchanged four full-source profile passes85aggregate/75every-file line AND
+branch on both runtimes:1961/2195statements (89.3%) and729/856branches (85.2%).
+Per-file statement/branch counts are active-work378/440 and167/196;
+stream-command1020/1178 and379/462; summary244/247 and99/102;
+plugin319/330 and84/96. No measured file is below either per-file floor.
+Coverage-files receipts are
+`20261030T011742Z-91193-8dcce90b` and `20261030T011940Z-94804-d074b69c`;
+raw reports are `.gate-logs/coverage-eof-v2-canonical12-311-20261030.json` and
+`.gate-logs/coverage-eof-v2-canonical12-312-20261030.json`.
+Native audits are `.gate-logs/coverage-20261030T011932Z.json` and
+`.gate-logs/coverage-20261030T012141Z.json`. These are the existing four complete
+providers, not global project coverage or full-gate acceptance.
+
+Whole publication admission now passes92 EACH on the same frozen source:
+311133.38s/native134.854s and312135.25s/native136.766s, with
+187events/92pairs/0failed reports/issues/unfinished EACH. Both exact native
+commands and terminal statuses are verified, including UV return and cleanup0.
+The12+1 partitions complete the13-owner acceptance union on each runtime.
+The earlier failed combined13 receipt remains failed; these are separate
+receiving scopes. Normal checkpoint, new-SHA hosted CI, full gate, ZDD,
+artifact/deployment/release proof and any timing improvement remain unproved.
+
+The [official pytest flaky guide](https://docs.pytest.org/en/stable/explanation/flaky.html)
+describes uncontrolled state/timing as a source of intermittent results.
+In [firsthand pytest4563](https://github.com/pytest-dev/pytest/issues/4563),
+the2018-12-19 reporter requests0.1s sleep, measures0.317211s and exceeds a0.2s
+assertion; it closes2018-12-20. This is a historical timing-sensitive assertion failure, not
+this job's causal proof or a fix result. Root's bounded native read retains
+raw57bab9c3 and9aa64fdb. All earlier failures, canonical85/75 line AND branch,
+full-gate/exact-SHA CI, ZDD/promotion/release requirements and seven open S98
+criteria remain.
+
+## Retained G precommit snapshot (historical proof scope)
+
+The following section preserves G's fixed precommit wording verbatim, including
+its then-pending commit, publication, M1 and focus claims. Those statements
+describe that snapshot, not current integration status. The section is retained
+from the final97 lines of M1's captured document.
+Root separately identifies actual G
+884f1f5a5d31b2d291f1038a6a870c65db187451 and actual M1
+73a8501a378696ccef6a7b77f24b031d03b0b109. Their existence supplies no result for
+M1's native128 focus. This document composition supplies no new focused,
+full-gate, CI, deployment or release proof.
+
 
 ## Native F focus child-trace ownership prerequisite (2026-10-30 UTC)
 
@@ -903,3 +1162,66 @@ durable trace identity and bounded diagnostics. They do not prove this copied-
 environment defect or the native focus repair; F source and the actual native
 controls own those conclusions. No new upstream retrieval or performance claim
 is attributed to this repair.
+
+
+## M1 native trace cache and promotion-child boundaries (2026-10-30 UTC)
+
+Fixed M1 source is73a8501a378696ccef6a7b77f24b031d03b0b109. Its native
+128-owner focus, run
+focus-9efbbd87381bcc2a6e0a65630ac37fa84b1a71c4bec6a32fbdc2de73cc6dd0d7,
+fails native2/1991.240s with pytest1FAIL/6326PASS/13SKIP1971.95s.
+The HTTPS fixture's inherited SYSTEM_PYTHON under environment-override Make
+is a separate body failure. That failure and every earlier F/G receipt remain
+unchanged; this trace analysis does not repair or relabel them.
+
+The exact native trace has12683events,6335starts/6335finishes, but only2593
+accepted pairs,3743 timing issues, one unfinished protocol and two failure
+reports for the single HTTPS node. Equal start/finish totals do not establish
+trace integrity. The first raw routing gap is at lines5175-5176: PID56999/gw0
+starts test_controller_sessionstart_truncates_trace_once, then the next
+retained row is the FINISH of test_trace_path_is_stable_after_session_start.
+The former FINISH and intervening STARTs are absent from the parent stream.
+Both original controller/worker RUN_START records remain; this is not evidence
+of blanket parent-file truncation or a worker-role change.
+
+The pinned direct-hook cases expose the cause. pytest_sessionstart assigns the
+module's cached _ACTIVE_TRACE_PATH and _ACTIVE_RUN_ID. The controller fixture
+restores its environment and config, but does not register those two cached
+fields with monkeypatch. Subsequent outer protocol events therefore retain
+the private test path. The stable-path fixture's raw finally reset to None
+later returns routing to the inherited parent path, leaving only that test's
+FINISH in the parent stream. The summary's unmatched finish and later
+overlapping starts are cascading diagnostics;3743 is not3743 independently
+established root causes. Missing intervals remain unproved.
+
+A second boundary is independently visible at lines7369-7389. During the
+promotion-contract test, child PID58092/controller records a complete8-case
+native session in the same parent file and focus run ID, before PID56999's
+outer FINISH. The original subprocess call inherits its trace environment.
+An eight-case foreign session must not be filtered into valid focus proof.
+
+The private H proposal ports only the already identified D65 fixture repairs:
+register both cached fields with monkeypatch in each direct-hook case, retain
+the existing config and profile cleanup, and give the promotion child an
+explicit copied environment with pytest-owned promotion-trace.jsonl,
+run ID promotion-probe and truncate1. Its actual Make argv, cwd,30-second
+bound and all original assertions remain. Unrelated environment fields stay
+in the copy. Production tracing, native roles, profile restoration,
+authentication, proof filters, literal rosters and caps do not change.
+
+Structural comparison over the pinned M1 inputs preserves all49 trace-module
+functions/183 assertions and all53 promotion-module functions/336 assertions.
+Every other function and module roster remains AST-identical except the
+required Callable import. The resulting trace module is byte-identical to
+the existing D65/C1 source578b4ad435c4a0402f9ba4d869a9d12dc5fc966468eeb18ae2014eaa9230f8bb.
+Only the narrow child fixture is ported into M1's promotion module; its original
+roster is retained. The D65 native controls preserve the actual parent binding
+around both original cases and check an inherited witness around the original
+promotion child. No test bodies or new profiles were executed by the private
+source/trace audit; its structural checks are not runtime acceptance.
+
+Root owns independent H source review and focused receiving with the separate
+HTTPS caller repair. The exact M2 complete128-owner native focus remains
+pending, followed by the unchanged integration, canonical gate, coverage85/75
+for lines and branches, exact-SHA CI, ZDD, deployment and release requirements.
+No new green focus, task completion or production fix is claimed.

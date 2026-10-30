@@ -402,3 +402,105 @@ def test_inherited_literal_trace_path_survives_actual_make_startup(
     for path in fixture.root.glob("config-*.json"):
         assert _read_json(path)["trace"] == str(trace)
     _assert_pairs(fixture, trace, "literal-run")
+
+
+@pytest.mark.parametrize("marker_cleanup_link", [False, True], ids=("ordinary", "owned-symlink"))
+@pytest.mark.parametrize("marker_early_environment", [False, True], ids=("ordinary-make", "make-e"))
+@pytest.mark.parametrize("marker_native_failure", [False, True], ids=("native-pass", "native-fail"))
+def test_native_test_files_phase_markers_follow_exit_and_owned_cleanup(
+    tmp_path: Path,
+    marker_cleanup_link: bool,
+    marker_early_environment: bool,
+    marker_native_failure: bool,
+) -> None:
+    """Locate the native owner boundary without replacing UV or cleanup."""
+    fixture = _fixture(tmp_path)
+    outside = fixture.root / "owned outside cleanup witness"
+    outside.mkdir()
+    outside_witness = outside / "preserved.txt"
+    outside_bytes = b"owned outside bytes remain unchanged\n"
+    outside_witness.write_bytes(outside_bytes)
+    record = fixture.root / "marker-basetemp.json"
+    conftest = fixture.root / "conftest.py"
+    extra = (
+        "import atexit\n"
+        "def pytest_configure(config):\n"
+        "    base = Path(config.getoption('basetemp'))\n"
+        "    def native_marker_atexit():\n"
+        "        assert base.is_dir(), 'native owner removed basetemp before interpreter exit'\n"
+        "        (base / 'owned-marker-payload').write_bytes(b'actual native cleanup payload')\n"
+        + f"        if {marker_cleanup_link!r}:\n"
+        + f"            (base / 'owned-outside-link').symlink_to(Path({str(outside)!r}), target_is_directory=True)\n"
+        + f"        Path({str(record)!r}).write_text(json.dumps({{'basetemp': str(base)}}), encoding='utf-8')\n"
+        + "        os.write(1, b'NATIVE-MARKER-ATEXIT\\n')\n"
+        + "    atexit.register(native_marker_atexit)\n"
+    )
+    conftest.write_text(conftest.read_text(encoding="utf-8") + extra, encoding="utf-8")
+    environment = dict(fixture.environment)
+    fixture_before = dict(fixture.environment)
+    trace = fixture.root / "marker-native.pytest.jsonl"
+    environment["GLUDD_XDIST_TRACE_LOG"] = str(trace)
+    environment["GLUDD_XDIST_TRACE_RUN_ID"] = "marker-native"
+    environment["GLUDD_XDIST_TRACE_TRUNCATE"] = "0"
+    environment["GLUDD_TRACE_UNRELATED_CARRIER"] = "owned marker carrier"
+    if marker_native_failure:
+        environment["GLUDD_TRACE_LOAD_FAIL"] = "1"
+    command = _test_files_command(fixture)
+    if marker_early_environment:
+        command.insert(1, "-e")
+    basetemp: Path | None = None
+    try:
+        result = _run(command, fixture, environment=environment)
+        assert result.returncode == (2 if marker_native_failure else 0)
+        assert result.stdout.count("NATIVE-MARKER-ATEXIT") == 1
+        if marker_native_failure:
+            assert "native-fixture-failure" in result.stdout
+            assert "Error 1" in result.stdout + result.stderr
+        data = _read_json(record)
+        base_value = data["basetemp"]
+        assert isinstance(base_value, str)
+        candidate = Path(base_value)
+        assert candidate.parent == Path("/tmp")
+        assert candidate.name.startswith("gludd-testfiles-")
+        assert candidate.name.removeprefix("gludd-testfiles-").isdigit()
+        calls = [
+            _mapping(json.loads(line)) for line in (fixture.root / "uv.jsonl").read_text(encoding="utf-8").splitlines()
+        ]
+        assert len(calls) == 1
+        arguments = calls[0]["argv"]
+        assert isinstance(arguments, list)
+        assert "--basetemp=" + str(candidate) in arguments
+        basetemp = candidate
+        _assert_configs(fixture, loaded=True)
+        assert outside_witness.read_bytes() == outside_bytes
+        assert not basetemp.exists() and not basetemp.is_symlink()
+        phases: list[dict[str, str]] = []
+        for line in result.stdout.splitlines():
+            if not line.startswith("test-files-boundary "):
+                continue
+            row: dict[str, str] = {}
+            for field_value in line.split()[1:]:
+                key, separator, value = field_value.partition("=")
+                assert separator == "="
+                row[key] = value
+            phases.append(row)
+        assert [row["phase"] for row in phases] == ["uv-return", "cleanup-start", "cleanup-return"]
+        assert set(phases[0]) == set(phases[2]) == {"phase", "shell_pid", "status"}
+        assert set(phases[1]) == {"phase", "shell_pid"}
+        assert {row["shell_pid"] for row in phases} == {basetemp.name.removeprefix("gludd-testfiles-")}
+        assert phases[0]["status"] == ("1" if marker_native_failure else "0")
+        assert phases[2]["status"] == "0"
+        assert result.stdout.index("NATIVE-MARKER-ATEXIT") < result.stdout.index("test-files-boundary phase=uv-return")
+        summary = _summary(fixture, trace, "marker-native")
+        assert summary["failure_report_count"] == int(marker_native_failure)
+        _assert_pairs(fixture, trace, "marker-native")
+        for snapshot in fixture.root.glob("config-*.json"):
+            assert _read_json(snapshot)["unrelated_carrier"] == "owned marker carrier"
+        carriers_unchanged = fixture.environment == fixture_before
+        assert carriers_unchanged, "native marker control mutated its caller environment"
+    finally:
+        if basetemp is not None:
+            if basetemp.is_symlink():
+                basetemp.unlink()
+            elif basetemp.exists():
+                shutil.rmtree(basetemp)

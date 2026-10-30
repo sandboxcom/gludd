@@ -278,6 +278,7 @@ jobs:
             OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=2 \
             OBSERVED_HEARTBEAT_SECS=10
       - name: Known runtime and handoff regression admission
+        id: runtime_regression_admission
         run: |
           echo "=== CI PHASE: runtime-regression-admission ==="
           make run-watched \
@@ -287,7 +288,57 @@ jobs:
             STALL_SECS=60 MAX_SECS=90 \
             LOG=.gate-logs/ci-runtime-regression-admission.log \
             OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=2 \
+            RUN_WATCHED_PYTEST_TRACE=1 \
             OBSERVED_HEARTBEAT_SECS=10
+      - name: Archive native runtime admission evidence
+        id: runtime_diagnostic_archive
+        if: ${{ always() && (steps.runtime_regression_admission.outcome == 'success' || steps.runtime_regression_admission.outcome == 'failure') }}
+        env:
+          UV_PROJECT_ENVIRONMENT: ${{ github.workspace }}/.venv
+          VIRTUAL_ENV: ${{ github.workspace }}/.venv
+          UV_NO_SYNC: "1"
+          UV_PYTHON: ${{ matrix.python-version }}
+          UV_PYTHON_DOWNLOADS: never
+          GLUDD_AUTH_PSK: ""
+          OBSERVED_ROOT: .gate-logs/observed
+          OBSERVED_LABEL: ci-runtime-regression-admission
+          RUN_ID: runtime-admission-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}
+          RUNTIME_DIAGNOSTIC_SOURCE_SHA: ${{ github.sha }}
+          RUNTIME_DIAGNOSTIC_ARCHIVE: /tmp/gludd-ci-runtime-admission-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}
+          RUNTIME_DIAGNOSTIC_VALIDATE_ONLY: "0"
+        run: |
+          # Preserve the original terminal producer; no new runtime execution.
+          make --no-print-directory runtime-startup-archive \
+            PYTHON="$GITHUB_WORKSPACE/.venv/bin/python3" \
+            SYSTEM_PYTHON="$GITHUB_WORKSPACE/.venv/bin/python3"
+      - name: Summarize native runtime admission trace
+        if: ${{ always() && steps.runtime_diagnostic_archive.outcome == 'success' }}
+        env:
+          UV_PROJECT_ENVIRONMENT: ${{ github.workspace }}/.venv
+          VIRTUAL_ENV: ${{ github.workspace }}/.venv
+          UV_NO_SYNC: "1"
+          UV_PYTHON: ${{ matrix.python-version }}
+          UV_PYTHON_DOWNLOADS: never
+          GLUDD_AUTH_PSK: ""
+          LOG: /tmp/gludd-ci-runtime-admission-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}/trace.raw
+          RUN_ID: runtime-admission-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}
+          TRACE_SUMMARY_TIMINGS: "1"
+          TRACE_SUMMARY_MEMORY: "1"
+        run: |
+          # Protocol wall spans/RSS are diagnostic; no CPU or gate authority.
+          make --no-print-directory test-xdist-trace-summary \
+            PYTHON="$GITHUB_WORKSPACE/.venv/bin/python3" \
+            SYSTEM_PYTHON="$GITHUB_WORKSPACE/.venv/bin/python3"
+      - name: Upload native runtime admission diagnostics
+        if: ${{ always() && steps.runtime_diagnostic_archive.outcome == 'success' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+        with:
+          name: runtime-admission-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}-${{ github.sha }}
+          path: /tmp/gludd-ci-runtime-admission-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}
+          # The native owner maps hidden producer inputs to explicit nonhidden roles.
+          include-hidden-files: false
+          if-no-files-found: error
+          retention-days: 14
       - name: Inject version
         if: startsWith(github.ref, 'refs/tags/v')
         run: |

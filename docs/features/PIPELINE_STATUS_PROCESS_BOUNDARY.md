@@ -1,5 +1,114 @@
 # Pipeline Status Process Boundary
 
+## Snapshot providers are loaded only for requested CLI snapshots (2026-10-27 UTC)
+
+The normal publisher requirement is exercised on published, remote-verified
+0a4a56a043590fb99d1e5c08bc1cefb36a0c6f83. Its native batch-push receipt is
+.gate-logs/observed/v012-repaired-source-publication/
+v012-repaired-source-0a4a56a-20261027.json, passed201.402s. Remote verification
+was followed by an accepted exact-SHA Build request before publication success.
+The separate prerequisite and original90/60 runtime passed3.792s and82.324s.
+Run acceptance is publication evidence; each workflow retains its terminal result:
+
+| Exact F workflow_dispatch, attempt1 | Native terminal result |
+| --- | --- |
+| [Build40474709144](https://github.com/sandboxcom/gludd/actions/runs/40474709144) |1FAIL/5PASS/13SKIP; gate311 runtime timeout |
+| [Molecule40475173286](https://github.com/sandboxcom/gludd/actions/runs/40475173286) | Success, all six jobs |
+| [Pages40475644714](https://github.com/sandboxcom/gludd/actions/runs/40475644714) | Three validations pass, deployment skipped |
+
+Native ci-job-failure-context binds Build job122089997944 to
+Known runtime and handoff regression admission: original90total/60quiet ends124
+after90.5s, with an unfinished MAIN child. Its earlier pinned-image and promotion
+steps pass; gate312 independently passes its runtime in89.9s. The new311 family
+955f7482bbd5b2c872fca39d3b20747a60ddd543c8b2c6ca76ca66fe8e1c0f2e stays
+OPEN. Eight downstream shard intervals are unknown behind that gate barrier.
+Neither the last visible test nor partial green progress identifies a failed
+assertion. Existing workflow diagnostics upload no runtime protocol trace.
+
+The bounded local parent profiles retain76 complete ci_await_exact cases
+(16.57s/native18.074s) and34 complete ci_verdict_structural_repair cases
+(10.21s/native11.616s). Parent poll/communicate waits dominate; those rows identify
+neither child CPU nor the hosted timeout cause. Repeated Make composition is only
+0.210 cumulative seconds across42 calls in the latter profile, so it was rejected
+as the repair. Existing same-run generation/history controls remain unchanged.
+
+The actual existing _sandbox native Make/verdict child, with identical owned GH
+argv, exposes unnecessary snapshot-provider imports through -X importtime.
+The baseline157 import events include scripts.active_work_status and
+scripts.automatic_disk_cleanup; its raw report is
+/tmp/gludd-v012-F-native-verdict-imports-20261027/measurements.json.
+The changed-source probe has131 events and no active-work, cleanup or disk
+provider import; retain
+/tmp/gludd-v012-R-native-verdict-imports-20261027/measurements.json and
+.gate-logs/observed/v012-r-native-verdict-imports/
+v012-r-native-verdict-imports311-0a4a56a-20261027.json, native0/1.126s.
+Cold/warm and instrumented/control samples establish no speed improvement.
+
+pipeline_status now binds its three real snapshot-provider modules when an
+actual snapshot is requested. Importing it as a library retains its eager public
+module APIs; later calls preserve existing provider overrides. Plain CLI verdicts
+retain ledger/query/exit/history behavior while omitting these unused providers.
+No capacity value is coerced, no query is cached and no serving process restarts.
+
+Two new same-entrypoint import-boundary cases first fail2 in1.64s, then the whole
+verdict owner plus the logical-Makefile guard pass37 in27.63s/native29.042s.
+Receipts under .gate-logs/observed retain v012-r-verdict-imports-red/
+v012-r-verdict-imports-red311-0a4a56a-20261027.json and the corresponding
+v012-r-verdict-imports-green path/run. The fresh-main positive additionally uses
+-P, the actual physical runpy script, real provider modules and native
+read_snapshot. It requires an exact-SHA pending snapshot with real owned local
+and capacity data, no cleanup and false gate/release authority. Final AST/positive
+receiving passes2 in19.32s/native20.656s at v012-r-final-ast-and-snapshot/
+v012-r-final-ast-and-snapshot311-0a4a56a-20261027.json.
+
+Final receiving keeps all fifteen complete owners: pipeline_status_job_progress,
+pipeline_status_inprocess_ledger,pipeline_status_exact_sha,status_heartbeat_terminal,
+pipeline_status_ssh_transport,ci_failure_ledger,proof_observations,require_ci_green,
+require_ci_green_detect_branch,pytest_param_fixture_collisions,
+ci_interaction_discipline,ci_verdict_structural_repair,ci_verdict_all_required,
+ci_await_exact and pipeline_coverage_source_boundary
+(each tests/unit/test_NAME.py). The latest twelve-owner roster is retained,
+with three complete affected consumers added.
+
+| Installed runtime | Complete receiving | Native coverage-files receipt |
+| --- | --- | --- |
+| 3.11 |827PASS/96.90s/native99.929s |20261027T102013Z-8472-a94aff01 |
+| 3.12 |827PASS/106.21s/native109.660s |20261027T102013Z-8473-8e4d3f25 |
+
+Both exact sessions are drained and inactive/passed0. Each native trace retains
+1657events/827complete protocols with zero issues, failures or unfinished nodes.
+The unchanged config/coverage_pipeline_status.ini measures both complete
+pipeline_status.py and require_ci_green.py, including real subprocess coverage.
+Native audits coverage-20261027T102153Z.json and coverage-20261027T102202Z.json
+under .gate-logs pass85aggregate/75each-file LINE AND BRANCH: aggregate99.3/98.3,
+pipeline_status99.2/98.1 and require_ci_green100/100. Earlier765-case receiving
+retains its earlier test bytes and is not substituted for this final scope.
+Ruff, separate strict source/test scopes, environment-write and line checks pass.
+Independent SOURCE ONLY review binds all three final source files and preserves
+65 original test functions/141 assertions; the source decision is
+/tmp/gludd-v012-R-source-review-20261027.md.
+
+Public research read2026-10-27:
+[pytest issue3918](https://github.com/pytest-dev/pytest/issues/3918) is a firsthand
+2018 report profiling import-hook overhead in an import-heavy suite. It was
+closed in2018; its old assertion-rewrite diagnosis does not diagnose current
+Gludd or justify disabling rewriting/plugins. The first broad three-result
+search was unrelated; a narrowed title search selects this actual report.
+Both unauthenticated HTTP200 responses are preserved at
+/tmp/gludd-v012-R-pytest-import-community-20261027.json and
+/tmp/gludd-v012-R-pytest-import-title-community-20261027.json.
+The repair decision follows the actual native child import witness.
+
+This R receiving snapshot precedes its normal source commit. After fresh normal
+collection/commit, run the first unchanged90/60 runtime through native
+ci-failure-repair for the OPEN955 family, using public run-watched and the actual
+_pytest-runtime-compatibility-admission command. Focused acceptance, source review
+and numeric coverage do not clear that timeout. Normal guarded publication must
+then accept the new exact-SHA Build; preserve its real terminal result while
+independent receiving continues. Canonical full gate, global coverage, exact-SHA
+push proof, genuine development/master promotion, ZDD deployment and fresh signed
+all-assets release remain pending. All seven S98 tasks remain open.
+
 ## Pipeline public CLI reuse (2026-10-21 UTC)
 
 Exact source4a10517129f3730c5776f33f2e190d3105528931 descends from5a2d216

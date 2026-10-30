@@ -1,5 +1,556 @@
 # GHA pipeline and agentic promotion audit
 
+## Marker runtime refusal and next measured source input (2026-10-28 UTC)
+
+At actual marker586088e27378bc3cc9e9bff451b50eecdd0dc1ad, both original90/60
+repair-owned runtimes fail124 (31190.54s;31290.512s). HELP1/TAIL193 complete in
+each; MAIN and final joins remain unproved. The failed owners ran simultaneously: six planned execution workers across
+four cohorts. They supply no isolated performance or CPU-cause proof.
+Normal guarded publication refuses0.744s/native2 with two open families lacking
+verified repairs; no Git transport or new GHA request starts. Exact receipts are
+recorded in the [runtime owner](RUNTIME_ADMISSION_CLEAN_SHA.md#measured-no-sleep-visitor-field-walk-2026-10-28-utc).
+Retain DC's earlier terminal Build failures/Molecule6/Pages3 with deployment
+skipped as fixed hosted evidence; they are not a marker or no-sleep hosted result.
+
+The existing two-node native profile identifies repeated visitor field-generator
+work; no speed, cause or deadline-fit claim follows. Reviewed no-cache source52a
+retains every original test/assertion and fresh whole input collection. Actual
+tests-only RED is13FAIL/2PASS/native1.801s,15pairs/0issues/unfinished. Complete affected-owner+AST receiving passes252 EACH (31163.09s/native64.338s;
+31266.83s/native68.248s),507events/252pairs/0failed reports/issues/unfinished EACH.
+The same original two-node command runs alone and passes2/4.29s/native5.653s
+(previous2/4.92s/native6.289s); the actual leaf has7events/2pairs and the separately
+allocated outer trace remainsEMPTY0. This one-sample diagnostic establishes no
+savings, CPU cause, deadline fit or hosted improvement. After the source
+checkpoint, the next original90/60 repair runs alone with no other local test
+cohorts; this does not claim contention was fixed in code or solely caused the
+timeouts. A new guarded publication/accepted GHA and every final proof remain
+separate; no local result grants hosted/gate/release authority.
+
+
+## dc88 terminal hosted evidence and next diagnostic input
+
+All three manual diagnostic workflows select feature/v012-count-archive-20261027
+at dc88c23a924c13375c7611a655825418374010ec, attempt1. Normal guarded
+publication198.261s verifies the exact remote source and accepted Build request;
+its successful transport and earlier local runtime repair82.111s do not certify
+hosted runtime success.
+
+| Native owner | Actual terminal evidence | Missing authority |
+| --- | --- | --- |
+| [Build40564351671](https://github.com/sandboxcom/gludd/actions/runs/40564351671) | Both gate promotion prerequisites pass;311 runtime124/90.562s and312 runtime124/90.536s fail. Exact observer305.413s/exit2 is drained and inactive. | All eight downstream shard intervals are unknown/censored in the immutable native timing summary; artifact and canonical push proof remain absent. |
+| [Molecule40564817216](https://github.com/sandboxcom/gludd/actions/runs/40564817216) | All6 shards pass. Exact observer184.135s/exit0 is drained and inactive. | Diagnostic source/event only; no candidate promotion or release proof. |
+| [Pages40564536697](https://github.com/sandboxcom/gludd/actions/runs/40564536697) | Both browser validations and JavaScript coverage pass; deployment skips. Exact observer366.911s/exit0 is drained and inactive. Native terminal summary2 is retained for the skipped job. | No master Pages deployment or application ZDD proof. |
+
+Native ci-view ingests each terminal result. Current ledger keeps open2,
+repaired13/resolved59/runs189: family16af6594e55238c36803e27791b640f9eb7275e6ed02e2346b7be44349c8678a
+reopens at occurrence3; familyfaedf98c373b6c548e8d799c7167010de6b52ccf6043d306925847fff51e5b1d
+is open at occurrence1. Preserve all prior failures and local repair history.
+The old parent-only signal and ledger nodes finish without a failed report in
+both archives; this removes those observed node failures from this attempt,
+while the overall runtime deadline still fails. Neither the archive finish
+records nor the passed earlier prerequisite make the whole job green.
+
+Python311 records2358 MAIN passes and all2552 protocol pairs; its last pytest
+summary is still followed by no runtime-cohort-join before the deadline.
+Python312 records2325 of2358 MAIN nodes, leaving33 unobserved. Its final two
+stress FINISH records after controller loss are not passed-call evidence.
+The [existing test-files owner](RUNTIME_ADMISSION_CLEAN_SHA.md#uv-return-and-owned-cleanup-visibility-2026-10-27-utc)
+now exposes saved UV return, owned cleanup start and cleanup return. Eight
+RED cases and GREEN BOTH retain native failure/cleanup premises. Initial
+complete23-owner receiving catches four real native dry-run parsing failures
+(1267 other passes/native463.975s). Code folds only the new post-RC continuations
+onto the original UV physical line; original tests/assertions remain unchanged.
+The four failed cases, eight marker cases and logical-Make guard then pass13
+EACH/native27.633s and29.700s,29events/13pairs/0issues EACH. Corrected Make23823835
+and unchanged teste3f95e99 have independent source-only approval. Complete24-owner
+receiving passes1479 EACH/native478.691s and498.866s, with exact sessions
+fully drained/status verified. Both traces have3092events/1496pairs/0issues/
+0unfinished;12 controlled child reports remain separate from zero outer failures.
+Normal checkpoint/fresh collection and publication remain required. This is useful
+changed diagnostic input, not a performance fix or authority to rerun dc88.
+
+The genuine baseline branch has its own normal checkpoint
+f145737b22b32b17496b5f98111b160e1a3ab8f8, following156787d/development82db.
+Its reviewed native image refresh/check and complete4-owner199PASS EACH remain
+source receiving. Normal commit58.895s includes fresh128741selected/
+128765collected,24deselected0errors45.60s/native52.787. Its actual guarded
+publication passes all eight guards, exact EE availability and six promotion
+pins1.59s/native2.841. The serial121/1/9 runtime prints MAIN2355PASS87.22s
+but ends124/90.525s before complete later-phase proof; outer101.090s/exit2
+explicitly starts no Git transport. Thus no exact remote/source CI exists for
+this checkpoint. The legacy child receipt has no progress_identity field; its
+actual source/owner/log/native status remains bounded by the verified outer
+command, not an invented child command receipt. Its allocated trace produces
+EMPTY0events, which supplies no timing/cause/performance proof. Preserve
+.gludd checkout-owned ledger scope and the exact failed receipts. The existing
+Main cohort schedule is the next source repair input; no deadline increase,
+new runner or unchanged retry is authorized by this refusal.
+
+Root remains the sole bounded hosted observer. The next published source needs
+its own accepted run and attempt while independent receiving continues. Final
+E/M/C/N, focus132/128 HOLD,333 combined, canonical21600/global85/75 BOTH,
+canonical push, master ZDD and fresh complete signed artifacts remain pending.
+
+## MC terminal hosted evidence and child handoff repair
+
+The three manual diagnostic workflows select feature/v012-count-archive-20261027
+at full SHA11adaa4080de17f47be0bd10e54176dddba3eb3d, attempt1. Accepted
+requests and publication remain separate from terminal results and release proof.
+
+| Native owner | Actual terminal evidence | Missing authority |
+| --- | --- | --- |
+| [Build40553611733](https://github.com/sandboxcom/gludd/actions/runs/40553611733) | Gate311 prerequisite passes, runtime124/90.537s; gate312 whole job passes. Observer670.829s/exit2 is inactive and drained. | All eight downstream shards unknown after failed barrier; no artifact matrix or canonical push proof. |
+| [Molecule40553820102](https://github.com/sandboxcom/gludd/actions/runs/40553820102) | All6 shards pass; exact observer245.521s/exit0 is inactive and drained. | Manual event and MC source only, no new signal-source or final release proof. |
+| [Pages40554132925](https://github.com/sandboxcom/gludd/actions/runs/40554132925) | Both browser validations and JavaScript coverage pass; deploy skips. Exact observer184.446s/exit0 is inactive and drained; native summary2 is preserved. | No master Pages deployment or application ZDD proof. |
+
+Native ci-view ingests all three without manual observation/ledger edits.
+Ledger16af reopens at occurrence2; open1/repaired13/resolved59/runs186 remains
+distinct from local repair history. MC publication199.900s proves its normal
+guards, hooks, exact remote binding and accepted Build signal, not hosted green.
+
+The failed311 archive hashes statusd997d805, log69cfd2b8, tracee8f89d06 and
+report645e9702 to their actual bytes. It contains5051events/2517pairs/0issues/
+0unfinished but FOUR failure REPORTs for TWO nodeIDs. Native parent-only
+shutdown fails communicate(timeout=10); the later ledger unraisable subtype is
+clipped. All four V4 cheap-input controls and three count guards complete on
+TAIL193PASS. MAIN completes2323 of2356;33 reference nodes are unobserved.
+Complete protocol pairs or the312 pass do not turn311 green or prove causality.
+
+The [owning signal record](WATCHDOG_SECRETS_LIFECYCLE.md#owned-child-pid-handoff-2026-10-27-utc)
+retains the real source fork/PID window and active same-entrypoint RED2FAIL/
+1PASS39.59s/native41.133s. The reviewed existing-launcher repair queues first
+INT/TERM until PID ownership, then retains original cleanup and first status
+under a later signal. Unchanged controls pass3EACH/native20.701/22.417s;
+complete18-owner receiving passes1465EACH/native349.738/364.545s,2933events/
+1465pairs and zero issues/failures/unfinished each. Script407a7850/test6b2f2709
+remain working postimages at fixed parentMC, not an exact committed hosted SHA.
+All old34functions/126asserts, original90/60,182families, eight promotion pins,
+three2/1/1 workers and21phases2850 remain. No performance claim follows.
+
+Root reconciles the actual old typing lease eed654, a genuine ancestor of MC,
+through native exact-tuple release after clean/quiescent verification. The
+missing e371 default row refusal is preserved. Existing materialization is now
+registered feature/v012-baseline-inputs-20261027 from development82db without
+another checkout or deleting refs. Its input repair/complete source closure and
+genuine E/M/C/N objects/proofs remain separate. Prospective receiving grows from
+67 to at least73 complete owners after actual source inventory; none is dropped.
+Focus132/128 HOLD,333 combined, canonical21600/global85/75 line AND branch,
+canonical push, reviewed promotion, master deployment and fresh complete signed
+stable artifacts remain open. Next: normal signal checkpoint/fresh collection,
+clean-SHA native16af repair, guarded publication/accepted exact-SHA Build and
+parallel Molecule/Pages diagnostics. All seven S98 tasks remain unchecked.
+
+## Received native Make carrier context
+
+The [owning input-boundary record](GIT_STATUS_READONLY.md#explicit-native-make-carrier-fixture-context)
+retains U's actual two hosted failures and the outer recipe's environment-
+override witness. The repair adds the exact existing native MAKEFLAGS
+binding/.PHONY context only to two controlled Make workspaces. All original
+16 functions/102 assertions, real Git/hook/Ansible/confinement, argv, copied
+carriers and ordinary/-e behavior remain. One explicit-origin assertion is
+added; no production source or publication guard changes.
+
+Native local RED2FAIL/5PASS31.085s establishes the added origin contract,
+with the old payload present locally; it is not a reproduction of the
+host's missing payload. Initial GREEN7 EACH/native30.248/31.687s has
+17events/7pairs/zero issues. A122-character assertion then fails Ruff;
+an AST-identical layout correction restores lint. Final approved source
+f9476b8ffd5bab16562a857db7a5aa2095216c1513b171c195044375832aba1d
+passes complete changed Hook/native extraction/AST receiving66 EACH,
+native71.786/75.775s,135events/66pairs/zero issues/failures/unfinished.
+Every exact native session is drained. These are local input/behavior
+proofs; original hosted failures and runtime timeout remain authoritative.
+
+V4 parentf3f05324322383c2b2f10d54a22546eca10dad54 has immutable eleven-path
+approval, normal71.724s and fresh131423 selected/131447 collected/
+24deselected/0errors47.59s/native53.239s. Its family182/eight pins and
+complete864-EACH receiving keep their actual unchanged scopes. No new
+runtime speed or global coverage claim follows from this fixture repair.
+
+Local immutable source audit verifies that master9cccc35c4435983679ac315d0e5fa63ebed7310c
+and development82db11b57b254c1ca1e035975b5cc86253e2fed5 are ancestral
+baseline candidates, requiring native remote binding, but differ from published34a workflow bytes
+and retain168/12 intervening workflow commits. Merely changing the baseline
+name cannot satisfy feature-ci provenance. The native guard filters failure
+families by actual branch; it is not development-only or a blanket global
+blocker. Current branch16af needs its native repair-owned original90/60
+runtime evidence. Old branch745/e917 retain separate count/Hook scopes and
+failed-source ancestry. Format-only repair plans execute no admission,
+tests or ledger writes and grant no repair authority.
+
+Next after normal carrier checkpoint: use explicit single-family
+ci-failure-repair with actual clean source and matching public run-watched
+evidence, then preserve every canonical EE/prerequisite/runtime/publication
+guard and accepted exact-SHA Build signaling. Dispatch independent Molecule
+and Pages diagnostics in parallel with hosted Build; diagnostic events
+remain distinct from canonical push/master/tag authority. All seven S98
+tasks,132/128 focus HOLD,333 combined,21600 full gate/global85/75 BOTH,
+genuine integration/master ZDD and fresh signed matrix remain pending.
+
+## Executed early-admission repair and remaining timeout (V4)
+
+The [trace record](XDIST_TRACE_SUMMARY.md#cheap-fixture-input-and-count-guards-v4)
+retains actual controlled4FAIL/1PASS, route1FAIL/1PASS, final9-EACH focus,
+terminal eight-pin acceptance and complete864-EACH sixteen-owner receiving.
+Independent source review binds all five postimages to actual V3 parent
+f78253494d85f6bf4d58816d45b25409be93cc23 and retains all181 predecessor
+families/760 assertions. This adds executable cheap regression guards to the
+existing owner, following the comparative review below; no second runner,
+observer or cache is introduced. Normal source checkpoint/publication and
+final release proofs retain their own authority.
+
+The actual current-source native fixture-audit profile runs the original
+test once through test-files-cprofile, selected installed311 in both watcher
+and CMD,45/30 diagnostic bounds and the ordinary Main harness. It passes1
+in7.03/native8.308 seconds. Emitted profile directory is
+.gate-logs/test-files-cprofile/profile-82238-ea1b769856d710bc, exact controller
+PID82238/run profile-82238-ea1b769856d710bc. Its real trace has5events/1pair,
+zero issues/failures/unfinished. One repository audit calls the source audit
+once;4204 source findings parse unique inputs. cProfile attributes5.802402
+elapsed-call seconds to the repository fixture and5.745314 to its audit;
+AST parse is3.393709 cumulative seconds. These overlapping rows are not OS
+CPU, hosted critical-path or savings measurements. Source already uses unique
+parsing, bounded/restored GC and grouped fixture ownership; no defensible
+parser repair follows. Preserve the actual V2 timeout rather than claiming
+this local diagnostic or new TAIL guards fixes MAIN completion.
+
+The exact retained Uunit1b native witness reports MAKEFLAGS origin
+environment override with only CI_FAILURE_LEDGER in the outer recipe's
+owned-key list; its ledger origin is command line and exact-ledger match
+true. The defect appears before Git/pre-push. Source inspection finds native
+foundation's existing target-specific MAKEFLAGS binding absent from those
+two fixture contexts. Its narrow private correction preserves all original
+assertions/argv/ordinary-e/provider/plugin/confinement behavior; RED/GREEN
+remain unexecuted at this fixed snapshot. No GNU Make-version or production
+confinement defect is inferred. Actual Uunit2 stale-count failure retains
+V1's local source correction and pending new hosted proof.
+
+V2 Build40522919824 remains failed124/90.566s in311;312 passes, and its exact
+failed archive is retained. Separate V2 Molecule six jobs and Pages three
+validation jobs pass; feature deployment is skipped. Canonical push/global
+gate,132/128 focus HOLD,333 combined replay, genuine development/master ZDD
+and fresh complete signed artifact matrix remain unproved. All seven S98
+tasks stay open.
+
+## Comparative primary implementation review (2026-10-27 UTC)
+
+Earlier upstream research addressed individual CI/pytest failures; it did
+not establish an effective end-to-end agentic release strategy. This review
+reads pinned first-party implementations rather than treating another
+project's checklist or an open proposal as proven operating behavior.
+
+| Primary evidence | Finding and Gludd consequence |
+| --- | --- |
+| [OpenHands orchestrator](https://github.com/OpenHands/software-agent-sdk/blob/f7cbea4ff6210f8f665aacb166abfacfca6f8be0/.github/workflows/create-release.yml) and [publisher](https://github.com/OpenHands/software-agent-sdk/blob/f7cbea4ff6210f8f665aacb166abfacfca6f8be0/.github/workflows/pypi-release.yml) | Explicit publisher dispatch, tag checkout and requested-version validation make publication inputs concrete. Gludd's Build dispatch enforcement already implements part of this pattern; accepted Build still does not certify every publisher or terminal success. Use the existing release owners for remaining fan-out/fan-in. |
+| [OpenHands binary workflow](https://github.com/OpenHands/software-agent-sdk/blob/f7cbea4ff6210f8f665aacb166abfacfca6f8be0/.github/workflows/release-binaries.yml) | Five native binary builds run artifact startup/health checks; container smoke jobs inspect architecture manifests and boot images. Preserve Gludd's required fresh-byte/platform matrix and complete-matrix acceptance; another project's partial-publication policy is not Gludd's completion criterion. |
+| [OpenHands release documentation](https://github.com/OpenHands/software-agent-sdk/blob/f7cbea4ff6210f8f665aacb166abfacfca6f8be0/.github/workflows/README-RELEASE.md) and [release skill](https://github.com/OpenHands/software-agent-sdk/blob/f7cbea4ff6210f8f665aacb166abfacfca6f8be0/.agents/skills/sdk-release/SKILL.md) | At the same commit, documentation describes explicit dispatch while the skill still describes release-event chaining. Executable source and actual service responses must own claims. Another prose layer would not repair Gludd's missed early regressions. |
+| [SWE-agent CI](https://github.com/SWE-agent/SWE-agent/blob/3ea751c087f32b16e039a2233dd6eefecef325d5/.github/workflows/pytest.yaml) | Both Python3.11/3.12 are tested and trajectories upload with always(). Gludd already has both runtime lanes; V2 now actually uploads its failed311 admission archive. Diagnose that retained input before repeating a timeout. |
+| [Aider package](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/.github/workflows/release.yml) and [container workflows](https://github.com/Aider-AI/aider/blob/5dc9490bb35f9729ef2c95d00a19ccd30c26339c/.github/workflows/docker-release.yml) | Separate tag-triggered publishers are concise, but these files alone supply no Gludd-equivalent complete artifact fan-in. Trigger simplicity cannot substitute for required byte, signature, coverage or deployment proof. |
+
+Firsthand long-lived evidence includes the
+[OpenHands release automation request4162](https://github.com/OpenHands/software-agent-sdk/issues/4162)
+(open since July20) and
+[reported repeated enterprise bump403 failures5475](https://github.com/OpenHands/software-agent-sdk/issues/5475).
+The latter reports continue-on-error hiding failures across releases. These
+are issue reports, not independently reproduced Gludd causes. The
+[thin-controller proposal4637](https://github.com/OpenHands/software-agent-sdk/issues/4637)
+also explicitly reuses existing jobs and separates infrastructure/missing
+telemetry from evaluation outcomes; it remains an open proposal, not
+evidence of a shipped controller.
+
+Concrete status: normal Gludd publishers already require accepted exact-SHA
+Build signaling; separate Molecule/Pages dispatches remain separately owned.
+V3 isolates three real fixture child boundaries with native RED/GREEN and
+785-EACH whole receiving. Cheap caller-input/count regressions are being
+prepared for the existing early-admission owner; they are not implemented
+or timed by this research. No measured end-to-end release speed or release
+success is claimed. Retain existing final gates and avoid a second runner,
+observer, proof cache or prose-only certification path.
+
+## V3 hosted failure boundary
+
+Normal V2 checkpoint34a19fb775e6fcea97ee723a2b9a89b3f3ddd98e passed
+63.953 seconds with fresh131394 selected/131418 collected/24 deselected/0
+errors. New feature branch publication passed197.299 seconds through the
+normal guards and accepted Build40522919824. Separate diagnostic
+Molecule40523778932 passes all6jobs; Pages40523450015 passes both browsers
+and JavaScript coverage, with deployment skipped on this feature branch.
+
+Build40522919824 is terminal failure, attempt1:311 job122254627067 passes
+promotion then fails runtime;312 job122254627211 passes. Archive, summary
+and upload pass on both. Downloaded exact311 archive replays and verifies
+its stored roles/hashes: statusae27ec13b96c5cdf7a17a2af056434a0ee8e908e4ecee936970c3fa6694e87b8,
+log68414a990bd8a30821db4004700f5cc85d7489ca98aa8bf6a576a8ae6ed71631,
+trace74ca2a02ce8c58989d7592c09165c0a0d2d0774434512f541109cf8be361b072.
+It records124/90.566 seconds and5033events/2510pairs/0issues/failures/
+unfinished. These wall/protocol facts do not establish the timeout cause.
+The first local archive reader's sandbox cleanup failed; its escalated
+native0 replay passes0.608 seconds without launching runtime.
+
+Native ledger family16af6594e55238c36803e27791b640f9eb7275e6ed02e2346b7be44349c8678a
+is OPEN. The original U observer retains its5401.03-second timeout. A later
+native service reading is terminalFAIL:unit-1b job122227591467 andunit-2
+job122227591557. Exact unit-2 native context shows the old16==15 count
+assertion; V1 has separate full-owner local acceptance, not hosted repair
+proof. Unit-1b's cause remains unproved; an initial FAILED-token lookup
+matched successful parameter names and cannot establish its actual failure. V3 complete13 receiving is recorded in the
+[trace feature](XDIST_TRACE_SUMMARY.md#native-child-trace-input-isolation-v3).
+All eight V2 downstream shard intervals remain unknown behind the failed
+barrier. Final132/128 focus HOLD,333 combined replay, genuine integration,
+21600 canonical gate/global85/75 BOTH, canonical push, master ZDD and fresh
+complete signed artifacts remain pending; all seven S98 tasks stay open.
+
+## V2 received archive replay security controls
+
+The [owning archive record](IMPORT_TIME_MEASUREMENT_INTEGRITY.md#native-archive-replay-security-coverage)
+retains both failed574-test coverage attempts and the two meaningful security
+controls. Exact reviewed test postimage4daf054a784c39cf76ed5bf35a3aae8e0efcc2d848b5fcd527bc9f06e73f6fb6
+keeps every old test byte. Complete original12-owner/four-provider coverage
+passes576 EACH, native108.173/118.393 seconds,1155events/576pairs/zero issues or
+failures. Actual native audits measure728/856 and729/856 branches with every
+file passing both75 floors and aggregate passing both85 floors. All production
+source, coverage settings and300/60 limits remain unchanged.
+
+Normal V2 checkpoint/new exact-SHA diagnostic CI and complete25-owner receiving
+remain pending. Old U ordinary13 retains3FAIL/778PASS EACH; the three count
+failures have V1's separate129-EACH owner proof, while31 mixed child pairs need
+separate fixture-owned trace inputs and actual RED/GREEN. Source approval and
+this component coverage do not grant a canonical full gate, project-wide85/75,
+exact-SHA push, master ZDD, signed artifact or release certificate. Retain the
+132/128 focus HOLD, unexecuted333 combined plan and all seven open S98 tasks.
+
+## U complete receiving count failure and V conformance
+
+Published U4482072ab960426a91ab198a22ed1504900a28ad retains its normal72.640-second
+checkpoint and fresh131392 selected/131416 collected/24 deselected/0-error
+collection. Its clean-source runtime82.862 seconds, exact terminal archive and
+parent84.219-second repair owner passed. Family
+d5b8783d8fa968c3eec9b4efff1a5ec84f632e5fb575e3d448ed3134ec349de4 is locally REPAIRED.
+Normal publication194.389 seconds verified the exact remote SHA and accepted
+Build40513368737; native parallel dispatchers accepted Molecule40513728636 and
+Pages40513571271. The retained native step snapshot shows the311 whole gate
+passed and both runtimes passed runtime/archive/summary/upload. Complete runs,
+canonical push, deployment and release proof remain separate required outcomes.
+
+The complete13 ordinary owners plus logical Make AST failed3/778 on EACH
+installed runtime:311263.02/native264.975 and312276.20/native278.189 seconds.
+All three failures are the original parameters of
+`test_native_reviewed_finalization_executes_in_bounded_early_admission`:
+its independent TAIL count remained15 after U intentionally added selector16.
+The eight promotion pins did not cover this whole owner. Prior source-only
+approvals missed this literal; retain those approvals and the adverse correction.
+Both failed receipts remain under `v012-U-ordinary13` with exact IDs
+`v012-U-ordinary13-311-4482072-20261027` and
+`v012-U-ordinary13-312-4482072-20261027`. Each trace has1725events/812pairs,
+zero issues/unfinished and13 mixed failure reports across5 nodes: actual3 outer
+failures and expected nested control failures are distinct. Trace ownership
+of those additional31 child pairs is a separate bounded source diagnosis.
+
+V changes only that assertion's count15 to16. All54 functions/336 assertion
+nodes, selector occurrence, last-four order, MAIN/HELP exclusions and original
+90/60/full-gate assertions remain. Exact code hash
+952305c2d6c4105184f0bfacdd184215b1d69a32e8dc377c981c71d72e1a2534 has independent
+source approval; the additional16-owner literal/AST audit found no other stale
+TAIL/union/family count within its bounded scope. Complete changed owner plus
+logical Make AST passes129 EACH:31125.79/native27.155 and31227.26/native28.666
+seconds,261events/129pairs/zero issues/failures/unfinished. Exact native IDs are
+`v012-V-tail-count-green311-4482072-20261027` and
+`v012-V-tail-count-green312-4482072-20261027`, label `v012-V-tail-count`.
+Ruff, configured strict typing and test-environment-write checks pass.
+
+The separate complete12-owner/four-source coverage attempts passed574 EACH
+but failed aggregate branch85:311726/856 and312727/856; every file passes75.
+Native failed audits `.gate-logs/coverage-20261027T134053Z.json` and
+`.gate-logs/coverage-20261027T134103Z.json` remain failed. New meaningful archive
+path/required-role controls are only proposed; no production or floor changes.
+Normal source checkpoint, broader receiving, fresh exact-SHA diagnostics,
+focus132/128 HOLD, combined333, genuine integration, canonical21600/global
+coverage, master ZDD, complete signed artifacts and all seven S98 proofs remain.
+
+## Working U native archive contract repair
+
+Fixed pre-commit source snapshot,2026-10-27 UTC.
+Local T5f7e0bbfc506f373daca7a2e737c9bd371a03145 passes normal commit64.507s and
+fresh131370selected/131394collected,24deselected/0errors48.07s/native53.506s.
+Remote S Build40498498468 remains1FAIL/5PASS/13SKIP, with311 runtime124/90.5
+and strict archive2. SourceS Molecule40498817189 succeeds6; Pages40498943860
+succeeds3 validation jobs with deployment skipped. Those terminal results are
+native ledger observations, not deployment proof. The sourceS open combined
+runtime/archive family is d5b8783d8fa968c3eec9b4efff1a5ec84f632e5fb575e3d448ed3134ec349de4.
+
+The [U archive record](IMPORT_TIME_MEASUREMENT_INTEGRITY.md#native-lf-and-integer-archive-contract)
+owns actual original/type/early/routing REDs, native thirteen controls, the
+single child-free TAIL unit, original assertion preservation and SOURCE ONLY
+reviews. Exact integer/LF/raw-byte checks replace the mismatched visual count.
+The original producer, cleanup,90/60 and all180 predecessor families remain.
+Current family181 and MAIN139/HELP1/TAIL16 preserve all three native children.
+All eight promotion pins pass; no capacity or canonical-gate waiver follows.
+
+First full profile attempts retain573PASS/1FAIL EACH and no coverage result.
+Only the offending synthetic fixture's two LF metadata inputs were conformed;
+its malformed-import assertions are unchanged. Corrected whole startup+AST+
+original dot passes112 EACH,227events/112pairs/0issues. Full profile and remaining
+ordinary receiving remain pending; their deduplicated25-owner union keeps all
+four production sources and85/75 LINE AND BRANCH on both runtimes.
+
+Next: normal source checkpoint/fresh collection, clean-SHA combined native repair
+with inner90/60 then real terminal archive0 under one enclosing240/180 owner,
+then normal guarded exact-SHA publication and accepted Build plus parallel
+Molecule/Pages diagnostics. Diagnostic source can be published after focused
+acceptance while independent broader receiving continues. Actual hosted archive,
+terminal Build/all shards and each later promotion outcome must be observed.
+This source fixes diagnostic compatibility, with no hosted timeout-cause or
+speed claim. The failed311 raw envelope remains unavailable.
+
+Final focus132/128 HOLD and required combined333 are unchanged. No E/M object,
+canonical full gate, canonical push proof, master ZDD acceptance, signed artifact
+matrix or v0.1.2 release completion exists. Earlier fixed records retain scope.
+
+## Fixed S hosted result and T fixture repair
+
+Published/remote-verified S b6530afbd41af2df9a3bcbdfa2c6b6511c8c647d has
+independent original-source approval for253 paths:246 unchanged R identities,
+six replacements and one newly changed original-scope workflow test.
+Normal publication requires accepted Build40498498468 before success and passes
+192.772s at .gate-logs/observed/v012-S-normal-source-publication/
+v012-S-normal-source-b6530af-20261027.json. Separate prerequisite/runtime
+owners pass3.521s/81.904s; the repair-owned90/60 passes81.981s with2542 pairs.
+
+[Build40498498468](https://github.com/sandboxcom/gludd/actions/runs/40498498468)
+attempt1 ends1FAIL/5PASS/13SKIP. Native311 job122169983377 passes pinned EE and
+promotion, then runtime returns124/90.5s. The following archive independently
+fails2: startup log size/count differs from its terminal status. Summary/upload
+are skipped. Native312 job122169983214 passes the entire gate, runtime80.496s
+and all three new diagnostic steps. The only live run artifact is its312
+runtime-admission archive; no failed311 raw envelope was uploaded. Exact failed
+step context is retained by ci-job-failure-context; no earlier-phase attribution
+or runtime-cause claim follows. All eight downstream shard intervals are unknown.
+Native ci-view records OPEN family
+d5b8783d8fa968c3eec9b4efff1a5ec84f632e5fb575e3d448ed3134ec349de4.
+The older955 local REPAIRED entry is not S-hosted resolution.
+
+[Molecule40498817189](https://github.com/sandboxcom/gludd/actions/runs/40498817189)
+and [Pages40498943860](https://github.com/sandboxcom/gludd/actions/runs/40498943860)
+are exact-S dispatches last observed pending. Root owns one bounded Pages
+observer. Its initial sandbox-denied reader was stopped through native
+project-namespace cleanup and drained143; the network-enabled replacement has
+working native lookup. The initial artifact download125 is also retained;
+native exact-run download succeeds11.019s after network/process permission
+changes. Neither lookup nor diagnostic archive supplies deployment proof.
+
+The [T fixture record](XDIST_TRACE_SUMMARY.md#fixture-trace-isolation-and-ordinary-entrypoint)
+retains both genuine REDs, original assertions, prior full14 trace qualification
+and final corrected complete two-owner ordinary228 EACH/traced7 EACH receiving.
+No production trace parser or90/60 bound changes. The strict archive contract
+mismatch is separate pending source work; no unchanged hosted rerun is justified.
+
+The former332 R-only combined count omitted S's workflow test. Current required
+union is329+3R+1S=333, unexecuted. Focus128 remains HOLD; a private prerequisite
+integration proposal supplies no E/M object, admission, gate or capacity waiver.
+Canonical21600/global85aggregate75every-file LINE AND BRANCH BOTH, canonical
+push CI, genuine development/master ZDD promotion, downloaded built-byte smokes
+and fresh complete signed artifact release remain required.
+
+## Hosted runtime trace and terminal archive wiring (2026-10-27 UTC)
+
+Published, remote-verified R3b4a12ae59680ed9116d840d0fc567712b655024 has
+independent SOURCE ONLY approval for its actual252-path development diff:
+244 unchanged F identities plus8 approved postimages. Normal direct publication
+passes191.570s at .gate-logs/observed/v012-R-normal-source-publication/
+v012-R-normal-source-3b4a12a-20261027.json and accepts its exact-SHA Build before
+success. Separate prerequisite/runtime receipts pass3.547s/81.493s under
+batch-push-prerequisite-admission and batch-push-runtime-admission,
+both run IDs ending42503. They retain original90/60 and all eight prerequisite pins.
+
+| Exact R workflow_dispatch, attempt1 | Native terminal result |
+| --- | --- |
+| [Build40489867319](https://github.com/sandboxcom/gludd/actions/runs/40489867319) |1FAIL/5PASS/13SKIP; gate311 runtime124/90.5s |
+| [Molecule40490205808](https://github.com/sandboxcom/gludd/actions/runs/40490205808) | All six jobs pass |
+| [Pages40490336699](https://github.com/sandboxcom/gludd/actions/runs/40490336699) | Three validations pass; deployment skipped |
+
+Exact ci-job-failure-context for Build job122140852035 preserves TAIL185 passing
+in70.57s and MAIN100% output at the90.5s timeout. Neither proves a terminal MAIN
+or joined pass. Earlier pinned-image/promotion steps pass, and gate312 passes
+the runtime independently. All eight downstream shard intervals remain unknown.
+Native ci-view ingestion reopens family
+955f7482bbd5b2c872fca39d3b20747a60ddd543c8b2c6ca76ca66fe8e1c0f2e;
+local R81.715/81.493/82.104 passes do not repair this new hosted failure.
+
+R's live nine-owner release-proof-admission passes148.399s at
+v012-R-release-admission/v012-release-admission-3b4a12a-20261027.json under
+.gate-logs/observed. Actual disk92% is below95; scratch1644.1MB is a soft limit.
+Cleanup is DRY-RUN: planned101 removals are not actual deletion. Resource
+ownership reports265; source contracts pass81 and eight prerequisite pins pass8.
+Its original90/60 runtime passes82.104s at release-proof-runtime-admission/
+proof-admission-20261027T104719Z-65565.json,5092events/2539pairs/zero issues.
+Admission grants no full-gate, hosted, deployment or release evidence.
+
+The actual hosted watcher defaults RUN_WATCHED_PYTEST_TRACE to0, and its workflow
+supplies no override. S adds literal1 to the same native watcher. Its original
+CMD, run/attempt/runtime identity,90/60, selectors,2/1/1, joins and drains remain.
+The next three steps reuse native runtime-startup-archive mode0, native
+test-xdist-trace-summary and the existing pinned upload action. No production
+Python, Make, manifest, package, runner, observer or cleanup policy changes.
+
+Archive runs after actual runtime success/failure, including a timed-out native
+owner. Earlier prerequisite failure leaves it skipped. Native exclusive output
+is /tmp/gludd-ci-runtime-admission-RUN-ATTEMPT-PYTHON, with original
+status/log/trace/report roles and manifest last. Summary reads immutable trace.raw
+and prints wall spans/RSS; it supplies no CPU or timing-cause proof. Upload requires
+archive success even if summary fails, uses only that leaf, includes actual
+run/attempt/runtime/source identity, retains14 days and fails on missing files.
+Nonhidden archive role names retain hidden producer inputs without broad upload.
+The declared source SHA is diagnostic input, not an authenticated attestation.
+
+Actual ordinary-receipt compatibility returned0 for report, mode0 archive and
+archived-trace summary using retained R batch-push-runtime-admission-42503.
+The new private archive
+/tmp/gludd-S-ordinary-runtime-compatibility-20261027-R42503 preserves original
+status/log/trace byte hashes. Source/private design and exact role pins are in
+/tmp/gludd-v012-S-hosted-diagnostic-design-20261027. Missing cold-import segments
+remain explicitly incomplete; ordinary argv remains in native progress_identity.
+Existing [firsthand import research](PIPELINE_STATUS_PROCESS_BOUNDARY.md#snapshot-providers-are-loaded-only-for-requested-cli-snapshots-2026-10-27-utc)
+supports attribution, without diagnosing this timeout or disabling plugins.
+
+Trace-flag RED is1FAIL/1ASTPASS18.74s/native20.101s; earlier flag-only receiving
+passes63/19.43s/native20.744s. Archive wiring independently fails2/.66s/native1.990s
+before implementation. Final changed-owner plus logical-Makefile guard passes65
+EACH:31119.09s/native20.444s and31221.13s/native22.540s. Both native traces have
+133events/65complete pairs/zero issues. Retain .gate-logs/observed/
+v012-S-changed-workflow-focus/v012-S-changed-workflow-focus{311,312}-3b4a12a-20261027.json.
+
+The complete fourteen-owner union plus AST separately passes765 EACH:
+311212.22s/native214.107s;312216.46s/native218.564s, at
+v012-S-complete-diagnostic-receiving/v012-S-complete-diagnostic-receiving{311,312}-3b4a12a-20261027.json.
+Those traces remain PARTIAL:1526events,441accepted pairs,320issues,1unfinished
+EACH. The native reader names test_controller_sessionstart_truncates_trace_once;
+source inspection finds retained trace-route globals outside that fixture's
+restoration. A second nested-run carrier issue is under separate bounded review.
+No current receipt or raw trace is edited. Complete fourteen-owner trace
+qualification stays pending;65-case focus does not replace that scope.
+
+The fourteen complete owners are ci_workflow_integrity,ci_hosted_failure_tooling,
+runtime_publish_admission,runtime_startup_diagnostic,runtime_startup_native_chain,
+test_files_native_trace,run_watched_trace,trace_summary_make_inputs,
+xdist_trace_diagnostics,xdist_trace_timings,gate_failure_promotion,
+build_workflow_node24_actions,ci_gate_matrix_full and release_pipeline_structure
+(each tests/unit/test_NAME.py). Preserve all61 original workflow cases and all
+old assertions. Three additive functions raise56/106 function/assertion nodes
+to59/140. Ruff, canonical configured strict typing, environment-write and
+strict<2500 line checks pass; workflow2481 lines. A wrong isolated typing config's
+missing YAML stubs remains failed caller input; canonical typings/policy are kept.
+Independent SOURCE ONLY approval binds the two files at
+/tmp/gludd-v012-S-diagnostic-wiring-source-review-20261027.md.
+
+This is a diagnostic-input repair before its normal commit. After fresh normal
+collection/commit and the required repair-owned original90/60 evidence, normal
+guarded publication must accept a new exact-SHA Build. Inspect its actual native
+archive and hosted outcome before selecting a performance repair. Do not rerun
+unchanged R or claim S fixes the timeout. Final source/focus/combined topology,
+canonical21600 gate/global85aggregate75per-file LINE AND BRANCH BOTH, exact-SHA
+push proof, genuine development/master promotion, ZDD and fresh signed complete
+artifacts remain pending. All seven S98 items remain unchecked.
+
 ## Draft-release fixture environment privacy (2026-10-27 UTC)
 
 Original-source review of a403ed858bb561f7bbc8353c54ad057be4020f89 found that
