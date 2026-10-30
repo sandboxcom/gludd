@@ -54,16 +54,22 @@ if TYPE_CHECKING:
     import active_work_status as inventory_owner
     import gludd_env_defaults as gludd_env_defaults
     import kill_owned_gate as cleanup_owner
+    import resource_arbiter as resource_owner
+    import start_gate_background as background_owner
     from active_work_status import _repository_roots
 elif __package__:
     from scripts import active_work_status as inventory_owner
     from scripts import gludd_env_defaults as gludd_env_defaults
     from scripts import kill_owned_gate as cleanup_owner
+    from scripts import resource_arbiter as resource_owner
+    from scripts import start_gate_background as background_owner
     from scripts.active_work_status import _repository_roots
 else:  # pragma: no cover - direct script execution
     import active_work_status as inventory_owner
     import gludd_env_defaults as gludd_env_defaults
     import kill_owned_gate as cleanup_owner
+    import resource_arbiter as resource_owner
+    import start_gate_background as background_owner
     from active_work_status import _repository_roots
 
 _OWNERSHIP_POLICY = "registered-cwd-start-identity-observer-protection-v1"
@@ -415,6 +421,62 @@ def _script_role(record: cleanup_owner.ProcessRecord, root: Path, name: str, *, 
     return (root / tokens[1]).resolve() == expected.resolve()
 
 
+def _gate_waiter_pid(command: str) -> int | None:
+    """Recognize the existing direct waiter's literal binding without evaluation."""
+    if "gate-wait" not in command:
+        return None
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return None
+    if not tokens or Path(tokens[0]).name not in {"make", "gmake"}:
+        return None
+    bindings: list[int] = []
+    goals: list[str] = []
+    for token in tokens[1:]:
+        if token == "--no-print-directory":
+            continue
+        if re.fullmatch(r"GATE_EXPECTED_PID=[1-9][0-9]*", token):
+            bindings.append(int(token.partition("=")[2]))
+        elif token.startswith("GATE_EXPECTED_PID"):
+            return None
+        elif not cleanup_owner._MAKE_ASSIGNMENT.fullmatch(token):
+            goals.append(token)
+    return bindings[0] if len(bindings) == 1 and goals == ["gate-wait"] else None
+
+
+def _native_gate_identity(root: Path) -> background_owner.GateIdentity | None:
+    """Read current producer association, never terminal-success authority."""
+    paths = background_owner.GatePaths.for_root(root)
+    payload = background_owner._read_json(paths.state_file)
+    if payload is None:
+        return None
+    identity = background_owner._identity_from_state(payload)
+    command = payload.get("command")
+    if (identity is None or payload.get("project_root") != str(paths.project_root)
+            or payload.get("project_namespace") != resource_owner.project_namespace(root)
+            or identity.process_group_id != identity.pid or identity.session_id != identity.pid
+            or not isinstance(command, list) or not all(isinstance(argument, str) for argument in command)
+            or not background_owner.is_canonical_gate_command(command, paths.project_root)):
+        return None
+    return identity
+
+
+def _native_terminal_gate(identity: background_owner.GateIdentity) -> bool:
+    """Retain terminal association; unavailable inspection revokes signal authority."""
+    terminal = background_owner._process_is_terminal(identity.pid)
+    if terminal is None:
+        raise ValueError("native gate terminal identity is unavailable")
+    if not terminal:
+        return False
+    state = background_owner._process_state(identity)
+    if state in {"owned", "gone"}:
+        return True
+    if state == "reused":
+        return False
+    raise ValueError("native gate terminal identity is unavailable")
+
+
 def _protected_pids(records: list[cleanup_owner.ProcessRecord], roots: tuple[Path, ...]) -> set[int]:
     """Use native observer metadata conservatively; display absence grants nothing."""
     observed: list[dict[str, str]] = []
@@ -439,11 +501,48 @@ def _protected_pids(records: list[cleanup_owner.ProcessRecord], roots: tuple[Pat
             raise ValueError("live native observer is absent from protection inventory")
     by_pid = {record.pid: record for record in records}
     protected: set[int] = set()
+    waiters: dict[Path, list[tuple[cleanup_owner.ProcessRecord, int]]] = {}
+    for record in records:
+        binding = _gate_waiter_pid(record.command)
+        if binding is not None and (cwd := _owned_cwd(record, roots)) is not None:
+            waiters.setdefault(cwd, []).append((record, binding))
     for root in roots:
-        owners.update(pid for pid in (
+        gate_pids = {pid for pid in (
             _read_gate_pid(str(root / ".gate-background.pid")),
             _read_gate_run_lock_pid(str(root / ".gate-logs/gate-run.lock")),
-        ) if pid in by_pid)
+        ) if pid in by_pid}
+        owners.update(gate_pids)
+        root_waiters = waiters.get(root.resolve(), [])
+        if not root_waiters:
+            continue
+        identity = _native_gate_identity(root)
+        for waiter, binding in root_waiters:
+            recorded = identity is not None and identity.pid == binding
+            gate = by_pid.get(binding)
+            if gate is None:
+                if recorded:
+                    owners.add(waiter.pid)
+                continue
+            if binding not in gate_pids and not recorded:
+                continue
+            if (
+                identity is not None and identity.pid == binding
+                and (
+                    cleanup_owner._normalized_start_identity(gate.started_at)
+                    != cleanup_owner._normalized_start_identity(identity.pid_started_at)
+                    or gate.pgid != identity.process_group_id
+                )
+            ):
+                continue
+            if _owned_cwd(gate, (root,)) is None or not cleanup_owner._is_gate_owner_command(gate.command):
+                if identity is not None and identity.pid == binding and _native_terminal_gate(identity):
+                    owners.add(waiter.pid)
+                continue
+            if recorded:
+                owners.add(binding)
+            # Deny-only protection covers normal terminal drain; it grants no proof
+            # or signal authority and retains the native waiter's original bound.
+            owners.add(waiter.pid)
     for pid in owners:
         owner = by_pid[pid]
         protected.update(target.record.pid for target in cleanup_owner._tree_targets(records, owner))

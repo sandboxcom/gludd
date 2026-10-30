@@ -42,14 +42,23 @@ so it never blocks the loop while waiting on a contended repo).
 
 from __future__ import annotations
 
+import argparse
+import asyncio
+import concurrent.futures
 import contextlib
 import errno
 import logging
 import os
+import re
+import shlex
+import stat
+import sys
 import threading
 import time
-from collections.abc import Iterator
-from types import TracebackType
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from pathlib import Path
+from types import CodeType, ModuleType, TracebackType
+from typing import Protocol, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +83,8 @@ _POLL_INTERVAL = 0.05
 # Guards the registry dict itself; held only for the dict lookup, never while
 # a per-repo lock is held (so it can never become a contention bottleneck).
 _registry_guard = threading.Lock()
+_observer_import_guard = threading.RLock()
+_observer_loading_module: ModuleType | None = None
 _repo_locks: dict[str, threading.RLock] = {}
 
 # Re-entrancy depth for the CROSS-PROCESS file lock, per repo key. flock is
@@ -95,9 +106,31 @@ _file_lock_owner: dict[str, tuple[int, int]] = {}
 _file_lock_fds: dict[str, int] = {}
 
 
+class _AsyncGitLockWorker:
+    """One thread-affine lock worker owned by one task and repository."""
+
+    def __init__(self, owner_token: tuple[object, str]) -> None:
+        self.owner_token = owner_token
+        self.process_id = os.getpid()
+        self.executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="gludd-git-lock",
+        )
+        self.users = 0
+
+
+# A nested async acquisition must execute on the same worker that owns the
+# underlying RLock. Different tasks intentionally get different workers so a
+# foreign task cannot be mistaken for a re-entrant owner.
+_async_workers_guard = threading.Lock()
+_async_workers: dict[tuple[object, str], _AsyncGitLockWorker] = {}
+
+_NativeResult = TypeVar("_NativeResult")
+
+
 def _reset_after_fork() -> None:
     """Discard parent-owned mutex state in a newly forked child."""
-    global _registry_guard
+    global _async_workers_guard, _registry_guard, _observer_import_guard, _observer_loading_module
 
     for fd in tuple(_file_lock_fds.values()):
         with contextlib.suppress(OSError):
@@ -106,7 +139,13 @@ def _reset_after_fork() -> None:
     _file_lock_depth.clear()
     _file_lock_owner.clear()
     _repo_locks.clear()
+    _async_workers.clear()
     _registry_guard = threading.Lock()
+    _async_workers_guard = threading.Lock()
+    _observer_import_guard = threading.RLock()
+    if _observer_loading_module is not None and sys.modules.get("stream_command") is _observer_loading_module:
+        del sys.modules["stream_command"]
+    _observer_loading_module = None
 
 
 if hasattr(os, "register_at_fork"):
@@ -324,7 +363,8 @@ def _file_lock(
         try:
             yield
         finally:
-            _file_lock_depth[key] -= 1
+            if os.getpid() == owner[0]:
+                _file_lock_depth[key] -= 1
         return
 
     # Defensive fallback for runtimes that fork outside Python's registered
@@ -375,15 +415,17 @@ def _file_lock(
         try:
             yield
         finally:
-            _file_lock_depth[key] = 0
-            _file_lock_owner.pop(key, None)
-            with contextlib.suppress(OSError):
-                fcntl.flock(fd, fcntl.LOCK_UN)
+            if os.getpid() == owner[0]:
+                _file_lock_depth[key] = 0
+                _file_lock_owner.pop(key, None)
+                with contextlib.suppress(OSError):
+                    fcntl.flock(fd, fcntl.LOCK_UN)
     finally:
-        if _file_lock_fds.get(key) == fd:
-            _file_lock_fds.pop(key, None)
-        with contextlib.suppress(OSError):
-            os.close(fd)
+        if os.getpid() == owner[0]:
+            if _file_lock_fds.get(key) == fd:
+                _file_lock_fds.pop(key, None)
+            with contextlib.suppress(OSError):
+                os.close(fd)
 
 
 # --- public API -----------------------------------------------------------
@@ -426,11 +468,11 @@ def git_repo_lock(
     git_dir = _git_dir(repo_path)
     key = _normalize(git_dir) if git_dir is not None else _normalize(repo_path)
     inproc = _get_inprocess_lock(key)
+    owner_pid = os.getpid()
     deadline = time.monotonic() + timeout
     if not inproc.acquire(timeout=max(0.0, timeout)):
         raise TimeoutError(
-            f"timed out after {timeout}s acquiring in-process git lock for {key!r} "
-            "(another thread holds the repo)"
+            f"timed out after {timeout}s acquiring in-process git lock for {key!r} (another thread holds the repo)"
         )
     try:
         if git_dir is None:
@@ -442,7 +484,155 @@ def git_repo_lock(
             with _file_lock(git_dir, key, timeout=remaining, stale_after=stale_after):
                 yield
     finally:
-        inproc.release()
+        if os.getpid() == owner_pid:
+            inproc.release()
+
+
+def _assert_async_worker_process(worker: _AsyncGitLockWorker) -> None:
+    """Refuse a copied worker before touching its inherited executor or locks."""
+    if worker.process_id != os.getpid():
+        raise RuntimeError("async Git lock context belongs to another process")
+
+
+def _reserve_async_worker(repo_path: str) -> _AsyncGitLockWorker:
+    """Reserve the thread-affine worker for this task/repository pair."""
+    task = asyncio.current_task()
+    if task is None:
+        raise RuntimeError("async_git_repo_lock requires a running asyncio task")
+    git_dir = _git_dir(repo_path)
+    key = _normalize(git_dir) if git_dir is not None else _normalize(repo_path)
+    owner_token = (task, key)
+    with _async_workers_guard:
+        worker = _async_workers.get(owner_token)
+        if worker is None:
+            worker = _AsyncGitLockWorker(owner_token)
+            _async_workers[owner_token] = worker
+        worker.users += 1
+        return worker
+
+
+def _adopt_completed_async_worker(worker: _AsyncGitLockWorker) -> None:
+    """Fence a live owner and adopt only its sole completed-task result."""
+    _assert_async_worker_process(worker)
+    try:
+        task = asyncio.current_task()
+    except RuntimeError:
+        task = None
+    # Keep the public synchronous returned-context API usable after the
+    # acquiring event loop has completed.
+    consumer: object = task if task is not None else threading.current_thread()
+    with _async_workers_guard:
+        previous_token = worker.owner_token
+        if _async_workers.get(previous_token) is not worker:
+            raise RuntimeError("async Git lock context has no registered owner")
+        if previous_token[0] is consumer:
+            return
+        previous_owner = previous_token[0]
+        if not isinstance(previous_owner, asyncio.Task) or not previous_owner.done():
+            raise RuntimeError("async Git lock context belongs to another live owner task")
+        if worker.users != 1:
+            raise RuntimeError("async Git lock owner transfer requires one reservation")
+        consumer_token = (consumer, previous_token[1])
+        existing = _async_workers.get(consumer_token)
+        if existing is not None and existing is not worker:
+            raise RuntimeError("async Git lock owner transfer conflicts with a registered worker")
+        # Publish one identity under the same registry guard used by reserve
+        # and release. The native RLock/flock stay held by the same worker.
+        _async_workers.pop(previous_token)
+        worker.owner_token = consumer_token
+        _async_workers[consumer_token] = worker
+
+
+def _release_async_worker(worker: _AsyncGitLockWorker) -> None:
+    """Release one reservation and stop an idle owner worker."""
+    if worker.process_id != os.getpid():
+        return
+    shutdown = False
+    with _async_workers_guard:
+        if worker.users <= 0:
+            raise RuntimeError("async Git lock worker released without an owner")
+        worker.users -= 1
+        if worker.users == 0:
+            if _async_workers.get(worker.owner_token) is worker:
+                _async_workers.pop(worker.owner_token)
+            shutdown = True
+    if shutdown:
+        _assert_async_worker_process(worker)
+        worker.executor.shutdown(wait=True)
+
+
+async def _await_native_future(
+    future: concurrent.futures.Future[_NativeResult], worker: _AsyncGitLockWorker,
+) -> _NativeResult:
+    """Await native worker completion while deferring repeated cancellation."""
+    _assert_async_worker_process(worker)
+    wrapped = asyncio.wrap_future(future)
+    while True:
+        _assert_async_worker_process(worker)
+        if future.done():
+            break
+        try:
+            await asyncio.shield(wrapped)
+        except asyncio.CancelledError:
+            # Cleanup owns the mutex until the worker completes. A later
+            # cancellation request must not interrupt that ownership handoff.
+            continue
+    _assert_async_worker_process(worker)
+    return future.result()
+
+
+class _EnteredAsyncGitRepoLock(contextlib.AbstractContextManager[None]):
+    """Already-acquired, single-use wrapper around a thread-owned mutex."""
+
+    def __init__(
+        self,
+        cm: contextlib.AbstractContextManager[None],
+        worker: _AsyncGitLockWorker,
+    ) -> None:
+        self._cm = cm
+        self._worker = worker
+        self._state_guard = threading.Lock()
+        self._entered = False
+        self._closed = False
+
+    def __enter__(self) -> None:
+        _assert_async_worker_process(self._worker)
+        with self._state_guard:
+            if self._closed:
+                raise RuntimeError("async Git lock context is already closed")
+            if self._entered:
+                raise RuntimeError("async Git lock context is already entered")
+            _adopt_completed_async_worker(self._worker)
+            self._entered = True
+        return None
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool | None:
+        if self._worker.process_id != os.getpid():
+            self._closed = True
+            self._entered = False
+            return None
+        with self._state_guard:
+            if self._closed:
+                return None
+            self._closed = True
+            self._entered = False
+        _assert_async_worker_process(self._worker)
+        future = self._worker.executor.submit(self._cm.__exit__, exc_type, exc, tb)
+        try:
+            _assert_async_worker_process(self._worker)
+            return future.result()
+        finally:
+            _release_async_worker(self._worker)
+
+    def __del__(self) -> None:
+        """Release an acquired mutex abandoned by a dying task."""
+        with contextlib.suppress(BaseException):
+            self.__exit__(None, None, None)
 
 
 async def async_git_repo_lock(
@@ -451,11 +641,12 @@ async def async_git_repo_lock(
     timeout: float = _DEFAULT_ACQUIRE_TIMEOUT,
     stale_after: float = _DEFAULT_STALE_AFTER,
 ) -> contextlib.AbstractContextManager[None]:
-    """Async-friendly acquire of :func:`git_repo_lock`.
+    """Acquire :func:`git_repo_lock` without blocking the event loop.
 
-    Acquires the (potentially blocking, timeout-bearing) lock off the event loop
-    via ``run_in_executor`` so waiting on a contended repo never blocks the
-    loop, then returns an already-entered context manager. Use as::
+    The returned synchronous context manager is already acquired. Nested calls
+    from one task and repository reuse a thread-affine worker, preserving the
+    underlying ``RLock`` ownership. Cancellation waits asynchronously for the
+    bounded acquire and releases any resulting ownership before propagating::
 
         cm = await async_git_repo_lock(repo_path)
         with cm:
@@ -464,54 +655,307 @@ async def async_git_repo_lock(
     For purely synchronous call sites (like repo.py's ``_run_git``) use
     :func:`git_repo_lock` directly.
     """
-    import asyncio
-    import concurrent.futures
-
-    class _EnteredAsyncGitRepoLock(contextlib.AbstractContextManager[None]):
-        def __init__(self, cm: contextlib.AbstractContextManager[None], executor: concurrent.futures.Executor) -> None:
-            self._cm = cm
-            self._executor = executor
-            self._entered = False
-            self._closed = False
-
-        def __enter__(self) -> None:
-            self._entered = True
-            return None
-
-        def __exit__(
-            self,
-            exc_type: type[BaseException] | None,
-            exc: BaseException | None,
-            tb: TracebackType | None,
-        ) -> bool | None:
-            if self._closed:
-                return None
-            self._closed = True
-            future = self._executor.submit(self._cm.__exit__, exc_type, exc, tb)
-            try:
-                return future.result()
-            finally:
-                self._executor.shutdown(wait=True)
-
+    worker = _reserve_async_worker(repo_path)
     cm = git_repo_lock(repo_path, timeout=timeout, stale_after=stale_after)
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="gludd-git-lock")
-    enter_future = executor.submit(cm.__enter__)
+    _assert_async_worker_process(worker)
+    enter_future = worker.executor.submit(cm.__enter__)
     try:
-        await asyncio.wrap_future(enter_future)
-    except BaseException:
-        # Cancelling the asyncio wrapper cannot stop a running executor
-        # thread.  Resolve the underlying future directly, then release on
-        # that same single worker if it acquired the thread-owned RLock.  This
-        # bounded synchronous cleanup prevents an orphaned repository mutex
-        # before cancellation or an enter failure is propagated.
+        _assert_async_worker_process(worker)
+        await asyncio.shield(asyncio.wrap_future(enter_future))
+    except BaseException as original:
         acquired = False
-        with contextlib.suppress(BaseException):
-            enter_future.result()
-            acquired = True
+        if isinstance(original, asyncio.CancelledError):
+            with contextlib.suppress(BaseException):
+                await _await_native_future(enter_future, worker)
+                acquired = True
         try:
             if acquired:
-                executor.submit(cm.__exit__, None, None, None).result()
+                _assert_async_worker_process(worker)
+                exit_future = worker.executor.submit(cm.__exit__, None, None, None)
+                await _await_native_future(exit_future, worker)
         finally:
-            executor.shutdown(wait=True)
+            _release_async_worker(worker)
         raise
-    return _EnteredAsyncGitRepoLock(cm, executor)
+    return _EnteredAsyncGitRepoLock(cm, worker)
+
+
+# Native Make owns these public names; this boundary is not a generic executor.
+_MAKE_COMMIT_TARGETS = frozenset(
+    {
+        "git-commit",
+        "commit-no-verify",
+        "git-commit-no-verify",
+        "git-amend-msg",
+        "repo-commit",
+        "ship-commit",
+        "ship-commit-files",
+        "git-commit-file",
+        "test-and-commit",
+        "commit-bootstrap",
+        "commit-and-ship",
+        "commit-and-ship-push",
+    }
+)
+_MAKE_TRANSACTION_FD = "GLUDD_COMMIT_TRANSACTION_FD"
+
+
+def _assert_make_transaction(repo_path: str, descriptor: str) -> int:
+    """Bind the inherited open description to the actual common-directory mutex."""
+    common = git_common_directory(repo_path)
+    if common is None or not _HAVE_FCNTL:
+        raise ValueError("native Make transactions require a POSIX Git common directory")
+    if not descriptor.isascii() or not descriptor.isdecimal() or len(descriptor) > 10:
+        raise ValueError("missing or invalid inherited commit-lock descriptor")
+    fd = int(descriptor)
+    if fd < 3 or fd > 2_147_483_647:
+        raise ValueError("commit-lock descriptor must be a native nonstandard C integer")
+    held = os.fstat(fd)
+    expected = os.stat(os.path.join(common, _LOCK_FILENAME), follow_symlinks=False)
+    if not stat.S_ISREG(held.st_mode) or not stat.S_ISREG(expected.st_mode):
+        raise ValueError("commit-lock descriptor must name the native regular mutex")
+    if (held.st_dev, held.st_ino) != (expected.st_dev, expected.st_ino):
+        raise ValueError("commit-lock descriptor belongs to a different repository")
+    # fstat/path equality is not lock authority. An independent open description
+    # refuses here while another caller owns the inode; an inherited owner can
+    # reassert its existing native flock without releasing it.
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    return fd
+
+
+def _native_make_options() -> tuple[str, tuple[int, ...]]:
+    """Retain native inspection modes and GNU Make pipe/FIFO jobserver semantics."""
+    prefix = re.split(r"(?:^|\s)--(?=\s|$)", os.environ.get("MAKEFLAGS", ""), maxsplit=1)[0]
+    tokens = shlex.split(prefix)
+    boolean_letters = r"[bBdeikLmnpqrRsStvw]+"
+    short = tokens[0] if tokens and re.fullmatch(boolean_letters, tokens[0]) else ""
+    short += "".join(token[1:] for token in tokens if re.fullmatch("-" + boolean_letters, token))
+    for mode, letter, long_flags in (
+        ("query", "q", {"-q", "--question"}),
+        ("dry-run", "n", {"-n", "--just-print", "--dry-run", "--recon"}),
+        ("touch", "t", {"-t", "--touch"}),
+    ):
+        if letter in short or any(token in long_flags for token in tokens):
+            return mode, ()
+    pairs: set[tuple[int, int]] = set()
+    for token in tokens:
+        if token.startswith("--jobserver-auth=fifo:"):
+            continue
+        if not token.startswith(("--jobserver-auth=", "--jobserver-fds=")):
+            continue
+        match = re.fullmatch(r"--jobserver-(?:auth|fds)=([0-9]{1,10}),([0-9]{1,10})", token)
+        if match is None:
+            raise ValueError("unusable native GNU Make jobserver input")
+        pair = int(match[1]), int(match[2])
+        if pair[0] == pair[1] or any(fd < 3 or fd > 2_147_483_647 for fd in pair):
+            raise ValueError("unusable native GNU Make jobserver descriptors")
+        for fd in pair:
+            if not stat.S_ISFIFO(os.fstat(fd).st_mode):
+                raise ValueError("native GNU Make jobserver descriptor is not a pipe")
+        pairs.add(pair)
+    if len(pairs) > 1:
+        raise ValueError("mismatched native GNU Make jobserver descriptor pairs")
+    return "execute", next(iter(pairs), ())
+
+
+class _CommitObserver(Protocol):
+    """The existing stream owner surface needed by one native commit."""
+
+    def __call__(
+        self,
+        command: Sequence[str],
+        log_path: Path,
+        *,
+        observed_root: Path,
+        label: str,
+        run_id: str,
+        heartbeat_seconds: float,
+        quiet_seconds: float,
+        max_seconds: float,
+        retain_runs: int,
+        environment: Mapping[str, str],
+        cwd: Path,
+        pass_fds: tuple[int, ...],
+    ) -> int:
+        """Execute and drain the existing owned command."""
+
+
+def _default_observer() -> tuple[_CommitObserver, Callable[[], str]]:
+    """Bind the native observer atomically without changing import search paths."""
+    import importlib.util
+
+    # Frozen modules live in the bootloader archive, without repository script files.
+    if getattr(sys, "frozen", False):
+        frozen_observer = importlib.import_module("stream_command")
+        return frozen_observer.stream_command, frozen_observer._new_run_id
+
+    global _observer_loading_module
+    with _observer_import_guard:
+        observer_module = sys.modules.get("stream_command")
+        if observer_module is None:
+            observer_path = Path(__file__).resolve().parents[3] / "scripts" / "stream_command.py"
+            observer_spec = importlib.util.spec_from_file_location("stream_command", observer_path)
+            if observer_spec is None or observer_spec.loader is None:
+                raise ValueError("native observer requires a loadable scripts/stream_command.py")
+            observer_module = importlib.util.module_from_spec(observer_spec)
+            sys.modules["stream_command"] = observer_module
+            _observer_loading_module = observer_module
+            try:
+                observer_spec.loader.exec_module(observer_module)
+            except BaseException:
+                if sys.modules.get("stream_command") is observer_module:
+                    del sys.modules["stream_command"]
+                raise
+            finally:
+                _observer_loading_module = None
+        return observer_module.stream_command, observer_module._new_run_id
+
+
+def _run_make_transaction(
+    target: str,
+    make: str,
+    makefile: str,
+    *,
+    observed_root: str,
+    heartbeat_seconds: float,
+    quiet_seconds: float,
+    max_seconds: float,
+    retain_runs: int,
+    observer_fn: _CommitObserver | None = None,
+    identity_fn: Callable[[], str] | None = None,
+) -> int:
+    """Hold the established mutex through one supervised native Make transaction."""
+    if target not in _MAKE_COMMIT_TARGETS:
+        raise ValueError("unsupported native commit target")
+    if Path(make).name not in {"make", "gmake"} or any(char.isspace() for char in make):
+        raise ValueError("native commit execution requires one Make executable")
+    root = Path.cwd().resolve()
+    selected_makefile = Path(makefile).resolve()
+    observation = Path(observed_root).resolve()
+    if not selected_makefile.is_file() or not selected_makefile.is_relative_to(root):
+        raise ValueError("native commit Makefile must belong to the selected checkout")
+    if not observation.is_relative_to(root):
+        raise ValueError("native commit observations must stay private to the selected checkout")
+    mode, jobserver_fds = _native_make_options()
+    if mode != "execute":
+        native_status = 1 if mode == "query" else 0
+        print(
+            f"AGENT_NEXT target={target} outcome=planned native_status={native_status} mode={mode} "
+            "gate_evidence=false release_ready=false source_checkpoint=false "
+            "next_action=Native query/dry-run/touch inspection executes no staging, guards, "
+            "collection, commit or target touch; use the actual Make target only after "
+            "its source/ownership prerequisites. Query1 means execution would be required.",
+            file=sys.stderr,
+        )
+        return native_status
+    common = git_common_directory(str(root))
+    if common is None or not _HAVE_FCNTL:
+        raise ValueError("native Make transactions require a POSIX Git common directory")
+
+    # Native stream_command supplies its actual current function and identity
+    # owner. The direct Python API keeps source-owned defaults for focused callers.
+    if (observer_fn is None) != (identity_fn is None):
+        raise ValueError("native observer and identity owner must be bound together")
+    if observer_fn is None or identity_fn is None:
+        observer_fn, identity_fn = _default_observer()
+    observer_code = getattr(observer_fn, "__code__", None)
+    if not isinstance(observer_code, CodeType):
+        raise ValueError("native observer must bind its actual source function")
+    print(
+        f"COMMIT-LOCK: source={Path(__file__).resolve()} observer={Path(observer_code.co_filename).resolve()}",
+        file=sys.stderr,
+        flush=True,
+    )
+    print(f"COMMIT-LOCK: waiting target={target} repository={common}", file=sys.stderr, flush=True)
+    with git_repo_lock(str(root)):
+        fd = _file_lock_fds[_normalize(common)]
+        _assert_make_transaction(str(root), str(fd))
+        environment = dict(os.environ)
+        environment[_MAKE_TRANSACTION_FD] = str(fd)
+        run_id = identity_fn()
+        result = observer_fn(
+            [make, "--no-print-directory", "-f", str(selected_makefile), "_commit-locked-" + target],
+            observation / "commit-transaction" / (run_id + ".log"),
+            observed_root=observation,
+            label="commit-transaction",
+            run_id=run_id,
+            heartbeat_seconds=heartbeat_seconds,
+            quiet_seconds=quiet_seconds,
+            max_seconds=max_seconds,
+            retain_runs=retain_runs,
+            environment=environment,
+            cwd=root,
+            pass_fds=(fd, *jobserver_fds),
+        )
+    outcome = "passed" if result == 0 else "failed"
+    next_action = (
+        "Only the mutation child finished; public publication and CI children retain their own status. "
+        "A local source checkpoint is not full-gate or exact-SHA hosted/deployment proof; "
+        "retain its collection and obtain independent source review."
+        if result == 0
+        else "Preserve this native receipt and any staged or applied state; inspect the exact "
+        "failed child/input before reconciliation or another commit."
+    )
+    print(
+        f"AGENT_NEXT target={target} phase=mutation outcome={outcome} native_status={result} "
+        f"gate_evidence=false release_ready=false next_owner=observed-status "
+        f"label=commit-transaction run_id={run_id}; {next_action}",
+        file=sys.stderr,
+    )
+    return result
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    observer_fn: _CommitObserver | None = None,
+    identity_fn: Callable[[], str] | None = None,
+    require_make_target: bool = False,
+) -> int:
+    """Expose only native Make commit execution and inherited-lock validation."""
+    parser = argparse.ArgumentParser(description="Native repository-locked Make commit transaction")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--make-target", choices=sorted(_MAKE_COMMIT_TARGETS))
+    mode.add_argument("--assert-transaction", action="store_true")
+    parser.add_argument("--label", choices=["commit-transaction"], required=require_make_target)
+    parser.add_argument("--make", default="make")
+    parser.add_argument("--makefile", default="Makefile")
+    parser.add_argument("--observed-root", default=".gate-logs/observed")
+    parser.add_argument("--heartbeat-secs", type=float, default=30.0)
+    parser.add_argument("--quiet-secs", type=float, default=0.0)
+    parser.add_argument("--max-secs", type=float, default=3600.0)
+    parser.add_argument("--retain-runs", type=int, default=20)
+    args = parser.parse_args(argv)
+    if require_make_target and args.assert_transaction:
+        parser.error("native commit dispatch requires --make-target, not --assert-transaction")
+    if not require_make_target and args.make_target:
+        parser.error("native commits must enter through the existing stream_command Make owner")
+    try:
+        if args.assert_transaction:
+            _assert_make_transaction(os.getcwd(), os.environ.get(_MAKE_TRANSACTION_FD, ""))
+            return 0
+        return _run_make_transaction(
+            str(args.make_target),
+            str(args.make),
+            str(args.makefile),
+            observed_root=str(args.observed_root),
+            heartbeat_seconds=float(args.heartbeat_secs),
+            quiet_seconds=float(args.quiet_secs),
+            max_seconds=float(args.max_secs),
+            retain_runs=int(args.retain_runs),
+            observer_fn=observer_fn,
+            identity_fn=identity_fn,
+        )
+    except (OSError, TimeoutError, ValueError) as error:
+        print(f"COMMIT-LOCK: refused: {error}", file=sys.stderr)
+        print(
+            "AGENT_NEXT target=commit-transaction outcome=refused native_status=2 "
+            "gate_evidence=false release_ready=false next_action=Preserve owned state and "
+            "repair the reported common-directory, descriptor, ownership or input prerequisite; "
+            "do not delete locks or retry an unchanged refusal.",
+            file=sys.stderr,
+        )
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

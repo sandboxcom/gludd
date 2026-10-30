@@ -380,6 +380,958 @@ def test_observer_preserves_child_failure_code(tmp_path: Path) -> None:
     assert status["termination_reason"] is None
 
 
+def test_native_owned_group_zero_lifecycle_observation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Observe group-zero across retained exit and reap; never send a signal."""
+    import errno
+
+    import psutil
+
+    if os.name != "posix":
+        print("NATIVE_GROUP_ZERO unavailable-non-posix")
+        return
+    assert signal.getsignal(signal.SIGCHLD) == signal.SIG_DFL
+    grace = 0.05
+    budget = max(grace, 1.0)
+    descendant_source = (
+        "import os, sys, time\n"
+        "from pathlib import Path\n"
+        "root = Path(sys.argv[1])\n"
+        "(root / 'descendant-ready').write_text(str(os.getpid()))\n"
+        "deadline = time.monotonic() + 4\n"
+        "while not (root / 'release-descendant').exists() and time.monotonic() < deadline:\n"
+        "    time.sleep(0.01)\n"
+    )
+    leader_source = (
+        "import os, subprocess, sys, time\n"
+        "from pathlib import Path\n"
+        "root = Path(sys.argv[1])\n"
+        f"descendant_source = {descendant_source!r}\n"
+        "descendant = subprocess.Popen([sys.executable, '-c', descendant_source, str(root)], "
+        "env=os.environ.copy(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+        "(root / 'leader-ready').write_text(str(os.getpid()))\n"
+        "deadline = time.monotonic() + 4\n"
+        "while not (root / 'release-leader').exists() and time.monotonic() < deadline:\n"
+        "    time.sleep(0.01)\n"
+        "os._exit(17)\n"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", leader_source, str(tmp_path)],
+        cwd=tmp_path, env=os.environ.copy(), start_new_session=True,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    native_methods = {
+        name: getattr(process, name) for name in ("poll", "wait", "send_signal", "kill", "terminate")
+    }
+    native_wait = process.wait
+    final_wait_calls = 0
+    final_status: int | None = None
+    descendant_pid: int | None = None
+    descendant_birth: float | None = None
+    member_deadline: float | None = None
+    evidence: dict[str, Any] = {
+        "runtime": sys.version.split()[0], "platform": sys.platform,
+        "leader_pid": process.pid, "physical_signals_sent": False,
+        "stages": [], "post_reap_absence_proved": False,
+        "leader_wait_budget": budget, "total_member_observation_budget": budget,
+    }
+
+    def forbidden_reap(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("Private leader must remain unreaped until its one final wait")
+
+    for name in native_methods:
+        monkeypatch.setattr(process, name, forbidden_reap)
+
+    def observe_group(stage: str) -> int:
+        try:
+            os.killpg(process.pid, 0)
+            outcome = 0
+        except OSError as error:
+            evidence["stages"].append({"stage": stage, "errno": error.errno, "result": "native-error"})
+            if error.errno not in (errno.EPERM, errno.ESRCH):
+                raise
+            return error.errno
+        evidence["stages"].append({"stage": stage, "errno": None, "result": 0})
+        return outcome
+
+    def final_reap() -> None:
+        nonlocal final_wait_calls, final_status
+        for name, method in native_methods.items():
+            monkeypatch.setattr(process, name, method)
+        assert final_wait_calls == 0
+        final_wait_calls += 1
+        final_status = native_wait(timeout=budget)
+
+    try:
+        deadline = time.monotonic() + budget
+        while not (tmp_path / "descendant-ready").exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert int((tmp_path / "leader-ready").read_text()) == process.pid
+        leader = psutil.Process(process.pid)
+        leader_birth = leader.create_time()
+        assert leader.ppid() == os.getpid() and leader.status() != psutil.STATUS_ZOMBIE
+        assert leader.cwd() == str(tmp_path.resolve())
+        assert os.getpgid(process.pid) == os.getsid(process.pid) == process.pid
+        descendant_pid = int((tmp_path / "descendant-ready").read_text())
+        descendant = psutil.Process(descendant_pid)
+        descendant_birth = descendant.create_time()
+        assert descendant.ppid() == process.pid and descendant.status() != psutil.STATUS_ZOMBIE
+        assert descendant.cwd() == str(tmp_path.resolve())
+        assert os.getpgid(descendant_pid) == os.getsid(descendant_pid) == process.pid
+        evidence["leader_birth"] = leader_birth
+        evidence["descendant_pid"] = descendant_pid
+        evidence["descendant_birth"] = descendant_birth
+        assert observe_group("live-leader-and-descendant") == 0
+
+        (tmp_path / "release-leader").touch()
+        deadline = time.monotonic() + budget
+        while psutil.Process(process.pid).status() != psutil.STATUS_ZOMBIE and time.monotonic() < deadline:
+            time.sleep(0.01)
+        zombie = psutil.Process(process.pid)
+        assert zombie.status() == psutil.STATUS_ZOMBIE
+        assert zombie.create_time() == leader_birth and zombie.ppid() == os.getpid()
+        assert process.returncode is None
+        fresh_descendant = psutil.Process(descendant_pid)
+        assert fresh_descendant.create_time() == descendant_birth
+        assert fresh_descendant.status() != psutil.STATUS_ZOMBIE
+        assert fresh_descendant.cwd() == str(tmp_path.resolve())
+        assert os.getpgid(descendant_pid) == os.getsid(descendant_pid) == process.pid
+        evidence["positive_retained_zombie"] = True
+        evidence["fresh_original_descendant_live"] = True
+        observe_group("zombie-leader-and-live-original-descendant")
+
+        member_deadline = time.monotonic() + budget
+        (tmp_path / "release-descendant").touch()
+        while True:
+            try:
+                terminal_descendant = psutil.Process(descendant_pid)
+                assert terminal_descendant.create_time() == descendant_birth
+                if terminal_descendant.status() == psutil.STATUS_ZOMBIE:
+                    evidence["original_descendant_terminal"] = "zombie"
+                    break
+            except psutil.ZombieProcess:
+                raise
+            except psutil.NoSuchProcess:
+                evidence["original_descendant_terminal"] = "gone"
+                break
+            assert time.monotonic() < member_deadline, "Original member observation budget expired"
+            time.sleep(0.01)
+        zombie = psutil.Process(process.pid)
+        assert zombie.status() == psutil.STATUS_ZOMBIE
+        assert zombie.create_time() == leader_birth and zombie.ppid() == os.getpid()
+        assert process.returncode is None
+        observe_group("zombie-leader-known-original-descendant-terminal")
+        final_reap()
+        assert final_status == process.returncode == 17
+        while True:
+            outcome = observe_group("after-final-wait-observation-only")
+            if outcome == errno.ESRCH:
+                evidence["post_reap_absence_proved"] = True
+                break
+            assert time.monotonic() < member_deadline, "Post-reap group absence remains unproved"
+            time.sleep(0.01)
+    finally:
+        (tmp_path / "release-leader").touch(exist_ok=True)
+        (tmp_path / "release-descendant").touch(exist_ok=True)
+        try:
+            if descendant_pid is not None and descendant_birth is not None:
+                if member_deadline is None:
+                    member_deadline = time.monotonic() + budget
+                while True:
+                    try:
+                        remaining = psutil.Process(descendant_pid)
+                        assert remaining.create_time() == descendant_birth
+                        if remaining.status() == psutil.STATUS_ZOMBIE:
+                            break
+                    except psutil.ZombieProcess:
+                        raise
+                    except psutil.NoSuchProcess:
+                        break
+                    assert time.monotonic() < member_deadline, "Owned fixture cleanup budget expired"
+                    time.sleep(0.01)
+        finally:
+            if final_wait_calls == 0:
+                final_reap()
+            evidence["final_wait_calls"] = final_wait_calls
+            evidence["final_native_status"] = final_status
+            evidence["final_returncode"] = process.returncode
+            print("NATIVE_GROUP_ZERO " + json.dumps(evidence, sort_keys=True))
+            assert final_wait_calls == 1 and final_status == process.returncode == 17
+
+
+@pytest.mark.parametrize("reader_mode", ("module", "status", "tail"))
+def test_passive_observer_readers_require_only_the_standard_library(
+    tmp_path: Path, reader_mode: str,
+) -> None:
+    """Passive readers must not import the execution-only process dependency."""
+    log = tmp_path / "observed" / "demo" / "run-1.log"
+    log.parent.mkdir(parents=True)
+    log.write_text("owned passive line\n", encoding="utf-8")
+    payload = stream_command._base_status(
+        label="demo", run_id="run-1", started_at=stream_command._utc_now(),
+        log_path=log, trace_path=None,
+    )
+    payload.update(state="passed", exit_code=0)
+    stream_command._StatusPublisher(tmp_path / "observed", "demo", "run-1").publish(payload)
+    program = (
+        "import runpy, sys\n"
+        "class RefuseExecutionDependency:\n"
+        "    def find_spec(self, fullname, path=None, target=None):\n"
+        "        if fullname == 'psutil' or fullname.startswith('psutil.'):\n"
+        "            raise ModuleNotFoundError('controlled execution-only dependency refusal')\n"
+        "        return None\n"
+        "sys.meta_path.insert(0, RefuseExecutionDependency())\n"
+        "mode = sys.argv[1]\n"
+        "sys.argv = sys.argv[2:]\n"
+        "runpy.run_path(sys.argv[0], run_name='passive_reader_probe' if mode == 'module' else '__main__')\n"
+    )
+    reader_arguments = [] if reader_mode == "module" else [
+        "--root", str(tmp_path / "observed"), "--label", "demo",
+        *(["--status"] if reader_mode == "status" else ["--tail", "1"]),
+    ]
+    completed = subprocess.run(
+        [sys.executable, "-S", "-c", program, reader_mode, str(STREAM_RUNNER), *reader_arguments],
+        cwd=tmp_path, env=os.environ.copy(), capture_output=True, check=False, timeout=5,
+    )
+
+    assert completed.returncode == 0, completed.stderr.decode()
+    if reader_mode == "status":
+        assert json.loads(completed.stdout)["state"] == "passed"
+    elif reader_mode == "tail":
+        assert completed.stdout == b"owned passive line\n"
+    else:
+        assert not completed.stdout
+
+
+def test_native_nonreaping_platform_capability_observation() -> None:
+    """Report public metadata; missing APIs are refusal inputs, not product failures."""
+    import select
+    import selectors
+
+    wait_names = ("P_PID", "WEXITED", "WNOHANG", "WNOWAIT", "CLD_EXITED", "CLD_KILLED", "CLD_DUMPED")
+    wait_flags = {name: getattr(os, name, None) for name in wait_names}
+    wait_missing = [name for name, value in wait_flags.items() if not isinstance(value, int)]
+    if not callable(getattr(os, "waitid", None)):
+        wait_missing.append("waitid")
+    queue_names = (
+        "KQ_FILTER_PROC", "KQ_NOTE_EXIT", "KQ_EV_ADD", "KQ_EV_ENABLE",
+        "KQ_EV_ONESHOT", "KQ_EV_ERROR",
+    )
+    queue_flags = {name: getattr(select, name, None) for name in queue_names}
+    queue_missing = [name for name, value in queue_flags.items() if not isinstance(value, int)]
+    for name in ("kqueue", "kevent"):
+        if not callable(getattr(select, name, None)):
+            queue_missing.append(name)
+    candidate = "waitid" if not wait_missing else (
+        "kqueue" if sys.platform == "darwin" and not queue_missing else "refused"
+    )
+    evidence = {
+        "platform": sys.platform, "runtime": sys.version.split()[0],
+        "implementation": sys.implementation.name,
+        "waitid_callable": callable(getattr(os, "waitid", None)),
+        "wait_flags": wait_flags, "wait_missing": wait_missing,
+        "kqueue_callable": callable(getattr(select, "kqueue", None)),
+        "kevent_callable": callable(getattr(select, "kevent", None)),
+        "queue_flags": queue_flags, "queue_missing": queue_missing,
+        "optional_queue_flags": {"KQ_EV_RECEIPT": getattr(select, "KQ_EV_RECEIPT", None)},
+        "select_source": getattr(select, "__file__", None),
+        "select_origin": getattr(getattr(select, "__spec__", None), "origin", None),
+        "selector_backend": selectors.DefaultSelector.__name__,
+        "backend_candidate": candidate, "native_behavior_proved": False,
+        "child_created": False, "kernel_queue_created": False, "waitid_called": False,
+    }
+    print("NATIVE_NONREAPING_CAPABILITY " + json.dumps(evidence, sort_keys=True))
+    for name in ("kqueue", "kevent"):
+        native = getattr(select, name, None)
+        doc = getattr(native, "__doc__", None) if native is not None else None
+        print("NATIVE_SELECT_DOC " + name + " " + (doc.splitlines()[0] if isinstance(doc, str) else "unavailable"))
+
+
+@pytest.mark.parametrize("registration_timing", ("before-exit", "after-zombie"))
+def test_native_kqueue_retained_leader_and_session_prerequisite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, registration_timing: str,
+) -> None:
+    """Observe retained leader/session identity and actual late registration."""
+    import errno
+    import select
+
+    import psutil
+
+    queue_factory = getattr(select, "kqueue", None)
+    event_factory = getattr(select, "kevent", None)
+    required = ("KQ_FILTER_PROC", "KQ_NOTE_EXIT", "KQ_EV_ADD", "KQ_EV_ENABLE", "KQ_EV_ONESHOT", "KQ_EV_ERROR")
+    if not callable(queue_factory) or not callable(event_factory) or any(
+        not isinstance(getattr(select, name, None), int) for name in required
+    ):
+        print("NATIVE_KQUEUE_PREREQUISITE " + json.dumps({
+            "runtime": sys.version.split()[0], "platform": sys.platform,
+            "registration_timing": registration_timing, "outcome": "refused-unavailable",
+            "child_created": False, "kernel_queue_created": False,
+            "session_prerequisite_proved": False,
+        }, sort_keys=True))
+        return
+
+    assert signal.getsignal(signal.SIGCHLD) == signal.SIG_DFL, "Requires default SIGCHLD/no auto-reap"
+    descendant_source = (
+        "import os, sys, time\n"
+        "from pathlib import Path\n"
+        "root = Path(sys.argv[1])\n"
+        "(root / 'descendant-ready').write_text(str(os.getpid()))\n"
+        "deadline = time.monotonic() + 8\n"
+        "while not (root / 'release-descendant').exists() and time.monotonic() < deadline:\n"
+        "    time.sleep(0.01)\n"
+    )
+    leader_source = (
+        "import os, subprocess, sys, time\n"
+        "from pathlib import Path\n"
+        "root = Path(sys.argv[1])\n"
+        f"descendant_source = {descendant_source!r}\n"
+        "descendant = subprocess.Popen([sys.executable, '-c', descendant_source, str(root)], "
+        "env=os.environ.copy(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+        "(root / 'leader-ready').write_text(str(os.getpid()))\n"
+        "deadline = time.monotonic() + 4\n"
+        "while not (root / 'release-leader').exists() and time.monotonic() < deadline:\n"
+        "    time.sleep(0.01)\n"
+        "os._exit(17)\n"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", leader_source, str(tmp_path)],
+        cwd=tmp_path, env=os.environ.copy(), start_new_session=True,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    methods = {
+        name: getattr(process, name) for name in ("poll", "wait", "send_signal", "kill", "terminate")
+    }
+    original_wait = process.wait
+    forbidden_calls: list[str] = []
+
+    def forbidden_method(*_args: object, **_kwargs: object) -> None:
+        forbidden_calls.append("retained-window-process-method")
+        raise AssertionError("Popen poll/wait/send_signal/kill/terminate is forbidden before final reap")
+
+    for name in methods:
+        monkeypatch.setattr(process, name, forbidden_method)
+
+    evidence: dict[str, object] = {
+        "runtime": sys.version.split()[0], "platform": sys.platform,
+        "registration_timing": registration_timing, "child_pid": process.pid,
+        "child_created": True, "kernel_queue_created": False,
+        "default_sigchld": True, "sole_reaper_contract": "owned-instance guards and one final Popen.wait",
+        "raw_events": [], "registration_errno": None, "session_prerequisite_proved": False,
+        "event_data_is_exit_code_authority": False,
+    }
+    queue = None
+    descendant_pid: int | None = None
+    descendant_birth: float | None = None
+    final_wait_calls = 0
+    final_status: int | None = None
+    try:
+        deadline = time.monotonic() + 2
+        while not (tmp_path / "descendant-ready").exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert int((tmp_path / "leader-ready").read_text()) == process.pid
+        leader = psutil.Process(process.pid)
+        leader_birth = leader.create_time()
+        assert leader.ppid() == os.getpid()
+        assert leader.status() != psutil.STATUS_ZOMBIE
+        assert leader.cwd() == str(tmp_path.resolve())
+        assert os.getpgid(process.pid) == os.getsid(process.pid) == process.pid
+        assert process.returncode is None
+        descendant_pid = int((tmp_path / "descendant-ready").read_text())
+        descendant = psutil.Process(descendant_pid)
+        descendant_birth = descendant.create_time()
+        assert descendant.ppid() == process.pid
+        assert descendant.status() != psutil.STATUS_ZOMBIE
+        assert descendant.cwd() == str(tmp_path.resolve())
+        assert os.getpgid(descendant_pid) == os.getsid(descendant_pid) == process.pid
+        evidence["live_leader"] = {
+            "pid": leader.pid, "birth": leader_birth, "ppid": leader.ppid(),
+            "cwd": leader.cwd(), "pgid": os.getpgid(process.pid), "sid": os.getsid(process.pid),
+        }
+        evidence["live_descendant"] = {
+            "pid": descendant_pid, "birth": descendant_birth, "ppid": descendant.ppid(),
+            "cwd": descendant.cwd(), "pgid": os.getpgid(descendant_pid), "sid": os.getsid(descendant_pid),
+        }
+
+        if registration_timing == "after-zombie":
+            (tmp_path / "release-leader").touch()
+            deadline = time.monotonic() + 2
+            while psutil.Process(process.pid).status() != psutil.STATUS_ZOMBIE and time.monotonic() < deadline:
+                time.sleep(0.01)
+            zombie = psutil.Process(process.pid)
+            assert zombie.status() == psutil.STATUS_ZOMBIE
+            assert zombie.create_time() == leader_birth and zombie.ppid() == os.getpid()
+            assert process.returncode is None
+            evidence["zombie_before_registration"] = True
+        else:
+            evidence["zombie_before_registration"] = False
+
+        queue = queue_factory()
+        evidence["kernel_queue_created"] = True
+        event = event_factory(
+            process.pid, filter=select.KQ_FILTER_PROC,
+            flags=select.KQ_EV_ADD | select.KQ_EV_ENABLE | select.KQ_EV_ONESHOT,
+            fflags=select.KQ_NOTE_EXIT,
+        )
+        events = []
+        native_error: OSError | None = None
+        try:
+            events = queue.control([event], 1, 0)
+        except OSError as error:
+            native_error = error
+        if registration_timing == "before-exit":
+            (tmp_path / "release-leader").touch()
+        if native_error is None and not events:
+            events = queue.control([], 1, 2)
+        evidence["raw_events"] = [
+            {"ident": int(item.ident), "filter": int(item.filter), "flags": int(item.flags),
+             "fflags": int(item.fflags), "data": int(item.data)}
+            for item in events
+        ]
+        errors = [int(item.data) for item in events if item.flags & select.KQ_EV_ERROR]
+        if native_error is not None or errors:
+            actual_errno = native_error.errno if native_error is not None else errors[0]
+            evidence["registration_errno"] = actual_errno
+            evidence["outcome"] = "refused-native-registration"
+            if native_error is not None:
+                evidence["registration_error"] = str(native_error)
+            assert registration_timing == "after-zombie" and actual_errno == errno.ESRCH
+        else:
+            assert len(events) == 1, "Native NOTE_EXIT event was not delivered within the owned bound"
+            observed = events[0]
+            assert observed.ident == process.pid and observed.filter == select.KQ_FILTER_PROC
+            assert observed.fflags & select.KQ_NOTE_EXIT
+            evidence["outcome"] = "exit-event-observed"
+
+        deadline = time.monotonic() + 2
+        while psutil.Process(process.pid).status() != psutil.STATUS_ZOMBIE and time.monotonic() < deadline:
+            time.sleep(0.01)
+        zombie = psutil.Process(process.pid)
+        assert zombie.status() == psutil.STATUS_ZOMBIE
+        assert zombie.create_time() == leader_birth and zombie.ppid() == os.getpid()
+        assert process.returncode is None
+        evidence["retained_leader"] = {
+            "pid": zombie.pid, "birth": zombie.create_time(), "ppid": zombie.ppid(),
+            "state": zombie.status(), "returncode": process.returncode,
+        }
+        try:
+            evidence["post_zombie_leader_pgid"] = os.getpgid(process.pid)
+        except ProcessLookupError as error:
+            evidence["post_zombie_leader_pgid"] = "unknown"
+            evidence["post_zombie_leader_pgid_errno"] = error.errno
+        fresh_descendant = psutil.Process(descendant_pid)
+        assert fresh_descendant.create_time() == descendant_birth
+        assert fresh_descendant.status() != psutil.STATUS_ZOMBIE
+        assert fresh_descendant.cwd() == str(tmp_path.resolve())
+        assert os.getpgid(descendant_pid) == os.getsid(descendant_pid) == process.pid
+        assert not forbidden_calls
+        evidence["fresh_live_descendant"] = {
+            "pid": fresh_descendant.pid, "birth": fresh_descendant.create_time(),
+            "ppid": fresh_descendant.ppid(), "state": fresh_descendant.status(),
+            "cwd": fresh_descendant.cwd(), "pgid": os.getpgid(descendant_pid),
+            "sid": os.getsid(descendant_pid),
+        }
+        evidence["session_prerequisite_proved"] = native_error is None and not errors
+    finally:
+        (tmp_path / "release-leader").touch(exist_ok=True)
+        (tmp_path / "release-descendant").touch(exist_ok=True)
+        try:
+            if descendant_pid is not None and descendant_birth is not None:
+                deadline = time.monotonic() + 3
+                while True:
+                    try:
+                        terminal_descendant = psutil.Process(descendant_pid)
+                        assert terminal_descendant.create_time() == descendant_birth
+                        if terminal_descendant.status() == psutil.STATUS_ZOMBIE:
+                            evidence["descendant_cleanup_state"] = "zombie"
+                            break
+                    except psutil.NoSuchProcess:
+                        evidence["descendant_cleanup_state"] = "gone"
+                        break
+                    assert time.monotonic() < deadline, "Owned descendant did not expire within cleanup bound"
+                    time.sleep(0.01)
+            assert not forbidden_calls
+        finally:
+            for name, original in methods.items():
+                monkeypatch.setattr(process, name, original)
+            try:
+                final_wait_calls += 1
+                final_status = original_wait(timeout=6)
+            finally:
+                if queue is not None:
+                    queue.close()
+                evidence["final_wait_calls"] = final_wait_calls
+                evidence["final_native_status"] = final_status
+                evidence["final_returncode"] = process.returncode
+                evidence["queue_closed"] = queue is None or queue.closed
+                print("NATIVE_KQUEUE_PREREQUISITE " + json.dumps(evidence, sort_keys=True))
+            assert final_wait_calls == 1 and final_status == process.returncode == 17
+
+
+@pytest.mark.parametrize("close_boundary", ("stdout", "selector"))
+def test_close_failure_still_seals_status_and_restores_resources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, close_boundary: str,
+) -> None:
+    """Owned native close failures cannot skip other teardown or terminal receipt."""
+    import selectors
+    from types import SimpleNamespace
+
+    import psutil
+
+    if os.name != "posix":
+        return
+    original_popen = subprocess.Popen
+    original_selector = selectors.DefaultSelector
+    original_open = Path.open
+    log = tmp_path / "observed" / "demo" / "run-1.log"
+    logs: list[Any] = []
+    children: list[tuple[subprocess.Popen[bytes], Any, Any]] = []
+    handlers = {signum: signal.getsignal(signum) for signum in (signal.SIGINT, signal.SIGTERM)}
+
+    class FailingPipe:
+        def __init__(self, native: Any) -> None:
+            self.native = native
+
+        def fileno(self) -> int:
+            return cast(int, self.native.fileno())
+
+        def close(self) -> None:
+            self.native.close()
+            raise OSError("controlled stdout close failure")
+
+    def tracked_open(path: Path, *args: Any, **kwargs: Any) -> Any:
+        handle = original_open(path, *args, **kwargs)
+        if path == log:
+            logs.append(handle)
+        return handle
+
+    def start_child(*args: Any, **kwargs: Any) -> subprocess.Popen[bytes]:
+        child = original_popen(*args, **kwargs)
+        native_pipe = child.stdout
+        assert native_pipe is not None
+        children.append((child, child.wait, native_pipe))
+        deadline = time.monotonic() + 1
+        while psutil.Process(child.pid).status() != psutil.STATUS_ZOMBIE and time.monotonic() < deadline:
+            time.sleep(0.01)
+        owned = psutil.Process(child.pid)
+        assert owned.status() == psutil.STATUS_ZOMBIE and owned.ppid() == os.getpid()
+        assert owned.create_time() > 0 and child.returncode is None
+        if close_boundary == "stdout":
+            child.stdout = cast(Any, FailingPipe(native_pipe))
+        return child
+
+    def create_selector() -> Any:
+        selector = original_selector()
+        native_close = selector.close
+
+        def fail_close() -> None:
+            native_close()
+            raise OSError("controlled selector close failure")
+
+        if close_boundary == "selector":
+            monkeypatch.setattr(selector, "close", fail_close)
+        return selector
+
+    monkeypatch.setattr(Path, "open", tracked_open)
+    monkeypatch.setattr(
+        stream_command, "subprocess",
+        SimpleNamespace(Popen=start_child, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT,
+                        TimeoutExpired=subprocess.TimeoutExpired),
+    )
+    monkeypatch.setattr(
+        stream_command, "selectors",
+        SimpleNamespace(DefaultSelector=create_selector, BaseSelector=selectors.BaseSelector,
+                        EVENT_READ=selectors.EVENT_READ),
+    )
+    # This control isolates finalization from the separately retained kernel
+    # EPERM finding; its sole native child is already positively zombie.
+    monkeypatch.setattr(stream_command, "_terminate_process_group", lambda _child, _grace: None)
+    failure: OSError | None = None
+    returncode: int | None = None
+    try:
+        try:
+            returncode = stream_command.stream_command(
+                [sys.executable, "-c", "import os; os._exit(17)"], log,
+                observed_root=tmp_path / "observed", label="demo", run_id="run-1",
+                quiet=True, cwd=tmp_path,
+            )
+        except OSError as error:
+            failure = error
+        after_handlers = {signum: signal.getsignal(signum) for signum in handlers}
+        logs_closed = bool(logs) and all(handle.closed for handle in logs)
+        status = _current_status(tmp_path)
+    finally:
+        for signum, handler in handlers.items():
+            signal.signal(signum, handler)
+        for child, native_wait, native_pipe in children:
+            if child.returncode is None:
+                native_wait(timeout=3)
+            native_pipe.close()
+        for handle in logs:
+            handle.close()
+
+    assert failure is None, "Native close failure must become a failed observer result"
+    assert returncode == 125
+    assert after_handlers == handlers
+    assert logs_closed
+    assert status["state"] == "failed" and status["exit_code"] == 125
+    assert status["termination_reason"] == f"observer-{close_boundary}-close-failed"
+
+
+def test_fast_exited_posix_leader_is_retained_until_group_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An already-zombie private child still needs cleanup before its sole reap."""
+    from types import SimpleNamespace
+
+    import psutil
+
+    if os.name != "posix":
+        return
+    assert signal.getsignal(signal.SIGCHLD) == signal.SIG_DFL
+    original_popen = subprocess.Popen
+    original_cleanup = stream_command._terminate_process_group
+    children: list[subprocess.Popen[bytes]] = []
+    original_methods: list[tuple[Any, Any]] = []
+    reaps: list[tuple[str, bool, int | None]] = []
+    cleaned: list[int] = []
+    cleanup_finished = False
+
+    def start_already_zombie(*args: Any, **kwargs: Any) -> subprocess.Popen[bytes]:
+        child = original_popen(*args, **kwargs)
+        children.append(child)
+        native_wait = child.wait
+        native_poll = child.poll
+        original_methods.append((native_wait, native_poll))
+        deadline = time.monotonic() + 2
+        while psutil.Process(child.pid).status() != psutil.STATUS_ZOMBIE and time.monotonic() < deadline:
+            time.sleep(0.01)
+        owned = psutil.Process(child.pid)
+        if owned.status() != psutil.STATUS_ZOMBIE or owned.ppid() != os.getpid():
+            raise OSError("Fast owned child did not reach positive native zombie state")
+        assert owned.create_time() > 0 and child.returncode is None
+
+        def record_poll() -> int | None:
+            reaps.append(("poll", cleanup_finished, child.returncode))
+            return native_poll()
+
+        def record_wait(*wait_args: Any, **wait_kwargs: Any) -> int:
+            reaps.append(("wait", cleanup_finished, child.returncode))
+            return native_wait(*wait_args, **wait_kwargs)
+
+        monkeypatch.setattr(child, "poll", record_poll)
+        monkeypatch.setattr(child, "wait", record_wait)
+        return child
+
+    def record_cleanup(child: subprocess.Popen[bytes], grace: float) -> Any:
+        nonlocal cleanup_finished
+        cleaned.append(child.pid)
+        try:
+            return original_cleanup(child, grace)
+        finally:
+            cleanup_finished = True
+
+    monkeypatch.setattr(
+        stream_command, "subprocess",
+        SimpleNamespace(Popen=start_already_zombie, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT,
+                        TimeoutExpired=subprocess.TimeoutExpired),
+    )
+    monkeypatch.setattr(stream_command, "_terminate_process_group", record_cleanup)
+    try:
+        returncode = stream_command.stream_command(
+            [sys.executable, "-c", "import os; os._exit(17)"],
+            tmp_path / "observed" / "demo" / "run-1.log",
+            observed_root=tmp_path / "observed", label="demo", run_id="run-1",
+            termination_grace_seconds=0.05, quiet=True, cwd=tmp_path,
+        )
+    finally:
+        for child, (native_wait, native_poll) in zip(children, original_methods, strict=True):
+            monkeypatch.setattr(child, "wait", native_wait)
+            monkeypatch.setattr(child, "poll", native_poll)
+            if child.returncode is None:
+                native_wait(timeout=3)
+            if child.stdout is not None:
+                child.stdout.close()
+    assert len(children) == 1
+    assert returncode == 17
+    assert reaps == [("wait", True, None)]
+    assert cleaned == [children[0].pid]
+    status = _current_status(tmp_path)
+    assert status["state"] == "failed" and status["exit_code"] == 17
+    assert status["termination_reason"] is None
+
+
+@pytest.mark.parametrize("post_reap_probe", ("native-live", "permission", "unknown"))
+def test_deferred_group_eperm_cannot_hide_a_live_original_descendant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, post_reap_probe: str,
+) -> None:
+    """A real live member remains failure after controlled signal refusals."""
+    import errno
+    from types import SimpleNamespace
+
+    import psutil
+
+    if os.name != "posix":
+        return
+    descendant_source = (
+        "import os, sys, time\n"
+        "from pathlib import Path\n"
+        "root = Path(sys.argv[1])\n"
+        "(root / 'descendant-ready').write_text(str(os.getpid()))\n"
+        "deadline = time.monotonic() + 4\n"
+        "while not (root / 'release-descendant').exists() and time.monotonic() < deadline:\n"
+        "    time.sleep(0.01)\n"
+    )
+    leader_source = (
+        "import os, subprocess, sys, time\n"
+        "from pathlib import Path\n"
+        "root = Path(sys.argv[1])\n"
+        f"descendant_source = {descendant_source!r}\n"
+        "descendant = subprocess.Popen([sys.executable, '-c', descendant_source, str(root)], "
+        "env=os.environ.copy(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+        "(root / 'leader-ready').write_text(str(os.getpid()))\n"
+        "deadline = time.monotonic() + 4\n"
+        "while not (root / 'release-leader').exists() and time.monotonic() < deadline:\n"
+        "    time.sleep(0.01)\n"
+        "os._exit(17)\n"
+    )
+    native_popen = subprocess.Popen
+    native_publish = stream_command._StatusPublisher.publish
+    children: list[tuple[subprocess.Popen[bytes], Any]] = []
+    events: list[tuple[str, int, bool]] = []
+    reaped = False
+    identities: dict[str, tuple[int, float]] = {}
+
+    def start_child(*args: Any, **kwargs: Any) -> subprocess.Popen[bytes]:
+        child = native_popen(*args, **kwargs)
+        native_wait = child.wait
+        children.append((child, native_wait))
+
+        def wait_once(*wait_args: Any, **wait_kwargs: Any) -> int:
+            nonlocal reaped
+            events.append(("wait", 0, reaped))
+            result = native_wait(*wait_args, **wait_kwargs)
+            reaped = True
+            events.append(("reaped", result, reaped))
+            return result
+
+        monkeypatch.setattr(child, "wait", wait_once)
+        return child
+
+    def release_after_live_binding(
+        publisher: Any, payload: dict[str, object],
+    ) -> None:
+        native_publish(publisher, payload)
+        if payload["state"] != "running" or identities:
+            return
+        deadline = time.monotonic() + 3
+        while not (tmp_path / "descendant-ready").exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        leader_pid = int((tmp_path / "leader-ready").read_text())
+        descendant_pid = int((tmp_path / "descendant-ready").read_text())
+        assert leader_pid == payload["child_pid"]
+        for role, pid in (("leader", leader_pid), ("descendant", descendant_pid)):
+            owned = psutil.Process(pid)
+            assert owned.status() != psutil.STATUS_ZOMBIE
+            assert owned.cwd() == str(tmp_path.resolve())
+            assert os.getpgid(pid) == os.getsid(pid) == leader_pid
+            assert owned.ppid() == (os.getpid() if role == "leader" else leader_pid)
+            identities[role] = (pid, owned.create_time())
+        (tmp_path / "release-leader").touch()
+
+    class ControlledOS:
+        def __getattr__(self, name: str) -> object:
+            return getattr(os, name)
+
+        def killpg(self, pid: int, signum: int) -> None:
+            assert pid == identities["leader"][0]
+            events.append(("group", int(signum), reaped))
+            if signum != 0:
+                assert not reaped
+                raise PermissionError(errno.EPERM, "controlled group signal refusal")
+            assert reaped
+            if post_reap_probe == "permission":
+                raise PermissionError(errno.EPERM, "controlled post-reap observation refusal")
+            if post_reap_probe == "unknown":
+                raise OSError(errno.EIO, "controlled post-reap observation error")
+            os.killpg(pid, 0)
+
+        def kill(self, pid: int, signum: int) -> None:
+            assert pid == identities["leader"][0] and not reaped
+            zombie = psutil.Process(pid)
+            assert zombie.create_time() == identities["leader"][1]
+            assert zombie.status() == psutil.STATUS_ZOMBIE and zombie.ppid() == os.getpid()
+            events.append(("pid", int(signum), reaped))
+            os.kill(pid, signum)
+
+    monkeypatch.setattr(
+        stream_command, "subprocess",
+        SimpleNamespace(Popen=start_child, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT,
+                        TimeoutExpired=subprocess.TimeoutExpired),
+    )
+    monkeypatch.setattr(stream_command, "os", ControlledOS())
+    monkeypatch.setattr(stream_command._StatusPublisher, "publish", release_after_live_binding)
+    # A census omission must never make EPERM into absence; the real native
+    # group-zero observation still sees the positively bound live descendant.
+    monkeypatch.setattr(psutil, "process_iter", lambda: iter(()))
+    try:
+        returncode = stream_command.stream_command(
+            [sys.executable, "-c", leader_source, str(tmp_path)],
+            tmp_path / "observed" / "demo" / "run-1.log",
+            observed_root=tmp_path / "observed", label="demo", run_id="run-1",
+            termination_grace_seconds=0.05, quiet=True, cwd=tmp_path,
+        )
+        descendant_pid, descendant_birth = identities["descendant"]
+        fresh = psutil.Process(descendant_pid)
+        live_at_return = (
+            fresh.create_time() == descendant_birth
+            and fresh.status() != psutil.STATUS_ZOMBIE
+            and fresh.cwd() == str(tmp_path.resolve())
+            and os.getpgid(descendant_pid) == os.getsid(descendant_pid) == identities["leader"][0]
+        )
+    finally:
+        (tmp_path / "release-leader").touch(exist_ok=True)
+        (tmp_path / "release-descendant").touch(exist_ok=True)
+        for child, native_wait in children:
+            if child.returncode is None:
+                native_wait(timeout=1)
+            if child.stdout is not None:
+                child.stdout.close()
+        if "descendant" in identities:
+            pid, birth = identities["descendant"]
+            deadline = time.monotonic() + 6
+            while True:
+                try:
+                    remaining = psutil.Process(pid)
+                    assert remaining.create_time() == birth
+                    if remaining.status() == psutil.STATUS_ZOMBIE:
+                        break
+                except psutil.ZombieProcess:
+                    raise
+                except psutil.NoSuchProcess:
+                    break
+                assert time.monotonic() < deadline, "Owned fixture did not expire naturally"
+                time.sleep(0.01)
+
+    assert returncode == 125 and live_at_return
+    assert [item for item in events if item[0] == "reaped"] == [("reaped", 17, True)]
+    after_reap = events[events.index(("reaped", 17, True)) + 1:]
+    assert after_reap and all(kind == "group" and signum == 0 for kind, signum, _flag in after_reap)
+    assert any(kind == "group" and signum == 0 and flag for kind, signum, flag in events)
+    status = _current_status(tmp_path)
+    assert status["state"] == "failed" and status["exit_code"] == 125
+    assert status["termination_reason"] == "observer-process-group-cleanup-failed"
+
+
+def test_failed_leader_with_closed_pipes_drains_positively_owned_descendant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A terminal leader and EOF cannot certify its still-live owned session."""
+    import psutil
+
+    child_source = (
+        "import json, os, signal, sys, time\n"
+        "from pathlib import Path\n"
+        "import psutil\n"
+        "root = Path(sys.argv[1])\n"
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+        "record = {'pid': os.getpid(), 'born': psutil.Process().create_time(), "
+        "'pgid': os.getpgid(0), 'sid': os.getsid(0), 'cwd': os.getcwd()}\n"
+        "(root / 'descendant.json').write_text(json.dumps(record))\n"
+        "deadline = time.monotonic() + 4\n"
+        "while not (root / 'release-leader').exists() and time.monotonic() < deadline:\n"
+        "    time.sleep(0.01)\n"
+        "time.sleep(1.5)\n"
+    )
+    leader_source = (
+        "import json, os, subprocess, sys, time\n"
+        "from pathlib import Path\n"
+        "import psutil\n"
+        "root = Path(sys.argv[1])\n"
+        f"child_source = {child_source!r}\n"
+        "child_environment = os.environ.copy()\n"
+        "subprocess.Popen([sys.executable, '-c', child_source, str(root)], "
+        "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=child_environment)\n"
+        "record = {'pid': os.getpid(), 'born': psutil.Process().create_time(), "
+        "'pgid': os.getpgid(0), 'sid': os.getsid(0), 'cwd': os.getcwd()}\n"
+        "(root / 'leader.json').write_text(json.dumps(record))\n"
+        "deadline = time.monotonic() + 4\n"
+        "while not (root / 'release-leader').exists() and time.monotonic() < deadline:\n"
+        "    time.sleep(0.01)\n"
+        "print('owned leader exits17 with closed descendant pipes', flush=True)\n"
+        "os._exit(17)\n"
+    )
+    positively_owned: list[psutil.Process] = []
+
+    def live_owned() -> list[psutil.Process]:
+        live: list[psutil.Process] = []
+        for process in positively_owned:
+            try:
+                if process.is_running() and process.status() != psutil.STATUS_ZOMBIE:
+                    live.append(process)
+            except psutil.NoSuchProcess:
+                continue
+        return live
+
+    original_publish = stream_command._StatusPublisher.publish
+
+    def publish_with_identity_barrier(
+        publisher: stream_command._StatusPublisher, payload: dict[str, object],
+    ) -> None:
+        original_publish(publisher, payload)
+        if payload["state"] != "running" or positively_owned:
+            return
+        deadline = time.monotonic() + 3
+        while not (tmp_path / "descendant.json").exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        leader = cast(dict[str, object], json.loads((tmp_path / "leader.json").read_text()))
+        descendant = cast(dict[str, object], json.loads((tmp_path / "descendant.json").read_text()))
+        leader_pid = payload["child_pid"]
+        assert type(leader_pid) is int and leader_pid > 1
+        assert leader["pid"] == leader_pid
+        for record in (leader, descendant):
+            pid = record["pid"]
+            assert type(pid) is int and pid > 1
+            process = psutil.Process(pid)
+            assert process.create_time() == record["born"]
+            assert process.status() != psutil.STATUS_ZOMBIE
+            assert process.cwd() == str(tmp_path.resolve()) == record["cwd"]
+            assert os.getpgid(pid) == leader_pid == record["pgid"]
+            assert os.getsid(pid) == leader_pid == record["sid"]
+            positively_owned.append(process)
+        (tmp_path / "release-leader").touch()
+
+    monkeypatch.setattr(stream_command._StatusPublisher, "publish", publish_with_identity_barrier)
+    live_at_return: list[int] = []
+    try:
+        returncode = stream_command.stream_command(
+            [sys.executable, "-c", leader_source, str(tmp_path)],
+            tmp_path / "observed" / "demo" / "run-1.log",
+            observed_root=tmp_path / "observed", label="demo", run_id="run-1",
+            max_seconds=8, quiet_seconds=0, quiet=True,
+            termination_grace_seconds=0.05, environment=os.environ.copy(), cwd=tmp_path,
+        )
+        live_at_return = [process.pid for process in live_owned()]
+    finally:
+        # No teardown signal or guessed PID: the owned child expires naturally.
+        (tmp_path / "release-leader").touch(exist_ok=True)
+        deadline = time.monotonic() + 6
+        remaining = positively_owned
+        while remaining and time.monotonic() < deadline:
+            remaining = live_owned()
+            if remaining:
+                time.sleep(0.02)
+        assert not remaining, "self-expiring owned fixture did not reach native terminal state"
+    assert len(positively_owned) == 2
+    assert returncode == 17
+    status = _current_status(tmp_path)
+    assert status["state"] == "failed" and status["exit_code"] == 17
+    assert status["termination_reason"] is None
+    assert Path(status["log_path"]).read_text() == "owned leader exits17 with closed descendant pipes\n"
+    assert not live_at_return, f"positively owned descendants survived observer terminal: {live_at_return}"
+
+
 def test_observer_records_child_signal_with_shell_exit_semantics(tmp_path: Path) -> None:
     completed = subprocess.run(
         _command(
@@ -394,6 +1346,348 @@ def test_observer_records_child_signal_with_shell_exit_semantics(tmp_path: Path)
     assert completed.returncode == 128 + signal.SIGTERM
     assert status["state"] == "interrupted"
     assert status["termination_reason"] == "child-signal:SIGTERM"
+
+
+@pytest.mark.parametrize("contradiction", ("wrong-ppid", "changed-birth", "consumed-status"))
+def test_positive_child_identity_contradiction_cannot_authorize_numeric_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, contradiction: str,
+) -> None:
+    """A positive contradiction cannot authorize actual numeric signal/reap boundaries."""
+    from types import SimpleNamespace
+
+    import psutil
+
+    if os.name != "posix":
+        return
+    operations: list[str] = []
+    samples = [0]
+    pipes: list[Any] = []
+
+    class PrivateChild:
+        pid = 1_000_000_001
+
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            read_fd, write_fd = os.pipe()
+            os.close(write_fd)
+            self.stdout = os.fdopen(read_fd, "rb", buffering=0)
+            pipes.append(self.stdout)
+            self.returncode = 17 if contradiction == "consumed-status" else None
+
+        def wait(self, *, timeout: float | None = None) -> int:
+            if self.returncode is None:
+                operations.append("numeric-wait")
+                self.returncode = 17
+            return self.returncode
+
+    class ControlledOS:
+        def __getattr__(self, name: str) -> object:
+            return getattr(os, name)
+
+        def killpg(self, pid: int, signum: int) -> None:
+            assert pid == PrivateChild.pid
+            operations.append("numeric-killpg")
+            raise ProcessLookupError("controlled absent group after boundary capture")
+
+        def kill(self, pid: int, signum: int) -> None:
+            assert pid == PrivateChild.pid
+            operations.append("numeric-kill")
+
+    def fresh_identity(pid: int) -> object:
+        assert pid == PrivateChild.pid
+        samples[0] += 1
+        birth = 100.0 + (contradiction == "changed-birth" and samples[0] > 1)
+        return SimpleNamespace(
+            create_time=lambda: birth,
+            ppid=lambda: os.getpid() + (contradiction == "wrong-ppid"),
+            status=lambda: psutil.STATUS_ZOMBIE,
+        )
+
+    controlled_psutil = SimpleNamespace(
+        Process=fresh_identity, process_iter=lambda: iter(()),
+        Error=psutil.Error, ZombieProcess=psutil.ZombieProcess,
+        NoSuchProcess=psutil.NoSuchProcess, STATUS_ZOMBIE=psutil.STATUS_ZOMBIE,
+    )
+    monkeypatch.setattr(
+        stream_command, "subprocess",
+        SimpleNamespace(Popen=PrivateChild, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT,
+                        TimeoutExpired=subprocess.TimeoutExpired),
+    )
+    monkeypatch.setattr(stream_command, "os", ControlledOS())
+    monkeypatch.setattr(stream_command, "psutil", controlled_psutil, raising=False)
+    try:
+        with monkeypatch.context() as local:
+            local.setitem(sys.modules, "psutil", controlled_psutil)
+            returncode = stream_command.stream_command(
+                ["controlled-no-native-child"], tmp_path / "observed" / "demo" / "run-1.log",
+                observed_root=tmp_path / "observed", label="demo", run_id="run-1", quiet=True,
+            )
+    finally:
+        for pipe in pipes:
+            pipe.close()
+
+    assert returncode == 125
+    assert not operations, "Positive contradiction must refuse numeric signal/native-reap boundaries"
+    if contradiction == "changed-birth":
+        assert samples[0] >= 2
+    status = _current_status(tmp_path)
+    assert status["state"] == "failed" and status["exit_code"] == 125
+    assert status["termination_reason"] == "observer-child-inspection-failed"
+
+
+@pytest.mark.parametrize("failure_kind", ("census", "member", "identity", "other-errno"))
+def test_group_absence_never_clears_an_independent_cleanup_failure(
+    monkeypatch: pytest.MonkeyPatch, failure_kind: str,
+) -> None:
+    """Native absence can reconcile group EPERM only, never another error."""
+    import errno
+    from types import SimpleNamespace
+
+    failure = OSError(errno.EACCES, "controlled " + failure_kind + " failure")
+    group_error = PermissionError(errno.EPERM, "controlled original group refusal")
+    cleanup = stream_command._PosixGroupCleanup((), (group_error,), failure)
+    observations: list[int] = []
+
+    def native_absence(_pid: int, signum: int) -> None:
+        observations.append(signum)
+        assert signum == 0
+        raise ProcessLookupError(errno.ESRCH, "controlled group absence")
+
+    monkeypatch.setattr(stream_command, "os", SimpleNamespace(killpg=native_absence))
+    with pytest.raises(OSError) as caught:
+        stream_command._finish_posix_group_cleanup(1_000_000_001, cleanup, 0.05, reaped=True)
+    assert caught.value is failure
+    assert not observations
+
+
+@pytest.mark.parametrize("terminal_outcome", ("absent", "unknown"))
+def test_transient_post_reap_eperm_is_silent_only_after_verified_absence(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], terminal_outcome: str,
+) -> None:
+    """A potentially resolved observation is buffered without losing real failures."""
+    import errno
+    from types import SimpleNamespace
+
+    pid = 1_000_000_001
+    original_context = (
+        f"original group operation=os.killpg pid={pid} signal=15 errno=1 deferred_from=before-reap",
+        f"original group operation=os.killpg pid={pid} signal=9 errno=1 deferred_from=before-reap",
+    )
+    group_error = PermissionError(errno.EPERM, "controlled original group refusal")
+    cleanup = stream_command._PosixGroupCleanup((), (group_error,), None, original_context)
+    calls: list[tuple[int, int]] = []
+
+    def controlled_native_probe(actual_pid: int, signum: int) -> None:
+        assert actual_pid == pid and signum == 0
+        calls.append((actual_pid, signum))
+        if len(calls) == 1:
+            raise PermissionError(errno.EPERM, "controlled transient post-reap permission result")
+        assert len(calls) == 2, "A terminal native outcome must stop the bounded probe"
+        if terminal_outcome == "absent":
+            raise ProcessLookupError(errno.ESRCH, "controlled native absence")
+        raise OSError(errno.EIO, "controlled unknown observation failure")
+
+    monkeypatch.setattr(stream_command, "os", SimpleNamespace(killpg=controlled_native_probe))
+    if terminal_outcome == "absent":
+        stream_command._finish_posix_group_cleanup(pid, cleanup, 0.05, reaped=True)
+        assert capsys.readouterr().err == ""
+    else:
+        with pytest.raises(OSError) as caught:
+            stream_command._finish_posix_group_cleanup(pid, cleanup, 0.05, reaped=True)
+        assert caught.value.errno == errno.EIO
+        stderr = capsys.readouterr().err
+        assert all(context in stderr for context in original_context)
+        assert "signal=0 errno=1" in stderr and "signal=0 errno=5" in stderr
+    assert calls == [(pid, 0), (pid, 0)]
+
+
+def test_unreaped_child_never_authorizes_a_post_reap_group_observation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed final wait leaves group EPERM unresolved without another signal."""
+    import errno
+    from types import SimpleNamespace
+
+    group_error = PermissionError(errno.EPERM, "controlled original group refusal")
+    cleanup = stream_command._PosixGroupCleanup((), (group_error,), None)
+    observations: list[int] = []
+
+    def forbidden_observation(_pid: int, signum: int) -> None:
+        observations.append(signum)
+        raise AssertionError("No post-reap observation exists before a successful final wait")
+
+    monkeypatch.setattr(stream_command, "os", SimpleNamespace(killpg=forbidden_observation))
+    with pytest.raises(OSError) as caught:
+        stream_command._finish_posix_group_cleanup(1_000_000_001, cleanup, 0.05, reaped=False)
+    assert caught.value is group_error
+    assert not observations
+
+
+def test_unavailable_child_inspection_still_cleans_the_private_pinned_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unavailable inspection differs from positive foreign identity."""
+    import psutil
+
+    if os.name != "posix":
+        return
+    original_cleanup = stream_command._terminate_process_group
+    children: list[tuple[subprocess.Popen[bytes], float, Any]] = []
+    cleanup_pids: list[int] = []
+
+    def unavailable_state(
+        child: subprocess.Popen[bytes], _birth: float | None,
+    ) -> tuple[float, bool]:
+        fresh = psutil.Process(child.pid)
+        assert fresh.ppid() == os.getpid() and child.returncode is None
+        children.append((child, fresh.create_time(), child.wait))
+        raise psutil.AccessDenied(pid=child.pid)
+
+    def record_cleanup(child: subprocess.Popen[bytes], grace: float) -> Any:
+        cleanup_pids.append(child.pid)
+        return original_cleanup(child, grace)
+
+    monkeypatch.setattr(stream_command, "_posix_child_state", unavailable_state)
+    monkeypatch.setattr(stream_command, "_terminate_process_group", record_cleanup)
+    try:
+        returncode = stream_command.stream_command(
+            [sys.executable, "-c", "import time; time.sleep(1.5)"],
+            tmp_path / "observed" / "demo" / "run-1.log",
+            observed_root=tmp_path / "observed", label="demo", run_id="run-1",
+            termination_grace_seconds=0.05, quiet=True, cwd=tmp_path,
+        )
+        assert len(children) == 1
+        child, _birth, _native_wait = children[0]
+        with pytest.raises(psutil.NoSuchProcess):
+            psutil.Process(child.pid)
+    finally:
+        for child, _birth, native_wait in children:
+            if child.returncode is None:
+                native_wait(timeout=3)
+            if child.stdout is not None:
+                child.stdout.close()
+
+    assert returncode == 125 and cleanup_pids == [children[0][0].pid]
+    status = _current_status(tmp_path)
+    assert status["state"] == "failed" and status["exit_code"] == 125
+    assert status["termination_reason"] == "observer-child-inspection-failed"
+
+
+@pytest.mark.parametrize("failed_group_signal", (None, signal.SIGTERM, signal.SIGKILL))
+def test_posix_group_cleanup_keeps_leader_unreaped_through_last_signal(
+    monkeypatch: pytest.MonkeyPatch, failed_group_signal: signal.Signals | None,
+) -> None:
+    """Native group cleanup cannot delegate to a Popen method that polls/reaps."""
+    from types import SimpleNamespace
+
+    import psutil
+
+    events: list[tuple[str, object]] = []
+    clock = [0.0]
+
+    class OwnedProcess:
+        pid = 999_999_999
+        returncode: int | None = None
+
+        def forbidden(self, *_args: object, **_kwargs: object) -> None:
+            events.append(("forbidden-popen", self.returncode))
+            raise AssertionError("Owned Popen must remain unreaped until all group operations finish")
+
+        poll = wait = terminate = kill = forbidden
+
+    process = OwnedProcess()
+
+    def signal_group(pid: int, signum: signal.Signals) -> None:
+        assert pid == process.pid and process.returncode is None
+        events.append(("group", signum))
+        if signum == failed_group_signal:
+            raise PermissionError("controlled group refusal")
+
+    def signal_leader(pid: int, signum: signal.Signals) -> None:
+        assert pid == process.pid and process.returncode is None
+        events.append(("leader-fallback", signum))
+
+    def grace_sleep(seconds: float) -> None:
+        events.append(("grace", seconds))
+        clock[0] += seconds
+
+    def forbidden_member_wait(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("Native member drain must observe without reaping")
+
+    monkeypatch.setattr(
+        stream_command, "os",
+        SimpleNamespace(name="posix", killpg=signal_group, kill=signal_leader),
+    )
+    monkeypatch.setattr(
+        stream_command, "time",
+        SimpleNamespace(monotonic=lambda: clock[0], sleep=grace_sleep),
+    )
+    monkeypatch.setattr(psutil, "process_iter", lambda: iter(()))
+    monkeypatch.setattr(psutil, "wait_procs", forbidden_member_wait)
+
+    cleanup = stream_command._terminate_process_group(cast(Any, process), 0.1)
+    assert cleanup is not None
+    if failed_group_signal is None:
+        assert cleanup.failure is None and not cleanup.group_eperm
+    else:
+        assert isinstance(cleanup.failure, OSError)
+        with pytest.raises(OSError, match="controlled group refusal"):
+            stream_command._finish_posix_group_cleanup(process.pid, cleanup, 0.1, reaped=False)
+
+    assert process.returncode is None
+    assert not any(kind == "forbidden-popen" for kind, _value in events)
+    term_index = events.index(("group", signal.SIGTERM))
+    kill_index = events.index(("group", signal.SIGKILL))
+    grace_indexes = [index for index, (kind, _value) in enumerate(events) if kind == "grace"]
+    assert grace_indexes and term_index < grace_indexes[0] < kill_index
+    assert clock[0] >= 0.1
+    if failed_group_signal is not None:
+        fallback_index = events.index(("leader-fallback", failed_group_signal))
+        group_index = events.index(("group", failed_group_signal))
+        assert group_index < fallback_index
+        assert all(kind != "group" for kind, _value in events[kill_index + 1:])
+
+
+@pytest.mark.parametrize("sigchld_policy", ("ignored", "custom"))
+def test_posix_observer_refuses_nondefault_reaper_before_child_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sigchld_policy: str,
+) -> None:
+    """A known competing/automatic-reap policy must not create an owned child."""
+    from types import SimpleNamespace
+
+    if os.name != "posix":
+        return
+    original_getsignal = signal.getsignal
+    original_sigchld = original_getsignal(signal.SIGCHLD)
+
+    def custom_handler(_signum: int, _frame: object) -> None:
+        return None
+
+    policy = signal.SIG_IGN if sigchld_policy == "ignored" else custom_handler
+    child_starts: list[str] = []
+
+    def forbidden_child_start(*_args: object, **_kwargs: object) -> None:
+        child_starts.append("attempted")
+        raise OSError("Controlled no-child start refused")
+
+    def observed_policy(signum: int) -> object:
+        return policy if signum == signal.SIGCHLD else original_getsignal(signum)
+
+    monkeypatch.setattr(signal, "getsignal", observed_policy)
+    monkeypatch.setattr(
+        stream_command, "subprocess",
+        SimpleNamespace(Popen=forbidden_child_start, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT),
+    )
+    returncode = stream_command.stream_command(
+        ["controlled-unused-child"], tmp_path / "observed" / "demo" / "run-1.log",
+        observed_root=tmp_path / "observed", label="demo", run_id="run-1", quiet=True,
+    )
+
+    assert returncode == 125
+    assert not child_starts
+    assert original_getsignal(signal.SIGCHLD) is original_sigchld
+    status = _current_status(tmp_path)
+    assert status["state"] == "failed" and status["exit_code"] == 125
+    assert status["termination_reason"] == "observer-child-ownership-refused"
 
 
 def test_observer_child_start_failure_is_fail_closed(tmp_path: Path) -> None:

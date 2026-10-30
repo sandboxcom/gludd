@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import importlib
 import os
 import subprocess
 import sys
 import textwrap
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = "general_ludd.code_intelligence"
@@ -179,3 +182,23 @@ def test_unknown_export_does_not_import_introspector() -> None:
         assert "NotAnExport" not in vars(api)
         assert not set(deferred).intersection(sys.modules)
     """)
+
+
+def test_public_exports_cache_identity_and_reject_unknown_names_in_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Preserve lazy cache identity, discoverability and errors in the native caller."""
+    api = importlib.import_module(PACKAGE)
+    canonical = importlib.import_module(PACKAGE + ".introspect").CodebaseIntrospector
+    with monkeypatch.context() as patch:
+        patch.setitem(vars(api), "CodebaseIntrospector", canonical)
+        patch.delitem(vars(api), "CodebaseIntrospector")
+        assert "CodebaseIntrospector" not in vars(api)
+        assert set(EXPORTS) <= set(dir(api))
+        assert api.CodebaseIntrospector is canonical
+        assert vars(api)["CodebaseIntrospector"] is canonical
+        assert api.CodebaseIntrospector is canonical
+        with pytest.raises(AttributeError) as failure:
+            _ = api.NotAnExport
+        assert str(failure.value) == f"module {PACKAGE!r} has no attribute 'NotAnExport'"
+        assert "NotAnExport" not in vars(api)

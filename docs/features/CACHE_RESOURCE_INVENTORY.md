@@ -1239,3 +1239,366 @@ refs stay intact. Source approval and the20KiB diagnostic supply no cleanup,
 publication-retry or release authority. After an actual prerequisite repair,
 run make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0 before
 freezing a candidate; a new HEAD or elapsed time is not a changed failing input.
+
+## Visible automatic retirement plans (S98.4, 2026-10-24)
+
+### Failure and authority
+
+At clean Main1eec791e4761fee468eda5302cb626407f259595, the retained direct-owner
+apply1393 transcript reports six clean worktree materializations archived and
+retired. The earlier dry-run57360 was incorrectly interpreted as a cache-only
+plan: each eligible retirement appeared only as a
+`would remove materialization` skip detail, while the native20-detail summary
+omitted305 entries. An omitted detail is not proof that retirement is absent.
+
+The selected `agent-cleanup` plan had independently refused the active logical
+lease for the commit-transaction branch. That refusal belongs to the selected
+retirement owner's policy. The automatic owner has its existing separate
+completion proof: a matching clean exact-HEAD commit receipt can permit
+retirement after the unchanged1800-second grace, even while the logical lease
+remains registered. Its unchanged source, ignored-data, process, registration,
+lease, branch-ref and commit-preservation guards still apply. Neither path
+proves that the candidate was integrated or accepted for release.
+
+The manual transcript is
+`/tmp/gludd-v012-capacity-apply-1393-transcript.log`. It retains complete native
+retirement lines for batch-publication, commit-transaction, gha-research,
+hosted-lane, pages-trigger-inputs and feature/v012-diagnostic-build-20261024,
+with their exact branches and HEADs. Each archive is under the canonical
+Git-common `.git/gludd-release-evidence/{branchdigest}-{SHA}`, where branchdigest
+is the first12 hexadecimal SHA256 characters of the branch name. The native
+manifest records rehydration context and preserved evidence; branch refs and
+commit objects remain. This transcript is manual receiving evidence, not a
+producer-generated current observation JSON or a fresh archive inspection.
+
+Apply1393 reports37 removed entries in pass1 and5 in pass2, zero cleanup errors,
+and a99-to97percent volume recheck. The second pass stops nonzero for no progress;
+6.7GiB free and97percent do not clear the unchanged hard95percent limit. The
+earlier1,498,797,097 logical bytecode bytes were a dry-run estimate, not measured
+physical reclamation. This output repair performs no real cleanup or lease
+release and claims no capacity clearance.
+
+### Producer contract and next action
+
+After its existing clean/ignored-data/HEAD/branch-ref/commit proofs, the native
+materialization owner now emits one line per eligible dry-run action:
+
+~~~text
+phase=cleanup action=remove-worktree status=dry-run path="<exact worktree>" branch="<exact branch>" head=<full SHA> archive="<required destination>" evidence_archival=required branch_ref=retained commit=retained mutation=none capacity_proof=none integration_proof=none
+~~~
+
+The line names materialization retirement and its required evidence archival;
+it is not a cache-only promise. The archive field is the intended destination,
+not an assertion that the apply-time archive safety checks have succeeded.
+Dry-run creates no archive, removes no materialization and issues no ref update.
+The confined no-optional-locks controls also retain both indices, tracked source
+and ignored proof bytes exactly. Apply retains its original
+archive validation, atomic archival/rollback, final revalidation and exact ref/
+commit preservation checks. Refusal emits no eligible retirement line.
+
+These action lines bypass the repetitive skip-detail cap, while the existing
+summary and result fields keep their original bounds and meaning. The original
+four-attempt/eight-pass materialization limits bound this additional output;
+no inventory, observer or cleanup authority is added. Healthy preflight remains
+a no-op, and a dry-run under unchanged hard pressure remains nonzero.
+
+Use the existing direct `make disk-cleanup-preflight` plan documented above
+with literal dry-run1, validate-only0, receipt grace1800 and the installed
+SYSTEM_PYTHON/runtime. Read every `status=dry-run` action and its full tuple
+before proposing apply. Preserve any refusal and repair its actual native
+input; never infer cache-only scope from a capped list, release a lease from a
+plan, or substitute force removal. Only an authorized native apply followed by
+a fresh native volume measurement can establish actual reclamation. Final
+proof still requires canonical release-proof-admission after capacity clears.
+
+### Failing-first receiving evidence
+
+Repair base83dc52ad37f51a68bb31b639c1f7bb26a9d1bd27 preserves all seven unrelated
+Node/CI-await WIP files byte-for-byte. The assigned resources owner adds a real
+private Git checkout with a clean unique unmerged candidate and ignored proof.
+Its capped-summary case executes the actual completion proof at1800 seconds,
+then the native cleanup producer and preflight with25 protected records.
+
+The first bounded run, retirement-plan-output-red311-83dc52a, has1PASS/5setup
+ERROR: the fixture omitted explicit subprocess CWD, so the native confinement
+guard correctly refused setup. The corrected-CWD run has1 genuine output
+failure,1 separate bytecode configuration-input refusal and4PASS. Moving only
+the fixture's two config boundaries into its setup/snapshot child environment
+preserves the bytecode guard. Neither setup refusal is relabeled product RED.
+
+The genuine retirement-plan-output-red311-env-83dc52a run has2FAIL/4PASS,
+4.54s pytest/5.7s native: both eligible producers omit the required action line.
+The unchanged six-case GREEN, retirement-plan-output-green311-83dc52a, has
+6PASS,2.58s pytest/3.4s native. Retain each run's native JSON/log/trace under
+`.gate-logs/observed/retirement-plan-output-red/` or
+`.gate-logs/observed/retirement-plan-output-green/`. All runs use installed311,
+90total/60quiet, serial execution, fatal warnings and literalID=.
+
+The positive controls retain refs, registrations, both indices, source and
+ignored proof bytes, with no archive created. Dirty source, a stale branch-ref
+tuple and nonregenerable ignored data all refuse without an eligible action;
+the original healthy no-op assertions remain. Existing test assertions are
+retained while strict callback/import/iterator typing conforms the same owner.
+The producer grows2482-to2490 lines without unrelated reformatting; lint,
+strict typing, environment-write, docstring and worktree line-limit checks pass.
+
+Full complete-owner receiving on311/312, the complete three-source
+`config/coverage_automatic_disk_cleanup.ini` profile with85/75 LINE and BRANCH
+floors, independent source review and normal commit collection were pending at that
+focused GREEN checkpoint.
+No source-only or focused receipt supplies a full gate, exact-SHA hosted run,
+deployment, promotion or task completion.
+
+
+### Complete-consumer coverage source identity
+
+The first actual20-owner source profile retains692PASS/37subtests in114.89s,
+then fails reporting before any coverage audit. Native run
+20261024T045824Z-93762-a8e4d273 ends failed/native116.4s with
+`No source for code` for an altered temporary disk-alias
+`scripts/automatic_disk_cleanup.py`. Its log/JSON/trace remain under
+`.gate-logs/observed/coverage-files/`. No successful report or312 replay is
+inferred from the passing tests.
+
+The complete disk-alias owner deliberately writes a cleanup spy with that
+basename and removes its owned TemporaryDirectory after the test. The profile's
+old `*/scripts/...` patterns admitted these distinct fixture bytes. The existing
+coverage-files owner already captures physical `pwd -P` and privately exports
+GLUDD_COVERAGE_SOURCE_ROOT before observer handoff. Reuse that existing identity:
+the same profile now binds each of its three complete source files through
+`${GLUDD_COVERAGE_SOURCE_ROOT?}/scripts/<file>`. Branch, parallel and subprocess
+measurement remain enabled; no omit, path alias, ignore-errors, function
+exclusion, new profile or floor change is introduced.
+
+The precedent and its separate historical failures are recorded in
+[Canonical Coverage Source Identity](COVERAGE_SOURCE_IDENTITY.md). The native
+coverage-files/root-export contracts in the complete
+`test_ci_named_shard_files.py` owner join the deduplicated receiving union.
+Keep the disk-alias consumer; its altered spy must not be mapped onto project
+source or removed from acceptance to obtain green coverage.
+
+Three new native controls retain3FAIL/1.07s/native2.0s before the profile input
+repair in retirement-source-identity-red311-83dc52a: missing source identity did
+not refuse, all-three policy patterns were unbound, and a real parent plus a
+changed-CWD child reproduced NoSource after deleting only its owned altered
+fixture files. The same controls then pass3/0.88s/native1.7s in
+retirement-source-identity-green311-83dc52a. Preserve their native JSON/log/trace
+under the correspondingly named observed labels. The private child records its
+actual CWD/root; native Coverage produces the report. Both canonical and altered
+control trees and COVERAGE_FILE are private fixture paths, so these controls
+supply no fabricated project coverage. All three private canonical files and
+their two branch outcomes remain measured after the altered files disappear.
+
+Before another full source replay, run the same cheap checks, freeze all four
+owned paths and obtain Root's refreshed staged-content guard. Reconcile the
+expected owned index/worktree difference and all seven foreign WIP snapshots;
+a hook's stash/restore message is not byte-preservation proof. Then admit one
+local cohort from fresh native load/process/lease observations and execute
+the21 complete owners serially on installed311 and312. Stop on any native
+test/report/audit failure and preserve its exact receipt before changing input.
+
+This new bounded source receiving uses300total/60quiet because no historical
+automatic-profile envelope was recovered. It is not historical-equivalence
+evidence or a replacement for the canonical90/60 promotion and21600 full gate.
+The concrete311 invocation is:
+
+~~~console
+make coverage-files \
+  COVERAGE_TESTFILES='tests/unit/test_automatic_disk_cleanup.py tests/unit/test_automatic_disk_cleanup_bytecode.py tests/unit/test_automatic_disk_cleanup_resources.py tests/unit/test_automatic_disk_cleanup_uv_diagnostics.py tests/unit/test_check_disk_usage.py tests/unit/test_ci_named_shard_files.py tests/unit/test_disk_alias_admission.py tests/unit/test_duplicate_code_guard.py tests/unit/test_duplicate_code_native.py tests/unit/test_file_line_limits.py tests/unit/test_file_line_remediation_plan.py tests/unit/test_oversized_test_module_splits.py tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_pipeline_status_inprocess_ledger.py tests/unit/test_pipeline_status_job_progress.py tests/unit/test_process_monitoring.py tests/unit/test_split_test_consumer_compatibility.py tests/unit/test_staged_snapshot.py tests/unit/test_staged_snapshot_bounded_git.py tests/unit/test_status_heartbeat_terminal.py tests/unit/test_worktree_retirement.py -n 0' \
+  COVERAGE_CONFIG=config/coverage_automatic_disk_cleanup.ini \
+  COVERAGE_REPORT=.gate-logs/coverage-retirement-plan-output311-canonical.json \
+  COVERAGE_AGGREGATE_MIN=85 COVERAGE_PER_FILE_MIN=75 ID= \
+  OBSERVED_ROOT=.gate-logs/observed OBSERVED_HEARTBEAT_SECS=30 \
+  OBSERVED_QUIET_SECS=60 OBSERVED_MAX_SECS=300 OBSERVED_RETAIN_RUNS=20 \
+  GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 \
+  GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 \
+  UV_PROJECT_ENVIRONMENT=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 \
+  VIRTUAL_ENV=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11 \
+  UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never \
+  PYTHON=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11/bin/python3 \
+  SYSTEM_PYTHON=/Users/shawnwilson/tmp/gludd-resources/gludd-a24d2f0bddee-toolchain/ci-shards/python-3.11/bin/python3
+~~~
+
+Only after terminal311 acceptance, use the same complete selector/config/floors
+and bounds with installed python-3.12, UV_PYTHON=3.12.15 and a distinct312 report.
+Require the native audit to pass LINE and BRANCH floors and verify the actual
+report retains all three canonical source files. Keep both exact runtime
+receipts; neither grants capacity, hosted, deployment, promotion or release
+authority. Actual acceptance after that required replay is recorded below.
+
+
+### Verified complete source packet
+
+The four-path canonical staged guard is
+`retirement-output-staged/retirement-output-canonical-staged311-83dc52a.json`,
+native6.8s/terminal0: four index paths, all three hooks and line guard pass,
+zero new clones/two existing. After the expected foreign-WIP stash/restore,
+all seven foreign files and four owned postimages were reread unchanged; native
+worktree-state showed exactly four staged paths with no owned MM difference.
+The actual source context is base83dc52ad37f51a68bb31b639c1f7bb26a9d1bd27 plus
+the four reviewed owned changes and the unchanged seven foreign WIP files.
+These are source-context receipts, not a later immutable candidate SHA.
+
+The complete21-owner union collects802 cases: the earlier692, all three new
+source-identity controls and107 cases in the complete named-shard owner. Both
+installed runtimes pass802 cases plus37 subtests with fatal warnings, serial
+execution, literalID= and the original accepted new300/60 source envelope:
+
+| Runtime | Native run | Pytest / native seconds | Native audit |
+| --- | --- | --- | --- |
+| 3.11.14 | 20261024T051424Z-25825-aca1814d | 116.14 / 118.0 | coverage-20261024T051622Z.json |
+| 3.12.15 | 20261024T051705Z-36882-613bc23a | 146.90 / 149.8 | coverage-20261024T051934Z.json |
+
+Both immutable observed JSON/log/trace sets are under
+`.gate-logs/observed/coverage-files/`. The actual producer-generated reports
+are `.gate-logs/coverage-retirement-plan-output311-canonical.json` and
+`.gate-logs/coverage-retirement-plan-output312-canonical.json`; both audits
+are under `.gate-logs/`. Each report contains exactly the intended three
+canonical production files. Both audits pass87.6percent aggregate LINE and
+85.9percent BRANCH, preserving85aggregate/75each-file for both metrics:
+
+| Complete source file | LINE percent | BRANCH percent |
+| --- | --- | --- |
+| scripts/automatic_disk_cleanup.py | 86.4 | 87.6 |
+| scripts/automatic_disk_cleanup_bytecode.py | 90.7 | 76.6 |
+| scripts/staged_snapshot.py | 92.1 | 87.1 |
+
+No new coverage exclusion or fixture-to-project path mapping is present. The
+earlier692/37-subtest NoSource run remains failed, as do all native RED/setup
+receipts. These duration observations do not establish a speed improvement.
+
+The existing complete resource owner also passes unchanged,264 resources:
+29async-task,73client,36process,9service and117temp-artifact. Its exact native
+command retains the full source root and inventory with no regeneration or
+path narrowing:
+
+~~~console
+make check-resource-ownership RESOURCE_OWNERSHIP_ROOT=. RESOURCE_OWNERSHIP_PATHS='' RESOURCE_OWNERSHIP_INVENTORY=config/resource_ownership_inventory.json RESOURCE_OWNERSHIP_WRITE=0
+~~~
+
+Use the explicit installed311 tuple above. Native90/60 watch
+`retirement-resource-ownership/retirement-resource-ownership311-83dc52a`
+passes5.3s; retain its actual JSON/log under `.gate-logs/observed/`.
+No additional source test cohort ran in this lane during that owner. The final receiving
+edit records these facts only in this feature; production, tests and profile
+stay frozen, so the source receipts retain their actual unchanged scope.
+
+Root owns the normal commit, independent source review and receiving/promotion
+work. This packet performs no real cache cleanup, materialization retirement,
+lease release, API write, publication or deployment. It changes no service or
+ZDD guard and does not remeasure or clear capacity. Normal collection, the
+combined canonical full gate, global coverage and required exact-SHA hosted/
+deployment proofs remain distinct and pending; all seven release tasks stay
+open until their actual criteria are verified.
+
+
+### Native index-refresh review correction (five-path packet)
+
+Independent review at
+`/tmp/gludd-v012-retirement-output-source-review.md` retains a P2: the original
+positive fixture supplied GIT_OPTIONAL_LOCKS=0, while the ordinary automatic
+dry-run inherited plain Git status behavior. Its index-preservation assertions
+therefore proved that controlled input only. The new unconditional mutation=none
+line required an actual native ordinary-input witness and a production fix;
+the output promise and original assertions are retained.
+
+A confined real checkout now changes only tracked stat metadata, preserving
+tracked bytes. Ordinary native status must first change both index bytes and
+mtime/inode. The test recreates the same stale-stat input without another
+status read, then calls the actual default materialization dry-run adapter.
+The first absent-carrier run,
+retirement-native-index-red311-83dc52a, fails1/1.03s/native1.9s: the actual
+helper changes the index while emitting mutation=none. This is an observed
+native write, not a claim inferred only from Git documentation.
+
+The expanded real matrix retains2FAIL/2PASS/1.82s/native2.7s at
+retirement-native-index-matrix-red311-83dc52a. Both absent and inherited-one
+read cases fail after their own successful write witnesses; competing mandatory
+index-lock refusal and explicit owned add already pass. All fixtures remain
+inside their owned Git roots, with no fake Git success producer.
+
+The only fifth-file production delta is in
+`scripts/prune_worktrees_safe.py::_git`:
+`["git", *args]` becomes
+`["git", "--no-optional-locks", *args]`.
+This reuses the [existing native status policy](GIT_STATUS_READONLY.md), preserves
+the inherited environment and all cwd/check/timeout/capture behavior, and
+suppresses optional refresh at the shared boundary for native reads. Explicit
+mutations retain Git's required locks. No parser, observer, mode, environment
+strip, new profile, cleanup authority or weaker promise is added.
+
+The same matrix plus all previous six plan/refusal/no-op and three canonical
+coverage controls then passes13/4.15s/native5.2s at
+retirement-native-index-green311-83dc52a. Both ordinary read variants preserve
+the index after genuine unguarded write witnesses. The held lock remains
+byte/mode/mtime/inode-identical with native128; an explicit owned add succeeds,
+stages the intended bytes and releases its own lock. Refs/evidence remain
+preserved. All runs use90/60, installed311, fatal warnings, serial execution,
+literalID= and native trace under the corresponding observed label.
+
+The earlier802-case profiles and264-resource check remain actual four-path
+receipts. They do not certify this changed five-path state. After cheap checks,
+freeze five postimages for Root's new staged-content guard before broader proof.
+Complete receiving is26 deduplicated owners: the original21 through the same
+complete three-source profile, and the original five-owner prune/registry
+profile plus complete agent_worktree_targets through its unchanged complete
+two-source profile. Preserve the retirement overlap required by both original
+profiles. Both profiles retain85/75 LINE and BRANCH,300/60 and one serial local
+cohort per lane; actual counts come from native collection.
+
+Root must receive only the literal one-line adapter hunk into newer Main prune
+code, preserving its registry, retirement and locking repairs. Never overwrite
+that newer module wholesale with this peer's older base. Normal source review/
+collection/checkpoint, Main receiving, full gate/global coverage, capacity and
+exact-SHA hosted/deployment/promotion proofs remain pending. These local read
+controls perform no live retirement, lease release, publication or deployment.
+
+
+### Five-path completed source receiving
+
+The five-path guard is
+`retirement-output-staged/retirement-native-index-staged311-83dc52a.json`,
+terminal0/native7.6s, all three hooks/line guard, zero new clones/two existing.
+After its expected foreign-WIP stash/restore, five frozen postimages and all
+seven foreign files reread unchanged; native index5 had no owned MM difference.
+The code/test/profile bytes stay fixed through the following complete runs:
+
+| Runtime / whole profile | Cases | Native run | Pytest / native seconds | Native audit |
+| --- | --- | --- | --- | --- |
+| 3.11.14 / three sources,21 owners | 806 +37 subtests | 20261024T054822Z-8717-48d13809 | 147.04 / 148.9 | coverage-20261024T055050Z.json |
+| 3.11.14 / two sources,6 owners | 263 | 20261024T055758Z-27172-e3b49c02 | 71.70 / 73.2 | coverage-20261024T055912Z.json |
+| 3.12.15 / three sources,21 owners | 806 +37 subtests | 20261024T060047Z-34715-31e9f21a | 150.06 / 152.7 | coverage-20261024T060320Z.json |
+| 3.12.15 / two sources,6 owners | 263 | 20261024T060347Z-43824-954ab5ee | 82.78 / 84.9 | coverage-20261024T060512Z.json |
+
+All four native JSON/log/trace sets remain under
+`.gate-logs/observed/coverage-files/`; audits remain under `.gate-logs/`.
+Raw reports are `coverage-retirement-five{311,312}-three-source.json` and
+`coverage-retirement-five{311,312}-prune-source.json` under `.gate-logs/`.
+Counts belong to each actual profile; the required retirement-owner overlap
+remains, and the complete receiving union is26 distinct owners. The common
+Root Git checkpoint between311 source runs is scheduling context, not source,
+runtime, exact-SHA or release proof for this peer.
+
+Both runtimes measure the same full source scopes and raw totals:
+three-source LINE1563/1784 and BRANCH555/646 (87.6/85.9percent); two-source
+LINE401/429 and BRANCH127/148 (93.5/85.8percent). Integer cross-products confirm
+the actual85aggregate/75each-file LINE and BRANCH floors; rounded display is not
+used as threshold authority. In the latter profile, complete prune measures
+LINE309/336, BRANCH108/128; registry measures LINE92/93, BRANCH19/20.
+All five production files are present and above75raw for both metrics.
+No production function, source path, branch, predecessor assertion or consumer
+is removed to obtain this result.
+
+After the drained two-source311 run, the new five-path full resource owner
+passes264 with WRITE=0 and no path restriction/inventory regeneration:
+29async-task,73client,36process,9service,117temp-artifact. Preserve
+`retirement-resource-ownership/retirement-resource-ownership311-five-83dc52a`,
+terminal0/native5.9s, under `.gate-logs/observed/`.
+
+This final feature edit records receipts only; the other four owned paths
+remain byte-frozen. Root's source-only approval for that unchanged code remains
+separate from the final prose guard, fresh normal collection/peer checkpoint
+and guarded Main intake. The newer Main prune module receives only the one-line
+adapter hunk. The full canonical gate/global coverage, fresh capacity admission
+and exact-SHA hosted/deployment/promotion proofs are still pending. None of
+these scoped profiles closes a release task or supplies a release-ready SHA.

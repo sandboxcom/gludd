@@ -9,6 +9,7 @@ from pathlib import Path
 
 from scripts.makefile_layout import compose_makefile
 
+from tests.unit.test_agent_worktree_targets import _recipe
 from tests.unit.test_worktree_prune_preservation import (
     test_cleanup_alias_applies_the_real_registered_native_retirement as _assert_native_retirement,
 )
@@ -121,8 +122,17 @@ class TestPreMergeCICheck:
         text = makefile_text()
         idx = text.find("development-merge-to-master:")
         assert idx != -1, "B04: development-merge-to-master target not found"
-        block = text[idx : idx + 600]
-        assert "require-ci-green" in block, "B04: development-merge-to-master does not check CI green"
+        end = text.find("\n\n", idx)
+        block = text[idx:end if end != -1 else len(text)]
+        assert "outcome=retired" in block and "exit 2" in block
+        assert "release-promote" in block
+        assert "git merge" not in block and "git checkout" not in block
+        start = text.index("\nrelease-promote:")
+        end = text.find("\n\n", start)
+        canonical = text[start:end if end != -1 else len(text)]
+        assert "require-dual-track-green" in canonical
+        assert "DUAL_TRACK_CI_VALIDATE_ONLY=0" in canonical
+        assert "RELEASE_READINESS_VALIDATE_ONLY=0" in canonical
 
     def test_agents_md_requires_ci_green_before_merge(self) -> None:
         content = agents_text()
@@ -196,10 +206,11 @@ class TestDevelopmentIsFeatureIntegrationPoint:
         content = agents_text()
         assert "development" in content.lower(), "B08: AGENTS.md does not reference development branch"
 
-    def test_development_merge_to_master_is_the_final_shipping_path(self) -> None:
+    def test_release_promote_is_the_final_shipping_path(self) -> None:
         assert guard_exists_in_makefile("development-merge-to-master"), (
-            "B08: development-merge-to-master target missing"
+            "B08: retired development-merge-to-master compatibility target missing"
         )
+        assert guard_exists_in_makefile("release-promote"), "B08: canonical release owner missing"
 
 
 # ── B09: Feature branches are short-lived ───────────────────────────
@@ -444,7 +455,7 @@ class TestWorktreeAgentsHaveOwnBranch:
         text = makefile_text()
         idx = text.find("agent-worktree:")
         assert idx != -1, "B23: agent-worktree target not found"
-        block = text[idx : idx + 500]
+        block = _recipe("agent-worktree", source=text)
         assert "worktree add" in block, "B23: agent-worktree does not create git worktree"
 
 

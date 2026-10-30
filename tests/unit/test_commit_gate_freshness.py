@@ -23,7 +23,8 @@ MAKEFILE = ROOT / "Makefile"
 def _recipe(target: str) -> str:
     """Extract the full recipe body for a make target. Assert target exists."""
     content = compose_makefile(MAKEFILE)
-    marker = f"\n{target}:"
+    private = f"\n_commit-locked-{target}:"
+    marker = private if private in content else f"\n{target}:"
     assert marker in content, f"Makefile target '{target}' not found"
     start = content.index(marker) + len(marker)
     next_target = content.find("\n\n", start)
@@ -52,7 +53,7 @@ class TestCommitTargetsEnforceGate:
         assert "2>/dev/null || true" not in recipe
         assert "git diff --name-only | xargs" not in recipe
         assert "git diff --cached --name-only -z" in recipe
-        assert "$(UV) run pre-commit run --files" in recipe
+        assert "$(UV) run --active pre-commit run --files" in recipe
 
     def test_commit_no_verify_enforces_gate(self):
         """git-commit-no-verify must check .gate-status freshness.
@@ -108,7 +109,7 @@ class TestCommitTargetsEnforceGate:
         # and actually inspect the git-amend-msg block (the original blind spot
         # was that its two comment header lines fooled the old "first line is
         # the target name" logic).
-        amend_block = next((b for b in blocks if "git-amend-msg:" in b), None)
+        amend_block = next((b for b in blocks if "_commit-locked-git-amend-msg:" in b), None)
         assert amend_block is not None, "splitter must locate the git-amend-msg block"
         assert "git commit" in amend_block, "splitter must reach git-amend-msg recipe"
         offenders = []
@@ -133,7 +134,7 @@ class TestCommitTargetsEnforceGate:
                 continue
             # Special-case: the .PHONY list, help text, or comments mentioning
             # "git commit" as documentation should not trip the guard.
-            target_name = first.split(":")[0].strip()
+            target_name = first.split(":")[0].strip().removeprefix("_commit-locked-")
             if target_name.startswith(".") or target_name in ("help", "usage"):
                 continue
             # Targets that legitimately invoke git commit without the gate MUST
@@ -165,7 +166,7 @@ class TestCommitLintGuard:
         missing = []
         for target in commit_targets:
             # Find the prerequisite line for this target
-            marker = f"\n{target}:"
+            marker = f"\n_commit-locked-{target}:"
             assert marker in content, f"Makefile target '{target}' not found"
             start = content.index(marker)
             prereq_end = content.index("\n", start + 1)
@@ -190,7 +191,7 @@ class TestCommitLintGuard:
             has_git_commit = any("git commit" in line and not line.strip().startswith("#") for line in lines)
             if not has_git_commit:
                 continue
-            target_name = first.split(":")[0].strip()
+            target_name = first.split(":")[0].strip().removeprefix("_commit-locked-")
             if target_name.startswith("."):
                 continue
             if target_name in (

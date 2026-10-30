@@ -85,9 +85,7 @@ MANIFEST_SCHEMA: dict[str, Any] = {
                                 "type": "string",
                                 "pattern": "^_?[A-Za-z0-9]+(?:[A-Za-z0-9_.-]*[A-Za-z0-9])?$",
                             },
-                            "budget_class": {
-                                "enum": ["fast", "standard", "slow"]
-                            },
+                            "budget_class": {"enum": ["fast", "standard", "slow"]},
                             "max_seconds": {
                                 "type": "integer",
                                 "minimum": 1,
@@ -152,9 +150,7 @@ def _target_stanzas(makefile: str) -> dict[str, str]:
     matches = list(TARGET_RE.finditer(makefile))
     return {
         match.group(1): makefile[
-            match.start() : matches[index + 1].start()
-            if index + 1 < len(matches)
-            else len(makefile)
+            match.start() : matches[index + 1].start() if index + 1 < len(matches) else len(makefile)
         ]
         for index, match in enumerate(matches)
     }
@@ -210,9 +206,7 @@ def _pytest_node_exists(node: str, repository_root: Path) -> bool:
     return unparameterized in _pytest_nodes(repository_root / relative)
 
 
-def _runtime_contract_errors(
-    runtime: dict[str, Any], *, admission: str, stanzas: dict[str, str]
-) -> list[str]:
+def _runtime_contract_errors(runtime: dict[str, Any], *, admission: str, stanzas: dict[str, str]) -> list[str]:
     """Return deterministic observer, budget, and phase-wiring violations."""
     errors: list[str] = []
     normalized_admission = " ".join(admission.replace("\\\n", " ").split())
@@ -267,9 +261,7 @@ def _runtime_contract_errors(
         )
         position = normalized_admission.find(marker)
         if position < 0:
-            errors.append(
-                f"{label}: runtime phase is not wired with its exact budget: {name}"
-            )
+            errors.append(f"{label}: runtime phase is not wired with its exact budget: {name}")
         else:
             phase_positions.append(position)
     if not has_slow_phase:
@@ -308,9 +300,7 @@ def validate_manifest(payload: object, *, repository_root: Path) -> list[str]:
         errors.append("integration admission must not invoke the full gate")
 
     runtime = cast(dict[str, Any], manifest["runtime_contract"])
-    errors.extend(
-        _runtime_contract_errors(runtime, admission=admission, stanzas=stanzas)
-    )
+    errors.extend(_runtime_contract_errors(runtime, admission=admission, stanzas=stanzas))
 
     preflights = _preflight_targets(makefile)
     seen_ids: set[str] = set()
@@ -334,10 +324,7 @@ def validate_manifest(payload: object, *, repository_root: Path) -> list[str]:
         if not owner:
             errors.append(f"{label}: owner target is not defined: {owner_target}")
         if f"$(MAKE) --no-print-directory {owner_target}" not in admission:
-            errors.append(
-                f"{label}: owner target is not wired into {admission_target}: "
-                f"{owner_target}"
-            )
+            errors.append(f"{label}: owner target is not wired into {admission_target}: {owner_target}")
         marker = f"=== GATE PHASE: {full_gate_phase} ==="
         if marker not in full_gate:
             errors.append(f"{label}: full gate phase is not defined: {full_gate_phase}")
@@ -364,10 +351,21 @@ def _load_manifest(path: Path) -> object:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    """Validate the promoted-failure manifest and retain native CLI status."""
+    parser = argparse.ArgumentParser(prog="check_gate_failure_promotions", description=__doc__)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--repository-root", type=Path, default=ROOT)
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as exc:
+        if exc.code:
+            print(
+                "AGENT_NEXT gate-failure-promotions ERROR: repair the reported CLI arguments; "
+                "rerun make check-gate-failure-promotions with the same intended inputs; "
+                "do not retry an unchanged broader cohort.",
+                file=sys.stderr,
+            )
+        raise
     repository_root = args.repository_root.resolve()
     manifest_path = args.manifest
     if not manifest_path.is_absolute():
@@ -376,11 +374,24 @@ def main(argv: list[str] | None = None) -> int:
         payload = _load_manifest(manifest_path)
     except (OSError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
         print(f"gate-failure-promotions: ERROR cannot load manifest: {exc}", file=sys.stderr)
+        print(
+            "AGENT_NEXT gate-failure-promotions ERROR: repair the reported manifest/path/parse input; "
+            "rerun make check-gate-failure-promotions with the same manifest; "
+            "do not retry an unchanged broader cohort.",
+            file=sys.stderr,
+        )
         return 1
     errors = validate_manifest(payload, repository_root=repository_root)
     if errors:
         for error in errors:
             print(f"gate-failure-promotions: ERROR {error}", file=sys.stderr)
+        print(
+            "AGENT_NEXT gate-failure-promotions FAIL: repair the reported manifest/schema/node/Make-wiring inputs; "
+            "rerun make check-gate-failure-promotions with the same manifest; "
+            "keep all eight required child pins and bounds; "
+            "do not retry an unchanged broader cohort.",
+            file=sys.stderr,
+        )
         return 1
     manifest = cast(dict[str, Any], payload)
     family_count = len(manifest["families"])
@@ -393,6 +404,11 @@ def main(argv: list[str] | None = None) -> int:
         f"runtime_phases={len(runtime_phases)} "
         f"runtime_ceiling_seconds={runtime_ceiling} "
         f"full_gate={manifest['full_gate_target']} required=true"
+    )
+    print(
+        "AGENT_NEXT gate-failure-promotions PASS STRUCTURAL ONLY: finish all eight required child pins and "
+        "await terminal make check-gate-failure-promotions exit0 before a broader cohort; "
+        "this script PASS is not full-owner, gate or CI proof."
     )
     return 0
 

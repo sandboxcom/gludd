@@ -1,26 +1,22 @@
 """M04: Merge is atomic.
 
 A merge MUST commit all resolved files in a single merge commit.
-Partial merges are forbidden. All merge targets must use `--no-ff`
-or `git merge` without `--no-commit` to ensure atomicity.
+Partial merges are forbidden. Feature merges retain their atomic commit policy;
+canonical master promotion fast-forwards to one already validated development SHA.
+The retired master alias must not perform any merge.
 """
 
 from pathlib import Path
 from typing import ClassVar
 
+from scripts.check_make_target_contract import _stanzas
 from scripts.makefile_layout import compose_makefile
 
 MAKEFILE = Path(__file__).parent.parent.parent / "Makefile"
 
 
 def _find_target_recipe(content: str, target: str) -> str:
-    idx = content.find(f"\n{target}:")
-    if idx == -1:
-        return ""
-    end = content.find("\n\n", idx)
-    if end == -1:
-        end = len(content)
-    return content[idx:end]
+    return _stanzas(content).get(target, "")
 
 
 class TestM04MergeIsAtomic:
@@ -31,21 +27,28 @@ class TestM04MergeIsAtomic:
         "agent-merge",
         "agent-merge-dev",
         "feature-done",
-        "development-merge-to-master",
     ]
 
-    def test_merge_targets_use_no_ff(self):
+    def test_merge_targets_use_no_ff(self) -> None:
         content = compose_makefile(MAKEFILE)
         violations = []
         for target in self._MERGE_TARGETS:
             recipe = _find_target_recipe(content, target)
             if not recipe:
                 continue
-            if "--no-ff" not in recipe:
+            if target in {"agent-merge", "agent-merge-dev"}:
+                assert "outcome=retired" in recipe and "native_status=2" in recipe
+                assert "exit 2" in recipe and "git merge" not in recipe and "git checkout" not in recipe
+                next_owner = "release-promote" if target == "agent-merge" else "development-merge-forward"
+                assert next_owner in recipe
+                canonical = _find_target_recipe(content, "development-fast-forward")
+                assert "merge --ff-only" in canonical
+                assert "EXPECTED_BEFORE_SHA" in canonical and "EXPECTED_AFTER_SHA" in canonical
+            elif "--no-ff" not in recipe:
                 violations.append(f"'{target}' missing --no-ff flag")
         assert not violations, "M04 VIOLATION — merge targets missing --no-ff:\n" + "\n".join(violations)
 
-    def test_no_merge_target_uses_no_commit(self):
+    def test_no_merge_target_uses_no_commit(self) -> None:
         content = compose_makefile(MAKEFILE)
         violations = []
         for target in self._MERGE_TARGETS:
@@ -59,13 +62,18 @@ class TestM04MergeIsAtomic:
                 "M04 VIOLATION — merge targets using --no-commit (partial merge allowed):\n" + "\n".join(violations)
             )
 
-    def test_merge_abort_available(self):
+    def test_merge_abort_available(self) -> None:
         content = compose_makefile(MAKEFILE)
         recipe = _find_target_recipe(content, "git-merge-abort")
         assert recipe, "M04: git-merge-abort must exist for atomicity recovery"
 
-    def test_development_merge_uses_no_ff(self):
+    def test_retired_alias_preserves_atomic_canonical_promotion(self) -> None:
         content = compose_makefile(MAKEFILE)
         recipe = _find_target_recipe(content, "development-merge-to-master")
-        assert recipe, "M04: development-merge-to-master must exist"
-        assert "--no-ff" in recipe, "M04: development-merge-to-master must use --no-ff for atomic merge"
+        assert recipe, "M04: development-merge-to-master must remain discoverable"
+        assert "outcome=retired" in recipe and "exit 2" in recipe
+        assert "git merge" not in recipe and "git checkout" not in recipe
+        canonical = _find_target_recipe(content, "release-promote")
+        assert 'merge --ff-only "$$DEV_SHA"' in canonical
+        assert "merge --no-ff" not in canonical
+        assert "merge --no-commit" not in canonical

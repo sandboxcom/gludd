@@ -1,6 +1,7 @@
 """Tests for status-snapshot in-place writing and SESSION.md drift detector."""
 
 import importlib.util
+import re
 from pathlib import Path
 from types import ModuleType
 
@@ -25,6 +26,17 @@ def _load_status_snapshot() -> ModuleType:
     return module
 
 
+def _retained_collection_header_claims(content: str) -> list[str]:
+    """Find direct header-relative collection claims in retained H2 sections."""
+    relative = r"\bcollection(?:\s+receipt)?\s+is\s+(?:the\s+)?(?:current\s+)?header\b"
+    violations = []
+    for section in re.split(r"(?m)^## ", content)[1:]:
+        title, _, body = section.partition("\n")
+        if title.startswith("Retained ") and re.search(relative, body, re.IGNORECASE):
+            violations.append(title)
+    return violations
+
+
 class TestStatusSnapshot:
     def test_script_exists(self) -> None:
         script = Path(__file__).parent.parent.parent / "scripts" / "status_snapshot.py"
@@ -35,6 +47,45 @@ class TestStatusSnapshot:
         content = session.read_text()
         assert "<!-- gate:begin -->" in content, "SESSION.md missing gate:begin marker"
         assert "<!-- gate:end -->" in content, "SESSION.md missing gate:end marker"
+        relative = _retained_collection_header_claims(content)
+        assert not relative, "Bind retained collection to its fixed ref/receipt, not the header: " + ", ".join(relative)
+
+    @pytest.mark.parametrize("moving_header", (
+        "Total tests:129093selected/129117collected at f2e; "
+        "receipt20261022T150906Z-56373-519db956.json",
+        "Total tests:129100selected/129124collected at d76; "
+        "receipt20261022T153930Z-71443-937148de.json",
+    ), ids=("f2e", "d76"))
+    def test_retained_collection_binding_survives_current_header_move(
+        self, tmp_path: Path, moving_header: str,
+    ) -> None:
+        explicit = (
+            "Its historical d0a collection remains129014selected/129038collected,\n"
+            "24deselected/zeroerrors47.58s/native52.718s at\n"
+            ".gate-logs/observed/test-count/20261022T134900Z-23107-0a3fbd8e.json.\n"
+        )
+        prefix = "# Session\n\n" + moving_header + "\n\n## Retained source\n\n"
+        session = tmp_path / "SESSION.md"
+        session.write_text(prefix + explicit, encoding="utf-8")
+        assert _retained_collection_header_claims(session.read_text(encoding="utf-8")) == []
+        stale = "Its normal collection receipt is the header's explicitly pinned d0a evidence.\n"
+        session.write_text(prefix + stale, encoding="utf-8")
+        assert _retained_collection_header_claims(session.read_text(encoding="utf-8")) == ["Retained source"]
+        session.write_text(prefix + explicit, encoding="utf-8")
+        assert session.read_text(encoding="utf-8") == prefix + explicit
+        assert _retained_collection_header_claims(session.read_text(encoding="utf-8")) == []
+
+    @pytest.mark.parametrize(("content", "expected"), (
+        ("## Current source\nCollection is the header's measurement.\n", []),
+        ("## Retained source\nA later header cannot recertify its collection.\n", []),
+        ("## Retained source\nExplicit receipt.\n## Current source\nCollection is the header.\n", []),
+        ("## Retained source\n### Details\nCollection receipt\nis the current header's measurement.\n",
+         ["Retained source"]),
+    ))
+    def test_retained_collection_control_respects_handoff_sections(
+        self, content: str, expected: list[str],
+    ) -> None:
+        assert _retained_collection_header_claims(content) == expected
 
     def test_makefile_status_snapshot_uses_script(self) -> None:
         content = _makefile_text()

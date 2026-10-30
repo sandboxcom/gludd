@@ -7,6 +7,7 @@ import importlib.metadata
 import json
 import math
 import os
+import shlex
 import sys
 import uuid
 from collections.abc import Iterator, Mapping, Sequence
@@ -235,8 +236,25 @@ def _environment_identity(environment: Mapping[str, str], cwd: Path | str | None
 
 
 
+def _canonical_native_command(command: Sequence[str]) -> Sequence[str]:
+    """Recognize only an exactly quoted native argv inside the default shell.
+
+    Execution and persisted identity retain the complete shell command. This
+    conservative view exists only for the owner's established Make exemptions
+    and fixed-command environment normalization; it never interprets a script.
+    """
+    if len(command) != 3 or list(command[:2]) != ["/bin/sh", "-c"]:
+        return command
+    try:
+        arguments = shlex.split(command[2], comments=False, posix=True)
+    except ValueError:
+        return command
+    return arguments if arguments and shlex.join(arguments) == command[2] else command
+
+
 def _semantic_environment(command: Sequence[str], environment: Mapping[str, str]) -> Mapping[str, str]:
     """Normalize only lifecycle metadata for the fixed compatibility command."""
+    command = _canonical_native_command(command)
     arguments = [arg for arg in command[1:] if arg != "--no-print-directory"]
     if not command or Path(command[0]).name != "make" or arguments != ["_pytest-runtime-compatibility-admission"]:
         return environment
@@ -391,6 +409,7 @@ def _retire_superseded_observation(
 
 def _read_only_capacity_diagnostic(command: Sequence[str]) -> bool:
     """Recognize only fixed read-only disk inspection, never cleanup execution."""
+    command = _canonical_native_command(command)
     if not command or Path(command[0]).name != "make":
         return False
     arguments = [arg for arg in command[1:] if arg != "--no-print-directory"]
@@ -443,12 +462,14 @@ def command_admission(
     cwd: Path | str | None = None,
 ) -> Iterator[Admission | None]:
     """Admit scoped execution; diagnostics and external-state waits stay available."""
-    targets = [arg for arg in command[1:] if "=" not in arg and arg != "--no-print-directory"]
-    if _read_only_capacity_diagnostic(command) or (command and Path(command[0]).name == "make" and len(targets) == 1
-            and (targets[0] in _DIAGNOSTICS or _bounded_status_wait(command, max_seconds))
+    semantic_command = _canonical_native_command(command)
+    targets = [arg for arg in semantic_command[1:] if "=" not in arg and arg != "--no-print-directory"]
+    if _read_only_capacity_diagnostic(semantic_command) or (
+            semantic_command and Path(semantic_command[0]).name == "make" and len(targets) == 1
+            and (targets[0] in _DIAGNOSTICS or _bounded_status_wait(semantic_command, max_seconds))
             and not any(arg.split("=", 1)[0] in {"UV", "PYTHON", "SHELL", "MAKEFILES", "MAKEFLAGS"}
-                        for arg in command[1:])
-            and all(not arg.startswith("-") or arg == "--no-print-directory" for arg in command[1:])):
+                        for arg in semantic_command[1:])
+            and all(not arg.startswith("-") or arg == "--no-print-directory" for arg in semantic_command[1:])):
         yield None
         return
     root = root.resolve()
@@ -524,6 +545,43 @@ def prepare_runtime_focus(root: Path, task_id: str = "") -> dict[str, object]:
         return state
 
 
+def _result_guidance(outcome: str) -> None:
+    """Teach the actual administrative result without interpreting native proofs."""
+    actions = {
+        "planned": (
+            "Inspect work-item status in mode0; no focus was selected, task eligibility was not checked "
+            "and no runtime admission ran. This plan is not acceptance."
+        ),
+        "uninitialized": (
+            "Select one open canonical active task with work-item focus/mode0; inspect "
+            "active-work-status for capacity and ownership before bounded acceptance."
+        ),
+        "observed": (
+            "Inspect exact linked receipts with observed-status and actual owners with active-work-status; "
+            "pointers do not prove live workers or acceptance. Repair the actual blocked or changed input "
+            "before retrying its owner."
+        ),
+        "updated": (
+            "This is an administrative declaration; no runtime admission ran. Inspect active-work-status "
+            "for capacity and ownership, then use the existing bounded acceptance owner."
+        ),
+        "prepared": (
+            "Only administrative focus was prepared; no runtime admission ran. Inspect active-work-status "
+            "for capacity and ownership before the existing bounded runtime owner."
+        ),
+        "refused": (
+            "Preserve the native reason and reconcile existing state before retry; repair the actual "
+            "changed input, and never delete native state or locks or manufacture observation JSON."
+        ),
+    }
+    status = 2 if outcome == "refused" else 0
+    print(
+        f"AGENT_NEXT target=work-item outcome={outcome} native_status={status} "
+        f"gate_evidence=false release_ready=false next_action={actions[outcome]}",
+        file=sys.stderr, flush=True,
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Expose bounded administrative controls without executing a second runner."""
     import argparse
@@ -533,7 +591,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--task", default="")
     parser.add_argument("--reason", default="")
     parser.add_argument("--validate-only", choices=("0", "1"), default="0")
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as exc:
+        if exc.code == 2:
+            _result_guidance("refused")
+        raise
     try:
         if args.action in {"focus", "support"} and not args.task.strip():
             raise ValueError("focus/support requires one canonical task ID")
@@ -556,9 +619,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "release_ready": False, "gate_evidence": False,
             }
         print(json.dumps(record, sort_keys=True))
+        if args.validate_only == "1":
+            outcome = "planned"
+        elif args.action == "status":
+            outcome = "uninitialized" if record.get("state") == "uninitialized" else "observed"
+        else:
+            outcome = "prepared" if args.action == "prepare-runtime" else "updated"
+        _result_guidance(outcome)
         return 0
     except (OSError, ValueError) as exc:
         print(f"work-item: {exc}", file=sys.stderr)
+        _result_guidance("refused")
         return 2
 
 

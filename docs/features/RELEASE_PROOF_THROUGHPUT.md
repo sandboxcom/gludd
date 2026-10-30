@@ -1,51 +1,46 @@
 # Release Proof Throughput
 
-## Published6ec94ab runtime failure and retained attribution
+## Active handoff and hosted authority
 
-Normal guarded publication verifies development6ec94ab4daf59e45b44720a44ffca19b2e7d0b23
-after exact served-manifest and2023+1+11/75.1s local admission. Exact Build
-39519193318 then fails311 admission at124/90.6s after2023/73.87s,help1/1.62s
-and ten tail passes. Its312 lane passes89.5s and fresh127723/127747collection,
-24deselected/0errors; the overall Build still fails and all eight shards remain
-censored/unknown. Native pipeline-status records open1/repaired11/resolved39,
-runs143. A new HEAD or the same-source local pass cannot repair this input.
+Use [SESSION](../../SESSION.md), the [current runtime record](RUNTIME_ADMISSION_CLEAN_SHA.md)
+and native work-item/active-work-status for the active branch, source, failed
+input and proof owner. The dated runs and old open/repaired/resolved counts
+below are historical evidence. They cannot clear a newer native failure or
+authorize another unchanged replay.
 
-Root owns the coupled diagnostic enhancement on development: extend the existing
-summary with opt-in validated wall spans, retain original counts/failures and
-separate exact run/worker/PID module totals. The [owning feature](XDIST_TRACE_SUMMARY.md#validated-test-protocol-wall-spans-v012)
-codifies47new controls, initial44FAIL/1PASS, repeated-module isolation RED,
-literal-option shell witness, final201PASS9.90s, and unchanged four-file native
-coverage431PASS70.85s at91.5line/85.5branch; summarizer98.2/95.6.
-The failed290-case70% aggregate receipt remains failed; the final cohort adds
-existing complete startup/retention owners without changing scope or floors.
-Main/tail raw profiles and native summaries are retained; parent waiting is
-not worker CPU and cross-worker sums are not combined elapsed time.
-Actual hosted311 cost repair, original90/60 family evidence, independent final
-review/full gate, exact-SHA CI, deployment and promotion remain missing.
-Disk97% still blocks expensive final release proof; no unchanged retry.
+Local focused tests provide fast feedback. Required hosted validation must run
+on the exact pushed candidate SHA, and deployment/publication follows its own
+workflow conditions:
 
-Independent5b10dd57eef9cc70f0b56fb34ca3dbfa9b7443f9 source review rejects duplicate
-START accounting with a native six-event witness; retain the negative decision.
-Root adds5failing controls and counted pending occurrences in the same summary
-owner. Complete437PASS71.34s/native73.4s measures unchanged four-file
-91.5line/85.6branch, summarizer98.3/95.8; no release authority follows.
-Native terminal6ec observations now record open2/repaired10/resolved40/runs145:
-WebKit23+1PASS416.52/51.18s/native472.4s and all six Molecule jobs pass, but
-Pages Chromium is cancelled during JS1 and deploy skips. Native annotation now identifies the unchanged20m0s job limit, and actual
-Ubuntu24.04.5 context establishes its runner baseline. The
-[Pages feature decision](PRESENTATION_JAVASCRIPT_COVERAGE.md#hosted-job-budget-and-required-ordering-2026-10-21-utc)
-preserves both JS0 engines, then dependent JS1, original20-minute budgets,
-600s children,85/75 coverage and required deployment predecessors. Parsed-YAML
-controls fail7/39PASS before repair, then whole five-owner acceptance165PASS6.74s.
-Separate setup cost is explicit; peak concurrency stays2. Source-only review,
-actual successor hosted coverage and deployment remain pending. Runtime311 remains open.
-Independent source decision approves7dcd1dd at
-/tmp/gludd-v012-candidate-7dcd1dd-source-review.md. Native ci-failure-repair
-records its Pages family locally repaired after complete232PASS7.11s at that
-clean exact source, not hosted-resolved. Commit collection127777/127801,
-24deselected/0errors47.34s/native52.7s supplies no full gate. The isolated
-pipeline-status process-cost enhancement remains the next active repair;
-Root owns its single Make writer and final receiving proof.
+| Trigger | Native workflow owner | Authority when its required work passes |
+|---|---|---|
+| Development or release-candidate push | [Build and Release](../../.github/workflows/build.yml), [Molecule](../../.github/workflows/molecule.yml), [Pages validation](../../.github/workflows/pages.yml) | Hosted validation for that exact SHA; retain every required workflow and job result. |
+| Master push | [Pages deploy](../../.github/workflows/pages.yml) after validate and javascript-coverage | Deployment of the presentation. |
+| Version tag v* | [Build release fan-in](../../.github/workflows/build.yml) | Release publication after required source proof and platform producers, followed by completeness and downloaded-artifact smoke verification. |
+| Explicit dispatch or schedule, with protected Azure live environment enabled | [Azure Container App live proof](../../.github/workflows/azure-containerapp-live.yml) | The actual selected environment's live-proof result, with its own required configuration and credentials. |
+
+A candidate push validates source before promotion. Pages deployment requires
+the master push condition and its two required predecessors. Version-tag
+publication requires the separate exact-source proof and release fan-in.
+Read the actual native outcome before attributing any of those authorities.
+Plan/configuration/source-only approval, a local component pass, pending,
+skipped or missing jobs cannot supply deployment or release proof.
+
+For hosted observation, select the existing branch-owned pipeline-status or
+ci-await producer with explicit repo/branch/SHA and documented variables.
+Keep generated current JSON producer-owned; preserve immutable failed runs.
+An authenticated CLI or configured Git transport proves neither a push nor
+hosted execution. Use normal guarded batch-push, verify-remote, then the native
+exact-SHA observer. Capacity, complete canonical gate, global85/75 BOTH,
+deployed reviewed-head acceptance and promotion remain separate requirements.
+
+## Historical6ec94ab runtime failure and retained attribution
+
+Normal guarded publication verifies development6ec94ab4daf59e45b44720a44ffca19b2e7d0b23 after exact served-manifest and2023+1+11/75.1s local admission. Exact Build 39519193318 then fails311 admission at124/90.6s after2023/73.87s,help1/1.62s and ten tail passes. Its312 lane passes89.5s and fresh127723/127747collection, 24deselected/0errors; the overall Build still fails and all eight shards remain censored/unknown. Native pipeline-status records open1/repaired11/resolved39, runs143. A new HEAD or the same-source local pass cannot repair this input.
+
+Root owns the coupled diagnostic enhancement on development: extend the existing summary with opt-in validated wall spans, retain original counts/failures and separate exact run/worker/PID module totals. The [owning feature](XDIST_TRACE_SUMMARY.md#validated-test-protocol-wall-spans-v012) codifies47new controls, initial44FAIL/1PASS, repeated-module isolation RED, literal-option shell witness, final201PASS9.90s, and unchanged four-file native coverage431PASS70.85s at91.5line/85.5branch; summarizer98.2/95.6. The failed290-case70% aggregate receipt remains failed; the final cohort adds existing complete startup/retention owners without changing scope or floors. Main/tail raw profiles and native summaries are retained; parent waiting is not worker CPU and cross-worker sums are not combined elapsed time. Actual hosted311 cost repair, original90/60 family evidence, independent final review/full gate, exact-SHA CI, deployment and promotion remain missing. Disk97% still blocks expensive final release proof; no unchanged retry.
+
+Independent5b10dd57eef9cc70f0b56fb34ca3dbfa9b7443f9 source review rejects duplicate START accounting with a native six-event witness; retain the negative decision. Root adds5failing controls and counted pending occurrences in the same summary owner. Complete437PASS71.34s/native73.4s measures unchanged four-file 91.5line/85.6branch, summarizer98.3/95.8; no release authority follows. Native terminal6ec observations now record open2/repaired10/resolved40/runs145: WebKit23+1PASS416.52/51.18s/native472.4s and all six Molecule jobs pass, but Pages Chromium is cancelled during JS1 and deploy skips. Native annotation now identifies the unchanged20m0s job limit, and actual Ubuntu24.04.5 context establishes its runner baseline. The [Pages feature decision](PRESENTATION_JAVASCRIPT_COVERAGE.md#hosted-job-budget-and-required-ordering-2026-10-21-utc) preserves both JS0 engines, then dependent JS1, original20-minute budgets, 600s children,85/75 coverage and required deployment predecessors. Parsed-YAML controls fail7/39PASS before repair, then whole five-owner acceptance165PASS6.74s. Separate setup cost is explicit; peak concurrency stays2. Source-only review, actual successor hosted coverage and deployment remain pending. Runtime311 remains open. Independent source decision approves7dcd1dd at /tmp/gludd-v012-candidate-7dcd1dd-source-review.md. Native ci-failure-repair records its Pages family locally repaired after complete232PASS7.11s at that clean exact source, not hosted-resolved. Commit collection127777/127801, 24deselected/0errors47.34s/native52.7s supplies no full gate. The isolated pipeline-status process-cost enhancement remains the next active repair; Root owns its single Make writer and final receiving proof.
 
 ## Problem and decision
 
@@ -745,8 +740,8 @@ documents module invocation and JSON arguments; its quoting guidance supports
 literal transport. The [native configuration reference](https://docs.ansible.com/projects/ansible/latest/reference_appendices/config.html)
 documents Ansible home and temporary configuration. Existing firsthand workflow
 and recursive-Make findings above motivate this executable route; neither
-upstream documentation nor check mode supplies an actual human request or
-release proof.
+upstream documentation nor check mode supplies an actual human request or release proof.
+The later [identity and result repair](MAKE_RESULT_GUIDANCE.md#humantodo-results-require-identity-and-reconciliation-2026-10-22-utc) retains malformed-success REDs, unverified-write reconciliation, outcome prompts, whole-module coverage, canonical routing and the held existing-daemon proposal.
 
 ## Native workflow repairs and retained decisions (2026-10-20)
 
@@ -1483,30 +1478,34 @@ The required S97 repairs remain in scope; excluded backlog work does not.
 | S98.6 | Stable promotion and release-cut evidence | Keep promotion, tagging, and publication blocked until final proof is green |
 | S98.7 | One complete canonical gate and hosted presentation/shards | Clear capacity, then replay the repaired launcher, handoff, and browser paths |
 
-Normalize each blocker by owner/node and actual failing input. A new SHA,
-observer suffix, time passage, source-only approval, or unrelated green check
-does not clear it. Retain the original failed run and specify the input change
-needed before another expensive attempt. This is a standing scheduling rule,
-not a new persisted fingerprint engine or a cache that reuses proof across SHAs.
+Normalize blockers by owner/node and actual failing input. A new SHA, observer
+label, elapsed time, source review or unrelated green result does not repair
+one. Retain its failed receipt and name the input change needed before retry.
 
-While blocked, continue bounded failing-first repair tests, mandatory actual
-collection before each small commit, and normal ledger-guarded development
-repair pushes. Do not repeat full gates, reseal candidates, broaden into
-unrelated features, or silently skip hosted failures. Batch known independent
-repair siblings before another CI push. Never edit tests just to obtain green;
-conform obsolete interface assertions only while retaining their intent.
+Use the mandatory Make guide's compatible implemented-release batch recipe:
+start with two eligible current-release items when ready, one if only one is.
+This is a conservative pilot, not a measured optimal batch size. Keep immediate
+failing-first and complete changed-owner feedback, one owner/record per item.
 
-The actual latest capacity failure is a hard prerequisite. Ambiguous toolchain
-ownership and shared OpenCode history remain protected; this workflow does not
-grant deletion authority or relax lock, link, lease, or cleanup checks. Local
-browser prerequisites are also absent, so focused JavaScript/CSS acceptance is
-not a substitute for the required fresh browser run.
+Retain each small logical commit, mandatory fresh collection and normal guarded
+repair push. Deduplicate complete acceptance owners at the stable receiving
+batch. Skip only optional terminal-covered unchanged-input repeats, never exact
+candidate proof or failures. Carry receipt guidance into the next coherent change.
+Preserve original test intent, fresh browser/runtime prerequisites and toolchain
+ownership; ambiguous shared history and every lock/link/lease/cleanup fence stay
+protected. This policy grants no deletion authority.
 
-After hard prerequisites clear: freeze once, obtain independent source review,
-run the combined acceptance set, run the complete canonical gate, and obtain
-required hosted success for that exact immutable SHA. No candidate edits during
-final proof. A failed final run returns to bounded repair work; it is never
-relabelled as green. Only then may the existing guarded promotion proceed.
+Actual capacity/configuration/ownership failures still block final proof.
+After they clear, run release-proof-admission mode0 and freeze once for independent
+review, combined acceptance, the complete canonical gate and required exact-SHA
+hosted/deployment/reviewed-head/promotion evidence. No edits during proof; changed
+source needs fresh applicable proof. Only actual full criteria and final proofs
+permit TASKS closure and the existing guarded promotion.
+
+### Measured scheduling decision, 2026-10-22 UTC
+
+The [dated measured decision](MAKE_RESULT_GUIDANCE.md#measured-throughput-decision)
+retains exact441-case/collection timings, the163.142s arithmetic, unmeasured costs, small-batch pilot and evidence-reuse limits. It claims no measured pipeline speedup.
 
 ## Move known failures ahead of costly fan-out
 
@@ -1622,6 +1621,10 @@ run/SHA identity and all eight shards. Failed shard intervals remain censored.
 No scheduling improvement is claimed before measuring the successor's hosted
 SHA. Independent source review, actual native admission, canonical coverage/
 full gate and matching hosted/deployment acceptance remain required.
+
+## CI run summary result guidance: recovered source (2026-10-26 UTC)
+
+The original summary5 packet survives in native peer index .git/worktrees/v012-ci-summary-result-guidance-20261024/index, HEAD 3a693d3aee571ef96666c62ef719f8f05b5ace38, index SHA256 936bd572278fb1486916cce6be52700c5788ff30ab25595291c3c70f1ec13fc5. Fixed make -f /tmp/gludd-v012-summary-export-20261026.mk export-summary uses that native gitdir/common repository and cat-file blobs, exports all five recovered and five original baseline files exclusively under /tmp/gludd-v012-summary-packet-export-20261026, verifies exact sizes/SHA256, and preserves peer index/HEAD/gitdir/commondir; Main's index is unobserved. Its manifest.json retains all path/blob identities, including producer 7cd9a43f7b45edebd8c2cc7460f934108ef4b1d1, script tests 2fb820445ed69411ebab9a6c61a2bb03276e4469 and target tests 92869ce5dae824267cd45f5a65ce0de3acd79f2b. Receiving branch feature/v012-summary-recovered-20261026 starts at c5e8278cbe0ecae3b46012ff07ff3c2f5cd33313; its three Python files matched original3a before applying the recovered delta. Current shared documents retain their later history and receive only guidance/provenance. The producer appends one final advisory stderr line after its table/optional timing JSON, preserving CLI/stdout, one bounded immutable fetch, native statuses and all eight pending/censored/unknown intervals. Planned performs no lookup; pending names ci-await after actual branch/workflow/kind selection; failed names ci-view for the exact failed/censored run; lookup-error requires changed lookup/identity input; passed names pipeline-status for the caller's branch/SHA/required workflows. Validated remote, bound stdin and legacy listed jobs keep distinct scopes and no canonical push/gate/release authority. The original source review found closed standard-library stderr raises ValueError after completed legacy tables; recovered code catches ValueError alongside OSError only at added advice, retaining original remote-start/invalid-JSON errors and every predecessor/negative assertion. Recovered historical prose reports 82-case profiles and 253-case seven-owner receiving EACH runtime plus source-only approval after an initial closed-stream HOLD. Its peer receipts include coverage-files/20261024T111110Z-9330-d6424aeb.json, coverage-files/20261024T111123Z-9677-08357727.json and ci-summary-guidance-closed-receiving/ci-summary-guidance-closed-receiving{311,312}-3a693d3.json; they do not certify this new branch. The old literal seven-file command is unavailable in recovered prose. Fresh c5 failing-first native Make control retained six PASS rows/status0/exact fetch, then failed only on absent guidance, 1FAIL/pytest1/watcher2 at .gate-logs/observed/summary-recovery-red/summary-recovery-red311-c5e8278.json. The logical-Makefile AST guard separately passed one case on311. Fresh whole producer profiles pass all 82 cases on EACH installed311/312 runtime with raw 258/263 lines (98.10%) and 95/102 branches (93.14%); both native 85aggregate/75each-file LINE+BRANCH audits pass. Exact new profile receipts are .gate-logs/observed/coverage-files/20261026T134638Z-57570-876a62cd.json and 20261026T134803Z-69390-2e45e8c3.json, with .gate-logs/summary-recovery-profile{311,312}-c5e8278.json. The first complete current seven-owner311 union retained 416PASS/1FAIL at test_gate_failure_promotion.py::test_hosted_fanout_requires_executed_runtime_admission because inherited build.yml still parameterized the runtime MAX_SECS; .gate-logs/observed/summary-recovery-consumers/summary-recovery-consumers311-c5e8278.json preserves it. Root applied only the prepared runtime MAX_SECS=90 workflow correction as a separately owned dirty input, retaining the original assertion. Its required complete publication consumer expands current acceptance to these eight complete owners: `tests/unit/test_ci_run_summary_script.py tests/unit/test_ci_run_summary_target.py tests/unit/test_no_passive_ci_polling.py tests/unit/test_secrets_baseline_compaction.py tests/unit/test_audit_public_secrets.py tests/unit/test_runtime_admission_scheduling.py tests/unit/test_gate_failure_promotion.py tests/unit/test_runtime_publish_admission.py`. An initial focused90/60 envelope timed out after 90.568s/native124 on 492 collected cases; its unfinished tail stays unproved at .gate-logs/observed/summary-recovery-receiving/summary-recovery-receiving311-c5e8278-wf90.json. Correct focused acceptance uses 600total/180quiet, distinct from unchanged canonical runtime/promotion90/60 and release21600. Both complete current eight-owner unions then passed all 492 cases, zero skips/errors, serial width1 with fatal warnings, literal ID= and explicit installed runtimes:311 163.68s/native165.194s and312 174.70s/native176.380s. Exact native terminal0 receipts are .gate-logs/observed/summary-recovery-receiving/summary-recovery-receiving{311,312}-c5e8278-wf90-600.json; no timing improvement is claimed. Complete Markdown/oversize/pytest-parameter owners separately passed94 EACH at .gate-logs/observed/summary-recovery-docs/summary-recovery-docs{311,312}-c5e8278.json before this final evidence paragraph; complete document readers are refreshed after this prose delta. Ruff, strict source/two-owner typing, producer docstrings, env-write guard, 299-target contract and its lookup-free exact example pass. Initial added feature prose exceeded the existing<2500-line policy; only that added prose was compacted, preserving prior history and policy. The isolated checkout's hardcoded local Rumdl was absent; Root authorized Main's existing locked native lint-markdown on the two exact peer documents/current peer config, which passes without dependency installation. Source review, normal guarded collection/commits and candidate integration remain required; canonical gate, exact-SHA hosted CI, development/master integration, deployment and release proofs remain separate.
 
 ## Hosted shard scheduling and automatic timing
 

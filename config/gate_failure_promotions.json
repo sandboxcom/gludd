@@ -1237,6 +1237,188 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_cache_resource_policy.py::test_shared_uv_inventory_reports_complete_without_mutation",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "git-async-live-owner-handoff",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_git_automation_locking_handoff.py::test_live_task_handoff_cannot_allow_critical_section_overlap",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "git-async-completed-owner-adoption",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_git_automation_locking_handoff.py::test_wait_for_result_binds_nested_use_to_consuming_task",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "git-merge-no-commit-dirty-preservation",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_git_merge_nc_safety.py::test_full_make_dirty_refusal_keeps_the_staged_source_test[command]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "git-merge-no-commit-literal-branch",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_git_merge_nc_safety.py::test_full_make_branch_data_stays_literal_before_startup[make-expression-command]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "make-promotion-terminal-result-guidance",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_make_result_guidance.py::test_promotion_make_guidance_waits_for_all_required_children[validator]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "make-contract-layout-error-guidance",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_make_checker_guidance.py::test_contract_native_input_error_guidance_retains_exit_one[include]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "make-guide-required-owner-command",
+      "owner_target": "check-gate-failure-promotions",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_make_target_contract.py::test_key_make_targets_recommends_guarded_release_owners",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "make-variable-recipe-context",
+      "owner_target": "check-gate-failure-promotions",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_makefile_targets_deep.py::TestVariableConsistency::test_no_bare_equals",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "development-merge-forward-plan-guidance",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_development_merge_forward_targets.py::test_merge_forward_plan_guidance_does_not_admit_integration[True-content]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "development-merge-forward-namesake",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_development_merge_forward_targets.py::test_merge_forward_guidance_runs_despite_namesake_file",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "human-todo-response-identity",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_gludd_human_todo_module.py::test_success_without_usable_id_never_verifies_write[missing-present-200]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "human-todo-check-mode-guidance",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_human_todo_make_target.py::test_human_todo_guidance_uses_actual_native_outcome[0-1]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "run-watched-native-outcome-guidance",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_run_watched_result_guidance.py::test_native_status_drives_one_result_prompt_without_changing_argv[7]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "run-watched-namesake-execution",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_run_watched_result_guidance.py::test_namesake_file_cannot_suppress_native_observation_or_guidance",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "run-watched-complete-command",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_run_watched_command_boundary.py::test_compound_tail_is_running_inside_one_terminal_receipt[7-0]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "make-guarded-goal-outcome-guidance",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_make_uv_execution_boundary.py::test_guarded_multi_goal_refusal_teaches_both_input_repairs_before_any_body[quoted-markdown]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "work-item-administrative-result-guidance",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_item_progress.py::test_native_work_item_status_guidance_preserves_owned_json[True]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "release-candidate-push-workflow-triggers",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_release_pipeline_structure.py::TestReleaseCandidateHostedValidation::test_candidate_push_filters_preserve_existing_routes",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "pytest-native-trace-protocol",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_test_files_native_trace.py::test_observer_trace_contains_real_matching_protocol_pairs[pass-serial]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "trace-summary-result-guidance",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_xdist_trace_diagnostics.py::test_native_summary_cli_keeps_json_status_and_emits_guidance[trace_guidance_native_rows0-empty]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "presentation-hosted-apt-literal-mode",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_presentation_browser_apt_source.py::test_apt_mode_is_literal_at_real_make_startup[environment-override]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "git-status-native-index-readonly",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_git_status_readonly.py::test_status_never_refreshes_native_index[inherited-one]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "publication-native-command-envelope",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_runtime_publish_admission.py::test_green_runtime_owner_runs_once_before_normal_transport[False]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "make-local-script-reference-boundary",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_makefile_audit_deep.py::TestScriptReferencesExist::test_all_scripts_exist",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "watchdog-bound-gate-waiter",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_task_watchdog.py::test_live_gate_bound_waiter_protects_the_complete_tree[make-pid]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "verify-remote-recipe-boundary",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_push_discipline_checks.py::TestVerifyRemoteAfterPush::test_verify_remote_compares_sha",
+      "full_gate_phase": "test"
     }
   ]
 }

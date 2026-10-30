@@ -116,6 +116,85 @@ def _state(root: Path) -> dict[str, object]:
 
 
 
+@pytest.mark.parametrize(("watched_boundary_command", "watched_boundary_exempt"), [
+    (["/bin/sh", "-c", "make disk-check"], True),
+    (["/bin/sh", "-c", "make --no-print-directory disk-check"], True),
+    (["/bin/sh", "-c", "make disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0 "
+      "DISK_CLEANUP_PREFLIGHT_DRY_RUN=1 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800"], True),
+    ([], False), (["make"], False), (["make", "disk-check"], True),
+    (["/bin/sh", "-c", ""], False),
+    (["/bin/sh", "-c", "make 'unterminated"], False),
+    (["/bin/sh", "-c", "make disk-check && printf unrelated"], False),
+    (["/bin/sh", "-c", "make disk-check;printf unrelated"], False),
+    (["/bin/sh", "-c", "make disk-check\nprintf unrelated"], False),
+    (["/bin/sh", "-c", "make $(printf disk-check)"], False),
+    (["/bin/sh", "-c", 'make "$$BOUNDARY_TARGET"'], False),
+    (["/tmp/fixture-spoof/sh", "-c", "make disk-check"], False),
+    (["/bin/sh", "-ec", "make disk-check"], False),
+    (["/bin/sh", "-c", "make disk-check", "extra-positional-context"], False),
+    (["/bin/sh", "-c", "make disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0 "
+      "DISK_CLEANUP_PREFLIGHT_DRY_RUN=0 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800"], False),
+])
+def test_run_watched_shell_keeps_only_existing_readonly_capacity_authority(
+    policy: ModuleType, watched_boundary_command: list[str], watched_boundary_exempt: bool,
+) -> None:
+    """Measure actual Main policy, never a copied fixture's coverage."""
+    assert policy._read_only_capacity_diagnostic(watched_boundary_command) is watched_boundary_exempt
+
+
+@pytest.mark.parametrize(("watched_boundary_command", "watched_boundary_exempt"), [
+    (["/bin/sh", "-c", "make cat-file 'FILE=literal && not-a-command'"], True),
+    (["/bin/sh", "-c", "make cat-file 'UV=literal && not-a-command'"], False),
+    (["/tmp/fixture-spoof/sh", "-c", "make cat-file"], False),
+    (["/bin/sh", "-c", "make cat-file", "extra-positional-context"], False),
+    (["/bin/sh", "-ec", "make cat-file"], False),
+    (["/bin/sh", "-c", "make $(printf cat-file)"], False),
+    (["/bin/sh", "-c", "make " + chr(96) + "printf cat-file" + chr(96)], False),
+    (["/bin/sh", "-c", "make cat-file\nprintf unrelated"], False),
+])
+def test_run_watched_shell_diagnostics_keep_native_scope_and_override_guards(
+    policy: ModuleType, repository: Path,
+    watched_boundary_command: list[str], watched_boundary_exempt: bool,
+) -> None:
+    with policy.command_admission(
+        repository, watched_boundary_command, environment={"PRIVATE_INPUT": "fixture-only"},
+        quiet_seconds=3.0, max_seconds=5.0, primary_task_id="F12.1", task_id="F12.1",
+    ) as admission:
+        if watched_boundary_exempt:
+            assert admission is None
+            assert not (repository / ".gludd/item-progress.json").exists()
+        else:
+            assert admission is not None
+            assert admission.identity["command"] == watched_boundary_command
+            assert admission.identity["limits"] == [3.0, 5.0]
+
+
+def test_run_watched_shell_normalizes_only_fixed_lifecycle_metadata(policy: ModuleType) -> None:
+    command = ["/bin/sh", "-c", "make --no-print-directory _pytest-runtime-compatibility-admission"]
+    environment = {
+        "GATE_CANDIDATE_SHA": "changing-owner-sha", "GLUDD_GATE_OWNER_PID": "123",
+        "MAKEOVERRIDES": "opaque-native-reference", "PRIVATE_INPUT": "fixture-only",
+    }
+    assert policy._semantic_environment(command, environment) == {
+        "MAKEOVERRIDES": "opaque-native-reference", "PRIVATE_INPUT": "fixture-only",
+    }
+    compound = ["/bin/sh", "-c", command[2] + " && printf extra-stage"]
+    assert policy._semantic_environment(compound, environment) is environment
+
+
+def test_run_watched_shell_full_identity_blocks_unchanged_failure_despite_new_observer(
+    policy: ModuleType, repository: Path,
+) -> None:
+    command = ("/bin/sh", "-c", "make test-files TESTFILES=first.py && make test-files TESTFILES=second.py")
+    identity = _start(policy, repository, command=command)
+    assert identity is not None and identity["command"] == list(command)
+    with pytest.raises(ValueError, match="unchanged failed inputs"):
+        _start(policy, repository, command=command, run_id="new-run", label="new-observer")
+    changed = ("/bin/sh", "-c", command[2].replace("second.py", "repaired.py"))
+    current = _start(policy, repository, command=changed, run_id="changed-tail")
+    assert current is not None and current["command"] == list(changed)
+
+
 @pytest.mark.parametrize("state", ["failed", "timed_out"])
 def test_gate_lifecycle_metadata_cannot_launder_a_failed_runtime_input(
     policy: ModuleType, repository: Path, state: str,
@@ -1053,6 +1132,166 @@ def test_native_control_cli_is_bounded_and_does_not_invent_readiness(
         record = json.loads(output.out)
         assert record["release_ready"] is False
         assert record["gate_evidence"] is False
+
+
+def _work_item_prompt(stdout: str, stderr: str, outcome: str, status: int) -> str:
+    prompts = [line for line in stderr.splitlines() if line.startswith("AGENT_NEXT target=work-item ")]
+    assert len(prompts) == 1, stderr
+    prompt = prompts[0]
+    assert f"outcome={outcome} " in prompt and f"native_status={status} " in prompt
+    assert "gate_evidence=false" in prompt and "release_ready=false" in prompt
+    assert "AGENT_NEXT" not in stdout
+    return prompt
+
+
+@pytest.mark.parametrize("initialized", [False, True])
+def test_native_work_item_status_guidance_preserves_owned_json(
+    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str], initialized: bool,
+) -> None:
+    monkeypatch.chdir(repository)
+    path = repository / ".gludd/item-progress.json"
+    if initialized:
+        _start(policy, repository, state="failed")
+    before = path.read_bytes() if path.exists() else None
+    capsys.readouterr()
+    assert policy.main(["status"]) == 0
+    output = capsys.readouterr()
+    record = json.loads(output.out)
+    if initialized:
+        assert before is not None and record == json.loads(before)
+        assert record["observations"] and record["reservations"] == {}
+    else:
+        assert record == {
+            "kind": "item_progress", "state": "uninitialized",
+            "gate_evidence": False, "release_ready": False,
+        }
+    assert (path.read_bytes() if path.exists() else None) == before
+    prompt = _work_item_prompt(output.out, output.err, "observed" if initialized else "uninitialized", 0)
+    if initialized:
+        assert "observed-status" in prompt and "active-work-status" in prompt
+        assert "pointers do not prove live workers or acceptance" in prompt
+        assert "changed input" in prompt
+    else:
+        assert "open canonical active task" in prompt and "focus" in prompt
+
+
+@pytest.mark.parametrize("action", ["status", "focus", "support", "prepare-runtime"])
+def test_native_work_item_plan_guidance_does_not_read_or_select_focus(
+    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str], action: str,
+) -> None:
+    monkeypatch.chdir(repository)
+    path = repository / ".gludd/item-progress.json"
+    path.parent.mkdir()
+    path.write_text("unread malformed state", encoding="utf-8")
+    before = path.read_bytes()
+    assert policy.main([
+        action, "--task", "F99.9", "--reason", "direct acceptance", "--validate-only", "1",
+    ]) == 0
+    output = capsys.readouterr()
+    assert json.loads(output.out) == {
+        "kind": "work_item_plan", "action": action, "task": "F99.9",
+        "gate_evidence": False, "release_ready": False,
+    }
+    assert path.read_bytes() == before and not (repository / ".gate-logs").exists()
+    prompt = _work_item_prompt(output.out, output.err, "planned", 0)
+    assert "no focus was selected" in prompt and "task eligibility was not checked" in prompt
+    assert "mode0" in prompt and "no runtime admission" in prompt
+
+
+@pytest.mark.parametrize("action", ["focus", "support", "prepare-runtime"])
+def test_native_work_item_mutation_guidance_keeps_administration_separate(
+    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str], action: str,
+) -> None:
+    monkeypatch.chdir(repository)
+    tasks = (repository / "TASKS.md").read_bytes()
+    if action == "support":
+        policy.focus_item(repository, "F12.1")
+    arguments = [action, "--task", "F12.2" if action == "support" else "F12.1"]
+    if action == "support":
+        arguments.extend(["--reason", "Direct acceptance dependency"])
+    assert policy.main(arguments) == 0
+    output = capsys.readouterr()
+    assert json.loads(output.out) == _state(repository)
+    assert _state(repository)["observations"] == {} and _state(repository)["reservations"] == {}
+    assert (repository / "TASKS.md").read_bytes() == tasks
+    assert not (repository / ".gate-logs").exists()
+    prompt = _work_item_prompt(output.out, output.err, "prepared" if action == "prepare-runtime" else "updated", 0)
+    assert "administrative" in prompt and "no runtime admission" in prompt
+    assert "capacity" in prompt and "ownership" in prompt
+
+
+@pytest.mark.parametrize(("arguments", "reason"), [
+    (["focus"], "focus/support requires one canonical task ID"),
+    (["support", "--task", "F12.2"], "support requires a direct acceptance reason"),
+    (["status"], "item progress input must be an object"),
+])
+def test_native_work_item_refusal_guidance_preserves_reason_and_state(
+    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str], arguments: list[str], reason: str,
+) -> None:
+    monkeypatch.chdir(repository)
+    path = repository / ".gludd/item-progress.json"
+    path.parent.mkdir()
+    path.write_text("[]", encoding="utf-8")
+    before = path.read_bytes()
+    assert policy.main(arguments) == 2
+    output = capsys.readouterr()
+    assert not output.out and output.err.startswith("work-item: " + reason + "\n")
+    assert path.read_bytes() == before and not (repository / ".gate-logs").exists()
+    prompt = _work_item_prompt(output.out, output.err, "refused", 2)
+    assert "changed input" in prompt and "reconcile" in prompt
+    assert "never delete native state or locks" in prompt
+
+
+def test_native_work_item_write_error_requires_reconciliation_of_applied_state(
+    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(repository)
+    writer = policy._atomic_write_json
+
+    def applied_then_failed(path: Path, record: dict[str, object]) -> None:
+        writer(path, record)
+        raise OSError("fixture write acknowledgement unavailable")
+
+    monkeypatch.setattr(policy, "_atomic_write_json", applied_then_failed)
+    assert policy.main(["focus", "--task", "F12.1"]) == 2
+    output = capsys.readouterr()
+    assert not output.out and "fixture write acknowledgement unavailable" in output.err
+    assert _state(repository)["primary_task_id"] == "F12.1"
+    prompt = _work_item_prompt(output.out, output.err, "refused", 2)
+    assert "reconcile" in prompt and "before retry" in prompt
+
+
+@pytest.mark.parametrize("arguments", [[], ["unknown"], ["status", "--validate-only", "2"]])
+def test_native_work_item_parser_refusal_keeps_usage_and_status(
+    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str], arguments: list[str],
+) -> None:
+    monkeypatch.chdir(repository)
+    with pytest.raises(SystemExit) as failure:
+        policy.main(arguments)
+    assert failure.value.code == 2
+    output = capsys.readouterr()
+    assert not output.out and output.err.startswith("usage: ") and "error:" in output.err
+    assert not (repository / ".gludd").exists()
+    _work_item_prompt(output.out, output.err, "refused", 2)
+
+
+def test_native_work_item_help_is_not_a_result_or_state_change(
+    policy: ModuleType, repository: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(repository)
+    with pytest.raises(SystemExit) as result:
+        policy.main(["--help"])
+    assert result.value.code == 0
+    output = capsys.readouterr()
+    assert output.out.startswith("usage: ") and not output.err
+    assert not (repository / ".gludd").exists()
 
 
 def test_native_support_cli_updates_only_its_owned_declaration(

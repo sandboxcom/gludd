@@ -274,7 +274,8 @@ def _parse_allowlist(
             raise AuditError(
                 f"alternate digests for architecture {raw_architecture!r} must be a list of lowercase SHA-256 digests"
             )
-        alternate_digests.update(raw_digest_list)
+        if normalized == normalized_architecture:
+            alternate_digests.update(raw_digest_list)
 
     raw_entries = data["allowed_missing_imports"]
     if not isinstance(raw_entries, list):

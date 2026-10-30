@@ -68,7 +68,9 @@ class TestG01G02GateMustPassBeforeCommit:
 
     def test_test_and_commit_is_allowlisted(self):
         content = compose_makefile(MAKEFILE)
-        recipe = _find_recipe(content, "test-and-commit")
-        if not recipe:
+        public = _find_recipe(content, "test-and-commit")
+        if not public:
             return
-        assert "pytest" in recipe, "G01: test-and-commit must run pytest as its own micro-gate"
+        assert "_commit-transaction" in public, "G01: test-and-commit must delegate to the native commit transaction"
+        locked = _find_recipe(content, "_commit-locked-test-and-commit")
+        assert locked and "pytest" in locked, "G01: test-and-commit must run pytest as its own micro-gate"

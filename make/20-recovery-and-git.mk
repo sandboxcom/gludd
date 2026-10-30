@@ -367,7 +367,7 @@ cleanup-stale-tmp: ## Remove stale gludd-owned temp dirs/files from ~/tmp (APPLY
 
 
 
-opencode-db-stats: ## Bounded read-only OpenCode table counts (OPENCODE_DB, OPENCODE_DATA_DIR, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_MAINTENANCE_VALIDATE_ONLY)
+opencode-db-stats: ## Bounded SQL-readonly OpenCode table counts and page metadata (OPENCODE_DB, OPENCODE_DATA_DIR, OPENCODE_DB_TIMEOUT_SECONDS, OPENCODE_DB_BUSY_TIMEOUT_MS, OPENCODE_MAINTENANCE_VALIDATE_ONLY)
 	@$(SYSTEM_PYTHON) scripts/opencode_db_maintenance.py stats \
 		$(if $(filter command line environment,$(origin OPENCODE_DB)),--db "$(OPENCODE_DB)",) \
 		$(if $(strip $(OPENCODE_DATA_DIR)),--data-dir "$(OPENCODE_DATA_DIR)",) \
@@ -565,7 +565,13 @@ molecule-test-model-pipeline:
 	@cd collections/ansible_collections/general_ludd/agent && $(UV) run molecule test -s default
 
 git-status:
-	@git status --short || echo "Not a git repo"
+	@git --no-optional-locks status --short; native_rc=$$?; \
+	if [ "$$native_rc" -eq 0 ]; then \
+		printf '%s\n' 'AGENT_NEXT target=git-status outcome=observed native_status=0 gate_evidence=false release_ready=false next_owner=worktree-state; status is an observation; preserve owned changes and obtain the required source, gate and exact-SHA proofs' >&2; \
+	else \
+		printf '%s\n' "AGENT_NEXT target=git-status outcome=failed native_status=$$native_rc gate_evidence=false release_ready=false next_owner=worktree-state; retain the native Git reason; reconcile repository and owned index/lock state before retry; failure grants no commit or release authority" >&2; \
+	fi; \
+	exit "$$native_rc"
 
 git-show:
 	@test -n "$(SHA)" || (echo "Usage: make git-show SHA=<sha>"; exit 1)
@@ -607,6 +613,41 @@ git-diff:
 # Usage: make git-diff-full [FILES='path ...']
 git-diff-full:
 	@git diff HEAD $(if $(FILES),-- $(FILES),) || echo "No diff"
+
+# Read-only tree comparison of two explicit, verified commit objects.
+.PHONY: git-compare-commits
+git-compare-commits:
+	@printf '%s\n' \
+		'import os, re, subprocess, sys' \
+		'base = os.environ.get("GLUDD_GIT_COMPARE_BASE", "")' \
+		'head = os.environ.get("GLUDD_GIT_COMPARE_HEAD", "")' \
+		'if not all(re.fullmatch(r"[0-9a-fA-F]{40}", value) for value in (base, head)):' \
+		'    print("AGENT_NEXT target=git-compare-commits outcome=refused native_status=2 phase=input next_action=pass-two-literal-full40hex-SHAs gate_evidence=false release_ready=false", file=sys.stderr)' \
+		'    raise SystemExit(2)' \
+		'def finish(outcome, status, phase, field, next_action):' \
+		'    print(f"AGENT_NEXT target=git-compare-commits outcome={outcome} native_status={status} base={base} head={head} scope=commit-trees-only phase={phase} input={field} next_action={next_action} gate_evidence=false release_ready=false", file=sys.stderr)' \
+		'    raise SystemExit(status)' \
+		'git = ["git", "--no-pager", "--no-optional-locks"]' \
+		'for field, sha in (("GIT_COMPARE_BASE", base), ("GIT_COMPARE_HEAD", head)):' \
+		'    try:' \
+		'        result = subprocess.run([*git, "cat-file", "-t", sha], stdout=subprocess.PIPE, check=False)' \
+		'    except OSError as error:' \
+		'        print(error, file=sys.stderr)' \
+		'        finish("failed", 127, "git-exec", field, "repair-native-git-execution")' \
+		'    status = result.returncode if result.returncode >= 0 else 128 - result.returncode' \
+		'    if status:' \
+		'        finish("failed", status, "verify-commit", field, "repair-missing-or-unreadable-pinned-commit")' \
+		'    if result.stdout != b"commit\n":' \
+		'        finish("refused", 2, "object-type", field, "select-a-direct-commit-object")' \
+		'try:' \
+		'    result = subprocess.run([*git, "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color", "--exit-code", base, head, "--"], check=False)' \
+		'except OSError as error:' \
+		'    print(error, file=sys.stderr)' \
+		'    finish("failed", 127, "git-exec", "pinned-pair", "repair-native-git-execution")' \
+		'status = result.returncode if result.returncode >= 0 else 128 - result.returncode' \
+		'outcome = "identical" if status == 0 else ("different" if status == 1 else "failed")' \
+		'next_action = "continue-independent-source-review" if status == 0 else ("review-the-pinned-patch" if status == 1 else "repair-the-native-diff-input")' \
+		'finish(outcome, status, "diff", "pinned-pair", next_action)' | "$(PYTHON)" -P -
 
 repo-diff:
 	@git diff --stat || echo "No diff"
@@ -650,6 +691,36 @@ git-owned-checkpoint-push:
 git-owned-checkpoint-restore:
 	@# FILES, GIT_CHECKPOINT_LABEL, GIT_CHECKPOINT_SHA, GIT_CHECKPOINT_VALIDATE_ONLY are environment-exported.
 	@$(PYTHON) "$(GIT_CHECKPOINT_OWNER)" restore
+
+# Selected checkpoint-owner link repair; capture public values as literal data.
+GIT_CHECKPOINT_WORKTREE ?=
+GIT_CHECKPOINT_ADMIN_DIR ?=
+GIT_CHECKPOINT_EXPECTED_HEAD ?=
+GIT_CHECKPOINT_EXPECTED_BRANCH ?=
+ifneq (,$(filter git-owned-checkpoint-repair-link,$(MAKECMDGOALS)))
+ifneq ($(words $(MAKECMDGOALS)),1)
+$(error OWNED-CHECKPOINT-REFUSED use one repair target per invocation)
+endif
+ifneq (,$(findstring $$,$(value GIT_CHECKPOINT_WORKTREE)$(value GIT_CHECKPOINT_ADMIN_DIR)$(value GIT_CHECKPOINT_EXPECTED_HEAD)$(value GIT_CHECKPOINT_EXPECTED_BRANCH)$(value GIT_CHECKPOINT_SHA)$(value GIT_CHECKPOINT_VALIDATE_ONLY)))
+$(error OWNED-CHECKPOINT-REFUSED repair inputs must be literal identity data)
+endif
+endif
+override GLUDD_CHECKPOINT_REPAIR_WORKTREE := $(value GIT_CHECKPOINT_WORKTREE)
+override GLUDD_CHECKPOINT_REPAIR_ADMIN_DIR := $(value GIT_CHECKPOINT_ADMIN_DIR)
+override GLUDD_CHECKPOINT_REPAIR_EXPECTED_HEAD := $(value GIT_CHECKPOINT_EXPECTED_HEAD)
+override GLUDD_CHECKPOINT_REPAIR_EXPECTED_BRANCH := $(value GIT_CHECKPOINT_EXPECTED_BRANCH)
+override GLUDD_CHECKPOINT_REPAIR_SHA := $(value GIT_CHECKPOINT_SHA)
+override GLUDD_CHECKPOINT_REPAIR_VALIDATE_ONLY := $(value GIT_CHECKPOINT_VALIDATE_ONLY)
+export GLUDD_CHECKPOINT_REPAIR_WORKTREE GLUDD_CHECKPOINT_REPAIR_ADMIN_DIR
+export GLUDD_CHECKPOINT_REPAIR_EXPECTED_HEAD GLUDD_CHECKPOINT_REPAIR_EXPECTED_BRANCH
+export GLUDD_CHECKPOINT_REPAIR_SHA GLUDD_CHECKPOINT_REPAIR_VALIDATE_ONLY
+unexport GIT_CHECKPOINT_WORKTREE GIT_CHECKPOINT_ADMIN_DIR GIT_CHECKPOINT_EXPECTED_HEAD GIT_CHECKPOINT_EXPECTED_BRANCH
+
+.PHONY: git-owned-checkpoint-repair-link
+git-owned-checkpoint-repair-link:
+	@# GIT_CHECKPOINT_WORKTREE, GIT_CHECKPOINT_ADMIN_DIR, GIT_CHECKPOINT_SHA are literal environment inputs.
+	@# GIT_CHECKPOINT_EXPECTED_HEAD, GIT_CHECKPOINT_EXPECTED_BRANCH, GIT_CHECKPOINT_VALIDATE_ONLY bind the plan/apply scope.
+	@$(PYTHON) -P "$(GIT_CHECKPOINT_OWNER)" repair-link
 
 git-stash-clear:
 	@COUNT=$$(git stash list 2>/dev/null | wc -l | tr -d ' '); \
@@ -751,7 +822,12 @@ git-patch-equivalence:
 git-show-commit:
 	@[ -n "$(C)" ] || { echo "Usage: make git-show-commit C=<sha>"; exit 1; }
 	@echo "--- $(C) summary ---"; git log -1 --format='%H%nparent: %P%ncommitter_unix: %ct%n%s' $(C)
-	@echo "--- files touched ---"; git show --stat --oneline $(C) | tail -n +2
+	@echo "--- files touched ---"; \
+	GIT_SHOW_FILES=$$(git show --stat --oneline $(C)) || { GIT_SHOW_STATUS=$$?; \
+		printf '%s\n' "AGENT_NEXT target=git-show-commit outcome=failed native_status=2 child_status=$$GIT_SHOW_STATUS phase=git-show gate_evidence=false release_ready=false; retain the native failure and repair requested C before claiming revision proof" >&2; exit "$$GIT_SHOW_STATUS"; }; \
+	printf '%s\n' "$$GIT_SHOW_FILES" | tail -n +2 || { GIT_SHOW_STATUS=$$?; \
+		printf '%s\n' "AGENT_NEXT target=git-show-commit outcome=failed native_status=2 child_status=$$GIT_SHOW_STATUS phase=display gate_evidence=false release_ready=false; retain the native failure and repair the display child before claiming revision proof" >&2; exit "$$GIT_SHOW_STATUS"; }; \
+	printf '%s\n' 'AGENT_NEXT target=git-show-commit outcome=passed native_status=0 gate_evidence=false release_ready=false next_owner=worktree-state; requested revision metadata and every display child finished; verify branch/clean ownership and required native acceptance before integration or release' >&2
 
 # Recreate a branch at BASE by cherry-picking a commit RANGE onto it. Used to
 # re-root mis-branched work onto its intended base WITHOUT touching the source
@@ -988,7 +1064,7 @@ resolve-development-conflicts:
 repo-add-all:
 	@git add -A
 
-commit-bootstrap: _gate-fresh-check _commit-lock-acquire
+_commit-locked-commit-bootstrap: _commit-lock-acquire _gate-fresh-check
 	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-bootstrap MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
@@ -997,7 +1073,7 @@ commit-bootstrap: _gate-fresh-check _commit-lock-acquire
 # messages with angle-bracket emails). Enforces the SAME fresh+green gate guard
 # as `git-commit` (a bare `git commit -F` would otherwise bypass it). Usage:
 #   make git-commit-file FILE=/tmp/msg.txt
-git-commit-file: _gate-fresh-check _commit-lock-acquire
+_commit-locked-git-commit-file: _commit-lock-acquire _gate-fresh-check
 	@[ -n "$(FILE)" ] || { echo "Usage: make git-commit-file FILE=path"; exit 1; }
 	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check
@@ -1121,8 +1197,9 @@ clean-untracked:
 	@echo "Cleaned up reinvention-of-wheel files"
 
 git-remote-sandboxcom:
-	@chmod 600 sandboxcom_github_rsa
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git remote add sandboxcom git@github.com:sandboxcom/gludd.git 2>/dev/null || true
+	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git remote set-url sandboxcom git@github.com:sandboxcom/gludd.git || true
+	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git remote set-url --push sandboxcom git@github.com:sandboxcom/gludd.git || true
 	@echo "Remote sandboxcom configured"
 
 # -- Push gate: prevent CI thrash (cancelled runs, push storms, excessive pushes) --
@@ -1225,12 +1302,70 @@ master-force-push:
 	@$(MAKE) verify-remote BRANCH=master SHA=$$(git rev-parse master)
 	@echo "Master branch force-pushed and verified"
 
+.PHONY: batch-push git-push-sandboxcom
+# Native GNU Make inspection must not execute a recursive publication recipe.
+override _publication-native-flags := $(strip $(call _native-make-option-prefix,$(MAKEFLAGS)))
+override _publication-native-short := $(call _native-make-boolean-cluster,$(filter-out -%,$(firstword $(_publication-native-flags)))) $(foreach option,$(filter-out --%,$(filter -%,$(_publication-native-flags))),$(call _native-make-boolean-cluster,$(patsubst -%,%,$(option))))
+override _publication-native-mode := $(if $(findstring q,$(_publication-native-short))$(filter --question,$(_publication-native-flags)),query,$(if $(findstring n,$(_publication-native-short))$(filter --just-print --dry-run --recon,$(_publication-native-flags)),dry-run,$(if $(findstring t,$(_publication-native-short))$(filter --touch,$(_publication-native-flags)),touch,execute)))
+
 git-push-sandboxcom: check-clean-tree _test-disabled-guard _push-rate-guard _stash-before-push-guard _pull-before-push-guard _ci-verdict-history-guard _pre-commit-stash-audit _ci-restart-cap
-	@$(MAKE) --no-print-directory _runtime-publish-admission RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY=0
-	@BRANCH=$$(git branch --show-current); \
-	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom HEAD:$$BRANCH
-	@echo "Pushed $$(git branch --show-current) to sandboxcom/gludd"
-	@$(MAKE) --no-print-directory _record-push-verdict
+	@if [ "$(_publication-native-mode)" != execute ]; then echo "AGENT_NEXT target=git-push-sandboxcom outcome=planned mode=$(_publication-native-mode) gate_evidence=false release_ready=false: Native inspection starts no publication, runtime admission or hosted observation." >&2; exit 0; fi; \
+	gludd_publish_branch=; gludd_publish_head=; gludd_publish_writes=false; \
+	gludd_publish_fail() { gludd_publish_rc=$$1; gludd_publish_outcome=$$2; gludd_publish_phase=$$3; \
+		case "$$gludd_publish_phase" in \
+		expected-input) gludd_publish_next='Supply both optional PUBLISH_EXPECTED_BRANCH and full40hex PUBLISH_EXPECTED_SHA, or leave both empty; keep inputs literal.' ;; \
+		expected-identity|identity|candidate) gludd_publish_next='Reconcile the saved branch/fullSHA with actual native HEAD before normal guarded publication; do not publish a different candidate.' ;; \
+		authentication) gludd_publish_next='Repair the actual remote/helper/key/account prerequisite through its existing owner; consent remains operator-owned.' ;; \
+		runtime) gludd_publish_next='Retain the actual admission receipt and repair its failed native input before another normal publication.' ;; \
+		diagnostic-input|diagnostic-preflight) gludd_publish_next='Repair the explicit feature-ci purpose, saved expected identity or independently published workflow baseline; preserve native failures. No release admission is substituted and no transport has started in this result branch.' ;; \
+		hosted-signal|diagnostic-signal) gludd_publish_next='Transport and history may already have applied; reconcile the saved branch/fullSHA and the actual returned run or native refusal. Use the existing ci-trigger-committed-head with that exact identity to request or reuse its Build run; do not repush unchanged source merely to request CI. Terminal CI and promotion proof remain required.' ;; \
+		*) gludd_publish_next='Transport or history may already have applied; preserve the native reason and reconcile the actual remote/history before retry. No older remote or unchanged repush supplies missing proof.' ;; \
+		esac; \
+		printf 'AGENT_NEXT target=git-push-sandboxcom outcome=%s phase=%s native_status=%s branch=%s sha=%s transport_may_have_applied=%s gate_evidence=false release_ready=false: %s\n' "$$gludd_publish_outcome" "$$gludd_publish_phase" "$$gludd_publish_rc" "$$gludd_publish_branch" "$$gludd_publish_head" "$$gludd_publish_writes" "$$gludd_publish_next" >&2; \
+		exit "$$gludd_publish_rc"; }; \
+	gludd_publish_purpose="$$GLUDD_PUBLISH_PURPOSE"; \
+	case "$$gludd_publish_purpose" in canonical|feature-ci) ;; *) gludd_publish_fail 2 refused diagnostic-input ;; esac; \
+	gludd_publish_branch=$$(git branch --show-current) || gludd_publish_fail "$$?" failed candidate; \
+	gludd_publish_head=$$(git rev-parse --verify HEAD^{commit}) || gludd_publish_fail "$$?" failed candidate; \
+	[ -n "$$gludd_publish_branch" ] || gludd_publish_fail 2 refused candidate; \
+	gludd_expected_branch="$$GLUDD_PUBLISH_EXPECTED_BRANCH"; gludd_expected_sha="$$GLUDD_PUBLISH_EXPECTED_SHA"; \
+	if [ -n "$$gludd_expected_branch" ] || [ -n "$$gludd_expected_sha" ]; then \
+		[ -n "$$gludd_expected_branch" ] && [ "$${#gludd_expected_sha}" -eq 40 ] || gludd_publish_fail 2 refused expected-input; \
+		case "$$gludd_expected_sha" in *[!0123456789abcdefABCDEF]*) gludd_publish_fail 2 refused expected-input ;; esac; \
+		git check-ref-format "refs/heads/$$gludd_expected_branch" || gludd_publish_fail "$$?" refused expected-input; \
+		gludd_expected_sha=$$(printf '%s' "$$gludd_expected_sha" | tr ABCDEF abcdef) || gludd_publish_fail "$$?" failed expected-input; \
+		if [ "$$gludd_expected_branch" != "$$gludd_publish_branch" ] || [ "$$gludd_expected_sha" != "$$gludd_publish_head" ]; then gludd_publish_fail 2 refused expected-identity; fi; \
+	fi; \
+	$(MAKE) --no-print-directory _require-sandboxcom-git-auth || gludd_publish_fail "$$?" failed authentication; \
+	if [ "$$gludd_publish_purpose" = feature-ci ]; then \
+		[ -n "$$gludd_expected_branch" ] && [ -n "$$gludd_expected_sha" ] || gludd_publish_fail 2 refused diagnostic-input; \
+		case "$$gludd_publish_branch" in feature/*|diagnostic/*) ;; *) gludd_publish_fail 2 refused diagnostic-input ;; esac; \
+		[ "$$FORCE" != 1 ] && [ "$$GLUDD_FORCE_PUSH" != 1 ] || gludd_publish_fail 2 refused diagnostic-input; \
+		GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' $(SYSTEM_PYTHON) scripts/ci_remote_head_guard.py \
+			--purpose feature-ci --publication --ref "$$gludd_publish_branch" --remote sandboxcom \
+			--expected-branch "$$gludd_expected_branch" --expected-sha "$$gludd_expected_sha" \
+			--baseline-ref "$$GLUDD_PUBLISH_BASELINE_REF" --baseline-sha "$$GLUDD_PUBLISH_BASELINE_SHA" \
+			--repo sandboxcom/gludd --workflow 'Build and Release' || gludd_publish_fail "$$?" refused diagnostic-preflight; \
+	else $(MAKE) --no-print-directory _runtime-publish-admission RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY=0 || gludd_publish_fail "$$?" failed runtime; fi; \
+	gludd_publish_current_branch=$$(git branch --show-current) || gludd_publish_fail "$$?" failed identity; \
+	gludd_publish_current_head=$$(git rev-parse --verify HEAD^{commit}) || gludd_publish_fail "$$?" failed identity; \
+	if [ "$$gludd_publish_current_branch" != "$$gludd_publish_branch" ] || [ "$$gludd_publish_current_head" != "$$gludd_publish_head" ]; then gludd_publish_fail 2 refused identity; fi; \
+	gludd_publish_writes=true; \
+	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom "$$gludd_publish_head:refs/heads/$$gludd_publish_branch" || gludd_publish_fail "$$?" failed transport; \
+	git branch --set-upstream-to="sandboxcom/$$gludd_publish_branch" "$$gludd_publish_branch" || gludd_publish_fail "$$?" failed tracking; \
+	$(MAKE) --no-print-directory _record-push-verdict PUSH_VERDICT_SHA="$$gludd_publish_head" PUBLISH_EXPECTED_BRANCH="$$gludd_publish_branch" PUBLISH_EXPECTED_SHA="$$gludd_publish_head" PUBLISH_PURPOSE="$$gludd_publish_purpose" || gludd_publish_fail "$$?" failed verdict; \
+	$(MAKE) --no-print-directory verify-remote BRANCH="$$gludd_publish_branch" SHA="$$gludd_publish_head" || gludd_publish_fail "$$?" failed remote-verification; \
+	gludd_publish_signal_phase=hosted-signal; \
+	if [ "$$gludd_publish_purpose" = feature-ci ]; then gludd_publish_signal_phase=diagnostic-signal; fi; \
+	$(MAKE) --no-print-directory ci-trigger-committed-head PUBLISH_PURPOSE="$$gludd_publish_purpose" \
+		PUBLISH_EXPECTED_BRANCH="$$gludd_publish_branch" PUBLISH_EXPECTED_SHA="$$gludd_publish_head" \
+		PUBLISH_BASELINE_REF="$$GLUDD_PUBLISH_BASELINE_REF" PUBLISH_BASELINE_SHA="$$GLUDD_PUBLISH_BASELINE_SHA" \
+		REF="$$gludd_publish_branch" REMOTE=sandboxcom REPO=sandboxcom/gludd WORKFLOW='Build and Release' EXAMPLE=0 \
+		WORK_ITEM_ID='$(subst ','"'"',$(value WORK_ITEM_ID))' || gludd_publish_fail "$$?" failed "$$gludd_publish_signal_phase"; \
+	if [ "$$gludd_publish_purpose" = feature-ci ]; then \
+		printf 'AGENT_NEXT target=git-push-sandboxcom outcome=diagnostic-signaled purpose=feature-ci native_status=0 branch=%s sha=%s gate_evidence=false release_ready=false: The saved source SHA is verified remotely and the existing exact-SHA signal returned a CI run. Inspect that run with the native CI failure/status owners; no terminal CI, canonical push, deployment or release proof is granted. Continue feature to development to master through unchanged promotion gates.\n' "$$gludd_publish_branch" "$$gludd_publish_head" >&2; exit 0; \
+	fi; \
+	printf 'AGENT_NEXT target=git-push-sandboxcom outcome=published native_status=0 branch=%s sha=%s gate_evidence=false release_ready=false: The saved fullSHA is verified remotely and the existing exact-SHA signal returned an accepted or reused Build run. Observe that actual run with pipeline-status and the native CI failure/status owners; no terminal CI, canonical push, deployment or release proof is granted. Canonical full gate, deployment acceptance and release promotion remain required.\n' "$$gludd_publish_branch" "$$gludd_publish_head" >&2
 
 push-dev: check-clean-tree ci-busy-check _push-rate-guard _stash-before-push-guard _ci-restart-cap _pull-before-push-guard
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push sandboxcom development
@@ -1294,7 +1429,7 @@ RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY ?= 0
 _runtime-publish-admission:
 	@case "$(RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY)" in 0|1) ;; *) echo 'RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY must be 0 or 1'; exit 2;; esac
 	@if [ "$(RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY)" = 1 ]; then \
-		echo "RUNTIME-PUBLISH-ADMISSION-PLAN environment=$(RUNTIME_PUBLISH_ENVIRONMENT) manifest_check=exact-pinned prerequisite_check=check-gate-failure-promotions prerequisite_max_seconds=90 prerequisite_quiet_seconds=60 max_seconds=90 quiet_seconds=60 profile=release exact_sha_resume=0 max_files_per_batch=16 gate_workers=1 pytest_trace=1 observed_root=$(OBSERVED_ROOT) release_ready=false gate_evidence=false"; exit 0; \
+		echo "RUNTIME-PUBLISH-ADMISSION-PLAN environment=$(RUNTIME_PUBLISH_ENVIRONMENT) manifest_check=exact-pinned prerequisite_check=check-gate-failure-promotions prerequisite_max_seconds=$(or $(RUNTIME_PUBLISH_MAX_SECS),90) prerequisite_quiet_seconds=$(or $(RUNTIME_PUBLISH_QUIET_SECS),60) max_seconds=$(or $(RUNTIME_PUBLISH_MAX_SECS),90) quiet_seconds=$(or $(RUNTIME_PUBLISH_QUIET_SECS),60) profile=release exact_sha_resume=0 max_files_per_batch=16 gate_workers=1 pytest_trace=1 observed_root=$(OBSERVED_ROOT) release_ready=false gate_evidence=false"; exit 0; \
 	fi; \
 	runtime_environment="$(RUNTIME_PUBLISH_ENVIRONMENT)"; \
 	if [ -z "$$runtime_environment" ]; then \
@@ -1314,7 +1449,7 @@ _runtime-publish-admission:
 		UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never \
 		GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 RUN_WATCHED_PYTEST_TRACE=1 \
 		CMD='$(MAKE) --no-print-directory check-gate-failure-promotions GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json' \
-		OBSERVED_LABEL=batch-push-prerequisite-admission RUN_ID="$$prerequisite_run_id" STALL_SECS=60 MAX_SECS=90 \
+		OBSERVED_LABEL=batch-push-prerequisite-admission RUN_ID="$$prerequisite_run_id" STALL_SECS=$(or $(RUNTIME_PUBLISH_QUIET_SECS),60) MAX_SECS=$(or $(RUNTIME_PUBLISH_MAX_SECS),90) \
 		LOG="$(OBSERVED_ROOT)/batch-push-prerequisite-admission/$$prerequisite_run_id.log" \
 		OBSERVED_ROOT="$(OBSERVED_ROOT)" OBSERVED_HEARTBEAT_SECS=10 OBSERVED_RETAIN_RUNS="$(or $(OBSERVED_RETAIN_RUNS),20)" \
 		|| { prerequisite_rc=$$?; echo "Canonical promotion prerequisite failed (exit $$prerequisite_rc); runtime replay was not started; Git transport was not attempted." >&2; exit $$prerequisite_rc; }; \
@@ -1325,7 +1460,7 @@ _runtime-publish-admission:
 		UV_NO_SYNC=1 UV_PYTHON=3.11 UV_PYTHON_DOWNLOADS=never \
 		GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 RUN_WATCHED_PYTEST_TRACE=1 \
 		CMD='$(MAKE) --no-print-directory _pytest-runtime-compatibility-admission' \
-		OBSERVED_LABEL=batch-push-runtime-admission RUN_ID="$$runtime_run_id" STALL_SECS=60 MAX_SECS=90 \
+		OBSERVED_LABEL=batch-push-runtime-admission RUN_ID="$$runtime_run_id" STALL_SECS=$(or $(RUNTIME_PUBLISH_QUIET_SECS),60) MAX_SECS=$(or $(RUNTIME_PUBLISH_MAX_SECS),90) \
 		LOG="$(OBSERVED_ROOT)/batch-push-runtime-admission/$$runtime_run_id.log" \
 		OBSERVED_ROOT="$(OBSERVED_ROOT)" OBSERVED_HEARTBEAT_SECS=10 OBSERVED_RETAIN_RUNS="$(or $(OBSERVED_RETAIN_RUNS),20)" \
 		|| { runtime_rc=$$?; echo "Runtime publication admission failed (exit $$runtime_rc); Git transport was not attempted." >&2; exit $$runtime_rc; }
@@ -1334,7 +1469,8 @@ _runtime-publish-admission:
 # Override: GLUDD_FORCE_PUSH=1. COMMIT_THRESHOLD=1 is blocked.
 # This is the RECOMMENDED push target. Use instead of git-push-sandboxcom directly.
 batch-push: check-clean-tree _no-bypass-guard _stash-before-push-guard _pull-before-push-guard _ci-verdict-history-guard _pre-commit-stash-audit _ci-restart-cap _push-rate-guard
-	@COUNT=$$(git log --oneline @{u}..HEAD 2>/dev/null | wc -l | tr -d ' '); \
+	@if [ "$(_publication-native-mode)" != execute ]; then echo "AGENT_NEXT target=batch-push outcome=planned mode=$(_publication-native-mode) gate_evidence=false release_ready=false: Native inspection starts no publication, runtime admission or hosted observation." >&2; exit 0; fi; \
+	COUNT=$$(git log --oneline @{u}..HEAD 2>/dev/null | wc -l | tr -d ' '); \
 	THRESHOLD=$${COMMIT_THRESHOLD:-5}; \
 	if [ "$$THRESHOLD" = "1" ]; then \
 		echo "BLOCKED: COMMIT_THRESHOLD=1 bypass is disabled; commit locally and batch pushes."; \
@@ -1346,11 +1482,41 @@ batch-push: check-clean-tree _no-bypass-guard _stash-before-push-guard _pull-bef
 		exit 0; \
 	fi; \
 	echo "$$COUNT unpushed commits, threshold met. Pushing..."; \
-	$(MAKE) --no-print-directory _runtime-publish-admission RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY=0 || exit $$?; \
-	BRANCH=$$(git branch --show-current); \
-	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom HEAD:$$BRANCH || { PUSH_RC=$$?; echo "Push failed for $$BRANCH (exit $$PUSH_RC); success was not recorded." >&2; exit $$PUSH_RC; }; \
+	gludd_batch_head=; BRANCH=; gludd_batch_writes=false; \
+	gludd_batch_fail() { gludd_batch_rc=$$1; gludd_batch_phase=$$2; \
+		if [ "$$gludd_batch_phase" = hosted-signal ]; then gludd_batch_next='Transport and history may already have applied; reconcile the saved branch/fullSHA and actual run or refusal through ci-trigger-committed-head; do not repush unchanged source merely to request CI.'; \
+		else gludd_batch_next='Preserve the actual failed owner and native reason; reconcile the saved branch/fullSHA and potentially applied remote/history before retry. No unchanged repush supplies missing proof.'; fi; \
+		printf 'AGENT_NEXT target=batch-push outcome=failed phase=%s native_status=%s branch=%s sha=%s transport_may_have_applied=%s gate_evidence=false release_ready=false: %s\n' "$$gludd_batch_phase" "$$gludd_batch_rc" "$$BRANCH" "$$gludd_batch_head" "$$gludd_batch_writes" "$$gludd_batch_next" >&2; exit "$$gludd_batch_rc"; }; \
+	BRANCH=$$(git branch --show-current) || gludd_batch_fail "$$?" candidate; \
+	gludd_batch_head=$$(git rev-parse --verify HEAD^{commit}) || gludd_batch_fail "$$?" candidate; \
+	[ -n "$$BRANCH" ] || gludd_batch_fail 2 candidate; \
+	gludd_batch_expected_branch="$$GLUDD_PUBLISH_EXPECTED_BRANCH"; gludd_batch_expected_sha="$$GLUDD_PUBLISH_EXPECTED_SHA"; \
+	if [ -n "$$gludd_batch_expected_branch" ] || [ -n "$$gludd_batch_expected_sha" ]; then \
+		[ -n "$$gludd_batch_expected_branch" ] && [ "$${#gludd_batch_expected_sha}" -eq 40 ] || gludd_batch_fail 2 expected-input; \
+		case "$$gludd_batch_expected_sha" in *[!0123456789abcdefABCDEF]*) gludd_batch_fail 2 expected-input ;; esac; \
+		git check-ref-format "refs/heads/$$gludd_batch_expected_branch" || gludd_batch_fail "$$?" expected-input; \
+		gludd_batch_expected_sha=$$(printf '%s' "$$gludd_batch_expected_sha" | tr ABCDEF abcdef) || gludd_batch_fail "$$?" expected-input; \
+		if [ "$$gludd_batch_expected_branch" != "$$BRANCH" ] || [ "$$gludd_batch_expected_sha" != "$$gludd_batch_head" ]; then gludd_batch_fail 2 expected-identity; fi; \
+	fi; \
+	$(MAKE) --no-print-directory _runtime-publish-admission RUNTIME_PUBLISH_ADMISSION_VALIDATE_ONLY=0 || gludd_batch_fail "$$?" runtime; \
+	gludd_batch_current_branch=$$(git branch --show-current) || gludd_batch_fail "$$?" identity; \
+	gludd_batch_current_head=$$(git rev-parse --verify HEAD^{commit}) || gludd_batch_fail "$$?" identity; \
+	if [ "$$gludd_batch_current_branch" != "$$BRANCH" ] || [ "$$gludd_batch_current_head" != "$$gludd_batch_head" ]; then gludd_batch_fail 2 identity; fi; \
+	gludd_batch_writes=true; \
+	GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom "$$gludd_batch_head:refs/heads/$$BRANCH" || { \
+		PUSH_RC=$$?; echo "Push failed for $$BRANCH (exit $$PUSH_RC); success was not recorded." >&2; \
+		echo "AGENT_NEXT target=batch-push outcome=failed phase=transport native_status=$$PUSH_RC gate_evidence=false release_ready=false: Preserve the native Git reason and intended candidate SHA. Missing workflow scope requires actual credential authorization; do not retry unchanged publication or adopt an older remote as candidate proof. Use make github-auth-status to inspect actual scopes. For missing workflow scope, preview make github-workflow-auth GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY=1 GITHUB_WORKFLOW_AUTH_ACCOUNT='' before requesting operator consent for mode 0. After the prerequisite changes, run make verify-state then normal make batch-push and exact-SHA remote/CI verification." >&2; \
+		exit "$$PUSH_RC"; \
+	}; \
+	git branch --set-upstream-to="sandboxcom/$$BRANCH" "$$BRANCH" || gludd_batch_fail "$$?" tracking; \
 	echo "Pushed $$BRANCH to sandboxcom/gludd ($$COUNT commits)"; \
-	$(MAKE) --no-print-directory _record-push-verdict
+	$(MAKE) --no-print-directory _record-push-verdict PUSH_VERDICT_SHA="$$gludd_batch_head" PUBLISH_EXPECTED_BRANCH="$$BRANCH" PUBLISH_EXPECTED_SHA="$$gludd_batch_head" PUBLISH_PURPOSE=canonical || gludd_batch_fail "$$?" verdict; \
+	$(MAKE) --no-print-directory verify-remote BRANCH="$$BRANCH" SHA="$$gludd_batch_head" || gludd_batch_fail "$$?" remote-verification; \
+	$(MAKE) --no-print-directory ci-trigger-committed-head PUBLISH_PURPOSE=canonical \
+		PUBLISH_EXPECTED_BRANCH="$$BRANCH" PUBLISH_EXPECTED_SHA="$$gludd_batch_head" PUBLISH_BASELINE_REF= PUBLISH_BASELINE_SHA= \
+		REF="$$BRANCH" REMOTE=sandboxcom REPO=sandboxcom/gludd WORKFLOW='Build and Release' EXAMPLE=0 \
+		WORK_ITEM_ID='$(subst ','"'"',$(value WORK_ITEM_ID))' || gludd_batch_fail "$$?" hosted-signal; \
+	printf 'AGENT_NEXT target=batch-push outcome=published native_status=0 branch=%s sha=%s gate_evidence=false release_ready=false: The saved source is verified remotely and the existing exact-SHA dispatcher returned an accepted or reused Build run. Observe that actual run; terminal CI, canonical push, deployment and release proof remain required.\n' "$$BRANCH" "$$gludd_batch_head" >&2
 
 force-batch-push:
 	@GLUDD_FORCE_PUSH=1 $(MAKE) batch-push FORCE=1

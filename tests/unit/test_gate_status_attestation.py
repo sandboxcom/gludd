@@ -44,12 +44,10 @@ def _passed_status(path: Path) -> None:
     )
 
 
-
 def _resume_status(path: Path, *, now: int = 1000, policy: str | None = None) -> None:
     path.write_text(
         "=== GATE fixture ===\n"
-        + (policy if policy is not None else
-           "gate-policy profile=release max_files_per_batch=16 workers=1\n")
+        + (policy if policy is not None else "gate-policy profile=release max_files_per_batch=16 workers=1\n")
         + "preflights PASS 35\nlint FAIL 1\n=== GATE: FAILED ===\n",
         encoding="utf-8",
     )
@@ -60,8 +58,14 @@ def test_resume_requires_current_signed_policy_without_admitting_failed_gate(tmp
     status = tmp_path / ".gate-status"
     _resume_status(status)
     result = attestation.verify_resume_status(
-        status, state_id=_STATE, key=_KEY, profile="release",
-        max_files_per_batch=16, workers=1, now=1001, freshness_seconds=60,
+        status,
+        state_id=_STATE,
+        key=_KEY,
+        profile="release",
+        max_files_per_batch=16,
+        workers=1,
+        now=1001,
+        freshness_seconds=60,
     )
     assert result.ok, result.reason
     assert verify_terminal_status(status, state_id=_STATE, key=_KEY, now=1001).ok
@@ -84,7 +88,11 @@ def test_resume_requires_current_signed_policy_without_admitting_failed_gate(tmp
     ],
 )
 def test_resume_refuses_unsigned_stale_changed_or_incomplete_evidence(
-    tmp_path: Path, mutation: str, state: str, key: bytes, now: int,
+    tmp_path: Path,
+    mutation: str,
+    state: str,
+    key: bytes,
+    now: int,
 ) -> None:
     status = tmp_path / ".gate-status"
     _resume_status(status)
@@ -97,9 +105,7 @@ def test_resume_refuses_unsigned_stale_changed_or_incomplete_evidence(
     elif mutation == "policy":
         _resume_status(status, policy="gate-policy profile=native max_files_per_batch=16 workers=1\n")
     elif mutation == "duplicate-policy":
-        _resume_status(status, policy=(
-            "gate-policy profile=release max_files_per_batch=16 workers=1\n" * 2
-        ))
+        _resume_status(status, policy=("gate-policy profile=release max_files_per_batch=16 workers=1\n" * 2))
     elif mutation == "missing-policy":
         _resume_status(status, policy="")
     elif mutation == "failed-preflight":
@@ -108,22 +114,30 @@ def test_resume_refuses_unsigned_stale_changed_or_incomplete_evidence(
         sign_terminal_status(status, state_id=_STATE, key=_KEY, now=1000)
     elif mutation == "duplicate-preflight":
         changed = original.split("attestation-version", 1)[0].replace(
-            "preflights PASS 35", "preflights PASS 35\npreflights FAIL 1",
+            "preflights PASS 35",
+            "preflights PASS 35\npreflights FAIL 1",
         )
         status.write_text(changed, encoding="utf-8")
         sign_terminal_status(status, state_id=_STATE, key=_KEY, now=1000)
     if mutation in {"unsigned", "tamper"}:
         status.write_text(changed, encoding="utf-8")
     result = attestation.verify_resume_status(
-        status, state_id=state, key=key, profile="release",
-        max_files_per_batch=16, workers=1, now=now, freshness_seconds=60,
+        status,
+        state_id=state,
+        key=key,
+        profile="release",
+        max_files_per_batch=16,
+        workers=1,
+        now=now,
+        freshness_seconds=60,
     )
     assert not result.ok
     assert result.reason
 
 
 def test_resume_policy_uses_the_authenticated_captured_bytes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     status = tmp_path / ".gate-status"
     _resume_status(status)
@@ -138,8 +152,13 @@ def test_resume_policy_uses_the_authenticated_captured_bytes(
 
     monkeypatch.setattr(attestation, "_split_status", replace_after_capture)
     result = attestation.verify_resume_status(
-        status, state_id=_STATE, key=_KEY, profile="release",
-        max_files_per_batch=16, workers=1, now=1001,
+        status,
+        state_id=_STATE,
+        key=_KEY,
+        profile="release",
+        max_files_per_batch=16,
+        workers=1,
+        now=1001,
     )
     assert result.ok, result.reason
     assert observations and all(content == captured for content in observations)
@@ -286,10 +305,12 @@ def test_failed_or_incomplete_gate_cannot_be_signed(tmp_path: Path) -> None:
     status = tmp_path / ".gate-status"
     _passed_status(status)
     status.write_text(
-        status.read_text(encoding="utf-8").replace(
+        status.read_text(encoding="utf-8")
+        .replace(
             "=== GATE: PASSED ===",
             "=== GATE: FAILED ===",
-        ).replace("lint PASS 0", "preflights FAIL 1"),
+        )
+        .replace("lint PASS 0", "preflights FAIL 1"),
         encoding="utf-8",
     )
 
@@ -301,10 +322,12 @@ def test_failed_gate_can_be_authenticated_without_becoming_green(tmp_path: Path)
     status = tmp_path / ".gate-status"
     _passed_status(status)
     status.write_text(
-        status.read_text(encoding="utf-8").replace(
+        status.read_text(encoding="utf-8")
+        .replace(
             "=== GATE: PASSED ===",
             "=== GATE: FAILED ===",
-        ).replace("lint PASS 0", "preflights FAIL 1"),
+        )
+        .replace("lint PASS 0", "preflights FAIL 1"),
         encoding="utf-8",
     )
 
@@ -433,7 +456,7 @@ def test_makefile_signs_final_gate_and_checks_before_commit() -> None:
     assert "scripts/gate_status_attestation.py verify .gate-status" in makefile
     assert "@echo run python scripts/gate_fresh_check.py check" not in makefile
     commit_recipe = makefile.split("\ngit-commit:", 1)[1].split("\n\n", 1)[0]
-    assert "check-gate-fresh" in commit_recipe
+    assert "_gate-fresh-check" in commit_recipe
 
 
 def test_cli_sign_and_verify_use_one_private_key_and_exact_state(
@@ -573,7 +596,8 @@ def test_git_helpers_reject_command_and_merge_stage_failures(
 
 @pytest.fixture(params=("sha1", "sha256"))
 def native_metadata_repository(
-    tmp_path: Path, request: pytest.FixtureRequest,
+    tmp_path: Path,
+    request: pytest.FixtureRequest,
 ) -> tuple[Path, str, str]:
     """Use actual Git objects in an isolated repository, including a spaced root."""
     object_format = request.param
@@ -624,11 +648,15 @@ def test_repository_identity_batches_only_fresh_metadata_with_equivalent_digests
                 if not exclude_bookkeeping or path != "SESSION.md"
             }
             expected = attestation._state_digest(
-                head if include_head else "", entries, object_format=object_format,
+                head if include_head else "",
+                entries,
+                object_format=object_format,
             )
             calls.clear()
             actual = attestation.repository_state_id(
-                nested, source=source, include_head=include_head,
+                nested,
+                source=source,
+                include_head=include_head,
                 exclude_bookkeeping=exclude_bookkeeping,
             )
             assert actual == expected
@@ -640,7 +668,8 @@ def test_repository_identity_batches_only_fresh_metadata_with_equivalent_digests
             assert calls[1] == (
                 repo,
                 ("ls-files", "--cached", "--others", "--exclude-standard", "--stage", "-t", "-z")
-                if source == "worktree" else ("ls-files", "--stage", "-z"),
+                if source == "worktree"
+                else ("ls-files", "--stage", "-z"),
             )
 
 
@@ -683,7 +712,8 @@ def test_batched_metadata_does_not_survive_content_index_or_head_mutations(
 
 
 def test_batched_metadata_preserves_newlines_and_unicode_in_root(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Parse the fixed metadata suffix without splitting a valid root pathname."""
     root = tmp_path / "path with space\nline-\u03bb"
@@ -701,7 +731,9 @@ def test_batched_metadata_preserves_newlines_and_unicode_in_root(
 
     monkeypatch.setattr(attestation, "_run_git", native_git)
     assert repository_state_id(tmp_path, source="index") == attestation._state_digest(
-        head, {}, object_format="sha1",
+        head,
+        {},
+        object_format="sha1",
     )
     assert len(calls) == 2
 
@@ -709,12 +741,20 @@ def test_batched_metadata_preserves_newlines_and_unicode_in_root(
 @pytest.mark.parametrize(
     "mutation",
     (
-        "missing-field", "missing-terminator", "extra-tail", "unknown-format",
-        "non-ascii", "wrong-head-width", "nonhex-head", "relative-root",
+        "missing-field",
+        "missing-terminator",
+        "extra-tail",
+        "unknown-format",
+        "non-ascii",
+        "wrong-head-width",
+        "nonhex-head",
+        "relative-root",
     ),
 )
 def test_batched_metadata_refuses_malformed_identity_before_content_reads(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
 ) -> None:
     root = os.fsencode(tmp_path)
     object_format = b"sha1"
@@ -755,11 +795,18 @@ def test_batched_metadata_keeps_native_git_failure_for_an_unborn_head(tmp_path: 
 
 
 def _legacy_worktree_state(
-    repo: Path, *, include_head: bool = True, exclude_bookkeeping: bool = False,
+    repo: Path,
+    *,
+    include_head: bool = True,
+    exclude_bookkeeping: bool = False,
 ) -> str:
     """Frozen pre-fusion byte oracle: separate stage/path queries and direct hashes."""
     raw_root, raw_format, raw_head, tail = attestation._run_git(
-        repo, "rev-parse", "--show-toplevel", "--show-object-format", "HEAD",
+        repo,
+        "rev-parse",
+        "--show-toplevel",
+        "--show-object-format",
+        "HEAD",
     ).rsplit(b"\n", 3)
     assert tail == b""
     root = Path(os.fsdecode(raw_root).strip())
@@ -820,16 +867,22 @@ def _assert_legacy_options(repo: Path) -> None:
     for include_head in (True, False):
         for exclude_bookkeeping in (False, True):
             assert repository_state_id(
-                repo, include_head=include_head, exclude_bookkeeping=exclude_bookkeeping,
+                repo,
+                include_head=include_head,
+                exclude_bookkeeping=exclude_bookkeeping,
             ) == _legacy_worktree_state(
-                repo, include_head=include_head, exclude_bookkeeping=exclude_bookkeeping,
+                repo,
+                include_head=include_head,
+                exclude_bookkeeping=exclude_bookkeeping,
             )
 
 
 def _native_index_input(repo: Path, data: bytes) -> None:
     result = subprocess.run(
         ["git", "-C", str(repo), "update-index", "-z", "--index-info"],
-        input=data, capture_output=True, check=False,
+        input=data,
+        capture_output=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
 
@@ -855,7 +908,11 @@ def test_worktree_fusion_matches_legacy_bytes_for_mixed_native_inventory(
     for name in (
         b"100644 " + b"a" * 40 + b" 0\tstage-looking",
         b"H 100755 " + b"b" * 64 + b" 0\tH-looking",
-        b"? another", b"S prefix", b"tab\tname", b"line\nname", b"unicode-\xce\xbb",
+        b"? another",
+        b"S prefix",
+        b"tab\tname",
+        b"line\nname",
+        b"unicode-\xce\xbb",
     ):
         (repo / os.fsdecode(name)).write_bytes(b"untracked\0full bytes")
     (repo / "untracked-link").symlink_to("missing-target")
@@ -865,12 +922,12 @@ def test_worktree_fusion_matches_legacy_bytes_for_mixed_native_inventory(
 
 @pytest.mark.parametrize("tag", (b"H", b"S", b"?"))
 def test_worktree_inventory_raw_non_utf8_paths_are_lossless(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tag: bytes,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tag: bytes,
 ) -> None:
     raw_path = b"H 100644 " + b"f" * 64 + b" 0\tpath-\xff\nline"
-    row = tag + b" " + (
-        raw_path if tag == b"?" else b"100644 " + b"a" * 40 + b" 0\t" + raw_path
-    ) + b"\0"
+    row = tag + b" " + (raw_path if tag == b"?" else b"100644 " + b"a" * 40 + b" 0\t" + raw_path) + b"\0"
     calls: list[tuple[str, ...]] = []
 
     def inventory(_repo: Path, *arguments: str) -> bytes:
@@ -934,10 +991,8 @@ def test_worktree_fusion_preserves_native_unmerged_refusal(
     repo, _object_format, _head = native_metadata_repository
     object_id = attestation._run_git(repo, "rev-parse", "HEAD:tracked.txt").strip()
     _native_index_input(
-        repo, b"".join(
-            b"100644 " + object_id + b" " + str(stage).encode("ascii") + b"\tconflict\0"
-            for stage in (1, 2, 3)
-        ),
+        repo,
+        b"".join(b"100644 " + object_id + b" " + str(stage).encode("ascii") + b"\tconflict\0" for stage in (1, 2, 3)),
     )
     with pytest.raises(RuntimeError, match="unresolved merge") as original:
         _legacy_worktree_state(repo)
@@ -962,8 +1017,10 @@ def test_worktree_fusion_preserves_native_unmerged_refusal(
     ),
 )
 def test_worktree_fusion_refuses_invalid_producer_before_body_reads(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-    invalid_row: bytes, expected_error: type[Exception],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invalid_row: bytes,
+    expected_error: type[Exception],
 ) -> None:
     read_paths: list[Path] = []
     metadata = os.fsencode(tmp_path) + b"\nsha1\n" + b"a" * 40 + b"\n"
@@ -983,7 +1040,8 @@ def test_worktree_fusion_refuses_invalid_producer_before_body_reads(
 
 
 def test_worktree_fusion_preserves_native_inventory_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     metadata = os.fsencode(tmp_path) + b"\nsha1\n" + b"a" * 40 + b"\n"
     commands: list[list[str]] = []
@@ -999,12 +1057,19 @@ def test_worktree_fusion_preserves_native_inventory_failure(
         repository_state_id(tmp_path)
     assert len(commands) == 2
     assert commands[-1][3:] == [
-        "ls-files", "--cached", "--others", "--exclude-standard", "--stage", "-t", "-z",
+        "ls-files",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+        "--stage",
+        "-t",
+        "-z",
     ]
 
 
 def test_unknown_source_keeps_metadata_and_index_error_order(
-    native_metadata_repository: tuple[Path, str, str], monkeypatch: pytest.MonkeyPatch,
+    native_metadata_repository: tuple[Path, str, str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo, _object_format, _head = native_metadata_repository
     actual_git = attestation._run_git

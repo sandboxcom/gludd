@@ -6,9 +6,10 @@ on:
       - development
       - master
       - main
+      - 'release-candidate/**'
     tags: ["v*"]
   pull_request:
-    branches: [master, main]
+    branches: [master, main, development]
   workflow_dispatch:
     inputs:
       vllm_base_url:
@@ -63,6 +64,8 @@ env:
   # Profile environments are composed from several independently locked
   # projects; later uv invocations must never exact-sync them back to root-only.
   UV_NO_SYNC: "1"
+  # Retain the canonical prerequisite and runtime watcher budget on hosted CI.
+  RUNTIME_PUBLISH_MAX_SECS: "90"
 
 jobs:
   version:
@@ -270,7 +273,7 @@ jobs:
             CMD='make check-gate-failure-promotions GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json' \
             RUN_ID="prerequisite-admission-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}" \
             OBSERVED_LABEL=ci-gate-failure-promotions \
-            STALL_SECS=60 MAX_SECS=90 \
+            STALL_SECS=60 MAX_SECS=${RUNTIME_PUBLISH_MAX_SECS:-90} \
             LOG=.gate-logs/ci-gate-failure-promotions.log \
             OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=2 \
             OBSERVED_HEARTBEAT_SECS=10
@@ -2245,14 +2248,15 @@ jobs:
       - name: Clean stale release (already_exists guard)
         # A previous run's draft/partial release for this tag makes
         # action-gh-release fail with 'release already_exists'. Delete only
-        # the DRAFT (never a published release) and let the next step recreate.
+        # the DRAFT (never a published release), preserving the triggering Git
+        # tag object, and let the next step recreate only the release.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           echo "=== CI PHASE: release-clean-stale ==="
           if gh release view ${{ github.ref_name }} --json isDraft -q .isDraft 2>/dev/null | grep -q true; then
             echo "Stale draft release for ${{ github.ref_name }} — deleting so action-gh-release can recreate it."
-            gh release delete ${{ github.ref_name }} --yes --cleanup-tag
+            gh release delete ${{ github.ref_name }} --yes
           else
             echo "No stale draft to clean for ${{ github.ref_name }}."
           fi

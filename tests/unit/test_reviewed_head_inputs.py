@@ -102,11 +102,11 @@ def _fixture(
     if mutate_after:
         recipe += "\t@touch unreviewed-native-mutation\n"
     _commit(root, "Makefile", recipe)
-    _commit(root, "TASKS.md", "- [ ] F12.1 — native focused proof | status: pending\n")
+    prerequisites = {"TASKS.md": "- [ ] F12.1 — native focused proof | status: pending\n"}
     for adapter in ("reviewed_head_inputs.py", "stream_command.py"):
-        _commit(root, "scripts/" + adapter, (ROOT / "scripts" / adapter).read_text(encoding="utf-8"))
+        prerequisites["scripts/" + adapter] = (ROOT / "scripts" / adapter).read_text(encoding="utf-8")
     if native_child_probe:
-        _commit(root, "conftest.py", (
+        prerequisites["conftest.py"] = (
             "import hashlib, json, sys\nfrom pathlib import Path\n"
             f"COUNTER = Path({str(tmp_path / 'native-child-count').__repr__()})\n"
             f"RUNTIME = Path({str(tmp_path / 'native-child-runtime.json').__repr__()})\n"
@@ -119,9 +119,16 @@ def _fixture(
             "        'loaded_plugins': sorted(name for name, plugin in "
             "session.config.pluginmanager.list_name_plugin() if plugin is not None)}\n"
             "    RUNTIME.write_text(json.dumps(runtime))\n"
-        ))
+        )
     assertion = "1 + 1 == 2" if focus_pass else "False"
-    base = _commit(root, "tests/unit/test_native.py", "def test_native():\n    assert " + assertion + "\n")
+    prerequisites["tests/unit/test_native.py"] = "def test_native():\n    assert " + assertion + "\n"
+    for name, content in prerequisites.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    _git(root, "add", "--", *prerequisites)
+    _git(root, "commit", "-m", "native fixture")
+    base = _git(root, "rev-parse", "HEAD")
     _git(root, "tag", "reviewed-base", base)
     _git(root, "switch", "-c", "reviewed/one")
     source = _commit(root, "source.txt", "reviewed native change\n")
@@ -145,6 +152,90 @@ def _fixture(
         }],
     }
     return root, spec
+
+
+@pytest.mark.parametrize(
+    "tail_fixture_probe",
+    [pytest.param(False, id="plain"), pytest.param(True, id="native-child-probe")],
+)
+def test_native_fixture_batches_complete_prerequisite_tree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tail_fixture_probe: bool,
+) -> None:
+    native_git = _git
+    operations: list[tuple[str, ...]] = []
+
+    def tracked_git(root: Path, *arguments: str) -> str:
+        operations.append(arguments)
+        return native_git(root, *arguments)
+
+    monkeypatch.setattr(sys.modules[__name__], "_git", tracked_git)
+    root, spec = _fixture(tmp_path, native_child_probe=tail_fixture_probe)
+    base = _git(root, "rev-parse", "refs/tags/reviewed-base")
+    expected_paths = {
+        "Makefile", "TASKS.md", "scripts/reviewed_head_inputs.py",
+        "scripts/stream_command.py", "tests/unit/test_native.py",
+    }
+    if tail_fixture_probe:
+        expected_paths.add("conftest.py")
+    assert set(_git(root, "ls-tree", "-r", "--name-only", base).splitlines()) == expected_paths
+    assert (root / "TASKS.md").read_text(encoding="utf-8") == (
+        "- [ ] F12.1 \u2014 native focused proof | status: pending\n"
+    )
+    assert (root / "tests/unit/test_native.py").read_text(encoding="utf-8") == (
+        "def test_native():\n    assert 1 + 1 == 2\n"
+    )
+    assert inputs._candidate_adapter_hashes(root, _git(root, "rev-parse", "HEAD")) == {
+        "producer_sha256": hashlib.sha256((ROOT / "scripts/reviewed_head_inputs.py").read_bytes()).hexdigest(),
+        "observer_sha256": hashlib.sha256((ROOT / "scripts/stream_command.py").read_bytes()).hexdigest(),
+    }
+    prepared = inputs.prepare_inputs(spec, repo_root=root)
+    head = cast(list[dict[str, object]], prepared["heads"])[0]
+    assert head["reviewed_base_sha"] == base
+    assert head["before_sha"] == _git(root, "rev-parse", "refs/tags/integration-base")
+    assert head["after_sha"] == _git(root, "rev-parse", "HEAD")
+    assert head["source_sha"] != head["after_sha"]
+    assert head["parent_shas"] == [head["before_sha"]]
+    # The original wrong-parent control needs this genuine earlier ancestor.
+    assert _git(root, "rev-parse", "refs/heads/reviewed/one~2") == _git(root, "rev-parse", base + "~1")
+    assert _git(root, "diff", "--exit-code", base, "--", *sorted(expected_paths)) == ""
+    assert compose_makefile(root / "Makefile") == (
+        'test-files:\n\t@"' + sys.executable
+        + '" -m pytest $(TESTFILES) $(PYTEST_ARGS) -o addopts= -q\n'
+    )
+    invalid_spec = copy.deepcopy(spec)
+    source = _git(root, "rev-parse", "refs/heads/reviewed/one")
+    _git(root, "tag", "different-reviewed-base", source + "~2")
+    invalid_heads = invalid_spec["heads"]
+    assert isinstance(invalid_heads, list) and len(invalid_heads) == 1
+    assert isinstance(invalid_heads[0], dict)
+    invalid_heads[0]["reviewed_base_ref"] = "refs/tags/different-reviewed-base"
+    native_receipt_git = receipt_owner._git
+    patches: list[tuple[str, ...]] = []
+
+    def recorded(repository: Path, *arguments: str, input_bytes: bytes | None = None) -> bytes:
+        if arguments[0] == "patch-id" or (arguments[0] == "show" and "--binary" in arguments):
+            patches.append(arguments)
+            pytest.fail("invalid source parent reached patch identity inspection")
+        return native_receipt_git(repository, *arguments, input_bytes=input_bytes)
+
+    with monkeypatch.context() as boundary:
+        boundary.setattr(receipt_owner, "_git", recorded)
+        with pytest.raises(ValueError, match="native cherry-pick patch or reviewed source base differs"):
+            inputs.prepare_inputs(invalid_spec, repo_root=root)
+    assert patches == []
+    commits = [arguments for arguments in operations if arguments[:1] == ("commit",)]
+    assert commits == [("commit", "-m", "native fixture")] * 4, commits
+    stages = [arguments for arguments in operations if arguments[:1] == ("add",)]
+    expected_prerequisites = [
+        "TASKS.md", "scripts/reviewed_head_inputs.py", "scripts/stream_command.py",
+    ]
+    if tail_fixture_probe:
+        expected_prerequisites.append("conftest.py")
+    expected_prerequisites.append("tests/unit/test_native.py")
+    assert stages == [
+        ("add", "Makefile"), ("add", "--", *expected_prerequisites),
+        ("add", "source.txt"), ("add", "integration.txt"),
+    ], stages
 
 
 def _key(tmp_path: Path) -> Path:

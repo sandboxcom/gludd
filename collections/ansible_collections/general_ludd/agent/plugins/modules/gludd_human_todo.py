@@ -18,6 +18,9 @@ DOCUMENTATION:
       was asked). C(state=dismissed) records that the human declined, so the
       agent knows to try a different approach.
     - Check mode skips write operations.
+    - HTTP success requires a nonempty, unpadded string id. Resolution responses
+      must match the requested id. An invalid response leaves the write outcome
+      unverified; reconcile with the daemon before retrying.
   options:
     state:
       description: Desired state.
@@ -123,6 +126,10 @@ RETURN:
     description: The human-todo id.
     type: str
     returned: always
+  write_outcome:
+    description: Unverified when an HTTP success has no usable or matching id.
+    type: str
+    returned: on invalid success response
 """
 
 from __future__ import annotations
@@ -227,7 +234,20 @@ def main() -> None:
         msg = resp.get("detail") or f"HTTP {status_code}"
         module.fail_json(**error_result(f"gludd_human_todo {state} failed: {msg}", status=status_code))
         return
-    module.exit_json(**ok_result({"human_todo": resp, "id": resp.get("id")}, changed=True))
+    response_id = resp.get("id")
+    if not isinstance(response_id, str) or not response_id or response_id != response_id.strip():
+        module.fail_json(**error_result(
+            "daemon returned no usable HumanTodo id; write outcome is unverified; reconcile before retry",
+            status=status_code, write_outcome="unverified",
+        ))
+        return
+    if state != "present" and response_id != module.params["id"]:
+        module.fail_json(**error_result(
+            "daemon HumanTodo id does not match requested identity; reconcile before retry",
+            status=status_code, write_outcome="unverified",
+        ))
+        return
+    module.exit_json(**ok_result({"human_todo": resp, "id": response_id}, changed=True))
 
 
 if __name__ == "__main__":

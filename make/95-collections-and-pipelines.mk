@@ -10,18 +10,31 @@ unexport HUMAN_TODO_ARGS_JSON HUMAN_TODO_VALIDATE_ONLY
 endif
 .PHONY: human-todo-module
 human-todo-module:
-	@[ -n "$$GLUDD_HUMAN_TODO_ARGS_JSON" ] || { echo "HUMAN_TODO_ARGS_JSON must contain the existing module arguments" >&2; exit 2; }
-	@case "$$GLUDD_HUMAN_TODO_VALIDATE_ONLY" in 0|1) ;; *) echo "HUMAN_TODO_VALIDATE_ONLY must be literal 0 or 1" >&2; exit 2;; esac
 	@set -eu; \
-	human_todo_tmp=$$(mktemp -d /tmp/gludd-human-todo-XXXXXX); \
+	human_todo_guide() { printf '%s\n' "AGENT_NEXT target=human-todo-module outcome=$$1 gate_evidence=false release_ready=false $$2" >&2; }; \
+	[ -n "$$GLUDD_HUMAN_TODO_ARGS_JSON" ] || { \
+		echo "HUMAN_TODO_ARGS_JSON must contain the existing module arguments" >&2; \
+		human_todo_guide refused "input=HUMAN_TODO_ARGS_JSON http_request=false next_owner=human-todo-module; supply the existing module arguments and validate first"; exit 2; }; \
+	case "$$GLUDD_HUMAN_TODO_VALIDATE_ONLY" in 0|1) ;; *) \
+		echo "HUMAN_TODO_VALIDATE_ONLY must be literal 0 or 1" >&2; \
+		human_todo_guide refused "input=HUMAN_TODO_VALIDATE_ONLY http_request=false next_owner=human-todo-module; set literal 1 for check mode or 0 for the authorized request"; exit 2;; esac; \
+	if human_todo_tmp=$$(mktemp -d /tmp/gludd-human-todo-XXXXXX); then :; else \
+		human_todo_status=$$?; human_todo_guide failed "phase=owned-temporary-directory native_status=$$human_todo_status http_request=false; repair the actual resource prerequisite before retry"; exit "$$human_todo_status"; fi; \
 	trap 'rm -rf "$$human_todo_tmp"' EXIT; \
-	human_todo_interpreter=$$($(UV) run python -c 'import json, sys; print(json.dumps({"ansible_python_interpreter": sys.executable}))'); \
+	if human_todo_interpreter=$$($(UV) run python -c 'import json, sys; print(json.dumps({"ansible_python_interpreter": sys.executable}))'); then :; else \
+		human_todo_status=$$?; human_todo_guide failed "phase=selected-runtime native_status=$$human_todo_status http_request=false; repair the actual installed-runtime input before retry"; exit "$$human_todo_status"; fi; \
 	if [ "$$GLUDD_HUMAN_TODO_VALIDATE_ONLY" = 1 ]; then set -- --check; else set --; fi; \
 	echo "[human-todo-module] starting validate_only=$$GLUDD_HUMAN_TODO_VALIDATE_ONLY"; \
-	ANSIBLE_HOME="$$human_todo_tmp" ANSIBLE_LOCAL_TEMP="$$human_todo_tmp/local" ANSIBLE_REMOTE_TEMP="$$human_todo_tmp/remote" \
+	if ANSIBLE_HOME="$$human_todo_tmp" ANSIBLE_LOCAL_TEMP="$$human_todo_tmp/local" ANSIBLE_REMOTE_TEMP="$$human_todo_tmp/remote" \
 	$(UV) run ansible localhost --inventory localhost, --connection local --forks 1 \
 		--module-name general_ludd.agent.gludd_human_todo --args "$$GLUDD_HUMAN_TODO_ARGS_JSON" \
-		--extra-vars "$$human_todo_interpreter" "$$@"
+		--extra-vars "$$human_todo_interpreter" "$$@"; then \
+		if [ "$$GLUDD_HUMAN_TODO_VALIDATE_ONLY" = 1 ]; then \
+			human_todo_guide planned "http_request=false next_owner=human-todo-module; check-mode changed=true and id=null are validation only; no HumanTodo was filed or resolved; use a real owned endpoint and explicit safe credential binding before an authorized request"; \
+		else human_todo_guide returned "next_owner=human-todo-module; capture the returned id and verify requested state against the real daemon; retain native evidence; this is not milestone or release proof"; fi; \
+	else human_todo_status=$$?; \
+		human_todo_guide failed "phase=module native_status=$$human_todo_status write_outcome=unverified; no verified filing or resolution; reconcile any potentially applied write before retry; preserve the native reason and repair the actual service/config/auth changed input"; \
+		exit "$$human_todo_status"; fi
 
 # --- Collection Tests ---
 # binary_re collection: 8 roles + 3 knowledge modules (fuzzing_strategies, obfuscation_techniques, prompt_injection_detector)
@@ -503,28 +516,30 @@ git-push-committed-head-nv: commit-ready
 # The helper reuses the remote-head guard, discovers a push-created exact-SHA
 # run before dispatching, serializes concurrent callers, records a successful
 # dispatch, and returns the confirmed run URL. EXAMPLE=1 is network-free.
+.PHONY: ci-trigger-committed-head
 ci-trigger-committed-head:
-	@REF="$(REF)"; if [ -z "$$REF" ]; then REF=$$(git branch --show-current); fi; \
-	REMOTE="$(REMOTE)"; if [ -z "$$REMOTE" ]; then REMOTE=sandboxcom; fi; \
-	if [ "$(EXAMPLE)" = "1" ]; then \
-		UV=echo $(SYSTEM_PYTHON) scripts/ci_signal_exact_sha.py \
-			--example --ref "$$REF" --remote "$$REMOTE" \
-			--repo "$(or $(REPO),sandboxcom/gludd)" \
-			--workflow "$(or $(WORKFLOW),Build and Release)" \
-			--discovery-polls "$(or $(DISCOVERY_POLLS),1)" \
-			--confirm-polls "$(or $(CONFIRM_POLLS),1)" \
-			--poll-interval "$(or $(POLL_INTERVAL),0)"; \
+	@if [ "$(_publication-native-mode)" != execute ]; then echo "AGENT_NEXT target=ci-trigger-committed-head outcome=planned mode=$(_publication-native-mode) gate_evidence=false release_ready=false: Native inspection starts no remote lookup, authorization or CI dispatch." >&2; exit 0; fi; \
+	REF="$$GLUDD_CI_TRIGGER_REF"; if [ -z "$$REF" ]; then REF=$$(git branch --show-current); fi; \
+	REMOTE="$$GLUDD_CI_TRIGGER_REMOTE"; if [ -z "$$REMOTE" ]; then REMOTE=sandboxcom; fi; \
+	gludd_ci_repo="$$GLUDD_CI_TRIGGER_REPO"; [ -n "$$gludd_ci_repo" ] || gludd_ci_repo=sandboxcom/gludd; \
+	gludd_ci_workflow="$$GLUDD_CI_TRIGGER_WORKFLOW"; [ -n "$$gludd_ci_workflow" ] || gludd_ci_workflow='Build and Release'; \
+	gludd_ci_discovery="$$GLUDD_CI_TRIGGER_DISCOVERY_POLLS"; gludd_ci_confirm="$$GLUDD_CI_TRIGGER_CONFIRM_POLLS"; \
+	gludd_ci_interval="$$GLUDD_CI_TRIGGER_POLL_INTERVAL"; set --; \
+	if [ "$$GLUDD_CI_TRIGGER_EXAMPLE" = 1 ]; then \
+		set -- --example; gludd_ci_default_discovery=1; gludd_ci_default_confirm=1; gludd_ci_default_interval=0; \
 	else \
 		$(MAKE) --no-print-directory _require-gh || exit 1; \
-		UV=echo GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new" \
-			$(SYSTEM_PYTHON) scripts/ci_signal_exact_sha.py \
-			--ref "$$REF" --remote "$$REMOTE" \
-			--repo "$(or $(REPO),sandboxcom/gludd)" \
-			--workflow "$(or $(WORKFLOW),Build and Release)" \
-			--discovery-polls "$(or $(DISCOVERY_POLLS),6)" \
-			--confirm-polls "$(or $(CONFIRM_POLLS),15)" \
-			--poll-interval "$(or $(POLL_INTERVAL),2)" || exit 1; \
-	fi
+		gludd_ci_default_discovery=6; gludd_ci_default_confirm=15; gludd_ci_default_interval=2; \
+	fi; \
+	[ -n "$$gludd_ci_discovery" ] || gludd_ci_discovery=$$gludd_ci_default_discovery; \
+	[ -n "$$gludd_ci_confirm" ] || gludd_ci_confirm=$$gludd_ci_default_confirm; \
+	[ -n "$$gludd_ci_interval" ] || gludd_ci_interval=$$gludd_ci_default_interval; \
+	UV=echo GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/.ssh/sandboxcom_gludd_rsa -o StrictHostKeyChecking=accept-new" \
+		$(SYSTEM_PYTHON) scripts/ci_signal_exact_sha.py "$$@" \
+		--ref "$$REF" --remote "$$REMOTE" --repo "$$gludd_ci_repo" --workflow "$$gludd_ci_workflow" \
+		--purpose "$$GLUDD_PUBLISH_PURPOSE" --expected-branch "$$GLUDD_PUBLISH_EXPECTED_BRANCH" --expected-sha "$$GLUDD_PUBLISH_EXPECTED_SHA" \
+		--baseline-ref "$$GLUDD_PUBLISH_BASELINE_REF" --baseline-sha "$$GLUDD_PUBLISH_BASELINE_SHA" \
+		--discovery-polls "$$gludd_ci_discovery" --confirm-polls "$$gludd_ci_confirm" --poll-interval "$$gludd_ci_interval" || exit 1
 
 # Push and dispatch the exact clean HEAD without allowing local/remote code drift.
 ci-push-committed-head: git-push-committed-head-nv ci-trigger-committed-head
@@ -609,18 +624,17 @@ gate-all-background:
 worktree-health-check:
 	@python3 scripts/check_worktree_health.py
 
-# Bulk merge: iterate all worktrees, attempt to merge each branch into
-# development via --no-ff, report conflicts, clean up successful merges.
-# Usage: make worktree-merge-all
+# Retired: bulk discovery cannot select reviewed source or authorize retirement.
+# Compatibility invocation always refuses with native status 2 and migration guidance.
+.PHONY: worktree-merge-all
 worktree-merge-all:
-	@$(UV) run python scripts/worktree_merge_all.py
+	@$(PYTHON) scripts/worktree_merge_all.py
 
-# Remove worktrees whose branches are fully merged into development,
-# while protecting the canonical ``agent-uv-boundary-fix`` workstream.
-# Worktrees with uncommitted changes or non-ancestor branches are skipped.
-# Usage: make worktree-cleanup-merged
+# Retired bulk compatibility entry: no inventory, tools or mutation children.
+# Usage: make worktree-cleanup-merged (expected native status 2)
 worktree-cleanup-merged:
-	@PYTHONPATH=scripts $(UV) run python scripts/cleanup_merged_worktrees.py
+	@printf '%s\n' 'Retired: worktree-cleanup-merged performs no cleanup.' \
+		'AGENT_NEXT target=worktree-cleanup-merged outcome=refused native_status=2 gate_evidence=false release_ready=false next_owner=agent-cleanup; reconcile native exact BRANCH=, canonical WORKTREE=, full source SHA and released logical ownership. Preserve the configured registry; never pass an empty registry override or guess a registry file/path. Use the existing selected owner and its documented inputs with AGENT_CLEANUP_VALIDATE_ONLY=1. For genuinely missing registrations inspect the documented wt-prune-safe validate-only plan. Preserve branch refs, locks, checkpoints and gate proof; no force removal or implicit unregister.' >&2; exit 2
 
 PIPELINE_STATUS_REPO ?= sandboxcom/gludd
 PIPELINE_STATUS_BRANCH ?= development

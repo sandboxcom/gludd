@@ -23,9 +23,138 @@ from statement/line coverage: executing the line containing an `if` does not
 prove that both its true and false paths ran.  Tests must assert the behavior
 of each path, rather than merely execute code for metric padding.
 
+### Unrounded admission and display precision
+
+Numeric admission compares the unrounded count-derived ratios with each
+configured aggregate and per-file floor. Report percentages retain one decimal
+place: 719/846 branches is 84.988179669%, so its displayed 85.0 still fails an
+85% aggregate floor. Exact 85/100 and exact per-file 75% remain passing
+boundaries. Custom numeric floors and weighted counts retain their existing
+meaning; no tolerance or epsilon lowers a floor.
+
+The existing JSON/Cobertura readers use the same decision and source filtering.
+Their imported measurements retain generic numeric authority; only completed
+owned native execution can establish the E2E provenance described below.
+Existing numeric/display fields are unchanged. The additive `threshold_failures`
+list carries each actual raw failed metric, threshold and scope (plus file for
+per-file failures), defaulting to an empty list when no failure is recorded.
+The CLI uses those authoritative causes rather than deriving a reason again
+from a rounded display. Legacy reports without this optional detail retain the
+existing diagnostic fallback; statuses and admission are not delegated to it.
+
+The bounded 2026-10-24 regression uses owned JSON/XML inputs and actual imported
+CLI calls. Before the source repair, 12 FAIL / 16 PASS in 1.38s (native 2.3s)
+exposes false success for aggregate branch, aggregate line and per-file line
+values just below their floors. All exact/custom-floor positives already pass.
+Native receipt: `.gate-logs/observed/coverage-floor-red/coverage-floor-red311-ccb8f79.json`.
+After repair the same 28 cases pass in 1.13s (native 2.0s) at
+`.gate-logs/observed/coverage-floor-green/coverage-floor-green311-ccb8f79.json`.
+Input bytes and generic non-E2E attribution remain. No earlier rounded
+`passed=true` observation is rewritten or relabeled as unrounded-floor proof.
+Complete source/consumer
+profiles, independent review, normal collection and final release proofs remain
+separate and pending.
+
+### Complete-consumer fixture conformance
+
+The first complete 12-owner Python 3.11 replay retains 1 FAIL / 323 PASS in
+21.98s (native 23.38s) at
+`.gate-logs/observed/coverage-files/20261024T062202Z-82025-b89ed7f4.json`.
+The unchanged `test_branch_totals_counted_correctly` expects imported E2E
+aliases. Immutable source ccb8f792c0a252dccef35302f37ac47e615917ec already omits
+those aliases; the raw-floor repair does not remove them. The failed native
+owner stops before coverage combination and numeric admission. Python 3.12 is
+not launched from that failed result.
+
+Only the five stale imported-alias assertions conform to the established
+contract: retain generic 10 total / 8 covered / 2 missing / 80% and explicitly
+assert both E2E aliases are absent. All other assertions, fixtures and native
+owned-E2E controls remain. Mechanical annotations and typed fake subprocess
+results resolve the same owner's 34 existing strict errors without suppressions.
+A whole-file replacement initially refuses a non-UTF-8 transport encoding;
+the corrected UTF-8 transport preserves the source before verification.
+
+The failed function plus all 28 raw-floor cases then pass: 29 PASS in 1.14s
+(native 2.0s), receipt
+`.gate-logs/observed/coverage-floor-conformance/coverage-floor-conformance311-ccb8f79.json`.
+The same 12-owner, two-source profile still requires complete receiving on both
+installed runtimes, with its original 180 total / 60 quiet seconds and 85%
+aggregate / 75% each-file line AND branch floors. No receipt supplies full-gate,
+exact-SHA hosted, deployment or task-completion authority.
+
+### Complete strict-floor source receiving
+
+The corrected complete replay retains the ten-owner manifest below and adds
+whole `tests/e2e/test_branch_coverage_thresholds_e2e.py` and
+`tests/e2e/test_branch_coverage_e2e.py`: 12 whole owners, 324 cases per runtime.
+These receipts belong to the frozen five-path delta on
+ccb8f792c0a252dccef35302f37ac47e615917ec in registered worktree
+`/tmp/gludd-worktrees/agent-v012-coverage-floor`. They supersede only the earlier
+pending source-profile state; every failed receipt remains retained.
+
+| Runtime | Cases | Pytest / native elapsed | Native coverage-files receipt |
+| --- | --- | --- | --- |
+| Installed 3.11.14 | 324 PASS | 23.08s / 24.533s | `.gate-logs/observed/coverage-files/20261024T063136Z-2973-fbb3b12b.json` |
+| Installed 3.12.15 | 324 PASS | 38.39s / 40.662s | `.gate-logs/observed/coverage-files/20261024T063347Z-10356-8047e8ee.json` |
+
+Both runs use unchanged `config/coverage_ci_tooling.ini`, measuring all of
+`audit_coverage.py` AND `coverage_missing_lines.py`, with 180 total / 60 quiet
+seconds, serial pytest, fatal warnings, literal `ID=` and native trace. Each
+trace records 651 events / 324 pairs with zero issues, unfinished tests or
+failure reports. These spans establish neither performance improvement nor
+live E2E execution.
+
+The actual repaired auditor passes both native reports:
+`.gate-logs/coverage-20261024T063201Z.json` and
+`.gate-logs/coverage-20261024T063428Z.json`. Independently read complete raw JSON
+has identical counts on both runtimes: aggregate lines 466/494 (94.33198%) and
+branches 147/170 (86.47059%); auditor lines 349/373 and branches 117/136;
+companion lines 117/121 and branches 30/34. Thus both raw aggregate floors
+clear 85%, and each file clears both raw 75% floors. The legacy display remains
+94.3% line / 86.5% branch aggregate, with per-file displays 93.6/86.0 and
+96.7/88.2. Both reports retain `threshold_failures=[]`, `shards=[]` and no E2E
+aliases. Raw inputs are `.gate-logs/coverage-v012-raw-floor311.json` and its
+`312.json` sibling.
+
+Only this receipt prose follows those source measurements. Independent review,
+normal per-commit collection, Main receiving, full canonical gate and exact-SHA
+hosted/deployment/promotion proofs remain separate; no task criterion closes.
+
 ## Required evidence
 
 An audit result is valid only when its JSON contains the following evidence:
+
+### Branchless percentage units and raw admission (2026-10-24 UTC)
+
+Receiving review found a separate gap in the original raw-floor packet.
+When all branch counts are zero, each file uses its raw line percentage for
+the existing branch fallback. The aggregate formerly multiplied the mean of
+rounded percentages by100 again: two85.0 displays became8500.0. It could admit
+a raw fallback below85 even when weighted aggregate lines passed.
+
+The new case measures85010/100000 and8496/10000 covered lines, with zero
+branches. Both per-file displays remain85.0 and clear75; weighted aggregate
+line coverage is85.005454545percent. The unweighted raw fallback is84.985 and
+must fail85 while displaying85.0 in percentage units. The original259-line
+source-scope test prefix and every earlier assertion are preserved.
+
+A genuine native case on the separate uncommitted correction based on
+0344d12fae95180f43bf07eedd130428da6c30fc failed1case in0.73s/native1.657s,
+then passed the SAME case in0.64s/native1.731s. Preserve the peer receipts
+.gate-logs/observed/branchless-floor-red/branchless-floor-red311-0344d12.json
+and .gate-logs/observed/branchless-floor-green/branchless-floor-green311-0344d12.json.
+Both retain matching native trace protocol pairs. These are bounded311 repair
+receipts, not the complete profile or current Main acceptance.
+
+The four-site repair retains raw values in the existing per_file_branch
+dictionary, computes its mean without the extra100, and rounds only at both
+existing report-formatting sites. Branchful count-weighted arithmetic, empty
+input100, schema, source confinement and generic-data/E2E proof limits remain.
+Root receives this correction alongside the original floor/resource/EE packet
+on Main49f2c5954c27b84355827bc2445223aad55a3a58. Original source receipts are
+historical; independent current-source review, complete unchanged profiles and
+consumers on both runtimes, normal collection and all final proofs remain
+required. No coverage threshold or old assertion is weakened.
 
 * `e2e_branch_totals` and `e2e_branch_coverage` (covered/total and percentage);
 * line coverage and the per-file threshold verdicts;

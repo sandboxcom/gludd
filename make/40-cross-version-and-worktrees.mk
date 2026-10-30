@@ -261,7 +261,7 @@ _gate-refresh-body:
 	$(MAKE) --no-print-directory test-hook-runtime > .gate-logs/hook-runtime.log 2>&1 && echo "PASS" >> "$$STATUS_WORK" || (echo "FAIL" >> "$$STATUS_WORK" && touch .gate-failed && tail -30 .gate-logs/hook-runtime.log); \
 	echo "=== GATE PHASE: typecheck ==="; \
 	printf "typecheck " >> "$$STATUS_WORK"; \
-	TC_ERRS=$$($(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); \
+	TC_ERRS=$$(MYPYPATH="$$(pwd -P)/src:$$(pwd -P)/scripts$${MYPYPATH:+:$$MYPYPATH}" $(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); \
 	TC_ERRS=$${TC_ERRS:-0}; \
 	if [ "$$TC_ERRS" -le "$(MYPY_MAX)" ]; then echo "PASS $$TC_ERRS" >> "$$STATUS_WORK"; else echo "FAIL $$TC_ERRS" >> "$$STATUS_WORK" && touch .gate-failed; fi; \
 	echo "=== GATE PHASE: collect ==="; \
@@ -300,47 +300,176 @@ _gate-refresh-body:
 _gate-fresh-check: check-gate-fresh
 	@true
 
-# Internal: serialize commit-shaped targets so parallel subagents cannot race on
-# the git index (staging sweeps, index-lock errors). Uses flock (Linux) with a
-# Python fcntl fallback (macOS). The lock file persists for the process lifetime;
-# when make exits, fd 9 closes and the lock auto-releases. This is LAYER 1 of the
-# commit-serialization guardrail (AGENTS.md). LAYER 2 is the enforce-commit-lock
-# plugin that wraps the ENTIRE bash tool call boundary.
+# The existing repository mutex spans one native Make transaction, including
+# staging, every guard, collection, index revalidation and commit. A prerequisite
+# shell cannot retain a lock for later recipes. Private entry validates the
+# inherited native flock; an environment label or inode match alone grants none.
 _gate-mutation-guard:
 	@$(UV) run python scripts/gate_run_lock.py assert-inactive "$(GATE_RUN_LOCK)" "$$PPID"
 
+.PHONY: _commit-lock-acquire _gate-mutation-guard git-commit commit-no-verify git-commit-no-verify git-amend-msg repo-commit ship-commit ship-commit-files git-commit-file test-and-commit commit-bootstrap commit-and-ship commit-and-ship-push _commit-locked-git-commit _commit-locked-commit-no-verify _commit-locked-git-commit-no-verify _commit-locked-git-amend-msg _commit-locked-repo-commit _commit-locked-ship-commit _commit-locked-ship-commit-files _commit-locked-git-commit-file _commit-locked-test-and-commit _commit-locked-commit-bootstrap _commit-locked-commit-and-ship _commit-locked-commit-and-ship-push
+
+# Native Make inspection owns its statuses and creates no transaction artifacts.
+# Capture only native options at parse time, before command assignments are added.
+# MAKEFLAGS may put combined short switches after long options (for example -qe).
+# The foundation provider stops definitions and excludes argument/path words.
+override _commit-native-flags := $(strip $(call _native-make-option-prefix,$(MAKEFLAGS)))
+override _commit-native-short := $(call _native-make-boolean-cluster,$(filter-out -%,$(firstword $(_commit-native-flags)))) $(foreach option,$(filter-out --%,$(filter -%,$(_commit-native-flags))),$(call _native-make-boolean-cluster,$(patsubst -%,%,$(option))))
+override _commit-native-mode := $(if $(findstring q,$(_commit-native-short))$(filter --question,$(_commit-native-flags)),query,$(if $(findstring n,$(_commit-native-short))$(filter --just-print --dry-run --recon,$(_commit-native-flags)),dry-run,$(if $(findstring t,$(_commit-native-short))$(filter --touch,$(_commit-native-flags)),touch,execute)))
+override _commit-native-goals := $(filter git-commit commit-no-verify git-commit-no-verify git-amend-msg repo-commit ship-commit ship-commit-files git-commit-file test-and-commit commit-bootstrap commit-and-ship commit-and-ship-push,$(MAKECMDGOALS))
+ifneq ($(_commit-native-mode),execute)
+ifneq ($(_commit-native-goals),)
+$(info AGENT_NEXT target=$(_commit-native-goals) outcome=planned native_status=$(if $(filter query,$(_commit-native-mode)),1,0) mode=$(_commit-native-mode) gate_evidence=false release_ready=false source_checkpoint=false next_action=Native Make inspection executes no staging collection commit publication CI wait or target touch; retain Make's actual status and use the ordinary target only after source and ownership prerequisites.)
+endif
+endif
+
+define _commit-transaction
+$(if $(filter execute,$(_commit-native-mode)),+@$(UV) run --active python scripts/stream_command.py --commit-transaction --label commit-transaction --make-target "$@" --make "$(MAKE)" --makefile "$(firstword $(MAKEFILE_LIST))" --observed-root "$(OBSERVED_ROOT)" --heartbeat-secs "$(OBSERVED_HEARTBEAT_SECS)" --quiet-secs "$(OBSERVED_QUIET_SECS)" --max-secs "$(OBSERVED_MAX_SECS)" --retain-runs "$(OBSERVED_RETAIN_RUNS)",@true)
+endef
+
+# Hosted CI may wait after publication; these fixed public actions never retain the mutation lock.
+# Keep recursive post actions inert during native query/dry-run/touch inspection.
+define _commit-publication
+$(if $(filter execute,$(_commit-native-mode)),+@set -eu; \
+	commit_publication_rc=0; commit_publication_phase=batch-push; \
+	if [ "$(PUSH)" = "1" ]; then \
+		$(MAKE) --no-print-directory batch-push || commit_publication_rc=$$?; \
+	fi; \
+	$(if $(filter commit-and-ship-push,$@),\
+		if [ "$$commit_publication_rc" -eq 0 ]; then \
+			commit_publication_phase=development-push; \
+			$(MAKE) --no-print-directory development-push || commit_publication_rc=$$?; \
+		fi; \
+		if [ "$$commit_publication_rc" -eq 0 ]; then \
+			commit_publication_phase=ci-verdict; \
+			$(MAKE) --no-print-directory ci-verdict || commit_publication_rc=$$?; \
+		fi; \
+	) \
+	if [ "$$commit_publication_rc" -eq 0 ]; then \
+		echo "AGENT_NEXT target=$@ phase=public-post-commit outcome=passed native_status=0 gate_evidence=false release_ready=false: Requested public post-commit actions finished after mutation lock release. Retain the mutation receipt and actual publication/CI receipts. A local checkpoint or child result supplies no full-gate deployment or release proof."; \
+	else \
+		echo "AGENT_NEXT target=$@ phase=public-post-commit outcome=failed native_status=$$commit_publication_rc failed_child=$$commit_publication_phase gate_evidence=false release_ready=false: Preserve the applied local commit and exact failed publication/CI evidence. Repair that child input before retrying publication; do not repeat the source commit or adopt an older remote as proof." >&2; \
+	fi; \
+	exit "$$commit_publication_rc",@true)
+endef
+
 _commit-lock-acquire: _gate-mutation-guard
-	@exec 9>/tmp/gludd-commit.lock; \
-	flock -n 9 2>/dev/null || python3 -c "import fcntl; f=open('/tmp/gludd-commit.lock'); \
-	  fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)" 2>/dev/null || { \
-	    echo "COMMIT-LOCK: another commit is in flight. Retry serially." >&2; exit 1; }
+	@$(UV) run --active python -P src/general_ludd/git_automation/locking.py --assert-transaction
+
+git-commit: _gate-fresh-check _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
+	@[ -n "$(MSG)" ] || { echo "Usage: make git-commit MSG='message'" >&2; exit 1; }
+	$(call _commit-transaction)
+
+commit-no-verify: _gate-fresh-check _commit-docstring-guard _pre-commit-stage-guard _edit-commit-atomicity-guard
+	$(call _commit-transaction)
+
+git-commit-no-verify: _gate-fresh-check
+	$(call _commit-transaction)
+
+git-amend-msg: _gate-fresh-check _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
+	$(call _commit-transaction)
+
+repo-commit: _commit-docstring-guard
+	$(call _commit-transaction)
+
+ship-commit: _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _push-parameter-audit _pre-commit-stash-audit _edit-commit-atomicity-guard
+	@: # PUSH ?= 0 default: commit locally; set PUSH=1 to also run _commit-publication
+	$(call _commit-transaction)
+	$(call _commit-publication)
+
+ship-commit-files: _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _push-parameter-audit _pre-commit-stash-audit _edit-commit-atomicity-guard
+	$(call _commit-transaction)
+	$(call _commit-publication)
+
+git-commit-file: _gate-fresh-check _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
+	$(call _commit-transaction)
+
+test-and-commit: _gate-fresh-check _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
+	$(call _commit-transaction)
+
+commit-bootstrap: _gate-fresh-check
+	$(call _commit-transaction)
+
+commit-and-ship: _gate-fresh-check _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
+	$(call _commit-transaction)
+	$(call _commit-publication)
+
+commit-and-ship-push: _gate-fresh-check _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
+	$(call _commit-transaction)
+	$(call _commit-publication)
+
+ifneq ($(filter _commit-locked-%,$(MAKECMDGOALS)),)
+.NOTPARALLEL:
+endif
 
 # Commit recipes that intentionally pass --no-verify still enforce the same
 # staged-content quality boundary once. Normal commit paths use the real
 # pre-commit hooks and do not repeat these checks.
 .PHONY: _pre-commit-secrets-guard
 _pre-commit-secrets-guard:
-	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run pre-commit run trailing-whitespace
-	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run pre-commit run end-of-file-fixer
-	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run pre-commit run detect-secrets-readonly
+	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run --active python -P -c 'import os, subprocess, sys; exec( \
+		"def native_status(code):\n" \
+		"    return code if code >= 0 else 128 - code\n" \
+		"def run_native(arguments, **options):\n" \
+		"    try:\n" \
+		"        return subprocess.run(arguments, check=False, **options)\n" \
+		"    except OSError as error:\n" \
+		"        print(\"AGENT_NEXT target=_pre-commit-secrets-guard outcome=failed native_status=127 failed_input=native-executable gate_evidence=false release_ready=false next_action=repair-native-executable-before-retry reason=\" + repr(str(error)), file=sys.stderr)\n" \
+		"        raise SystemExit(127)\n" \
+		"inventory = run_native([\"git\", \"--no-optional-locks\", \"diff\", \"--cached\", \"--name-only\", \"-z\", \"--\"], stdout=subprocess.PIPE)\n" \
+		"if inventory.returncode:\n" \
+		"    status = native_status(inventory.returncode)\n" \
+		"    print(f\"AGENT_NEXT target=_pre-commit-secrets-guard outcome=failed native_status={status} failed_owner=git-staged-paths gate_evidence=false release_ready=false next_action=repair-native-index-query-before-hook-retry\", file=sys.stderr)\n" \
+		"    raise SystemExit(status)\n" \
+		"if inventory.stdout and not inventory.stdout.endswith(bytes((0,))):\n" \
+		"    print(\"AGENT_NEXT target=_pre-commit-secrets-guard outcome=refused native_status=2 failed_input=unterminated-staged-NUL-inventory gate_evidence=false release_ready=false next_action=repair-native-Git-output-before-hook-retry\", file=sys.stderr)\n" \
+		"    raise SystemExit(2)\n" \
+		"paths = [os.fsdecode(name) for name in inventory.stdout.split(bytes((0,))) if name]\n" \
+		"if not paths:\n" \
+		"    print(\"AGENT_NEXT target=_pre-commit-secrets-guard outcome=empty native_status=0 staged_files=0 hook_commands=0 gate_evidence=false release_ready=false next_action=no-staged-scope-was-measured\", file=sys.stderr)\n" \
+		"    raise SystemExit(0)\n" \
+		"unsupported = next((name for name in paths if name.startswith(\"-\")), None)\n" \
+		"if unsupported is not None:\n" \
+		"    print(\"AGENT_NEXT target=_pre-commit-secrets-guard outcome=refused native_status=2 failed_input=option-looking-staged-path gate_evidence=false release_ready=false next_action=repair-owned-root-filename-before-hook-retry path=\" + repr(unsupported), file=sys.stderr)\n" \
+		"    raise SystemExit(2)\n" \
+		"unmerged = run_native([\"git\", \"--no-optional-locks\", \"diff\", \"--cached\", \"--name-only\", \"--diff-filter=U\", \"-z\", \"--\"], stdout=subprocess.PIPE)\n" \
+		"if unmerged.returncode:\n" \
+		"    status = native_status(unmerged.returncode)\n" \
+		"    print(f\"AGENT_NEXT target=_pre-commit-secrets-guard outcome=failed native_status={status} failed_owner=git-unmerged-paths gate_evidence=false release_ready=false next_action=repair-native-index-query-before-hook-retry\", file=sys.stderr)\n" \
+		"    raise SystemExit(status)\n" \
+		"if unmerged.stdout:\n" \
+		"    print(\"AGENT_NEXT target=_pre-commit-secrets-guard outcome=refused native_status=1 failed_input=unmerged-index gate_evidence=false release_ready=false next_action=reconcile-owned-merge-through-native-Git-before-hook-retry\", file=sys.stderr)\n" \
+		"    raise SystemExit(1)\n" \
+		"from pre_commit.staged_files_only import staged_files_only\n" \
+		"from pre_commit.store import Store\n" \
+		"with staged_files_only(Store().directory):\n" \
+		"    for command in (\"pre-commit run trailing-whitespace\", \"pre-commit run end-of-file-fixer\", \"pre-commit run detect-secrets-readonly\"):\n" \
+		"        result = run_native([*sys.argv[1:], \"run\", \"--active\", *command.split(), \"--files\", *paths])\n" \
+		"        if result.returncode:\n" \
+		"            status = native_status(result.returncode)\n" \
+		"            hook = command.rsplit(\" \", 1)[1]\n" \
+		"            print(f\"AGENT_NEXT target=_pre-commit-secrets-guard outcome=failed native_status={status} failed_hook={hook} gate_evidence=false release_ready=false next_action=inspect-native-hook-output-and-preserve-applied-fixer-state-before-retry\", file=sys.stderr)\n" \
+		"            raise SystemExit(status)\n" \
+		"print(f\"AGENT_NEXT target=_pre-commit-secrets-guard outcome=passed native_status=0 staged_files={len(paths)} hook_commands=3 selection=native-hook-output gate_evidence=false release_ready=false next_owner=_pre-commit-content-guard next_action=retain-native-output-and-run-staged-line-and-clone-guards; skipped-hooks-measure-no-matching-files\", file=sys.stderr)\n" \
+	)' $(UV)
 
 _pre-commit-content-guard: _pre-commit-secrets-guard
 	@$(MAKE) --no-print-directory check-file-line-limits FILE_LINE_LIMIT_POLICY="$(FILE_LINE_LIMIT_POLICY)" FILE_LINE_LIMIT_STAGED=1
 	@$(MAKE) --no-print-directory check-duplicate-code DUPLICATE_CODE_CONFIG="$(DUPLICATE_CODE_CONFIG)" DUPLICATE_CODE_ENGINE="$(DUPLICATE_CODE_ENGINE)" DUPLICATE_CODE_SOURCE=staged DUPLICATE_CODE_BASE_REF=HEAD DUPLICATE_CODE_CURRENT_REF=HEAD DUPLICATE_CODE_VALIDATE_ONLY=0
 
-git-commit: _gate-fresh-check _commit-lock-acquire _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard _pre-commit-spec-quality-guard
+_commit-locked-git-commit: _commit-lock-acquire _gate-fresh-check _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard _pre-commit-spec-quality-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit MSG='message'"; exit 1; fi
 	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check
 	@echo "Gate fresh and green. Running pre-commit directly on staged files..."
 	@if ! git diff --cached --quiet; then \
-		git diff --cached --name-only -z | xargs -0 $(UV) run pre-commit run --files && \
+		git diff --cached --name-only -z | xargs -0 $(UV) run --active pre-commit run --files && \
 		git diff --cached --name-only -z | xargs -0 git add; \
 	fi
 	@$(MAKE) --no-print-directory check-gate-fresh
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
-commit-no-verify: _pre-commit-content-guard _gate-fresh-check _commit-lock-acquire _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _edit-commit-atomicity-guard
+_commit-locked-commit-no-verify: _commit-lock-acquire _pre-commit-content-guard _gate-fresh-check _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _edit-commit-atomicity-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-no-verify MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
@@ -349,19 +478,19 @@ commit-no-verify: _pre-commit-content-guard _gate-fresh-check _commit-lock-acqui
 # The --no-verify flag skips ONLY the pre-commit hook stash, NOT the gate.
 # There is no GLUDD_CI_IS_GATE bypass — the fresh+green .gate-status check is
 # unconditional. Run `make gate` and have it pass; that is the only path.
-git-commit-no-verify: _pre-commit-content-guard _gate-fresh-check _commit-lock-acquire
+_commit-locked-git-commit-no-verify: _commit-lock-acquire _pre-commit-content-guard _gate-fresh-check
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit-no-verify MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
 # git-amend-msg: amend the last commit message (--amend --no-edit equivalent),
 # enforcing gate check. Cannot bypass the gate via --amend.
-git-amend-msg: _pre-commit-content-guard _gate-fresh-check _commit-lock-acquire
+_commit-locked-git-amend-msg: _commit-lock-acquire _pre-commit-content-guard _gate-fresh-check
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-amend-msg MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git commit --amend --no-verify -m "$(MSG)"
 
-repo-commit: _pre-commit-content-guard _commit-lock-acquire _commit-lint-guard _commit-docstring-guard
+_commit-locked-repo-commit: _commit-lock-acquire _pre-commit-content-guard _commit-lint-guard _commit-docstring-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make repo-commit MSG='message'"; exit 1; fi
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
@@ -372,7 +501,7 @@ repo-commit: _pre-commit-content-guard _commit-lock-acquire _commit-lint-guard _
 # Allowlisted from the local _gate-fresh-check (CI is the gate for
 # subagent-dispatched pushes; see test_commit_gate_freshness.py ALLOWLIST_NO_GATE).
 PUSH ?= 0
-ship-commit: _pre-commit-content-guard _commit-lock-acquire _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _push-parameter-audit _pre-commit-stash-audit _edit-commit-atomicity-guard
+_commit-locked-ship-commit: _commit-lock-acquire _pre-commit-content-guard _commit-lint-guard _commit-docstring-guard _pre-commit-stage-guard _stash-leak-guard _push-parameter-audit _pre-commit-stash-audit _edit-commit-atomicity-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make ship-commit MSG='message'"; exit 1; fi
 	@STAGED_FILES=$$(git diff --cached --name-only | LC_ALL=C sort); \
 		if [ -n "$(SHIP_COMMIT_EXPECTED_FILES)" ]; then \
@@ -397,23 +526,21 @@ ship-commit: _pre-commit-content-guard _commit-lock-acquire _commit-lint-guard _
 		fi; \
 		echo "Committing staged changes..."; \
 		if git diff --cached --quiet; then echo "Nothing to commit"; else git commit -n -m "$(MSG)"; fi
-	@if [ "$(PUSH)" = "1" ]; then $(MAKE) --no-print-directory batch-push; else echo "Committed locally. Use PUSH=1 to push, or make batch-push separately."; fi
+	@if [ "$(PUSH)" != "1" ]; then echo "Committed locally. Use PUSH=1 to push, or make batch-push separately."; fi
 
 # ship-commit-files: atomic staging + commit under the commit lock. Bundles
 # `git-add` + `ship-commit` so one subagent's `git add -A` cannot sweep
 # another's staged files. Usage: make ship-commit-files FILES='...' MSG='...'
-ship-commit-files: _commit-lock-acquire
+_commit-locked-ship-commit-files: _commit-lock-acquire
 	@[ -n "$(FILES)" ] || { echo "Usage: make ship-commit-files FILES='...' MSG='...'"; exit 1; }
 	@$(MAKE) --no-print-directory git-add FILES='$(FILES)'
-	@$(MAKE) --no-print-directory ship-commit MSG='$(MSG)' SHIP_COMMIT_EXPECTED_FILES='$(FILES)'
+	@$(MAKE) --no-print-directory _commit-locked-ship-commit MSG='$(MSG)' SHIP_COMMIT_EXPECTED_FILES='$(FILES)'
 
-commit-and-ship: lint-fix git-add-all
-	@$(MAKE) --no-print-directory ship-commit MSG='$(MSG)'
+_commit-locked-commit-and-ship: _commit-lock-acquire lint-fix git-add-all
+	@$(MAKE) --no-print-directory _commit-locked-ship-commit MSG='$(MSG)'
 
-commit-and-ship-push: lint-fix git-add-all
-	@$(MAKE) --no-print-directory ship-commit MSG='$(MSG)'
-	@$(MAKE) --no-print-directory development-push
-	@$(MAKE) --no-print-directory ci-verdict
+_commit-locked-commit-and-ship-push: _commit-lock-acquire lint-fix git-add-all
+	@$(MAKE) --no-print-directory _commit-locked-ship-commit MSG='$(MSG)'
 
 delete-file:
 	@[ -n "$(FILES)" ] || { echo "Usage: make delete-file FILES='file1 file2'"; exit 1; }
@@ -572,6 +699,14 @@ git-merge-abort:
 	@git merge --abort
 	@echo "Merge aborted."
 
+# Merge a branch while preferring the current branch's content on conflicts.
+# Use only when the branch's overlapping docs/tracking changes are known to be
+# older/superseded by the current branch. Non-conflicting branch changes are kept.
+# Usage: make git-merge-ours MSG='branch-name'
+git-merge-ours: _merge-strategy-guard
+	@if [ -z "$(MSG)" ]; then echo "Usage: make git-merge-ours MSG='branch-name'"; exit 1; fi
+	@git merge --no-ff -X ours "$(MSG)"
+
 git-rebase-abort:
 	@git rebase --abort
 	@echo "Rebase aborted."
@@ -660,35 +795,92 @@ feature-done:
 # Each subagent that mutates files works in an isolated git worktree on its
 # own branch, so concurrent edits cannot interleave on the shared checkout
 # (no dirty-tree surprises, no commit races, no misattributed work).
-# Lifecycle: agent-worktree -> branch edits+commits -> reviewed agent-merge-dev
+# Lifecycle: isolated edits+commits -> pinned accepted development integration -> owned retirement
 # -> proven release-promote -> native planned agent-cleanup. Read-only
 # research tasks skip this entirely — they do not touch the working tree.
 
-# Create an isolated worktree for a subagent. Usage:
-#   make agent-worktree BRANCH=agent-fix-slurm
-# Prints "WORKTREE_PATH=<path>" for the subagent to work in. If the branch
-# already exists (re-dispatch / resume), the worktree is attached to it
-# instead of being re-created from scratch.
-agent-worktree:
-	@[ -n "$(BRANCH)" ] || { echo "Usage: make agent-worktree BRANCH=agent-<name>"; exit 1; }
-	@WORKTREE_PATH="/tmp/gludd-worktrees/$(BRANCH)"; \
-	mkdir -p /tmp/gludd-worktrees; \
-	git worktree add "$$WORKTREE_PATH" -b "$(BRANCH)" 2>/dev/null || git worktree add "$$WORKTREE_PATH" "$(BRANCH)"; \
-	$(MAKE) --no-print-directory workstream-register BRANCH="$(BRANCH)" WORKTREE="$$WORKTREE_PATH" ACTIVE_WORKSTREAM_REGISTRY="$(ACTIVE_WORKSTREAM_REGISTRY)"; \
-	echo "WORKTREE_PATH=$$WORKTREE_PATH"; \
-	echo "Worktree ready at $$WORKTREE_PATH on branch $(BRANCH)"
+# All three creation targets share native failure and identity checks. Existing
+# branches are attached deliberately, never as a retry after an arbitrary error.
+# Creation does not require a clean caller: its index and working bytes are owned
+# by the caller and must remain untouched. Partial creation is retained on failure.
+define _agent-worktree-create
+	$(if $(filter execute,$(_commit-native-mode)),+)@branch='$(subst ','"'"',$(BRANCH))'; base_ref='$(subst ','"'"',$(1))'; mode='$(2)'; \
+	WORKTREE_PATH="/tmp/gludd-worktrees/$$branch"; pinned_base=; phase=branch-name; \
+	fail_creation() { \
+		creation_status="$$1"; \
+		printf '%s\n' "AGENT_NEXT target=$@ outcome=failed phase=$$phase native_status=$$creation_status branch=$$branch worktree=$$WORKTREE_PATH pinned_base=$$pinned_base gate_evidence=false release_ready=false next_action=inspect-native-error-and-reconcile-retained-state-before-retry; do not force-remove, reset, unlock or prune"; \
+		exit "$$creation_status"; \
+	}; \
+	git check-ref-format --branch "$$branch" >/dev/null || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	if [ "$$mode" = development ]; then \
+		phase=development-ref; \
+		if git show-ref --verify --quiet refs/heads/development; then :; else \
+			creation_status=$$?; \
+			[ "$$creation_status" -eq 1 ] || fail_creation "$$creation_status" >&2; \
+			git branch development master || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+		fi; \
+	fi; \
+	phase=base-ref; \
+	pinned_base=$$(git rev-parse --verify --end-of-options "$$base_ref^{commit}") || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	phase=repository; \
+	common_dir=$$(git rev-parse --path-format=absolute --git-common-dir) || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	common_dir=$$(cd "$$common_dir" && pwd -P) || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	phase=branch-ref; existing_branch=0; pinned_source="$$pinned_base"; \
+	if git show-ref --verify --quiet "refs/heads/$$branch"; then \
+		existing_branch=1; \
+		pinned_source=$$(git rev-parse --verify --end-of-options "refs/heads/$$branch^{commit}") || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+		if [ "$$mode" != resume ]; then \
+			phase=existing-branch-base; \
+			git merge-base --is-ancestor "$$pinned_base" "$$pinned_source" || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+		fi; \
+	else \
+		creation_status=$$?; \
+		[ "$$creation_status" -eq 1 ] || fail_creation "$$creation_status" >&2; \
+	fi; \
+	phase=worktree-path; \
+	[ ! -e "$$WORKTREE_PATH" ] && [ ! -L "$$WORKTREE_PATH" ] || fail_creation 2 >&2; \
+	[ ! -L '/tmp/gludd-worktrees' ] || fail_creation 2 >&2; \
+	mkdir -p '/tmp/gludd-worktrees' || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	physical_root=$$(cd '/tmp/gludd-worktrees' && pwd -P) || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	expected_path="$$physical_root/$$branch"; \
+	parent_path=$$(dirname "$$expected_path"); \
+	while [ ! -e "$$parent_path" ] && [ ! -L "$$parent_path" ]; do parent_path=$$(dirname "$$parent_path"); done; \
+	physical_parent=$$(cd "$$parent_path" && pwd -P) || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	[ "$$physical_parent" = "$$parent_path" ] || fail_creation 2 >&2; \
+	phase=worktree-add; \
+	if [ "$$existing_branch" -eq 1 ]; then \
+		git worktree add "$$WORKTREE_PATH" "$$branch" || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	else \
+		git worktree add "$$WORKTREE_PATH" -b "$$branch" "$$pinned_source" || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	fi; \
+	phase=checkout-path; \
+	actual_path=$$(git -C "$$WORKTREE_PATH" rev-parse --show-toplevel) || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	[ "$$actual_path" = "$$expected_path" ] || fail_creation 2 >&2; \
+	phase=checkout-repository; \
+	actual_common=$$(git -C "$$WORKTREE_PATH" rev-parse --path-format=absolute --git-common-dir) || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	actual_common=$$(cd "$$actual_common" && pwd -P) || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	[ "$$actual_common" = "$$common_dir" ] || fail_creation 2 >&2; \
+	phase=checkout-branch; \
+	actual_branch=$$(git -C "$$WORKTREE_PATH" symbolic-ref --quiet --short HEAD) || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	[ "$$actual_branch" = "$$branch" ] || fail_creation 2 >&2; \
+	phase=checkout-source; \
+	actual_source=$$(git -C "$$WORKTREE_PATH" rev-parse --verify HEAD) || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	[ "$$actual_source" = "$$pinned_source" ] || fail_creation 2 >&2; \
+	phase=registration; \
+	$(MAKE) --no-print-directory workstream-register BRANCH="$$branch" WORKTREE="$$WORKTREE_PATH" ACTIVE_WORKSTREAM_REGISTRY='$(subst ','"'"',$(3))' || { creation_status=$$?; fail_creation "$$creation_status" >&2; }; \
+	printf '%s\n' "WORKTREE_PATH=$$WORKTREE_PATH" "Worktree ready at $$WORKTREE_PATH on branch $$branch from $$base_ref"; \
+	printf '%s\n' "AGENT_NEXT target=$@ outcome=passed branch=$$branch pinned_source=$$pinned_source pinned_base=$$pinned_base registered=true gate_evidence=false release_ready=false next_action=work-in-the-verified-registered-checkout-and-complete-item-acceptance-before-integration" >&2
+endef
 
-# Create an isolated worktree at an explicit base ref. Usage:
-#   make agent-worktree-base BRANCH=release-sync BASE=sandboxcom/master
+# Plain creation starts at HEAD; a preexisting branch resumes its pinned source.
+agent-worktree:
+	@[ -n '$(subst ','"'"',$(BRANCH))' ] || { echo "Usage: make agent-worktree BRANCH=agent-<name>"; echo "AGENT_NEXT target=$@ outcome=refused native_status=1 next_action=supply-BRANCH gate_evidence=false release_ready=false" >&2; exit 1; }
+	$(call _agent-worktree-create,HEAD,resume,$(ACTIVE_WORKSTREAM_REGISTRY))
+
+# Explicit base creation/resume must retain the requested base in its ancestry.
 agent-worktree-base:
-	@[ -n "$(BRANCH)" ] && [ -n "$(BASE)" ] || { echo "Usage: make agent-worktree-base BRANCH=agent-<name> BASE=<ref>"; exit 1; }
-	@WORKTREE_PATH="/tmp/gludd-worktrees/$(BRANCH)"; \
-	mkdir -p /tmp/gludd-worktrees; \
-	git rev-parse --verify "$(BASE)^{commit}" >/dev/null 2>&1 || { echo "ERROR: BASE $(BASE) is not a valid commit"; exit 1; }; \
-	git worktree add "$$WORKTREE_PATH" -b "$(BRANCH)" "$(BASE)" 2>/dev/null || git worktree add "$$WORKTREE_PATH" "$(BRANCH)"; \
-	$(MAKE) --no-print-directory workstream-register BRANCH="$(BRANCH)" WORKTREE="$$WORKTREE_PATH" ACTIVE_WORKSTREAM_REGISTRY="$(ACTIVE_WORKSTREAM_REGISTRY)"; \
-	echo "WORKTREE_PATH=$$WORKTREE_PATH"; \
-	echo "Worktree ready at $$WORKTREE_PATH on branch $(BRANCH) from $(BASE)"
+	@[ -n '$(subst ','"'"',$(BRANCH))' ] && [ -n '$(subst ','"'"',$(BASE))' ] || { echo "Usage: make agent-worktree-base BRANCH=agent-<name> BASE=<ref>"; echo "AGENT_NEXT target=$@ outcome=refused native_status=1 next_action=supply-BRANCH-and-BASE gate_evidence=false release_ready=false" >&2; exit 1; }
+	$(call _agent-worktree-create,$(BASE),base,$(ACTIVE_WORKSTREAM_REGISTRY))
 
 # Positive native retention; no unlock, activity renewal or checkpoint mutation.
 WORKTREE_RETAIN_REASON ?=
@@ -706,20 +898,21 @@ agent-worktree-retain:
 		--reason '$(subst ','"'"',$(value WORKTREE_RETAIN_REASON))' \
 		--retain-validate-only '$(subst ','"'"',$(value WORKTREE_RETAIN_VALIDATE_ONLY))'
 
-# Merge a subagent's worktree branch back to master. Run on the MAIN checkout
-# (never from inside a worktree). Usage:
-#   make agent-merge BRANCH=agent-fix-slurm
-agent-merge: _gate-mutation-guard
-	@[ -n "$(BRANCH)" ] || { echo "Usage: make agent-merge BRANCH=agent-<name>"; exit 1; }
-	@git merge --no-ff "$(BRANCH)" -m "merge: $(BRANCH) worktree work into master"
-	@echo "Merged $(BRANCH) into master"
+# Retired: master promotion is owned by release-promote, never a feature merge.
+.PHONY: agent-merge
+agent-merge:
+	@printf '%s\n' 'RETIRED: agent-merge bypassed the canonical development-to-master release owner.' >&2; \
+	printf '%s\n' 'AGENT_NEXT target=agent-merge outcome=retired native_status=2 gate_evidence=false release_ready=false; preserve candidate/index/refs/checkpoints; integrate reviewed source into the actual development receiver, then use release-promote with exact-SHA local/hosted/deployment evidence and the genuine REVIEWED_HEAD_INTEGRATION_RECEIPT; no checkout, Git, cleanup or publication was attempted' >&2; \
+	exit 2
 
 # Compatibility cleanup routes retain the existing native ownership authority.
 AGENT_CLEANUP_VALIDATE_ONLY ?= 1
+AGENT_CLEANUP_PURPOSE ?= merged
+AGENT_CLEANUP_EXPECTED_HEAD ?=
 CLEAN_STALE_WORKTREES_VALIDATE_ONLY ?= 1
-unexport AGENT_CLEANUP_VALIDATE_ONLY CLEAN_STALE_WORKTREES_VALIDATE_ONLY
+unexport AGENT_CLEANUP_VALIDATE_ONLY AGENT_CLEANUP_PURPOSE AGENT_CLEANUP_EXPECTED_HEAD CLEAN_STALE_WORKTREES_VALIDATE_ONLY
 ifneq (,$(filter agent-cleanup clean-stale-worktrees,$(MAKECMDGOALS)))
-ifneq (,$(findstring $$,$(value BRANCH)$(value WORKTREE)$(value ACTIVE_WORKSTREAM_REGISTRY)$(value AGENT_CLEANUP_VALIDATE_ONLY)$(value CLEAN_STALE_WORKTREES_VALIDATE_ONLY)))
+ifneq (,$(findstring $$,$(value BRANCH)$(value WORKTREE)$(value ACTIVE_WORKSTREAM_REGISTRY)$(value AGENT_CLEANUP_VALIDATE_ONLY)$(value AGENT_CLEANUP_PURPOSE)$(value AGENT_CLEANUP_EXPECTED_HEAD)$(value CLEAN_STALE_WORKTREES_VALIDATE_ONLY)))
 $(error cleanup inputs must be literal data, not Make expressions)
 endif
 endif
@@ -727,22 +920,35 @@ endif
 # Explicit selected-owner retirement; plan by default, never delete branch refs.
 agent-cleanup:
 	@case '$(subst ','"'"',$(value AGENT_CLEANUP_VALIDATE_ONLY))' in 0|1) ;; *) echo "AGENT_CLEANUP_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac
-	@exec $(UV) run python -m scripts.prune_worktrees_safe --retire-merged \
-		--branch '$(subst ','"'"',$(value BRANCH))' --worktree '$(subst ','"'"',$(value WORKTREE))' \
+	@set -- --branch '$(subst ','"'"',$(value BRANCH))' --worktree '$(subst ','"'"',$(value WORKTREE))' \
 		$(if $(value ACTIVE_WORKSTREAM_REGISTRY),--registry '$(subst ','"'"',$(value ACTIVE_WORKSTREAM_REGISTRY))') \
-		--retire-validate-only '$(subst ','"'"',$(value AGENT_CLEANUP_VALIDATE_ONLY))'
+		$(if $(value AGENT_CLEANUP_EXPECTED_HEAD),--expected-head '$(subst ','"'"',$(value AGENT_CLEANUP_EXPECTED_HEAD))') \
+		--retire-validate-only '$(subst ','"'"',$(value AGENT_CLEANUP_VALIDATE_ONLY))'; \
+		case '$(subst ','"'"',$(value AGENT_CLEANUP_PURPOSE))' in \
+		merged) exec $(UV) run python -m scripts.prune_worktrees_safe --retire-merged "$$@";; \
+		self-improve-evaluation) exec $(UV) run python -m scripts.prune_worktrees_safe --retire-self-improve-evaluation "$$@";; \
+		*) echo "AGENT_CLEANUP_PURPOSE must be merged or self-improve-evaluation"; exit 2;; esac
 
 # Logical workstreams represent model-agent ownership and therefore cannot be
 # inferred from OS PIDs.  Registration is explicit and shared by all worktrees.
 workstream-register:
-	@[ -n "$(BRANCH)" ] && [ -n "$(WORKTREE)" ] || { echo "Usage: make workstream-register BRANCH=<name> WORKTREE=<path>"; exit 2; }
-	@UV_NO_SYNC=0 $(UV) run --no-project python -m scripts.workstream_registry register --branch "$(BRANCH)" --worktree "$(WORKTREE)" \
-		$(if $(ACTIVE_WORKSTREAM_REGISTRY),--registry "$(ACTIVE_WORKSTREAM_REGISTRY)")
+	@[ -n '$(subst ','"'"',$(BRANCH))' ] && [ -n '$(subst ','"'"',$(WORKTREE))' ] || { echo "Usage: make workstream-register BRANCH=<name> WORKTREE=<path>"; exit 2; }
+	@UV_NO_SYNC=0 $(UV) run --no-project python -m scripts.workstream_registry register --branch '$(subst ','"'"',$(BRANCH))' --worktree '$(subst ','"'"',$(WORKTREE))' \
+		$(if $(ACTIVE_WORKSTREAM_REGISTRY),--registry '$(subst ','"'"',$(ACTIVE_WORKSTREAM_REGISTRY))')
 
+# Release only an explicitly pinned native owner; retain its verified tuple.
+ifneq (,$(filter workstream-unregister,$(MAKECMDGOALS)))
+ifneq (,$(findstring $$,$(value BRANCH)$(value WORKTREE)$(value WORKSTREAM_EXPECTED_HEAD)$(value ACTIVE_WORKSTREAM_REGISTRY)))
+$(error workstream release inputs must be literal data, not Make expressions)
+endif
+endif
+unexport WORKSTREAM_EXPECTED_HEAD
 workstream-unregister:
-	@[ -n "$(BRANCH)" ] || { echo "Usage: make workstream-unregister BRANCH=<name>"; exit 2; }
-	@UV_NO_SYNC=0 $(UV) run --no-project python -m scripts.workstream_registry unregister --branch "$(BRANCH)" \
-		$(if $(ACTIVE_WORKSTREAM_REGISTRY),--registry "$(ACTIVE_WORKSTREAM_REGISTRY)")
+	@[ -n '$(subst ','"'"',$(value BRANCH))' ] && [ -n '$(subst ','"'"',$(value WORKTREE))' ] && [ -n '$(subst ','"'"',$(value WORKSTREAM_EXPECTED_HEAD))' ] || { echo "Usage: make workstream-unregister BRANCH=<name> WORKTREE=<canonical-path> WORKSTREAM_EXPECTED_HEAD=<full-sha>"; exit 2; }
+	@UV_NO_SYNC=0 $(UV) run --no-project python -m scripts.workstream_registry unregister \
+		--branch '$(subst ','"'"',$(value BRANCH))' --worktree '$(subst ','"'"',$(value WORKTREE))' \
+		--expected-head '$(subst ','"'"',$(value WORKSTREAM_EXPECTED_HEAD))' \
+		$(if $(value ACTIVE_WORKSTREAM_REGISTRY),--registry '$(subst ','"'"',$(value ACTIVE_WORKSTREAM_REGISTRY))')
 
 # Plan ordinary clean pruning through the native registry/lock-aware owner.
 clean-stale-worktrees:
@@ -1040,6 +1246,7 @@ test-self-improve-multifile:
 
 # Verify an immutable managed-promotion marker only on development history.
 # Usage: make self-improve-promotion-marker SELF_IMPROVE_PROMOTION_ARTIFACT_DIGEST=<sha256> SELF_IMPROVE_PROMOTION_PLAN_DIGEST=<sha256> SELF_IMPROVE_PROMOTION_ATTEMPT_DIGEST=<sha256> SELF_IMPROVE_PROMOTION_VALIDATE_ONLY=0|1
+.PHONY: self-improve-promotion-marker
 self-improve-promotion-marker:
 	@ARTIFACT="$(SELF_IMPROVE_PROMOTION_ARTIFACT_DIGEST)"; \
 	PLAN="$(SELF_IMPROVE_PROMOTION_PLAN_DIGEST)"; \
@@ -1050,15 +1257,19 @@ self-improve-promotion-marker:
 		[ "$${#VALUE}" -eq 64 ] || { echo "promotion digests must contain 64 characters"; exit 2; }; \
 	done; \
 	case "$$VALIDATE_ONLY" in 0|1) ;; *) echo "SELF_IMPROVE_PROMOTION_VALIDATE_ONLY must be 0 or 1"; exit 2;; esac; \
-	if [ "$$VALIDATE_ONLY" = 1 ]; then echo "PROMOTION_MARKER_VALIDATE_ONLY=ok branch=development"; exit 0; fi; \
-	git rev-parse --verify development^{commit} >/dev/null 2>&1 || { echo "development branch is unavailable"; exit 2; }; \
-	COMMIT=$$(git log development --fixed-strings --grep="Gludd-Self-Improve-Artifact=$$ARTIFACT" --format='%H' -n 1); \
-	if [ -z "$$COMMIT" ]; then echo "PROMOTION_ABSENT"; exit 3; fi; \
-	BODY=$$(git show -s --format='%B' "$$COMMIT"); \
+	if [ "$$VALIDATE_ONLY" = 1 ]; then echo "PROMOTION_MARKER_VALIDATE_ONLY=ok branch=development"; echo "AGENT_NEXT target=self-improve-promotion-marker outcome=planned native_status=0 gate_evidence=false release_ready=false; digest grammar only; no marker or development history was inspected" >&2; exit 0; fi; \
+	git rev-parse --verify refs/heads/development^{commit} >/dev/null 2>&1 || { echo "development branch is unavailable"; exit 2; }; \
+	COMMIT=$$(git log --fixed-strings --grep="Gludd-Self-Improve-Artifact=$$ARTIFACT" --format='%H' -n 1 refs/heads/development --) || { \
+		STATUS=$$?; echo "AGENT_NEXT target=self-improve-promotion-marker outcome=lookup-error native_status=$$STATUS gate_evidence=false release_ready=false; repair the actual Git log failure before marker lookup or cleanup" >&2; exit "$$STATUS"; }; \
+	if [ -z "$$COMMIT" ]; then \
+		echo "PROMOTION_ABSENT"; echo "AGENT_NEXT target=self-improve-promotion-marker outcome=absent native_status=3 gate_evidence=false release_ready=false; no matching development marker; GNU Make returns 2 for this recipe outcome; a plan or absent marker grants no promotion proof" >&2; exit 3; fi; \
+	BODY=$$(git show -s --format='%B' "$$COMMIT" --) || { \
+		STATUS=$$?; echo "AGENT_NEXT target=self-improve-promotion-marker outcome=lookup-error native_status=$$STATUS gate_evidence=false release_ready=false; repair the actual Git show failure before marker verification or cleanup" >&2; exit "$$STATUS"; }; \
 	printf '%s\n' "$$BODY" | grep -Fq "Gludd-Self-Improve-Artifact=$$ARTIFACT" || { echo "artifact marker mismatch"; exit 2; }; \
 	printf '%s\n' "$$BODY" | grep -Fq "Gludd-Self-Improve-Plan=$$PLAN" || { echo "plan marker mismatch"; exit 2; }; \
 	printf '%s\n' "$$BODY" | grep -Fq "Gludd-Self-Improve-Attempt=$$ATTEMPT" || { echo "attempt marker mismatch"; exit 2; }; \
-	echo "PROMOTION_COMMIT=$$COMMIT"
+	echo "PROMOTION_COMMIT=$$COMMIT"; \
+	echo "AGENT_NEXT target=self-improve-promotion-marker outcome=verified native_status=0 gate_evidence=false release_ready=false; exact development marker identity only; verify native acceptance and owned cleanup before durable completion; exact-SHA hosted and deployment proof remain pending" >&2
 
 # Compatibility alias retains one explicit reference boundary; it never fans out.
 test-self-improve-all:

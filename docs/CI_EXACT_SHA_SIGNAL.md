@@ -1,5 +1,28 @@
 # Exact-SHA GHA Signal
 
+## Feature source feedback before promotion
+
+After focused acceptance and a normal source commit, use the existing
+git-push-sandboxcom owner with explicit PUBLISH_PURPOSE=feature-ci, the actual
+feature/** or diagnostic/** expected branch/fullSHA, and independently published
+PUBLISH_BASELINE_REF/PUBLISH_BASELINE_SHA. The baseline may be master, main,
+development or an already-published release-candidate/** branch, independently
+verified at that exact fullSHA with native full branch grammar. This diagnostic
+eligibility grants no candidate readiness or protected-branch publication.
+The
+[feature source contract](features/GITHUB_PUBLICATION_HTTPS.md#feature-source-ci-before-promotion)
+owns native guards, unchanged workflow bytes/history, saved-SHA recording,
+verification and the sequential call to this existing signal owner.
+Canonical mode retains its original release admission and proof requirements.
+
+Build's feature push filter does not create a canonical push run. Explicit
+feature diagnostics use this existing workflow_dispatch route and the existing
+repository credential. Read actual dispatch errors; this interface neither
+changes credentials nor requests workflow-edit consent. Live diagnostic input
+pins both branch and fullSHA before lookup/dispatch and confirms only that SHA.
+A run URL proves visibility, while native CI owners still determine its result.
+Feature to development to master retains all promotion/deployment conditions.
+
 `make ci-push-committed-head` is the release-candidate push path. After it
 pushes and verifies the clean committed HEAD, it invokes
 `make ci-trigger-committed-head`. The trigger target is an idempotent signal:
@@ -77,7 +100,7 @@ discovery, durable dispatch ownership, or full-SHA confirmation.
 The documented behavioral smoke is deterministic and network-free:
 
 ```text
-make ci-trigger-committed-head EXAMPLE=1 REF=release/beta3-candidate REMOTE=sandboxcom REPO=sandboxcom/gludd WORKFLOW='Build and Release' DISCOVERY_POLLS=1 CONFIRM_POLLS=1 POLL_INTERVAL=0
+make ci-trigger-committed-head EXAMPLE=1 REF=feature/contract REMOTE=sandboxcom REPO=sandboxcom/gludd WORKFLOW='Build and Release' DISCOVERY_POLLS=1 CONFIRM_POLLS=1 POLL_INTERVAL=0 PUBLISH_PURPOSE=feature-ci PUBLISH_EXPECTED_BRANCH=feature/contract PUBLISH_EXPECTED_SHA=0123456789abcdef0123456789abcdef01234567 PUBLISH_BASELINE_REF=master PUBLISH_BASELINE_SHA=abcdef0123456789abcdef0123456789abcdef01
 ```
 
 The safe example must print both `GHA-SIGNAL-EXISTING` and an example

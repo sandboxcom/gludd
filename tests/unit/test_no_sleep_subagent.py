@@ -25,39 +25,45 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 
-ALLOWLIST = frozenset({
-    # Daemon/watchdog infrastructure — legitimate sleep-in-loop for background polling.
-    "task_watchdog.py",
-    "azure_event_guard.sh",
-    # Background test runners supervise child processes and emit visible heartbeats.
-    "heavy_sem.py",
-    "run_test_background.sh",
-    "run_ci_shards_parallel.py",
-    "token_window_monitor.py",
-    # Bounded service-readiness loop; it never occupies a delegated agent slot.
-    "smoke_daemon.py",
-    # Bounded infrastructure readiness/locking loops surface attempt heartbeats.
-    "collection_lock.py",
-    "postgres_e2e_runner.py",
-    # Background lifecycle supervisors are signal-stoppable and continuously observable.
-    "e2e_supervisor.py",
-    # Exact gate-tree waits have computed attempt ceilings and emit wait heartbeats.
-    "kill_owned_gate.py",
-    # Native Safari driver readiness has a fixed ten-second deadline and one-second heartbeats.
-    "run_presentation_safari_smoke.py",
-    # The gate watcher has an explicit total timeout and periodic log heartbeats;
-    # termination waits have fixed deadlines and the identity retry is capped at 20 attempts.
-    "start_gate_background.py",
-    # Release-only CI observers are bounded, emit heartbeats, and remain blocked
-    # from delegated-agent prompts by enforce-no-wait.ts.
-    "ci_annotations_poll.py",
-    "ci_await.py",
-    "ci_poll.py",
-    "ci_push_and_verify.sh",
-    "ci_signal_exact_sha.py",
-    # The local-model E2E readiness loop is bounded to 120 seconds and test-owned.
-    "test_llama_3_2_game_gen.py",
-})
+ALLOWLIST = frozenset(
+    {
+        # Daemon/watchdog infrastructure — legitimate sleep-in-loop for background polling.
+        "task_watchdog.py",
+        "azure_event_guard.sh",
+        # Background test runners supervise child processes and emit visible heartbeats.
+        "heavy_sem.py",
+        "run_test_background.sh",
+        "run_ci_shards_parallel.py",
+        "token_window_monitor.py",
+        # Bounded service-readiness loop; it never occupies a delegated agent slot.
+        "smoke_daemon.py",
+        # Bounded infrastructure readiness/locking loops surface attempt heartbeats.
+        "collection_lock.py",
+        "postgres_e2e_runner.py",
+        # Background lifecycle supervisors are signal-stoppable and continuously observable.
+        "e2e_supervisor.py",
+        # Exact gate-tree waits have computed attempt ceilings and emit wait heartbeats.
+        "kill_owned_gate.py",
+        # Native Safari driver readiness has a fixed ten-second deadline and one-second heartbeats.
+        "run_presentation_safari_smoke.py",
+        # The gate watcher has an explicit total timeout and periodic log heartbeats;
+        # termination waits have fixed deadlines and the identity retry is capped at 20 attempts.
+        "start_gate_background.py",
+        # Release-only CI observers are bounded, emit heartbeats, and remain blocked
+        # from delegated-agent prompts by enforce-no-wait.ts.
+        "ci_annotations_poll.py",
+        "ci_await.py",
+        "ci_poll.py",
+        "ci_push_and_verify.sh",
+        "ci_signal_exact_sha.py",
+        # Native command observer owned by run-watched; bounded by explicit
+        # --max-secs/--quiet-secs, emits heartbeats, and drains the exact child
+        # process tree before returning.
+        "stream_command.py",
+        # The local-model E2E readiness loop is bounded to 120 seconds and test-owned.
+        "test_llama_3_2_game_gen.py",
+    }
+)
 
 
 class _PythonSleepInLoopVisitor(ast.NodeVisitor):
@@ -76,9 +82,7 @@ class _PythonSleepInLoopVisitor(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> None:
         function = node.func
-        is_sleep = (
-            isinstance(function, ast.Name) and function.id == "sleep"
-        ) or (
+        is_sleep = (isinstance(function, ast.Name) and function.id == "sleep") or (
             isinstance(function, ast.Attribute) and function.attr == "sleep"
         )
         if self.loop_depth and is_sleep:
@@ -91,9 +95,7 @@ def _python_has_sleep_in_loop(text: str, file_path: Path) -> bool:
         tree = ast.parse(text, filename=str(file_path))
     except SyntaxError as exc:
         relative_path = file_path.relative_to(REPO_ROOT)
-        raise AssertionError(
-            f"Source file is not valid Python: {relative_path}"
-        ) from exc
+        raise AssertionError(f"Source file is not valid Python: {relative_path}") from exc
     visitor = _PythonSleepInLoopVisitor()
     visitor.visit(tree)
     return visitor.found
@@ -124,9 +126,7 @@ def _has_sleep_in_loop(file_path: Path) -> bool:
         text = file_path.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
         relative_path = file_path.relative_to(REPO_ROOT)
-        raise AssertionError(
-            f"Source file is not valid UTF-8: {relative_path}"
-        ) from exc
+        raise AssertionError(f"Source file is not valid UTF-8: {relative_path}") from exc
     if file_path.suffix == ".py":
         return _python_has_sleep_in_loop(text, file_path)
     return _shell_has_sleep_in_loop(text)
@@ -144,9 +144,7 @@ def _collect_sleep_in_loop_files() -> frozenset[str]:
 def test_allowlisted_files_exist() -> None:
     """Every file in ALLOWLIST must exist in scripts/."""
     missing = [f for f in ALLOWLIST if not (SCRIPTS_DIR / f).is_file()]
-    assert not missing, (
-        f"ALLOWLIST entries do not exist in scripts/: {', '.join(sorted(missing))}"
-    )
+    assert not missing, f"ALLOWLIST entries do not exist in scripts/: {', '.join(sorted(missing))}"
 
 
 def test_canonical_disk_alias_requires_no_polling_allowance() -> None:
@@ -159,12 +157,17 @@ def test_disk_alias_polling_contract_is_checked_before_publication() -> None:
     """Execute the native owner plan and retain full-gate authority."""
     result = subprocess.run(
         ["make", "--no-print-directory", "-n", "_pytest-runtime-compatibility-admission"],
-        cwd=REPO_ROOT, capture_output=True, text=True, timeout=20, check=False,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assignments = [
         argument.removeprefix("TESTFILES=")
-        for argument in shlex.split(result.stdout) if argument.startswith("TESTFILES=")
+        for argument in shlex.split(result.stdout)
+        if argument.startswith("TESTFILES=")
     ]
     assert assignments and "tests/unit/test_no_sleep_subagent.py" in assignments[0].split()
     manifest = json.loads((REPO_ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
@@ -195,10 +198,8 @@ def test_allowlist_entries_are_still_valid() -> None:
     re-evaluated — the test flags them as stale."""
     found = _collect_sleep_in_loop_files()
     stale = ALLOWLIST - found
-    assert not stale, (
-        "ALLOWLIST entries no longer contain sleep-in-loop —"
-        " remove them from ALLOWLIST:\n"
-        + "\n".join(f"  - {f}" for f in sorted(stale))
+    assert not stale, "ALLOWLIST entries no longer contain sleep-in-loop — remove them from ALLOWLIST:\n" + "\n".join(
+        f"  - {f}" for f in sorted(stale)
     )
 
 

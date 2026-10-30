@@ -27,7 +27,13 @@ def test_duration_report_preserves_native_two_worker_outcomes(tmp_path: Path, mo
     baseline = [flag for flag in flags if flag not in _DURATION_FLAGS]
     probe = tmp_path / "test_duration_native.py"
     (tmp_path / "conftest.py").write_text(
+        "from pathlib import Path\n"
         "import pytest\n"
+        "def pytest_configure(config):\n"
+        "    physical = Path(__file__).parent.resolve()\n"
+        "    assert config.rootpath == physical\n"
+        "    assert Path(config.getoption('confcutdir')).resolve() == physical\n"
+        f"    assert Path(config.inipath) == Path({str(ROOT / 'pyproject.toml')!r})\n"
         "@pytest.fixture\n"
         "def duration_resource(request):\n"
         f"    if {mode!r} == 'setup' and request.node.name == 'test_native_outcome':\n"
@@ -48,8 +54,13 @@ def test_duration_report_preserves_native_two_worker_outcomes(tmp_path: Path, mo
         f"    if {mode!r} == 'warning': warnings.warn('duration-native-warning', UserWarning)\n",
         encoding="utf-8",
     )
+    physical = tmp_path.resolve()
+    child_configuration = [
+        "-c", str(ROOT / "pyproject.toml"),
+        f"--rootdir={physical}", f"--confcutdir={physical}",
+    ]
     results = [
-        _native_test_files([probe], 2, extra_pytest_args=shlex.join(["-c", str(ROOT / "pyproject.toml"), *options]))
+        _native_test_files([probe], 2, extra_pytest_args=shlex.join([*child_configuration, *options]))
         for options in (baseline, flags)
     ]
     assert results[0].returncode == results[1].returncode

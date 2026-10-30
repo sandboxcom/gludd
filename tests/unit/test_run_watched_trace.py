@@ -136,7 +136,10 @@ def _assert_recorder_arguments(fixture: WatchedTraceFixture, watched_trace_expec
     ]
     if watched_trace_expected:
         expected.append("--pytest-trace")
-    expected.extend(["--", sys.executable, str(fixture.child), "literal child argument"])
+    expected.extend([
+        "--", "/bin/sh", "-c",
+        shlex.join([sys.executable, str(fixture.child), "literal child argument"]),
+    ])
     assert call["argv"] == expected
 
 

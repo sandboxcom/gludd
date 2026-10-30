@@ -6,6 +6,434 @@ its original cold/cached readiness assertions, five-second limit and bounded
 600-second commands remain required. Instrumented measurements do not prove
 a latency improvement and cannot substitute for those two-engine results.
 
+## Guarded hosted archive input (S98.4,2026-10-22 UTC)
+
+Root receives the reviewed private six-file proposal from exact
+5dc22cb9d885636df107dbbda6d28ead94a048c2 on
+release-candidate/v012-git-mutex-20261022. Root alone owns Main/shared/Git.
+The complete proposal and interpreter correction decisions are consumed at
+/tmp/gludd-v012-pages-apt-input-proposal/decision.md. Private bridge/inspection/
+patch-generation files do not land. Existing public research below retains the
+actual failed job/image, primary sources and firsthand issue bodies.
+
+Use the new thin native owner with its only public variable explicit:
+
+```console
+make presentation-browser-apt-source PRESENTATION_BROWSER_APT_VALIDATE_ONLY=1
+```
+
+Mode1 is the default offline plan: no Ansible child, facts or system reads.
+Literal mode0 is wired only into the existing ephemeral GitHub-hosted Linux
+Ubuntu24 x64 Pages jobs. It requires the actual hosted context and gathered
+Ubuntu24.04/noble/x86_64 facts. Never spoof those inputs for local apply. Early
+raw-value capture keeps command/environment/-e values literal before startup.
+Plan/refusal/returned/failed AGENT_NEXT retains actual phase/status, missing
+input and next owner, with gate_evidence=false/release_ready=false. A failed
+preparation stops the workflow before its installer; preserve the native reason
+and change that input before another attempt.
+
+### Native source and write boundary
+
+The native playbook inspects fixed /etc/apt/apt-mirrors.txt and its ubuntu.sources
+binding, refusing missing/non-regular/symlink or unknown inputs. Both source URI
+tokens and complete mirror bytes are validated before either file is changed.
+Mirror bytes must match the exact reviewed Azure HTTP or HTTPS priority1/archive
+HTTPS2/security HTTPS3 list, or the already-repaired last two lines. Known URI
+fields retain case, repeated stanzas, multiple tokens and continuation bytes;
+unknown tokens and empty fields refuse. Each complete original URI field is
+regex-escaped and anchored for native atomic replace; only Azure tokens within
+that validated field are rebound to the reviewed mirror list. Comments and
+other field bytes remain exact. A separate atomic native replace removes only
+the reviewed Azure mirror line. Suites/components/signatures, cloud-init,
+acquire options, packages and browsers retain their inputs, priorities2/3 and
+modes. The trusted ephemeral runner's parent paths are assumed; no concurrent
+hostile filesystem guarantee is claimed.
+
+Original-source review of a403ed858bb561f7bbc8353c54ad057be4020f89 retains two
+concrete failures of proof: a direct Azure source could be rewritten before an
+unreviewed mirror file was refused, and an unanchored URL replacement could
+also alter comments or other Deb822 fields. Additive confined native controls
+pair each direct HTTP/HTTPS binding with an unreviewed mirror file and require
+unchanged bytes/modes/ownership/inode/mtime. Separate valid native controls
+retain comment/metadata URLs while rewriting case-varied, repeated, multi-token
+and continued URI fields, then require idempotence. At proposal time these
+controls and their repair have not run. Record their actual RED/GREEN receipts
+before claiming acceptance; no hosted, installer, browser or release outcome
+follows source review.
+
+Actual review repair starts from that frozen a403 source in
+feature/v012-original-review-repairs-20261026. The tests-only native RED
+reports four browser failures plus the separate release-fixture repr failure:
+5FAIL/7.96s/native2/9.632s, at
+.gate-logs/observed/v012-review-apt-repr-red/v012-review-apt-repr-red311-a403-20261026.json.
+The first complete receiving retains549PASS/5FAIL/105.86s/native2/107.475s:
+v012-review-root-receiving/v012-review-root-receiving311-a403-20261026.json.
+Its five failures exposed doubled backslashes in the proposed Jinja suffix,
+which matched literal escape text and left valid URI fields unchanged.
+Only that suffix was corrected to single backslashes. No test was relaxed.
+The complete native browser owner then passes32/35.84s/native0/37.254s:
+v012-review-apt-corrected/v012-review-apt-corrected311-a403-20261027.json.
+
+The final deduplicated19 whole-owner browser/privacy union passes554 EACH:
+3.11 in106.76s/native108.332s and3.12 in115.86s/native117.729s. Exact receipts
+are v012-review-root-receiving/v012-review-root-receiving{311,312}-corrected-a403-20261027.json
+under .gate-logs/observed in the same isolated checkout. Both sessions are
+drained; native observed-status verifies inactive/passed0 and exact commands.
+Each native trace has1111events/554paired protocols, zero issues, failures or
+unfinished nodes. Ruff/strict typing, environment-write, line and logical-Make
+checks pass; the six-path staged guard passes3.876s with no changed-production
+clone scan needed. Independent review approves source only and preserves all
+original browser function bodies/assertions. Final prose/normal collection and
+commit remain separate; canonical gate, current-SHA hosted installer/browser,
+deployment, ZDD and release acceptance remain required.
+
+Installed Ansible's native stat/slurp/assert/replace provide inspection,
+validation, check mode and atomic writes. apt_repository/deb822_repository would
+introduce unnecessary source regeneration and python-apt/debian requirements;
+no new library, parser, runner, observer or cache is added. The playbook binds
+ansible_python_interpreter to ansible_playbook_python. Main ansible.cfg has no
+interpreter_python binding and is unchanged. A native no-extra-vars control
+retains the earlier actual discovery-warning/executable-path RED, then passes
+with the controller binding; warning settings/assertions are not suppressed.
+The fixed localhost/local/forks1/become invocation owns its unique Ansible TMP
+paths and cleanup. Native child17 remains recipe17/enclosing Make2.
+
+Both the browser matrix and JS-coverage job prepare the source immediately
+before the unchanged600-second with-deps installer and real launch probe.
+Original20-minute jobs, engines/packages, needs/master deployment condition,
+JS85/75BOTH, Chromium/WebKit readiness, ZDD and all promotion gates remain.
+Preparation edits the source preference; it authenticates or installs no package
+and proves no current server outage, IPv6/DNS cause or speed gain. Unknown runner
+layouts need a reviewed source-input change; no guessed rewrite or unchanged retry.
+
+### Actual canonical receiving
+
+Canonical tests-first receiving retains23FAIL1.24s/native2/about2.1s for the
+missing target/playbook/contract/workflow, not a collection error:
+.gate-logs/observed/pages-apt-receiving-red/v012-pages-apt-receiving-red311.json.
+The actual Main owner then passes23/17.31s/native0/about18.1s:
+.gate-logs/observed/pages-apt-receiving/v012-pages-apt-receiving311.json.
+Native fixtures execute installed Ansible against owned TMP files only, retaining
+unchanged source/unrelated bytes, mode/uid/gid, idempotent inode/mtime, check-mode
+no-write, ten input/platform refusals, real denied atomic write and temp cleanup.
+Actual Linux facts/become/runtime source files and acquisition remain hosted proof.
+
+One cheap native environment/-e literal-mode case is appended as family175
+presentation-hosted-apt-literal-mode in the existing first compatibility cohort.
+All174 predecessors/order remain; no new phase/runner or whole Ansible cohort
+is added to the90/60 admission. Three actual routing pins first fail0.93s in
+pages-apt-routing-red/v012-pages-apt-routing-red311; after manifest/wiring repair,
+the complete eight required pins pass1.79s/terminal0. An E501 on the new selector
+is repaired by string reflow, retaining all assertions and the<2500 limit.
+Ruff and three separate strict scopes pass; target contract281, actual safe plan
+and1160targets/zero duplicates pass. Full receiving/coverage and normal collection
+remain required; no family is marked repaired by these focused results.
+
+The first expanded644-case coverage attempt retains22FAIL/622PASS151.81s,
+native1/153.2s at coverage-files/20261022T193654Z-30330-cfb11542. Six additional
+independent routing-count literals still expected174; that failure precedes
+coverage reporting, so no passing coverage audit is claimed. The subsequent
+204-case route attempt retains23FAIL/181PASS36.84s/native2/about37.7s at
+pages-apt-complete-routing/v012-pages-apt-complete-routing311: its attempted
+multi-match text edit refused6matches, but Root's transport batch incorrectly
+continued to dependent checks. Preserve both failures. Six exact-context edits
+now conform each count to175, retain every predecessor/slice and add the exact
+new tail/param case. Never weaken the count assertions or ignore an edit refusal.
+The initial contract addition also retains2504-line refusal; compacting only the
+related dependency target's variable-array formatting preserves identical inputs
+and restores<2500. Eight required pins pass1.77s/terminal0 after these corrections.
+
+For future promotions, inspect all independent count literals and open-ended
+tail pins, not only the top constant. Finish complete routing owners before
+coverage; keep the complete unchanged coverage profile separate from unrelated
+instrumented repository scans. Stop dependent mutations/tests on any nonzero
+native edit/static result. A yielded launch or a retained earlier green does not
+satisfy that dependency. The failed644 cohort is never relabeled as a passing run.
+
+Corrected complete routing receiving passes204/52.04s/native0/about53.1s:
+pages-apt-complete-routing/v012-pages-apt-complete-routing-fixed311. The
+unchanged documented six-owner source coverage then passes250/27.41s/native0/
+about28.8s at coverage-files/20261022T194250Z-36826-bed52902; immutable audit
+.gate-logs/coverage-20261022T194319Z.json measures96.4line/90.3branch, both
+whole files above75BOTH and85aggregate unchanged. Full raw JSON is
+.gate-logs/coverage-presentation-browser-pages-input-canonical311.json; XML is
+/tmp/gludd-v012-pages-input-canonical-coverage311.xml. The other311callers passed
+in the retained failed644 replay; only routing expectation code changed after it.
+Neither622passes nor the separate canonical profile relabels that failed run.
+
+The complete corrected Python3.12 combined union, including all23real-Ansible
+cases and both whole routing owners, passes668/103.70s/native0/105.025s:
+.gate-logs/observed/pages-input-combined-receiving/v012-pages-input-combined-receiving312.json.
+Its tested source is b2573458527a55622570d54a26c7694ed8e813682ebf0b365c98958979256d58;
+native argv retains every selector and fatal warnings, with no skips. XML/raw
+stay /tmp/gludd-v012-pages-input-combined-receiving312.{xml,log}. No further
+code/Make/config/test edit follows these terminal results; receipt prose only.
+Normal collection and new-SHA source review remain pending, before native
+family repair/guarded publication and actual hosted proof.
+
+The existing complete six-owner coverage recipe below retains both entire
+Python sources and85aggregate/75each LINE AND BRANCH. The new Make/YAML fixtures
+are behavioral acceptance, not Python coverage of those unchanged controllers.
+Repeat the complete affected-owner union on312 without syncing a live prefix;
+keep every global check in its canonical full gate. Source review, guarded batch
+publication, actual hosted source preparation followed by the original installer/
+launch and both browser/JS gates, exact-SHA CI/deployment and promotion remain
+pending. All seven release tasks stay unchecked.
+
+### URI field review correction
+
+Independent review of exact ad4f92abc025cd416d0c72d822270336901ba00a is
+CHANGES REQUIRED: /tmp/gludd-v012-pages-input-ad4f92-source-review.md.
+The binding matcher requires whitespace and a nonempty value, so additional
+URIs:unknown, unspaced duplicate and empty URIs: fields are invisible to the
+existing allowlist/count/uniqueness assertions. The minimal reviewed correction
+is consumed from /tmp/gludd-v012-pages-input-ad4f92-URI-binding-correction.patch.
+Retain that rejection and immutable candidate; its23/668 earlier passes did not
+exercise this boundary.
+
+Receive the three additive native refusal cases first. Both unspaced controls
+fail4.01s/native2/4.9s and the empty-field control fails2.23s/native2/2.9s:
+.gate-logs/observed/pages-uri-binding-red/v012-pages-uri-binding-red311.json and
+v012-pages-empty-uri-red311.json. Actual Ansible incorrectly reports prepared
+and mutates the owned mirror fixture. Capture every URIs field, including empty
+or unspaced values, so the original assertions reject before that atomic write.
+All23 predecessor cases, failure status, no-prepared and byte/mode assertions
+remain unchanged; no test exception or new parsing dependency is introduced.
+
+The complete26-case owner plus59 fixture-collision controls passes85 per
+runtime:31125.06s/native0/25.872s and31227.97s/native0/29.146s. Native receipts:
+.gate-logs/observed/pages-uri-binding/v012-pages-uri-binding311.json and
+v012-pages-uri-binding312.json; raw/XML are
+/tmp/gludd-v012-pages-uri-binding{311,312}.{log,xml}. Ruff and separate complete
+strict test-owner checking pass. This one-line YAML source correction changes
+no Python production source or coverage profile. Existing85aggregate/75each
+LINE AND BRANCH, fatal warnings and full gates remain required. Normal collection,
+independent successor source review, clean-SHA native family repair and actual
+hosted installer/browser/JS/deployment proof remain pending; do not relabel
+focused fixture success as acquisition or release acceptance.
+
+Rollback is a reviewed revert of this source change on a new candidate. Fresh
+hosted runners retain their image defaults; no persistent service/data migration
+exists. Never restore guessed remote /etc bytes or continue after failed prep.
+
+## Bounded public dependency research (S98.4, 2026-10-22 UTC)
+
+Actual candidate eb772 Pages39826135878 fails Chromium dependency acquisition:
+the existing600s command returns124 while azure.archive.ubuntu.com font
+downloads stall. The retained job log is
+/tmp/gludd-v012-candidate-hosted-job-log-eb772-pages.log. This establishes
+neither a general mirror outage nor an IPv6/DNS cause. No unchanged retry or
+longer timeout follows. Existing install/launch assertions, both browser engines,
+JS coverage, ZDD and85/75 LINE AND BRANCH remain required.
+
+Local tests and exact pushed-SHA GHA remain separate evidence. Candidate pushes
+run validation; they do not deploy Pages or publish a release. The existing
+[Pages workflow](../../.github/workflows/pages.yml) deploys only a master push
+once validate and javascript-coverage pass. The existing [Build workflow](../../.github/workflows/build.yml)
+publishes version-tagged releases after its required job fan-in. A green candidate
+run cannot replace those deployment and publication proofs.
+
+Root receives the concrete private proposal
+/tmp/gludd-v012-browser-source-inspection-proposal/decision.md from
+1ca50fa574acea09aaa880f986496f5587d16819 on
+release-candidate/v012-git-mutex-20261022. Root remains the sole Main/shared/Git
+writer. The prior native trace change's normal hooks selected129192 of129216
+collected,24deselected/0errors47.81s/native53.2s in
+.gate-logs/observed/test-count/20261022T184335Z-95128-f820750b.json.
+Independent APPROVE SOURCE ONLY is fully consumed at
+/tmp/gludd-v012-trace-1ca50fa-source-review.md. It grants no gate or hosted proof.
+
+The existing Make source-inspection pattern and installed mature curl provide
+the missing research interface; no production parser, daemon, runner or cache.
+The two targets have zero public variables:
+
+```console
+make inspect-presentation-browser-dependency-source
+make inspect-presentation-browser-dependency-source-live
+```
+
+The first prints an offline fixed plan. The second explicitly retrieves nine
+public inputs: locked Playwright1.63.0 dependency/escalation code and native
+packages, upstream APT manual sources, the current runner source tree, two
+apt scripts at the observed failed-image tag and two fixed-repository searches.
+The lock-binding test retains the exact presentation-test version. Upstream
+main-branch context cannot certify the failed hosted image. Its initial tail
+lacks the image version; the native setup-context proof below supplies it.
+
+Each request clears private environment/config/proxy/auth inputs and uses
+HTTPS/TLS,10s connect/20s total/2MiB,0retries/0redirects. Native begin/end labels,
+raw bodies, HTTP/effective URL and native status stream visibly. A failure stops
+later requests and retains earlier raw evidence. AGENT_NEXT names the actual
+failed source, required changed input and no unchanged retry. Plan/retrieval
+guidance says research_only=true, gate_evidence=false and release_ready=false;
+issue relevance and apt repair stay unverified even for exit0 or empty results.
+The two issue searches retain exact repos, Azure archive and Connection timed
+out phrases, created before2026-01-01, oldest first, five results and one page. Inspect actual firsthand
+bodies/dates/resolution before using them as long-lived practitioner evidence.
+
+Canonical tests-first receiving retains16FAIL/0.79s/native2/about1.6s:
+.gate-logs/observed/browser-source-receiving-red/v012-browser-source-receiving-red311.json.
+Adding the actual owner yields16PASS/4.57s/native0/about5.2s:
+.gate-logs/observed/browser-source-receiving-green/v012-browser-source-receiving-green311.json.
+These are native fake-curl protocol tests, with system/package/auth tripwires,
+ordinary/-e paths, native22/28/47 failures and retained prior raw bodies.
+They prove no real URL availability, issue relevance, apt or hosted repair.
+All nine predecessor assertions and seven result-guidance cases remain.
+
+The native280-target contract and actual offline plan pass. Actual retrieval
+then exposes two research-input failures: apt-conf-noble returns28/TLS timeout
+both inside and outside the sandbox; native receipts browser-source-public/
+v012-browser-source-public-first and v012-browser-source-public-network-route
+retain their separate bounded failures. No unchanged third retry follows.
+Use the reachable GitHub-hosted upstream APT manual sources instead, explicitly
+as upstream context rather than a verified Noble package version.
+Five native input controls fail before that URL/label change, then all16 pass
+4.62s; receipts browser-source-endpoint-red/v012-browser-source-endpoint-red311
+and browser-source-endpoint-green/v012-browser-source-endpoint-green311 retain
+5FAIL/11PASS and16PASS.
+
+The next fetch preserves those four successful sources but returns22/HTTP404
+for the proposed runner manifest path:
+browser-source-public/v012-browser-source-public-upstream. Replace that proven
+missing input with the official bounded recursive source-tree API. Four native
+input controls fail before the change, then all16 pass4.55s; retain the
+browser-source-context-red/green receipts with matching v012 run IDs.
+Actual eight-source retrieval passes0/1.701s:
+.gate-logs/observed/browser-source-public/v012-browser-source-public-tree.json.
+The returned tree identifies build.ubuntu-24_04.pkr.hcl and
+configure-apt-sources.sh; a guessed manifest URL is never availability evidence.
+
+The first oldest-first issue cohort largely concerns stale packages,404s,
+caching and unsupported versions. Keep its raw output; mere search hits do not
+prove relevance. Refine only the two fixed queries with the exact Connection
+timed out phrase. All repos/date/page/size/transport bounds and raw-result
+assertions remain. Four native controls fail1.75s before the query change,
+then all16 pass4.58s. Receipts remain browser-source-query-red/
+v012-browser-source-query-red311 and browser-source-query-green/
+v012-browser-source-query-green311. The refined eight-source retrieval
+passes0/1.900s,439036bytes, at tested source
+ce5e6bf7577080842ddd29ebeefa6972d3764ab244349834fa77436cfeb2afb5:
+.gate-logs/observed/browser-source-public/v012-browser-source-public-timeouts.json.
+Raw bodies remain /tmp/gludd-v012-browser-source-public-timeouts.log.
+
+### Bind source inspection to the actual hosted image
+
+ci-job-log intentionally displays only the final400 lines. Their missing
+ImageVersion was a display limit, not proof that setup metadata was unavailable.
+The existing exact job context owner retrieves the actual setup without a new
+observer/cache. Historical exact example:
+
+```console
+make ci-job-failure-context RUN=39826135878 JOB=119989801864 PATTERN='Included Software:' BEFORE=5 AFTER=3 MAX_MATCHES=1 CI_JOB_CONTEXT_VALIDATE_ONLY=0
+```
+
+Native receipt candidate-hosted-image-context/
+v012-candidate-hosted-image-context-eb772-pages passes retrieval0/about1.7s.
+The actual failed job reports Ubuntu24.04 Version20261012.334.1, with source
+release tag ubuntu24/20261012.334. This is metadata evidence, not a passed job
+or proof that no later step changed effective configuration.
+
+The same public owner adds the tree-confirmed configure-apt-sources.sh as its
+ninth request. Six canonical request/count controls fail with10predecessors
+passing before the extension; all16 then pass4.81s. Retain
+browser-source-apt-sources-red/v012-browser-source-apt-sources-red311 and
+browser-source-apt-sources-green/v012-browser-source-apt-sources-green311.
+The two apt script requests then bind to the observed image tag, while the
+discovery tree and upstream APT manual remain explicitly upstream context.
+No repository/date/page/curl-bound or prior native assertion is removed.
+
+Actual pinned receiving runs the280-target contract, offline plan, complete
+16-case owner (PASS4.80s) and all9HTTP200 fetches in one native command chain:
+.gate-logs/observed/browser-source-pinned-receiving/v012-browser-source-pinned-receiving311.json,
+native0/about8.4s. Full source bodies and XML stay in
+/tmp/gludd-v012-browser-source-pinned-receiving311.log and .xml. This is source
+retrieval plus focused acceptance, never actual package acquisition.
+
+The [tagged mirror-source script](https://raw.githubusercontent.com/actions/runner-images/ubuntu24/20261012.334/images/ubuntu/scripts/build/configure-apt-sources.sh)
+declares Azure HTTP priority1, Ubuntu archive HTTPS2 and security HTTPS3 behind
+mirror+file. The [tagged acquire configuration](https://raw.githubusercontent.com/actions/runner-images/ubuntu24/20261012.334/images/ubuntu/scripts/build/configure-apt.sh)
+declares bounded retries/timeouts. Prefer a guarded change to that known mirror
+preference over rewriting suites/components/signatures or bypassing the complete
+dependency installer. Actual runtime files must still match the accepted
+format before mutation, and the changed source needs actual hosted acceptance.
+
+### Actual primary and long-lived practitioner findings
+
+The [pinned Playwright dependency implementation](https://raw.githubusercontent.com/microsoft/playwright/v1.63.0/packages/playwright-core/src/server/registry/dependencies.ts)
+runs apt update/install for its complete native package set and may elevate
+through sudo/sh. An unverified outer APT_CONFIG variable is insufficient to
+prove the elevated child's effective configuration. The [upstream APT manual source](https://raw.githubusercontent.com/Debian/apt/main/doc/apt.conf.5.xml)
+documents configuration precedence. The [current runner apt configuration](https://raw.githubusercontent.com/actions/runner-images/main/images/ubuntu/scripts/build/configure-apt.sh)
+bounds x64 acquisition retries/timeouts and logs effective configuration; its
+comments explain that retries at one URI delay trying a later mirror. This
+supports investigating effective source/configuration inputs, not asserting
+the failed hosted image already has those current settings.
+
+The narrowed runner search reports7total with the first5retained; the
+Playwright search reports1. Actual metadata and the following issue bodies
+were inspected from that immutable raw receipt:
+
+| Firsthand issue and created date | Observed report and limit |
+| --- | --- |
+| [runner-images675](https://github.com/actions/runner-images/issues/675),2020-04-04 | Intermittent package connection timeouts at the Azure archive; frequency is an author's estimate, not our measurement |
+| [runner-images7048](https://github.com/actions/runner-images/issues/7048),2023-02-06 | Package acquisition fails while apt update appears unaffected |
+| [Playwright20678](https://github.com/microsoft/playwright/issues/20678),2023-02-06 | Local execution works, GHA with-deps acquisition fails; omitting dependencies leaves missing browser requirements |
+
+These older Ubuntu18/22 reports establish a recurring failure class, not the
+cause or fix of our Ubuntu24 timeout. Their closed metadata does not prove a
+maintainer resolution; comments were not retrieved. Keep the full dependency
+installer and launch probe. Root assigns a confined required apt-input repair
+proposal to publication_repair_design; no Main/system mutation, source mirror
+success or hosted repair is certified by that assignment or this research.
+
+### Focused acceptance must not recurse into global checks
+
+The initial complete caller union passes312 under Python3.11 in121.28s,
+native0/122.423s:
+.gate-logs/observed/browser-source-callers/v012-browser-source-callers311.json.
+Its full guardrails file also executes global collection/lint/Ansible owners.
+The matching Python3.12 union times out124/130.558s after90.539s quiet:
+.gate-logs/observed/browser-source-callers/v012-browser-source-callers312.json.
+This is not a completed cohort or an assertion failure. Its trace retains
+174finished protocols and an unfinished
+TestMakefileTargets::test_make_test_count_passes. No XML completion is claimed.
+make ps afterward shows only the two known watchdogs, no test/audit child.
+
+Do not guess the blocked owner from the earlier runtime's trace: the3.11 live
+snapshot showed ansible-syntax, whereas the3.12 terminal trace identifies
+test-count. The existing native summary distinguishes both. Preserve the
+600s child/660s pytest collection bounds,300s Ansible bound and all original
+assertions. The accidental focused-scope expansion, not a production repair,
+is corrected here; no larger retry or claimed full-gate success follows.
+
+The corrected focused scope keeps all complete new/browser/Make/fixture/docs
+owners above, replaces the unrelated full guardrails file with its three
+Make-structure nodes and complete affected prompting/integrity/completion/
+evidence/prompt-diet classes, and retains both internal-link checks. This
+changes only the focused invocation; the full gate still selects every global
+guardrail test. Normal per-commit collection remains mandatory. The3.11
+broader receipt retains its own actual scope; never relabel it as a new run.
+The corrected Python3.12 complete affected-owner/class union passes261/45.58s,
+native0/46.898s at tested source
+7a29042ce02509d88f4f4352cf80d2ab74c2713d80fc0d0498423d24dde83aa6:
+.gate-logs/observed/browser-source-focused-callers/v012-browser-source-focused-callers312.json.
+The receipt records every exact selector and native argv; its XML is
+/tmp/gludd-v012-browser-source-focused-callers312.xml. Whole source owners
+remain new inspector, SearXNG inspection, target contract, Make layout/deep,
+presentation Make, status snapshot, oversized documents and fixture collisions.
+Policy scope is the three static TestMakefileTargets nodes plus complete
+TestBashGuardrailPrompting, TestGuardrailIntegrity, TestTaskCompletionGuardrail,
+TestEvidencePolicyGuardrail and TestSystemPromptDiet classes, followed by the
+two original internal-link nodes. Full gate/global collection evidence remains
+missing; this result never supersedes the timed-out broader receipt. The3.11
+broader312-case result covers these unchanged code selectors; do not replay it
+solely to produce matching counts after receipt-only prose changes.
+
+Required focused receiving now has the scoped results above. Normal per-commit
+collection and exact-source review of the new research owner remain pending. This diagnostic interface does not
+expand timing-sensitive admission selectors or certify any release task;
+all7S98 items stay unchecked.
+
 ## Tool and collection boundary
 
 Use the Python Playwright public CDP session to collect Chromium precise V8
@@ -826,3 +1254,57 @@ checkpoints and next native Make actions. Generated current JSON belongs only
 to existing pipeline-status/ci-await/observer/registry producers. Pipeline and
 gate repairs precede preparing completed backlog items as the user requested.
 ```
+
+## Active native mode-payload witness (2026-10-27 UTC)
+
+Final original-source review of7eca8a3269fba7f25c1e72cd307e116db42f2b94 retains
+a test-evidence gap: the original mode guard asserts no marker evaluation but
+has no active unguarded same-input witness, and its marker path is unquoted.
+This does not demonstrate a production guard defect. Keep all original guard
+assertions, the complete three command/environment/environment-override origins,
+actual project Make entrypoint, explicit copied environment and15-second child
+bound. A separate owned .PHONY Make target expands the same MODE variable,
+exact payload and origin. Its space-bearing owned marker must contain unsafe;
+remove only that owned witness before the existing guarded no-evaluation check.
+Use shlex.quote for the owned marker path; retain unrelated environment carriers.
+
+The real tests-first control adds that witness but keeps the old unquoted
+payload construction: all three origins fail on the missing full space-bearing
+marker path. They join two independently owned repr failures, with the logical
+Make AST control passing, at v012-final-review-red/
+v012-final-review-red311-a7a2cc2-20261027.json:5FAIL/1PASS18.50s/native19.855s.
+Changing only marker quoting and the two repr fields makes the identical cohort
+6PASS20.61s/native22.002s at v012-final-review-green/
+v012-final-review-green311-a7a2cc2-20261027.json. These registered repair-checkout
+receipts prove the active payload and guarded refusal on this scope, not hosted
+browser/coverage, installer, apt mutation, runtime performance or release proof.
+The pipeline audit records the separate strict-import prerequisite and complete
+receiving/normal-collection/final-review obligations. Preserve the existing
+primary dependency research and its bounded forum-search limitations above;
+no new upstream bug or public research result is inferred from this fixture gap.
+
+### Complete affected-owner receiving before source checkpoints
+
+The frozen repair working snapshot passes all128 cases in these four complete
+owners on EACH installed runtime: test_collection_hook_environment.py,
+test_make_uv_execution_boundary.py, test_presentation_browser_apt_source.py and
+test_collection_lock.py. Python3.11.14 reports107.17s/native109.061s at
+v012-final-review-receiving/v012-final-review-receiving311-a7a2cc2-20261027.json;
+Python3.12.15 reports111.33s/native113.473s at the matching312 receipt. Both
+exact sessions drain and native observed-status confirms inactive/passed/exit0.
+Each trace has259events/128 complete pairs/zero issues, unfinished or failures.
+These600/180 diagnostics use ordinary project configuration, fatal warnings,
+one outer worker, literal ID= and the selected installed tuple/UV0.13.1 in
+both watcher and actual CMD. No production90/60 or canonical21600 bound changes.
+
+Independent delta review retains all333 original assertion ASTs across the four
+owners, with no stale donor baseline replacing Main C. The existing apt control
+adds the active witness; other original function bodies and runtime imports
+remain. Source review also covers only the owned TASKS624 insertion, preserving
+all328 states/order and2499lines. These are four-owner WORKING-snapshot receipts
+before the separate privacy/typing and browser-witness source commits; they do
+not certify an isolated earlier partial checkpoint. Normal hooks/fresh collection,
+Main receiving/final immutable source rebinding, the corrected-source original
+runtime, canonical gate/global85aggregate75per-file LINE AND BRANCH BOTH,
+canonical exact-SHA push CI, master ZDD and fresh signed all-assets release stay
+required. Earlier C/a403 adverse decisions and every failed receipt remain.

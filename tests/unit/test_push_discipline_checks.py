@@ -5,8 +5,12 @@ Makefile targets, guard scripts, plugin files, and their wiring.
 """
 
 import re
+import sys
+from collections.abc import Callable
 from pathlib import Path
 
+import pytest
+from scripts.check_make_target_contract import _stanzas
 from scripts.makefile_layout import compose_makefile
 
 from tests.unit.test_ci_interaction_discipline import _verdict_source
@@ -47,24 +51,24 @@ def plugin_exists(name: str) -> bool:
 class TestNoPushWhileCIPending:
     """P01: _push-rate-guard blocks push when CI is in_progress."""
 
-    def test_push_rate_guard_exists(self):
+    def test_push_rate_guard_exists(self) -> None:
         assert guard_exists_in_makefile("_push-rate-guard"), "P01: _push-rate-guard missing from Makefile"
 
-    def test_ci_push_guard_checks_in_progress_status(self):
+    def test_ci_push_guard_checks_in_progress_status(self) -> None:
         script = SCRIPTS_DIR / "ci_push_guard.py"
         assert script.exists(), "P01: scripts/ci_push_guard.py missing"
         content = script.read_text()
         assert "in_progress" in content, "P01: ci_push_guard.py does not check in_progress status"
         assert "_ACTIVE_STATUSES" in content, "P01: ci_push_guard.py lacks _ACTIVE_STATUSES tuple"
 
-    def test_push_rate_guard_calls_ci_push_guard(self):
+    def test_push_rate_guard_calls_ci_push_guard(self) -> None:
         text = makefile_text()
         idx = text.find("_push-rate-guard:")
         assert idx != -1
         block = text[idx : idx + 800]
         assert "ci_push_guard.py" in block, "P01: _push-rate-guard does not call ci_push_guard.py"
 
-    def test_ci_push_guard_blocks_when_active(self):
+    def test_ci_push_guard_blocks_when_active(self) -> None:
         script = SCRIPTS_DIR / "ci_push_guard.py"
         content = script.read_text()
         assert "CI BUSY" in content or "return 1" in content, "P01: ci_push_guard.py does not block on active CI"
@@ -76,21 +80,21 @@ class TestNoPushWhileCIPending:
 class TestCIBusyOnAllPushTargets:
     """P02: Every push target invokes a CI-busy guard."""
 
-    def test_git_push_sandboxcom_has_push_rate_guard(self):
+    def test_git_push_sandboxcom_has_push_rate_guard(self) -> None:
         assert target_uses_guard("git-push-sandboxcom", "_push-rate-guard"), (
             "P02: git-push-sandboxcom does not use _push-rate-guard"
         )
 
-    def test_development_push_has_ci_busy_check(self):
+    def test_development_push_has_ci_busy_check(self) -> None:
         assert target_uses_guard("development-push", "ci-busy-check"), (
             "P02: development-push does not use ci-busy-check"
         )
 
-    def test_batch_push_has_ci_related_guards(self):
+    def test_batch_push_has_ci_related_guards(self) -> None:
         text = makefile_text()
         idx = text.find("batch-push:")
         assert idx != -1
-        block = text[idx : idx + 300]
+        block = _stanzas(text)["batch-push"]
         has_guard = "_stash-before-push-guard" in block or "_push-rate-guard" in block or "_ci-restart-cap" in block
         assert has_guard, "P02: batch-push lacks CI-related guards"
 
@@ -101,21 +105,21 @@ class TestCIBusyOnAllPushTargets:
 class TestNoCommitThreshold1:
     """P03: COMMIT_THRESHOLD=1 must be blocked by policy and mechanism."""
 
-    def test_commit_threshold_1_is_blocked_in_makefile(self):
+    def test_commit_threshold_1_is_blocked_in_makefile(self) -> None:
         text = makefile_text()
         idx = text.find("batch-push:")
         assert idx != -1
-        block = text[idx : idx + 500]
+        block = _stanzas(text)["batch-push"]
         assert "COMMIT_THRESHOLD=1" in block and "BLOCKED" in block, "P03: batch-push does not block COMMIT_THRESHOLD=1"
 
-    def test_batch_push_default_threshold_is_5(self):
+    def test_batch_push_default_threshold_is_5(self) -> None:
         text = makefile_text()
         idx = text.find("batch-push:")
         assert idx != -1
-        block = text[idx : idx + 500]
+        block = _stanzas(text)["batch-push"]
         assert "COMMIT_THRESHOLD:-5}" in block or "THRESHOLD=5" in block, "P03: batch-push default threshold is not 5"
 
-    def test_agents_md_mentions_no_commit_threshold_1(self):
+    def test_agents_md_mentions_no_commit_threshold_1(self) -> None:
         content = agents_text()
         assert "COMMIT_THRESHOLD=1" in content, "P03: AGENTS.md does not mention COMMIT_THRESHOLD=1"
 
@@ -126,20 +130,20 @@ class TestNoCommitThreshold1:
 class TestPushToPushInterval:
     """P04: Push cooldown enforces minimum interval between pushes."""
 
-    def test_push_cooldown_seconds_var_exists(self):
+    def test_push_cooldown_seconds_var_exists(self) -> None:
         text = makefile_text()
         assert re.search(r"^PUSH_COOLDOWN_SECS\s*\?", text, re.MULTILINE), (
             "P04: PUSH_COOLDOWN_SECS variable missing from Makefile"
         )
 
-    def test_push_cooldown_default_at_least_120(self):
+    def test_push_cooldown_default_at_least_120(self) -> None:
         text = makefile_text()
         match = re.search(r"^PUSH_COOLDOWN_SECS\s*\?\=\s*(\d+)", text, re.MULTILINE)
         assert match, "P04: PUSH_COOLDOWN_SECS not found with default value"
         cooldown = int(match.group(1))
         assert cooldown >= 120, f"P04: PUSH_COOLDOWN_SECS={cooldown}, expected >= 120"
 
-    def test_push_rate_guard_checks_cooldown(self):
+    def test_push_rate_guard_checks_cooldown(self) -> None:
         text = makefile_text()
         match = re.search(
             r"^_push-rate-guard:[^\n]*\n(?P<body>(?:\t.*\n)+)",
@@ -152,7 +156,7 @@ class TestPushToPushInterval:
             "P04: _push-rate-guard does not check push cooldown"
         )
 
-    def test_push_timestamps_tracked_in_state_file(self):
+    def test_push_timestamps_tracked_in_state_file(self) -> None:
         text = makefile_text()
         assert "gludd-watchdog-push-timestamps.json" in text, "P04: push timestamp state file not tracked"
 
@@ -160,20 +164,54 @@ class TestPushToPushInterval:
 # ── P05: Verify remote after every push ───────────────────────────────
 
 
+@pytest.fixture
+def native_verify_remote_rule() -> str:
+    source = (ROOT / "make/30-ci-and-release.mk").read_text()
+    marker = "\nverify-remote:"
+    assert source.count(marker) == 1
+    return "verify-remote:" + source.split(marker, 1)[1].split("\n\n", 1)[0] + "\n"
+
+
 class TestVerifyRemoteAfterPush:
     """P05: verify-remote must confirm remote tip matches local."""
 
-    def test_verify_remote_target_exists(self):
+    def test_verify_remote_target_exists(self) -> None:
         assert guard_exists_in_makefile("verify-remote"), "P05: verify-remote target missing from Makefile"
 
-    def test_verify_remote_compares_sha(self):
+    def test_verify_remote_compares_sha(self) -> None:
         text = makefile_text()
-        idx = text.find("verify-remote:")
-        assert idx != -1
-        block = text[idx : idx + 500]
+        match = re.search(
+            r"^verify-remote:[^\n]*\n(?P<body>(?:\t.*\n)+)", text, re.MULTILINE,
+        )
+        assert match is not None
+        block = match.group("body")
         assert "git ls-remote" in block and "VERIFIED" in block, (
             "P05: verify-remote does not compare remote SHA to local"
         )
+
+    @pytest.mark.parametrize("prefix", ["@", "+@", "-@"])
+    def test_verify_remote_reads_complete_native_rule(
+        self, monkeypatch: pytest.MonkeyPatch, native_verify_remote_rule: str, prefix: str,
+    ) -> None:
+        source = native_verify_remote_rule.replace("\t@", "\t" + prefix, 1)
+        padding = "\t# " + "owned native guidance " * 40 + "\n"
+        source = source.replace("\n", "\n" + padding, 1)
+        assert source.index("git ls-remote") > 500
+        monkeypatch.setattr(sys.modules[__name__], "makefile_text", lambda: source)
+        self.test_verify_remote_compares_sha()
+
+    @pytest.mark.parametrize("missing", ["git ls-remote", "VERIFIED", "both"])
+    def test_verify_remote_rejects_neighboring_recipe_decoys(
+        self, monkeypatch: pytest.MonkeyPatch, native_verify_remote_rule: str, missing: str,
+    ) -> None:
+        source = (
+            "verify-remote:\n\t@:\n" if missing == "both"
+            else native_verify_remote_rule.replace(missing, "omitted-native-token")
+        )
+        source += '\nneighbor:\n\t@echo "git ls-remote VERIFIED"\n'
+        monkeypatch.setattr(sys.modules[__name__], "makefile_text", lambda: source)
+        with pytest.raises(AssertionError, match="P05:"):
+            self.test_verify_remote_compares_sha()
 
 
 # ── P06: CI verdict must match head SHA ───────────────────────────────
@@ -182,10 +220,10 @@ class TestVerifyRemoteAfterPush:
 class TestCIVerdictMustMatchHeadSHA:
     """P06: Never report CI verdict whose headSha != branch tip."""
 
-    def test_ci_verdict_target_exists(self):
+    def test_ci_verdict_target_exists(self) -> None:
         assert guard_exists_in_makefile("ci-verdict"), "P06: ci-verdict target missing from Makefile"
 
-    def test_ci_verdict_reports_head_sha(self):
+    def test_ci_verdict_reports_head_sha(self) -> None:
         text = makefile_text()
         idx = text.find("ci-verdict:")
         assert idx != -1
@@ -199,10 +237,10 @@ class TestCIVerdictMustMatchHeadSHA:
 class TestCICooldownBeforeStatusClaim:
     """P07: Use ci-verdict-safe (cooldown-aware), not bare ci-verdict."""
 
-    def test_ci_verdict_safe_target_exists(self):
+    def test_ci_verdict_safe_target_exists(self) -> None:
         assert guard_exists_in_makefile("ci-verdict-safe"), "P07: ci-verdict-safe target missing from Makefile"
 
-    def test_ci_verdict_safe_calls_cooldown_script(self):
+    def test_ci_verdict_safe_calls_cooldown_script(self) -> None:
         text = makefile_text()
         match = re.search(r"^ci-verdict-safe:", text, re.MULTILINE)
         assert match, "P07: ci-verdict-safe target not found"
@@ -210,7 +248,7 @@ class TestCICooldownBeforeStatusClaim:
         block = text[idx : idx + 500]
         assert "scripts/ci_check_cooldown.py" in block, "P07: ci-verdict-safe does not call ci_check_cooldown.py"
 
-    def test_ci_verdict_safe_has_cooldown_documentation(self):
+    def test_ci_verdict_safe_has_cooldown_documentation(self) -> None:
         text = makefile_text()
         idx = text.find("ci-verdict-safe:")
         assert idx != -1
@@ -226,14 +264,14 @@ class TestCICooldownBeforeStatusClaim:
 class TestCooldownNotReportedAsPending:
     """P08: CI cooldown block (exit 3) != PENDING."""
 
-    def test_ci_check_cooldown_script_exists(self):
+    def test_ci_check_cooldown_script_exists(self) -> None:
         assert (SCRIPTS_DIR / "ci_check_cooldown.py").exists(), "P08: scripts/ci_check_cooldown.py missing"
 
-    def test_cooldown_returns_exit_3_when_active(self):
+    def test_cooldown_returns_exit_3_when_active(self) -> None:
         content = (SCRIPTS_DIR / "ci_check_cooldown.py").read_text()
         assert "return 3" in content, "P08: ci_check_cooldown.py does not return exit code 3 for cooldown"
 
-    def test_cooldown_exit_3_is_distinct_from_pending(self):
+    def test_cooldown_exit_3_is_distinct_from_pending(self) -> None:
         content = (SCRIPTS_DIR / "ci_check_cooldown.py").read_text()
         assert "COOLDOWN" in content, "P08: ci_check_cooldown.py does not label cooldown blocks as COOLDOWN"
 
@@ -244,14 +282,14 @@ class TestCooldownNotReportedAsPending:
 class TestNoPushWhileGateRed:
     """P09: push targets must check .gate-status before pushing."""
 
-    def test_pre_push_check_checks_gate_status(self):
+    def test_pre_push_check_checks_gate_status(self) -> None:
         text = makefile_text()
         idx = text.find("pre-push-check:")
         assert idx != -1
         block = text[idx : idx + 600]
         assert ".gate-status" in block, "P09: pre-push-check does not check .gate-status"
 
-    def test_pre_push_check_block_on_red_gate(self):
+    def test_pre_push_check_block_on_red_gate(self) -> None:
         text = makefile_text()
         idx = text.find("pre-push-check:")
         assert idx != -1
@@ -265,11 +303,11 @@ class TestNoPushWhileGateRed:
 class TestPushOnlySanctionedTargets:
     """P10: Only batch-push, development-push, git-push-sandboxcom for push."""
 
-    def test_sanctioned_push_targets_exist(self):
+    def test_sanctioned_push_targets_exist(self) -> None:
         for target in ["batch-push", "development-push", "git-push-sandboxcom"]:
             assert guard_exists_in_makefile(target), f"P10: sanctioned push target {target} missing"
 
-    def test_enforce_make_plugin_blocks_raw_push(self):
+    def test_enforce_make_plugin_blocks_raw_push(self) -> None:
         assert plugin_exists("enforce-make.ts"), "P10: enforce-make.ts missing"
         content = (PLUGIN_DIR / "enforce-make.ts").read_text()
         has_block = "git push" in content.lower() or "bash" in content.lower()
@@ -282,12 +320,12 @@ class TestPushOnlySanctionedTargets:
 class TestMaxOneCIInFlight:
     """P11: At most one CI run in progress per branch before pushing."""
 
-    def test_push_rate_guard_checks_active_runs(self):
+    def test_push_rate_guard_checks_active_runs(self) -> None:
         content = (SCRIPTS_DIR / "ci_push_guard.py").read_text()
         assert "in_progress" in content, "P11: ci_push_guard.py does not check for in_progress"
         assert "queued" in content, "P11: ci_push_guard.py does not check for queued"
 
-    def test_push_rate_guard_blocks_on_active(self):
+    def test_push_rate_guard_blocks_on_active(self) -> None:
         content = (SCRIPTS_DIR / "ci_push_guard.py").read_text()
         assert "exit" in content or "return 1" in content or "sys.exit" in content, (
             "P11: ci_push_guard.py does not have an exit/block path"
@@ -300,11 +338,11 @@ class TestMaxOneCIInFlight:
 class TestCancelledRunThrash:
     """P12: >3 cancelled runs in 2h must block push."""
 
-    def test_push_rate_guard_counts_cancelled_runs(self):
+    def test_push_rate_guard_counts_cancelled_runs(self) -> None:
         text = makefile_text()
         assert "scripts/gha_cancelled_count.py" in text, "P12: _push-rate-guard does not call gha_cancelled_count.py"
 
-    def test_push_rate_guard_blocks_on_thrash(self):
+    def test_push_rate_guard_blocks_on_thrash(self) -> None:
         text = makefile_text()
         idx = text.find("_push-rate-guard:")
         assert idx != -1
@@ -320,11 +358,11 @@ class TestCancelledRunThrash:
 class TestForceBypassReleaseCutOnly:
     """P13: FORCE=1 override restricted to release-cut pipeline."""
 
-    def test_force_bypass_documented_in_agents_md(self):
+    def test_force_bypass_documented_in_agents_md(self) -> None:
         content = agents_text()
         assert "FORCE=1" in content, "P13: AGENTS.md does not mention FORCE=1"
 
-    def test_force_bypass_referenced_in_ci_check_cooldown(self):
+    def test_force_bypass_referenced_in_ci_check_cooldown(self) -> None:
         content = (SCRIPTS_DIR / "ci_check_cooldown.py").read_text()
         assert "FORCE" in content, "P13: ci_check_cooldown.py does not reference FORCE bypass"
 
@@ -335,10 +373,10 @@ class TestForceBypassReleaseCutOnly:
 class TestNoPushFromWorktree:
     """P14: Must push from main checkout, not worktree."""
 
-    def test_branch_discipline_plugin_exists(self):
+    def test_branch_discipline_plugin_exists(self) -> None:
         assert plugin_exists("enforce-branch-discipline.ts"), "P14: enforce-branch-discipline.ts missing"
 
-    def test_clean_tree_plugin_exists(self):
+    def test_clean_tree_plugin_exists(self) -> None:
         assert plugin_exists("enforce-clean-tree.ts"), "P14: enforce-clean-tree.ts missing"
 
 
@@ -348,20 +386,20 @@ class TestNoPushFromWorktree:
 class TestBatchLocalPushOnce:
     """P15: ship-commit PUSH=0 default, batch-push requires threshold."""
 
-    def test_ship_commit_push_0_is_default(self):
+    def test_ship_commit_push_0_is_default(self) -> None:
         text = makefile_text()
         match = re.search(r"^PUSH\s*\?\=\s*(\d+)", text, re.MULTILINE)
         assert match, "P15: PUSH variable default not found"
         assert match.group(1) == "0", f"P15: PUSH default is {match.group(1)}, expected 0"
 
-    def test_batch_push_requires_threshold(self):
+    def test_batch_push_requires_threshold(self) -> None:
         text = makefile_text()
         idx = text.find("batch-push:")
         assert idx != -1
-        block = text[idx : idx + 600]
+        block = _stanzas(text)["batch-push"]
         assert "THRESHOLD" in block and "unpushed" in block.lower(), "P15: batch-push does not enforce commit threshold"
 
-    def test_ship_commit_does_not_push_by_default(self):
+    def test_ship_commit_does_not_push_by_default(self) -> None:
         text = makefile_text()
         assert "PUSH ?= 0" in text and "Committed locally" in text, "P15: ship-commit does not support PUSH=0 default"
 
@@ -372,10 +410,10 @@ class TestBatchLocalPushOnce:
 class TestPushRateGuardFailClosed:
     """P16: Push rate guard must deny push when CI state is unknown."""
 
-    def test_ci_push_guard_script_exists(self):
+    def test_ci_push_guard_script_exists(self) -> None:
         assert (SCRIPTS_DIR / "ci_push_guard.py").exists(), "P16: scripts/ci_push_guard.py missing"
 
-    def test_makefile_push_rate_guard_fail_closed(self):
+    def test_makefile_push_rate_guard_fail_closed(self) -> None:
         text = makefile_text()
         idx = text.find("_push-rate-guard:")
         assert idx != -1
@@ -384,7 +422,7 @@ class TestPushRateGuardFailClosed:
         has_for_force = "FORCE" in block
         assert has_or_exit or has_for_force, "P16: _push-rate-guard does not have fail-closed blocking (|| { exit 1 })"
 
-    def test_ci_push_guard_has_error_handling(self):
+    def test_ci_push_guard_has_error_handling(self) -> None:
         content = (SCRIPTS_DIR / "ci_push_guard.py").read_text()
         assert "FileNotFoundError" in content, "P16: ci_push_guard.py lacks error handling"
         assert "sys.exit" in content or "return" in content, "P16: ci_push_guard.py lacks exit path"
@@ -396,17 +434,55 @@ class TestPushRateGuardFailClosed:
 class TestNoPushWithDirtyTree:
     """P17: Must not push while working tree is dirty."""
 
-    def test_clean_tree_plugin_blocks_on_dirty(self):
+    def test_clean_tree_plugin_blocks_on_dirty(self) -> None:
         assert plugin_exists("enforce-clean-tree.ts"), "P17: enforce-clean-tree.ts missing"
         content = (PLUGIN_DIR / "enforce-clean-tree.ts").read_text()
         assert "porcelain" in content.lower() or "dirty" in content.lower(), (
             "P17: enforce-clean-tree.ts does not check dirty tree"
         )
 
-    def test_stash_leak_guard_exists(self):
+    def test_stash_leak_guard_exists(self) -> None:
         assert guard_exists_in_makefile("_stash-leak-guard"), "P17: _stash-leak-guard missing from Makefile"
 
-    def test_push_targets_use_check_clean_tree(self):
+    def test_push_targets_use_check_clean_tree(self) -> None:
         for target in ["git-push-sandboxcom", "batch-push", "development-push"]:
             uses_check = target_uses_guard(target, "check-clean-tree")
             assert uses_check, f"P17: {target} does not use check-clean-tree guard"
+
+@pytest.mark.parametrize("check", (
+    TestNoCommitThreshold1().test_commit_threshold_1_is_blocked_in_makefile,
+    TestNoCommitThreshold1().test_batch_push_default_threshold_is_5,
+    TestBatchLocalPushOnce().test_batch_push_requires_threshold,
+))
+def test_batch_policy_checks_accept_complete_padded_native_rule(
+    monkeypatch: pytest.MonkeyPatch, check: Callable[[], None],
+) -> None:
+    text = makefile_text()
+    block = _stanzas(text)["batch-push"]
+    header, _, recipe = block.partition("\n")
+    padded = header + "\n" + "\t@:\n" * 600 + recipe
+    assert text.count(block) == 1
+    monkeypatch.setattr(sys.modules[__name__], "makefile_text", lambda: text.replace(block, padded, 1))
+    check()
+
+
+@pytest.mark.parametrize("check", (
+    TestNoCommitThreshold1().test_commit_threshold_1_is_blocked_in_makefile,
+    TestNoCommitThreshold1().test_batch_push_default_threshold_is_5,
+    TestBatchLocalPushOnce().test_batch_push_requires_threshold,
+))
+@pytest.mark.parametrize("neighbor", (False, True), ids=("missing-policy", "neighbor-only-policy"))
+def test_batch_policy_checks_refuse_missing_or_neighboring_commands(
+    monkeypatch: pytest.MonkeyPatch, check: Callable[[], None], neighbor: bool,
+) -> None:
+    text = "batch-push:\n\t@true\n"
+    if neighbor:
+        text += (
+            "\nowned-neighbor:\n"
+            "\t@THRESHOLD=$${COMMIT_THRESHOLD:-5}; "
+            "if [ \"$$THRESHOLD\" = \"1\" ]; then echo 'BLOCKED: COMMIT_THRESHOLD=1'; exit 1; fi; "
+            "echo \"$$THRESHOLD unpushed commits\"\n"
+        )
+    monkeypatch.setattr(sys.modules[__name__], "makefile_text", lambda: text)
+    with pytest.raises(AssertionError):
+        check()

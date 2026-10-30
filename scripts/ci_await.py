@@ -23,9 +23,20 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from proof_observations import write_snapshot
+
+    from scripts.ci_check_cooldown import (
+        diagnostic_push_generation,
+        record_diagnostic_pending,
+        record_diagnostic_verdict,
+    )
 else:
     if __package__ in {None, ""}:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from scripts.ci_check_cooldown import (
+        diagnostic_push_generation,
+        record_diagnostic_pending,
+        record_diagnostic_verdict,
+    )
     from scripts.proof_observations import write_snapshot
 
 DEFAULT_REPO = "sandboxcom/gludd"
@@ -203,6 +214,56 @@ def _publish_observation(
     return True
 
 
+
+def _record_diagnostic_feedback(
+    path: Path | None, selector: RunSelector, run: dict[str, Any],
+    *, elapsed: float, progress: ProgressFn, generation: int | None,
+) -> bool:
+    """Use only the just-published observation and pre-query history generation."""
+    if path is None or generation is None:
+        return True
+    try:
+        pending = run.get("status") in ("queued", "in_progress", "pending", "requested", "waiting")
+        recorder = record_diagnostic_pending if pending else record_diagnostic_verdict
+        recorded = recorder(
+            repo=selector.repo, branch=selector.ref, sha=selector.sha,
+            workflow=selector.workflow, event=selector.event,
+            run=run, after_run_id=selector.after_run_id, expected_generation=generation,
+        )
+    except (OSError, ValueError) as exc:
+        progress(f"CI-AWAIT: diagnostic-history-error={exc}")
+        _publish_observation(
+            path, selector, run, state="lookup_error", elapsed=elapsed,
+            exit_code=1, error=str(exc), progress=progress,
+        )
+        progress(
+            "AGENT_NEXT target=ci-await outcome=diagnostic-feedback-failed native_status=1 "
+            "history_may_be_applied=true canonical_push=false ci_green=false "
+            "gate_evidence=false release_ready=false: Retain the native writer error; "
+            "reconcile the existing history/state/counter before retrying."
+        )
+        return False
+    if recorded and pending:
+        progress(
+            "AGENT_NEXT target=ci-await outcome=diagnostic-pending-acknowledged "
+            "native_status=2 history_recorded=true history_only=true counter_reset=false "
+            "canonical_push=false ci_green=false gate_evidence=false release_ready=false: "
+            "Exact current feature Build is pending. Independent normal guarded publication "
+            "may proceed within the unchanged cap; continue bounded observation. "
+            "See .agents/policy/key-make-targets.md."
+        )
+    elif recorded:
+        progress(
+            f"AGENT_NEXT target=ci-await outcome=diagnostic-feedback-recorded "
+            f"native_status={0 if run.get('conclusion') == 'success' else 1} "
+            "history_recorded=true canonical_push=false ci_green=false "
+            "gate_evidence=false release_ready=false: Terminal Build dispatch feedback "
+            "was recorded for the current pushed SHA; repair its failures before the "
+            "next normal guarded source publication. Canonical push and release proof remain required."
+        )
+    return True
+
+
 def ci_await(
     selector: RunSelector | str,
     timeout: int,
@@ -223,6 +284,20 @@ def ci_await(
         "=== CI-AWAIT: "
         f"{_describe(selector)} every {poll_interval:g}s (timeout={timeout}s) ==="
     )
+
+    try:
+        generation = diagnostic_push_generation() if (
+            observation_path is not None and selector.repo == DEFAULT_REPO
+            and selector.workflow == "Build and Release" and selector.event == "workflow_dispatch"
+            and selector.ref.startswith(("feature/", "diagnostic/"))
+        ) else None
+    except OSError as exc:
+        progress(f"CI-AWAIT: history-generation-error={exc}")
+        _publish_observation(
+            observation_path, selector, None, state="lookup_error", elapsed=0.0,
+            exit_code=1, error=str(exc), progress=progress,
+        )
+        return 1
 
     while True:
         elapsed = max(0.0, clock() - started)
@@ -252,6 +327,11 @@ def ci_await(
             if status == "completed" and conclusion in TERMINAL_SUCCESS:
                 if not publish(state="success", exit_code=0):
                     return 1
+                if not _record_diagnostic_feedback(
+                    observation_path, selector, run, elapsed=elapsed, progress=progress,
+                    generation=generation,
+                ):
+                    return 1
                 progress(
                     f"[{elapsed:g}s] CI-AWAIT: TERMINAL SUCCESS run={run_id} "
                     f"sha={head_sha} conclusion={conclusion}"
@@ -259,6 +339,11 @@ def ci_await(
                 return 0
             if conclusion in TERMINAL_FAILURE or status == "completed":
                 if not publish(state="failure", exit_code=1):
+                    return 1
+                if not _record_diagnostic_feedback(
+                    observation_path, selector, run, elapsed=elapsed, progress=progress,
+                    generation=generation,
+                ):
                     return 1
                 progress(
                     f"[{elapsed:g}s] CI-AWAIT: TERMINAL FAILURE run={run_id} "
@@ -274,12 +359,22 @@ def ci_await(
         if elapsed >= timeout:
             if not publish(state="timeout", exit_code=2):
                 return 1
+            if run is not None and not _record_diagnostic_feedback(
+                observation_path, selector, run, elapsed=elapsed, progress=progress,
+                generation=generation,
+            ):
+                return 1
             progress(
                 f"=== CI-AWAIT: TIMEOUT after {elapsed:g}s (still pending) ==="
             )
             return 2
 
         if not publish(state="lookup_error" if lookup_error else "pending", exit_code=None):
+            return 1
+        if run is not None and not _record_diagnostic_feedback(
+            observation_path, selector, run, elapsed=elapsed, progress=progress,
+            generation=generation,
+        ):
             return 1
 
         wait_seconds = min(poll_interval, timeout - elapsed)
@@ -394,14 +489,44 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"CI-AWAIT-VALIDATED {_describe(selector)} "
             f"timeout={timeout}s interval={args.poll_interval:g}s"
         )
+        print(
+            "AGENT_NEXT target=ci-await outcome=validated mode=validate-only "
+            "native_status=0 configuration_only=true network=false "
+            "terminal_verdict=false ci_green=false observation_written=false "
+            "gate_evidence=false release_ready=false next_owner=ci-await; "
+            "configuration validated only; no GitHub query, wait or observation "
+            "write occurred. To observe CI, use CI_AWAIT_VALIDATE_ONLY=0 and "
+            "CI_AWAIT_SNAPSHOT_ONLY=0 with the same selector.",
+            file=sys.stderr,
+        )
         return 0
     if args.snapshot_only:
         try:
             run = get_latest_run(selector)
         except AwaitError as exc:
             print(f"CI-AWAIT-SNAPSHOT-BLOCKED error={exc}", file=sys.stderr)
+            print(
+                "AGENT_NEXT target=ci-await outcome=lookup-failed mode=snapshot-only "
+                "native_status=1 lookup_only=true terminal_verdict=false "
+                "ci_green=false observation_written=false gate_evidence=false "
+                "release_ready=false next_owner=ci-await; "
+                "snapshot lookup failed; observation output is unchanged. "
+                "Repair the reported lookup input before retry.",
+                file=sys.stderr,
+            )
             return 1
         print(int(run.get("databaseId") or 0) if run is not None else 0)
+        print(
+            "AGENT_NEXT target=ci-await outcome=snapshot mode=snapshot-only "
+            "native_status=0 lookup_only=true terminal_verdict=false ci_green=false "
+            "observation_written=false gate_evidence=false release_ready=false "
+            "next_owner=ci-await; stdout is only the newest matching run ID or 0; "
+            "zero status confirms lookup only. Observation output is unchanged. "
+            "To observe the current matching run, use CI_AWAIT_SNAPSHOT_ONLY=0 "
+            "with the same selector and after-run ID. Use stdout as "
+            "CI_AWAIT_AFTER_RUN_ID only when awaiting a future run.",
+            file=sys.stderr,
+        )
         return 0
     if args.observation_output is not None:
         return ci_await(

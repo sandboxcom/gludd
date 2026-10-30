@@ -17,6 +17,7 @@ import sys
 import time as time
 import traceback
 from collections.abc import Callable, Sequence
+from contextlib import suppress
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -136,6 +137,64 @@ class PipelineSummary:
             f"{len(self.successes)} passed, {len(self.missing_workflows)} missing"
         )
         return tuple(output)
+
+
+def _hosted_next_action(summary: PipelineSummary | None) -> str:
+    """Keep hosted publication/observation separate from local proof capacity."""
+    if summary is None:
+        return "resolve_observation_error"
+    if summary.failures:
+        return "repair_hosted_failure"
+    if not summary.runs or summary.missing_workflows:
+        return "establish_exact_sha_push_evidence"
+    if summary.pending:
+        return "await_exact_sha_runs"
+    return "collect_required_deployment_proof"
+
+
+def _emit_hosted_guidance(args: argparse.Namespace, exit_code: int) -> None:
+    """Teach the next native owner after reporting, without replacing its status."""
+    summary: PipelineSummary | None = args.hosted_summary
+    action = args.hosted_snapshot_action or _hosted_next_action(summary)
+    if summary is None or exit_code != summary.exit_code or args.ledger_observation_exit_code:
+        action = "resolve_observation_error"
+    if args.validate_only:
+        action = "run_live_exact_sha_observation"
+    outcomes = {
+        "run_live_exact_sha_observation": (
+            "planned", "Offline plan only: run pipeline-status mode0 for the exact SHA; "
+            "synthetic PASS rows provide no hosted proof.",
+        ),
+        "resolve_observation_error": (
+            "lookup_error", "Preserve the native lookup/snapshot/history error and reconcile its actual input "
+            "before retry; prior success supplies no current proof.",
+        ),
+        "establish_exact_sha_push_evidence": (
+            "missing", "Required push evidence is missing. Use verify-state, github-auth-status and normal "
+            "guarded publication, then full-SHA verify-remote and pipeline-status; inspect push filters if already "
+            "published. Keep workflow consent explicit; do not wait for a nonexistent run.",
+        ),
+        "await_exact_sha_runs": (
+            "pending", "Matching exact-SHA runs exist: use native ci-await to observe completion; "
+            "do not cancel or replace useful runs merely to report progress.",
+        ),
+        "repair_hosted_failure": (
+            "failed", "Use ci-failure-status and ci-failure-repair for actual failed owners, then publish "
+            "one coherent tested repair batch; do not rerun unchanged failures.",
+        ),
+        "collect_required_deployment_proof": (
+            "passed", "Observed exact-SHA hosted checks passed. Retain canonical gate/coverage and required "
+            "deployment/publication proofs; candidate CI is not deployment or release.",
+        ),
+    }
+    outcome, message = outcomes[action]
+    sha = summary.sha if summary is not None else args.sha or "unknown"
+    # Advisory text never replaces the already measured native result.
+    with suppress(AttributeError, OSError, ValueError):
+        sys.stderr.write(
+            f"AGENT_NEXT target=pipeline-status outcome={outcome} native_status={exit_code} "
+            f"sha={sha} hosted_next_action={action} gate_evidence=false release_ready=false: {message}\n"
+        )
 
 
 def _compatibility_verdict_line(summary: PipelineSummary, exit_code: int) -> str:
@@ -562,12 +621,14 @@ def _publish_snapshot(
                    "clear_hard_capacity_before_local_proofs" if capacity is not None and capacity["hard_blocked"] else
                    "collect_exact_final_proofs" if state == "success" else
                    "resolve_or_await_hosted_evidence")
+    hosted_action = ("resolve_observation_error" if errors else
+                     "repair_hosted_failure" if state == "failure" else _hosted_next_action(summary))
     missing_proofs = {
         task_id: {
             "implementation_sha": implementation_sha, "hosted_sha": sha,
             "hosted_status": state, "canonical_gate": "not_collected",
             "canonical_coverage": "not_collected", "source_review": "not_collected",
-            "next_action": next_action,
+            "next_action": next_action, "hosted_next_action": hosted_action,
         }
         for task_id in open_tasks if isinstance(task_id, str)
     } if isinstance(open_tasks, list) else {}
@@ -603,6 +664,7 @@ def _publish_snapshot(
             for missing in missing_proofs.values():
                 missing["hosted_status"] = state
                 missing["next_action"] = "resolve_observation_error"
+                missing["hosted_next_action"] = "resolve_observation_error"
             if not publish():
                 return False
     print(f"PIPELINE-SNAPSHOT-WRITTEN path={args.snapshot_output} state={state} release_ready=false", flush=True)
@@ -611,6 +673,7 @@ def _publish_snapshot(
             f"PIPELINE-TERMINAL-OBSERVED repo={args.repo} branch={args.branch} "
             f"sha={sha} verdict={verdict} release_ready=false", flush=True,
         )
+    args.hosted_snapshot_action = "resolve_observation_error" if errors else hosted_action
     return not errors
 
 
@@ -668,6 +731,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Print both observations while retaining the ledger's failure precedence."""
     args = _parser().parse_args(argv)
     args.ledger_observation_exit_code = args.ledger_observation_exit_code or 0
+    args.hosted_summary = None
+    args.hosted_snapshot_action = None
     if args.observe_ledger:
         args.ledger_observation_exit_code = _cli_exit_code(lambda: _observe_ledger(args))
     status_rc = _cli_exit_code(lambda: _status(args)) if args.observe_ledger else _status(args)
@@ -680,7 +745,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 traceback.print_exc()
             except Exception:
                 return ledger_rc
+        _emit_hosted_guidance(args, ledger_rc)
         return ledger_rc
+    _emit_hosted_guidance(args, status_rc)
     return status_rc
 
 
@@ -703,6 +770,7 @@ def _status(args: argparse.Namespace) -> int:
             for index, workflow in enumerate(DEFAULT_REQUIRED_WORKFLOWS, start=1)
         ]
         summary = evaluate_runs(runs, sha, branch=args.branch)
+        args.hosted_summary = summary
         print("\n".join(summary.lines()))
         print("PIPELINE_STATUS_VALIDATE_ONLY_PASS")
         return summary.exit_code
@@ -726,8 +794,10 @@ def _status(args: argparse.Namespace) -> int:
         print(f"CI ERROR: {exc}")
         _publish_snapshot(args, None, sha=sha, error=str(exc))
         return 2
+    args.hosted_summary = summary
     print("\n".join(summary.lines()))
     if not _publish_snapshot(args, summary, sha=sha):
+        args.hosted_summary = None
         return 2
     if args.record_verdict:
         try:

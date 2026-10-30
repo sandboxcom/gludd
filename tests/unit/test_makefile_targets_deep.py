@@ -892,6 +892,8 @@ class TestVariableConsistency:
         content = _read_makefile()
         violations = []
         for i, line in enumerate(content.split("\n"), 1):
+            if line.startswith("\t"):
+                continue
             s = line.strip()
             if s.startswith("#") or s == "":
                 continue

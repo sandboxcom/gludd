@@ -574,6 +574,12 @@ def _candidate_teardowns(
     return sorted(set(evidence))
 
 
+def _resource_hash(kind: str, owner: str, acquisition: str, teardown: str) -> str:
+    """Hash declared ownership descriptors independently of source coordinates."""
+    digest_payload = "\0".join((kind, owner, acquisition, teardown))
+    return hashlib.sha256(digest_payload.encode("utf-8")).hexdigest()
+
+
 def _evidence_for_call(
     call: ast.Call,
     *,
@@ -602,7 +608,6 @@ def _evidence_for_call(
         )
         teardown = "; ".join(candidates)
     owner = _owner_name(call, parents)
-    digest_payload = "\0".join((kind, owner, acquisition, teardown))
     return ResourceEvidence(
         path=relative,
         line=call.lineno,
@@ -611,7 +616,7 @@ def _evidence_for_call(
         owner=owner,
         acquisition=acquisition,
         teardown=teardown,
-        source_hash=hashlib.sha256(digest_payload.encode("utf-8")).hexdigest(),
+        source_hash=_resource_hash(kind, owner, acquisition, teardown),
         owned=bool(teardown),
     )
 
@@ -686,6 +691,12 @@ def _evidence_from_item(item: object) -> ResourceEvidence:
         or _HASH_RE.fullmatch(evidence.source_hash) is None
     ):
         raise ValueError(f"invalid or unowned inventory resource: {item!r}")
+    if evidence.source_hash != _resource_hash(
+        evidence.kind, evidence.owner, evidence.acquisition, evidence.teardown,
+    ):
+        raise ValueError(
+            f"inventory fingerprint mismatch: {evidence.path}:{evidence.line}:{evidence.column} [{evidence.kind}]"
+        )
     return evidence
 
 
@@ -713,6 +724,11 @@ def validate_inventory(
         for item in findings
         if not item.owned
     ]
+    errors.extend(
+        f"inventory fingerprint mismatch: {item.path}:{item.line}:{item.column} [{item.kind}]"
+        for item in inventory.values()
+        if item.source_hash != _resource_hash(item.kind, item.owner, item.acquisition, item.teardown)
+    )
     actual_groups: dict[tuple[str, str, str, str], list[ResourceEvidence]] = defaultdict(list)
     inventory_groups: dict[tuple[str, str, str, str], list[ResourceEvidence]] = defaultdict(list)
     for item in findings:

@@ -1,3 +1,165 @@
+# Keep expected publication identity literal before startup/export expansion.
+PUBLISH_EXPECTED_BRANCH ?=
+PUBLISH_EXPECTED_SHA ?=
+override GLUDD_PUBLISH_EXPECTED_BRANCH := $(value PUBLISH_EXPECTED_BRANCH)
+export GLUDD_PUBLISH_EXPECTED_BRANCH := $(value PUBLISH_EXPECTED_BRANCH)
+override GLUDD_PUBLISH_EXPECTED_SHA := $(value PUBLISH_EXPECTED_SHA)
+export GLUDD_PUBLISH_EXPECTED_SHA := $(value PUBLISH_EXPECTED_SHA)
+unexport PUBLISH_EXPECTED_BRANCH PUBLISH_EXPECTED_SHA
+PUBLISH_PURPOSE ?= canonical
+PUBLISH_BASELINE_REF ?=
+PUBLISH_BASELINE_SHA ?=
+override GLUDD_PUBLISH_PURPOSE := $(value PUBLISH_PURPOSE)
+export GLUDD_PUBLISH_PURPOSE := $(value PUBLISH_PURPOSE)
+override GLUDD_PUBLISH_BASELINE_REF := $(value PUBLISH_BASELINE_REF)
+export GLUDD_PUBLISH_BASELINE_REF := $(value PUBLISH_BASELINE_REF)
+override GLUDD_PUBLISH_BASELINE_SHA := $(value PUBLISH_BASELINE_SHA)
+export GLUDD_PUBLISH_BASELINE_SHA := $(value PUBLISH_BASELINE_SHA)
+unexport PUBLISH_PURPOSE PUBLISH_BASELINE_REF PUBLISH_BASELINE_SHA
+PUSH_VERDICT_SHA ?=
+override GLUDD_PUSH_VERDICT_SHA := $(value PUSH_VERDICT_SHA)
+export GLUDD_PUSH_VERDICT_SHA := $(value PUSH_VERDICT_SHA)
+unexport PUSH_VERDICT_SHA
+# Capture existing signal data only in its complete owned direct/alias graph.
+ifneq ($(filter ci-trigger-committed-head ci-trigger ci-push-committed-head _require-gh,$(MAKECMDGOALS)),)
+override GLUDD_CI_TRIGGER_REF := $(value REF)
+export GLUDD_CI_TRIGGER_REF := $(value REF)
+override GLUDD_CI_TRIGGER_REMOTE := $(value REMOTE)
+export GLUDD_CI_TRIGGER_REMOTE := $(value REMOTE)
+override GLUDD_CI_TRIGGER_REPO := $(value REPO)
+export GLUDD_CI_TRIGGER_REPO := $(value REPO)
+override GLUDD_CI_TRIGGER_WORKFLOW := $(value WORKFLOW)
+export GLUDD_CI_TRIGGER_WORKFLOW := $(value WORKFLOW)
+override GLUDD_CI_TRIGGER_EXAMPLE := $(value EXAMPLE)
+export GLUDD_CI_TRIGGER_EXAMPLE := $(value EXAMPLE)
+override GLUDD_CI_TRIGGER_DISCOVERY_POLLS := $(value DISCOVERY_POLLS)
+export GLUDD_CI_TRIGGER_DISCOVERY_POLLS := $(value DISCOVERY_POLLS)
+override GLUDD_CI_TRIGGER_CONFIRM_POLLS := $(value CONFIRM_POLLS)
+export GLUDD_CI_TRIGGER_CONFIRM_POLLS := $(value CONFIRM_POLLS)
+override GLUDD_CI_TRIGGER_POLL_INTERVAL := $(value POLL_INTERVAL)
+export GLUDD_CI_TRIGGER_POLL_INTERVAL := $(value POLL_INTERVAL)
+unexport REF REMOTE REPO WORKFLOW EXAMPLE DISCOVERY_POLLS CONFIRM_POLLS POLL_INTERVAL
+endif
+
+# Capture literal commit comparisons before any startup/export child.
+ifneq ($(filter git-compare-commits,$(MAKECMDGOALS)),)
+GIT_COMPARE_BASE ?=
+GIT_COMPARE_HEAD ?=
+override GLUDD_GIT_COMPARE_BASE := $(value GIT_COMPARE_BASE)
+override GLUDD_GIT_COMPARE_HEAD := $(value GIT_COMPARE_HEAD)
+export GLUDD_GIT_COMPARE_BASE GLUDD_GIT_COMPARE_HEAD
+unexport GIT_COMPARE_BASE GIT_COMPARE_HEAD
+# Strip hex to detect every foreign byte; tokenize hex to count exactly forty.
+override _GLUDD_GIT_COMPARE_NONHEX = $(subst F,,$(subst E,,$(subst D,,$(subst C,,$(subst B,,$(subst A,,$(subst f,,$(subst e,,$(subst d,,$(subst c,,$(subst b,,$(subst a,,$(subst 9,,$(subst 8,,$(subst 7,,$(subst 6,,$(subst 5,,$(subst 4,,$(subst 3,,$(subst 2,,$(subst 1,,$(subst 0,,$(1)))))))))))))))))))))))
+override _GLUDD_GIT_COMPARE_HEX_WORDS = $(subst F,F ,$(subst E,E ,$(subst D,D ,$(subst C,C ,$(subst B,B ,$(subst A,A ,$(subst f,f ,$(subst e,e ,$(subst d,d ,$(subst c,c ,$(subst b,b ,$(subst a,a ,$(subst 9,9 ,$(subst 8,8 ,$(subst 7,7 ,$(subst 6,6 ,$(subst 5,5 ,$(subst 4,4 ,$(subst 3,3 ,$(subst 2,2 ,$(subst 1,1 ,$(subst 0,0 ,$(1)))))))))))))))))))))))
+ifneq ($(MAKECMDGOALS),git-compare-commits)
+$(error AGENT_NEXT target=git-compare-commits outcome=refused native_status=2 phase=goals next_action=use-one-goal-and-two-full40hex-SHAs gate_evidence=false release_ready=false)
+endif
+ifneq (x$(call _GLUDD_GIT_COMPARE_NONHEX,$(GLUDD_GIT_COMPARE_BASE))x,xx)
+$(error AGENT_NEXT target=git-compare-commits outcome=refused native_status=2 input=GIT_COMPARE_BASE next_action=pass-literal-full40hex-SHA gate_evidence=false release_ready=false)
+endif
+ifneq ($(words $(call _GLUDD_GIT_COMPARE_HEX_WORDS,$(GLUDD_GIT_COMPARE_BASE))),40)
+$(error AGENT_NEXT target=git-compare-commits outcome=refused native_status=2 input=GIT_COMPARE_BASE next_action=pass-literal-full40hex-SHA gate_evidence=false release_ready=false)
+endif
+ifneq (x$(call _GLUDD_GIT_COMPARE_NONHEX,$(GLUDD_GIT_COMPARE_HEAD))x,xx)
+$(error AGENT_NEXT target=git-compare-commits outcome=refused native_status=2 input=GIT_COMPARE_HEAD next_action=pass-literal-full40hex-SHA gate_evidence=false release_ready=false)
+endif
+ifneq ($(words $(call _GLUDD_GIT_COMPARE_HEX_WORDS,$(GLUDD_GIT_COMPARE_HEAD))),40)
+$(error AGENT_NEXT target=git-compare-commits outcome=refused native_status=2 input=GIT_COMPARE_HEAD next_action=pass-literal-full40hex-SHA gate_evidence=false release_ready=false)
+endif
+endif
+
+# Reject evaluated creation data before any native startup/export child.
+# This is scoped to the public creation goals, preserving unrelated Make callers.
+ifneq ($(filter agent-worktree agent-worktree-base agent-worktree-dev,$(MAKECMDGOALS)),)
+ifneq (,$(findstring $$,$(value BRANCH)$(value BASE)$(value ACTIVE_WORKSTREAM_REGISTRY)))
+$(error worktree creation inputs must be literal data; AGENT_NEXT outcome=refused native_status=2 next_action=use-literal-BRANCH-BASE-and-registry gate_evidence=false release_ready=false)
+endif
+endif
+
+# Capture Node source inspection mode before eager startup/export expansion.
+ifneq ($(filter inspect-node-audit-source,$(MAKECMDGOALS)),)
+NODE_AUDIT_SOURCE_VALIDATE_ONLY ?= 1
+override GLUDD_NODE_AUDIT_SOURCE_VALIDATE_ONLY := $(value NODE_AUDIT_SOURCE_VALIDATE_ONLY)
+export GLUDD_NODE_AUDIT_SOURCE_VALIDATE_ONLY := $(value NODE_AUDIT_SOURCE_VALIDATE_ONLY)
+unexport NODE_AUDIT_SOURCE_VALIDATE_ONLY
+ifneq (x$(value GLUDD_NODE_AUDIT_SOURCE_VALIDATE_ONLY)x,x0x)
+ifneq (x$(value GLUDD_NODE_AUDIT_SOURCE_VALIDATE_ONLY)x,x1x)
+$(error NODE_AUDIT_SOURCE_VALIDATE_ONLY must be literal 0 or 1)
+endif
+endif
+endif
+
+# Keep HTTPS configuration mode literal before native startup/export expansion.
+SANDBOXCOM_HTTPS_VALIDATE_ONLY ?= 1
+override GLUDD_SANDBOXCOM_HTTPS_VALIDATE_ONLY := $(value SANDBOXCOM_HTTPS_VALIDATE_ONLY)
+export GLUDD_SANDBOXCOM_HTTPS_VALIDATE_ONLY := $(value SANDBOXCOM_HTTPS_VALIDATE_ONLY)
+unexport SANDBOXCOM_HTTPS_VALIDATE_ONLY
+
+# Shared native Make inspection grammar.
+# Pure private functions: no subprocesses or eager flag capture.
+override _native-make-option-prefix = $(if $(filter --,$(firstword $(1))),,$(firstword $(1)) $(if $(word 2,$(1)),$(call _native-make-option-prefix,$(wordlist 2,$(words $(1)),$(1)))))
+override _native-make-remove-letters = $(if $(strip $(2)),$(call _native-make-remove-letters,$(subst $(firstword $(2)),,$(1)),$(wordlist 2,$(words $(2)),$(2))),$(1))
+override _native-make-boolean-cluster = $(if $(call _native-make-remove-letters,$(1),b B d e i k L m n p q r R s S t v w),,$(1))
+# End shared native Make inspection grammar.
+
+# Capture operator-owned workflow consent inputs before startup/export expansion.
+GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY ?= 1
+GITHUB_WORKFLOW_AUTH_ACCOUNT ?=
+override GLUDD_GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY := $(value GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY)
+export GLUDD_GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY := $(value GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY)
+override GLUDD_GITHUB_WORKFLOW_AUTH_ACCOUNT := $(value GITHUB_WORKFLOW_AUTH_ACCOUNT)
+export GLUDD_GITHUB_WORKFLOW_AUTH_ACCOUNT := $(value GITHUB_WORKFLOW_AUTH_ACCOUNT)
+unexport GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY GITHUB_WORKFLOW_AUTH_ACCOUNT
+
+# Capture hosted apt input before native startup/export expansion.
+PRESENTATION_BROWSER_APT_VALIDATE_ONLY ?= 1
+override GLUDD_PRESENTATION_BROWSER_APT_VALIDATE_ONLY := $(value PRESENTATION_BROWSER_APT_VALIDATE_ONLY)
+export GLUDD_PRESENTATION_BROWSER_APT_VALIDATE_ONLY := $(value PRESENTATION_BROWSER_APT_VALIDATE_ONLY)
+unexport PRESENTATION_BROWSER_APT_VALIDATE_ONLY
+ifneq ($(filter presentation-browser-apt-source,$(MAKECMDGOALS)),)
+override GITHUB_ACTIONS := $(value GITHUB_ACTIONS)
+override RUNNER_ENVIRONMENT := $(value RUNNER_ENVIRONMENT)
+override RUNNER_OS := $(value RUNNER_OS)
+override ImageOS := $(value ImageOS)
+export GITHUB_ACTIONS RUNNER_ENVIRONMENT RUNNER_OS ImageOS
+endif
+
+# Refuse nonliteral selected-owner context before startup/export children expand it.
+ifneq ($(filter workstream-unregister agent-cleanup,$(MAKECMDGOALS)),)
+ifneq (,$(findstring $$,$(value BRANCH)$(value WORKTREE)$(value WORKSTREAM_EXPECTED_HEAD)$(value ACTIVE_WORKSTREAM_REGISTRY)$(value AGENT_CLEANUP_PURPOSE)$(value AGENT_CLEANUP_EXPECTED_HEAD)$(value AGENT_CLEANUP_VALIDATE_ONLY)))
+$(error workstream release/retirement inputs must be literal data, not Make expressions)
+endif
+unexport BRANCH WORKTREE WORKSTREAM_EXPECTED_HEAD ACTIVE_WORKSTREAM_REGISTRY
+unexport AGENT_CLEANUP_PURPOSE AGENT_CLEANUP_EXPECTED_HEAD AGENT_CLEANUP_VALIDATE_ONLY
+endif
+
+# Keep no-commit merge branch data literal before startup or export children.
+override GLUDD_GIT_MERGE_NC_BR := $(value BR)
+export GLUDD_GIT_MERGE_NC_BR
+unexport BR
+
+# Validate opt-in rerun flags before startup/export or ci-view prerequisites.
+ifneq ($(filter ci-rerun,$(MAKECMDGOALS)),)
+CI_RERUN_DEBUG ?= 0
+CI_RERUN_FAILED_ONLY ?= 0
+override GLUDD_CI_RERUN_DEBUG := $(value CI_RERUN_DEBUG)
+override GLUDD_CI_RERUN_FAILED_ONLY := $(value CI_RERUN_FAILED_ONLY)
+export GLUDD_CI_RERUN_DEBUG := $(value CI_RERUN_DEBUG)
+export GLUDD_CI_RERUN_FAILED_ONLY := $(value CI_RERUN_FAILED_ONLY)
+unexport CI_RERUN_DEBUG CI_RERUN_FAILED_ONLY
+ifneq (x$(value GLUDD_CI_RERUN_DEBUG)x,x0x)
+ifneq (x$(value GLUDD_CI_RERUN_DEBUG)x,x1x)
+$(error CI_RERUN_DEBUG must be literal 0 or 1)
+endif
+endif
+ifneq (x$(value GLUDD_CI_RERUN_FAILED_ONLY)x,x0x)
+ifneq (x$(value GLUDD_CI_RERUN_FAILED_ONLY)x,x1x)
+$(error CI_RERUN_FAILED_ONLY must be literal 0 or 1)
+endif
+endif
+endif
+
 # Capture raw CI cancellation inputs before native startup shell expansion.
 # Capture emergency cancellation inputs only for its explicit Make goal.
 ifneq ($(filter ci-cancel,$(MAKECMDGOALS)),)
@@ -55,6 +217,12 @@ export GLUDD_UV_CACHE_PRUNE_FORCE := $(value UV_CACHE_PRUNE_FORCE)
 export GLUDD_UV_CACHE_PRUNE_VALIDATE_ONLY := $(value UV_CACHE_PRUNE_VALIDATE_ONLY)
 export GLUDD_UV_CACHE_PRUNE_ROOT := $(value UV_CACHE_PRUNE_OBSERVED_ROOT)
 unexport UV_CACHE_PRUNE_TIMEOUT UV_CACHE_PRUNE_FORCE UV_CACHE_PRUNE_VALIDATE_ONLY UV_CACHE_PRUNE_OBSERVED_ROOT
+
+# Keep an explicitly supplied pytest trace path literal before startup exports.
+ifneq ($(filter command line environment override,$(origin GLUDD_XDIST_TRACE_LOG)),)
+override GLUDD_XDIST_TRACE_LOG := $(value GLUDD_XDIST_TRACE_LOG)
+export GLUDD_XDIST_TRACE_LOG
+endif
 
 # Keep the opt-in watcher flag literal before native startup/export expansion.
 RUN_WATCHED_PYTEST_TRACE ?= 0
@@ -385,6 +553,7 @@ export TERM
 SSH_KEY ?= $(HOME)/.ssh/sandboxcom_gludd_rsa
 
 _MULTIWORD_VALUE_GOALS := \
+    agent-worktree agent-worktree-base agent-worktree-dev \
     copy-file feature-done feature-start git-add git-branch git-checkout git-cherry-pick-list \
     git-commit git-commit-file git-commit-files git-merge git-reset git-restore git-tag-move \
     git-tag-push lint-files lint-fix-files lint-markdown lint-docstrings release-cut release-deploy release-promote release-upload-assets \
@@ -394,12 +563,18 @@ _FIRST_MAKE_GOAL := $(firstword $(MAKECMDGOALS))
 _EXTRA_MAKE_GOALS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 ifneq (,$(filter $(_FIRST_MAKE_GOAL),$(_MULTIWORD_VALUE_GOALS)))
 ifneq (,$(_EXTRA_MAKE_GOALS))
-$(error Quote multi-word variable values for $(_FIRST_MAKE_GOAL); stray make goals: $(_EXTRA_MAKE_GOALS))
+$(error Quote multi-word variable values for $(_FIRST_MAKE_GOAL); stray make goals: $(_EXTRA_MAKE_GOALS); \
+    AGENT_NEXT target=$(_FIRST_MAKE_GOAL) outcome=refused native_status=2 gate_evidence=false release_ready=false next_action=quote-values-or-split-goals; \
+    use one guarded target per Make invocation; quote the whole assignment when extra words belong to a value; \
+    if values are already quoted and goals are intentional, use separate Make invocations)
 endif
 endif
 
 PYTHON := python3
+# Explicit command-line runtime selection is trusted; ambient inputs stay fixed.
+ifneq ($(origin SYSTEM_PYTHON),command line)
 override SYSTEM_PYTHON := /usr/bin/python3
+endif
 # Execution stays real for every explicit goal and prerequisite. UV_NO_SYNC
 # above prevents implicit environment changes without silencing owners/guards.
 UV := uv
@@ -532,6 +707,8 @@ help:
 		"  resolve-ansible-runtime-requirements Compile complete staged EE inputs (ANSIBLE_EE_COLLECTION_ROOT, ANSIBLE_EE_RESOLUTION_OUTPUT, ANSIBLE_EE_RESOLUTION_VALIDATE_ONLY=1)" \
 		"  check-ansible-base-image Prove the exact EE base manifest is still served (ANSIBLE_EE_BASE_IMAGE_CHECK_VALIDATE_ONLY=0|1)" \
 		"  inspect-ansible-searxng-source Read eleven exact frozen source/default-build inputs (ANSIBLE_SEARXNG_SOURCE_INSPECT_VALIDATE_ONLY=0|1)" \
+		"  inspect-presentation-browser-dependency-source Show the offline fixed public browser research plan (no variables)" \
+		"  inspect-presentation-browser-dependency-source-live Retrieve nine bounded public sources and issue searches (no variables)" \
 		"  refresh-ansible-base-image Resolve, verify, and atomically pin the supported EE base (ANSIBLE_EE_BASE_IMAGE_REFRESH_VALIDATE_ONLY=0|1)" \
 		"  update-collection-python-boundary-inventory Refresh exact legacy migration inventory" \
 		"  deps-audit            Fail-closed Python dependency truth audit" \
@@ -539,6 +716,7 @@ help:
 		"  node-deps-sync        Install locked Node deps (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY, NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false)" \
 		"  node-deps-relock      Regenerate Node lock (NODE_DEPS_VALIDATE_ONLY, NODE_DEPS_NPM_USERCONFIG, NODE_DEPS_NPM_CACHE, NODE_DEPS_NPM_REGISTRY, NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false)" \
 		"  node-deps-audit       Audit locked Node deps (NODE_DEPS_NPM_UPDATE_NOTIFIER=true|false plus NODE_DEPS_AUDIT_LEVEL=low|moderate|high|critical)" \
+		"  inspect-node-audit-source Plan nine fixed public Node advisory/metadata sources (NODE_AUDIT_SOURCE_VALIDATE_ONLY=1; explicit live=0)" \
 		"  freellmapi-upstream-admission  Validate/refresh the non-runnable upstream candidate (FREELLMAPI_ADMISSION_TAG, FREELLMAPI_ADMISSION_COMMIT, FREELLMAPI_ADMISSION_LIVE=0|1, FREELLMAPI_ADMISSION_OUTPUT)" \
 		"  freellmapi-upstream-build  Validate/run the exact-source upstream suite (FREELLMAPI_BUILD_LIVE=0|1, FREELLMAPI_BUILD_CANDIDATE, FREELLMAPI_BUILD_PLAN, FREELLMAPI_BUILD_REPORT)" \
 		"  freellmapi-three-arm-replay  Build/validate/replay exact v0.11.1 without promotion (FREELLMAPI_THREE_ARM_MODE, FREELLMAPI_THREE_ARM_CANDIDATE, FREELLMAPI_THREE_ARM_PLAN, FREELLMAPI_THREE_ARM_CORPUS, FREELLMAPI_THREE_ARM_REPORT)" \
@@ -558,6 +736,7 @@ help:
 		"  lint-python           Run the canonical Python Ruff gate (application + tests)" \
 		"  lint-make             Run duplicate-target, parity, and Make dry-run validation" \
 		"  lint-files            Run ruff linter on FILES only" \
+		"  check-test-env-writes  Static test environment guard; use fixture monkeypatch or explicit child env; no runtime/gate proof" \
 		"  check-molecule-yaml   Complete native inputs (MOLECULE_YAML_LINT_TIMEOUT_SECONDS=1..120, MOLECULE_YAML_VALIDATE_ONLY=0|1)" \
 		"  lint-markdown         Run locked Rumdl checks (MARKDOWN_FILES, RUMDL_CONFIG; MARKDOWNLINT_CONFIG alias)" \
 		"  lint-docstrings       Run locked Ruff docstring rules on DOCSTRING_FILES" \
@@ -566,6 +745,7 @@ help:
 		"  split-makefile-layout  Validate/apply the ordered make/*.mk layout (MAKEFILE_SPLIT_APPLY=0|1)" \
 		"  vendor-presentation-assets  Validate/refresh pinned Reveal.js assets (PRESENTATION_VENDOR_VALIDATE_ONLY=0|1)" \
 		"  presentation-browser-install Check/install pinned Chromium + WebKit (PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=0|1)" \
+		"  presentation-browser-apt-source Plan/prepare the hosted native Ubuntu archive input (PRESENTATION_BROWSER_APT_VALIDATE_ONLY=0|1)" \
 		"  presentation-browser-install-deps Validate/install Playwright browser system libraries (PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY=0|1)" \
 		"  presentation-browser-test   Validate/run bounded Chromium + WebKit acceptance (PRESENTATION_BROWSER_VALIDATE_ONLY=0|1); optional Chromium JS coverage (PRESENTATION_BROWSER_JS_COVERAGE=0|1)" \
 		"  presentation-safari-test    Validate/run bounded native Safari smoke (PRESENTATION_SAFARI_VALIDATE_ONLY=0|1)" \
@@ -596,8 +776,8 @@ help:
 		"  gate-lite             Local validation (lint+typecheck+collect+smoke+unit@2w); no OOM" \
 		"  gate-audit            Gate + coverage audit (85% per-file threshold)" \
 		"  coverage-files        Observable targeted coverage (COVERAGE_* plus OBSERVED_ROOT, OBSERVED_HEARTBEAT_SECS, OBSERVED_QUIET_SECS, OBSERVED_MAX_SECS, OBSERVED_RETAIN_RUNS)" \
-		"  observed-status       Print current/exact retained command status (OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_STALE_SECS)" \
-		"  observed-tail         Print bounded current/exact retained log tail (OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_TAIL_LINES)" \
+		"  observed-status       Print current/exact retained command status (PYTHON, OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_STALE_SECS)" \
+		"  observed-tail         Print bounded current/exact retained log tail (PYTHON, OBSERVED_LABEL, RUN_ID, OBSERVED_ROOT, OBSERVED_TAIL_LINES)" \
 		"  run-watched           Observe one bounded command with quoted child arguments (CMD, OBSERVED_LABEL, RUN_ID, STALL_SECS, MAX_SECS, LOG, OBSERVED_ROOT, OBSERVED_HEARTBEAT_SECS, OBSERVED_RETAIN_RUNS)" \
 		"  runtime-startup-diagnostic Plan a fixed serial collection diagnostic (RUNTIME_DIAGNOSTIC_*, OBSERVED_*, RUN_ID, LOG, WORK_ITEM_ID)" \
 		"  runtime-startup-report Read one exact retained/archive startup run; never launches work (RUNTIME_DIAGNOSTIC_*, OBSERVED_ROOT, OBSERVED_LABEL, RUN_ID)" \
@@ -606,7 +786,7 @@ help:
 		"  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)" \
 		"  gate-tail             Print a bounded latest gate-log snapshot (GATE_TAIL_LINES=80)" \
 		"  gate-lite-tail        Print a bounded latest gate-lite-log snapshot (GATE_TAIL_LINES=80)" \
-		"  gate-progress         Estimate gate completion percent and ETA from historical logs (GATE_PROGRESS_MAX_HISTORICAL=10)" \
+		"  gate-progress         Estimate gate completion percent and ETA (GATE_PROGRESS_MAX_HISTORICAL=10; request post-output sleep for a RUNNING snapshot with GATE_PROGRESS_SLEEP=120..300, default 0; GATE_PROGRESS_COOLDOWN_SECS=120)" \
 		"  triage-failures       Incrementally group streamed failures (LOG, TRIAGE_STATE, TRIAGE_FORMAT)" \
 		"  collect-check         Fast collection-error gate" \
 		"  pre-commit-check      Fast lint + collection + typecheck commit preflight" \
@@ -738,18 +918,21 @@ help:
 		"  tf-versions-check     Enforce stacks match infra/terraform/versions.tf" \
 		"  tf-clean              Remove the shared plugin cache" \
 		"" \
-		"  --- Git ---" \
-		"  ci-cancel             Plan an emergency single-run request (RUN, CI_CANCEL_VALIDATE_ONLY=1; explicit apply=0)" \
-		"  (Single-source policy: features land on development first, then merge to master)" \
+	"  --- Git ---" \
+	"  (Single-source policy: features land on development first, then merge to master)" \
 		"  git-status            Show git status" \
+		"  batch-push            Publish a guarded candidate (default COMMIT_THRESHOLD=5; contract threshold=1 refuses; SSH_KEY)" \
+		"  git-merge-nc           Prepare a clean no-commit ort merge (BR; refuses unsafe state)" \
 		"  git-owned-checkpoint-push     Checkpoint explicit owned files (FILES, GIT_CHECKPOINT_LABEL, GIT_CHECKPOINT_VALIDATE_ONLY)" \
 		"  git-owned-checkpoint-restore  Restore exact top checkpoint, retaining evidence (FILES, GIT_CHECKPOINT_LABEL, GIT_CHECKPOINT_SHA, GIT_CHECKPOINT_VALIDATE_ONLY)" \
+		"  git-owned-checkpoint-repair-link  Plan/repair only a verified absent owner link (GIT_CHECKPOINT_WORKTREE, GIT_CHECKPOINT_ADMIN_DIR, GIT_CHECKPOINT_SHA, GIT_CHECKPOINT_EXPECTED_HEAD, GIT_CHECKPOINT_EXPECTED_BRANCH, GIT_CHECKPOINT_VALIDATE_ONLY)" \
 		"  git-diff              Show diff stats" \
 		"  git-staged            Show staged changes" \
 		"  git-log               Show recent commits" \
 		"  git-show-commit C=<sha>  Show hash, parents, committer time, subject, and files" \
 		"  git-show-full SHA=<sha>  Show a host-independent canonical patch" \
 		"  git-is-ancestor A=<commit> B=<commit>  Print and retain native Git ancestry status" \
+		"  git-compare-commits     Read-only patch for explicit full40hex GIT_COMPARE_BASE/HEAD; native0 identical,1 different" \
 		"  git-patch-equivalence PATCH_UPSTREAM=<ref> PATCH_HEAD=<ref> PATCH_LIMIT=<n>  Compare patch identity" \
 		"  branches-unmerged-development  List every local branch tip not reachable from development" \
 		"  branch-reconciliation-inventory RECONCILE_TARGET=<ref> RECONCILE_LIMIT=<n> RECONCILE_AFTER=<ref|empty>  Page bounded local branch reconciliation state as JSON" \
@@ -778,14 +961,14 @@ help:
 		"  agent-worktree-base BRANCH=<name> BASE=<ref>  Isolated worktree from an explicit base ref" \
 		"  agent-worktree-retain  Plan a native retention lock (BRANCH, WORKTREE, WORKTREE_RETAIN_REASON, WORKTREE_RETAIN_VALIDATE_ONLY=1)" \
 		"  workstream-register BRANCH=<name> WORKTREE=<path>  Protect an active logical workstream" \
-		"  workstream-unregister BRANCH=<name>  Release a completed logical workstream" \
-		"  agent-cleanup         Plan native merged-owner retirement (BRANCH, WORKTREE, ACTIVE_WORKSTREAM_REGISTRY, AGENT_CLEANUP_VALIDATE_ONLY=1; 0 applies)" \
+		"  workstream-unregister Release exact BRANCH/WORKTREE/WORKSTREAM_EXPECTED_HEAD into the existing registry (ACTIVE_WORKSTREAM_REGISTRY)" \
+		"  agent-cleanup         Plan selected retirement (BRANCH, WORKTREE, ACTIVE_WORKSTREAM_REGISTRY, AGENT_CLEANUP_PURPOSE=merged|self-improve-evaluation, AGENT_CLEANUP_EXPECTED_HEAD, AGENT_CLEANUP_VALIDATE_ONLY=1; 0 applies)" \
 		"  clean-stale-worktrees Plan native clean pruning (ACTIVE_WORKSTREAM_REGISTRY, CLEAN_STALE_WORKTREES_VALIDATE_ONLY=1; 0 applies)" \
 		"  wt-prune-safe         Default clean pruning; WT_PRUNE_RETIRE_MERGED=1 retires one merged BRANCH/WORKTREE with archived proof (WT_PRUNE_RETIRE_VALIDATE_ONLY=1 plans; ACTIVE_WORKSTREAM_REGISTRY, WT_PRUNE_VALIDATE_ONLY)" \
-		"  agent-merge          Legacy master helper; use agent-merge-dev then release-promote" \
+		"  agent-merge          Retired: status 2; use canonical release-promote" \
 		"  agent-worktree-list           List active git worktrees" \
 		"  worktree-commit-changes MSG='...'  Commit all changes in the current worktree" \
-		"  worktree-cleanup-merged       Remove worktrees whose branches are merged into development" \
+		"  worktree-cleanup-merged       Retired: exits 2; use selected native retirement plan" \
 		"  merge-commit-nv MSG='...'     Complete an in-progress merge commit without pre-commit hooks" \
 		"  self-improve-local-proposal  Owned local GGUF proposal worker (SELF_IMPROVE_MODEL_PATH/PROMPT_FILE/PROPOSAL_FILE)" \
 		"  azure-self-improve-auth-args  Emit validated NUL arguments for one least-privilege Azure SP command" \
@@ -816,12 +999,13 @@ help:
 		"  agent-report                 Agent activity dashboard (reads /tmp/gludd-agent-results.jsonl)" \
 		"  check-duplicate-targets           Detect Makefile targets declared on parallel branches" \
 		"  agent-worktree-dev BRANCH=<name>  Isolated git worktree from development branch" \
-		"  agent-merge-dev BRANCH=<name>     Merge a subagent worktree branch into development" \
+		"  agent-merge-dev             Retired: status 2; use pinned canonical development integration" \
 		"  development-push             Push the development branch to remote" \
 		"  development-merge-forward SOURCE=<ref> MODE=content|ancestry-only APPLY=0|1  Transactional reconciliation into development (dry-run default)" \
 		"  development-merge-forward-batch SOURCES='<refs>' APPLY=0|1  Atomic ancestry-only reconciliation for multiple superseded refs" \
 		"  development-fast-forward SOURCE=<ref> EXPECTED_BEFORE_SHA=<sha> EXPECTED_AFTER_SHA=<sha> APPLY=0|1  Guarded development fast-forward (default 0; APPLY=1 requires full 40-character SHAs)" \
-		"  development-merge-to-master  Merge development into master (release prep; CI-green required)" \
+		"  worktree-merge-all            Retired: status 2; select reviewed source via development-merge-forward" \
+		"  development-merge-to-master  Retired: status 2; use canonical release-promote and exact-SHA proof" \
 		"  development-start            Create development branch from master if it doesn't exist" \
 		"  development-status           Show commits on development not yet on master" \
 		"  git-tag-push TAG=<t> [COMMIT=<sha>] [MSG='...']  Create annotated tag + push to sandboxcom" \
@@ -942,18 +1126,24 @@ help:
 		"  ci-cooldown-status     Show remaining cooldown seconds" \
 		"  ci-view RUN=<id>       Show CI run details (jobs, steps, failures)" \
 		"  ci-rerun RUN=<id>      Guard and rerun one observed immutable CI run" \
+		"  ci-rerun-help          Show gh run rerun --help" \
+		"  ci-cancel              Cancel one CI run (GLUDD_CI_CANCEL_RUN, GLUDD_CI_CANCEL_VALIDATE_ONLY=0|1)" \
 		"  ci-recover-runner-acquisition RUN=<id>  Retry attempt 1 only when every failure is hosted-runner acquisition" \
 		"  ci-active              List active/in-flight CI runs" \
 		"  ci-greenness           CI reliability ratio (green / total completed)" \
-		"  ci-trigger-committed-head [REF=<b>]  Idempotently signal + return exact-SHA GHA run URL" \
+		"  ci-trigger-committed-head [REF=<b>]  Exact-SHA signal; EXAMPLE=1 offline; feature-ci requires expected pair + published baseline" \
 		"  ci-record-verdict      Record a known CI verdict directly, bypassing cooldown (VERDICT=success|failure|pending, SHA=<sha>)" \
 		"  deploy-and-forget      Single guarded push + cooldown record (BRANCH, DEPLOY_AND_FORGET_VALIDATE_ONLY=0|1)" \
 		"" \
 		"  --- Git Remote ---" \
 		"  git-remote-sandboxcom Configure sandboxcom GitHub remote with SSH key" \
-		"  git-push-sandboxcom   Guarded mirror push (PUSH_REMOTE, SSH_KEY; dry-run is not remote evidence)" \
+		"  git-push-sandboxcom   Guarded canonical push; explicit PUBLISH_PURPOSE=feature-ci requires expected branch/fullSHA + published baseline" \
 		"  git-pull-sandboxcom   Pull and rebase from sandboxcom/gludd" \
 		"  git-fetch-sandboxcom  Fetch from sandboxcom/gludd" \
+		"  github-auth-status       Read native GitHub accounts/scopes; authentication is not workflow write authority" \
+		"  github-workflow-auth     Preview GitHub workflow consent (GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY=1, GITHUB_WORKFLOW_AUTH_ACCOUNT=); operator owns mode 0" \
+		"  git-configure-sandboxcom-https  Repo-local gh HTTPS setup (SANDBOXCOM_HTTPS_VALIDATE_ONLY=1 plan, 0 apply); no push/CI proof" \
+		"  verify-remote BRANCH=<b> SHA=<sha> SSH_KEY=<path>  Native heads-ref proof with SSH or configured gh HTTPS; no CI proof" \
 		"  ship-async REF=<hash> [TARGET=master]  Run gate in background job; ff-only merge on green" \
 		"" \
 		"  --- SearXNG Research Backend ---" \
@@ -993,7 +1183,7 @@ help:
 		"  opencode-disk         Bounded data usage using the authoritative OpenCode DB path" \
 		"  opencode-clean        Offline bounded DB/cache cleanup; refuses while OpenCode runs" \
 		"  opencode-clean-hard   Offline aggressive cache/log cleanup; refuses while OpenCode runs" \
-		"  opencode-db-stats     Bounded read-only table counts" \
+		"  opencode-db-stats     SQL-readonly table/page metadata; physical reclaim remains unknown" \
 		"  opencode-db-schema    Bounded read-only schema report" \
 		"  opencode-db-sample    Bounded read-only timestamp sample" \
 		"  opencode-db-prune     Offline bounded recursive session/event prune" \
@@ -1336,6 +1526,67 @@ inspect-ansible-searxng-source:
 				"https://raw.githubusercontent.com/searxng/searxng/$$revision/$$source_file"; \
 		done
 
+# Fixed public research only. No caller URL, token, mode or output-path variables.
+# Playwright v1.63.0 matches requirements/profiles/presentation-test/uv.lock.
+.PHONY: inspect-presentation-browser-dependency-source inspect-presentation-browser-dependency-source-live
+
+inspect-presentation-browser-dependency-source:
+	@printf '%s\n' \
+		'BROWSER_SOURCE_INSPECTION plan_only=true network=false requests=9 playwright=1.63.0 gate_evidence=false' \
+		'playwright-dependencies https://raw.githubusercontent.com/microsoft/playwright/v1.63.0/packages/playwright-core/src/server/registry/dependencies.ts' \
+		'playwright-native-dependencies https://raw.githubusercontent.com/microsoft/playwright/v1.63.0/packages/playwright-core/src/server/registry/nativeDeps.ts' \
+		'apt-conf-upstream https://raw.githubusercontent.com/Debian/apt/main/doc/apt.conf.5.xml' \
+		'apt-sources-upstream https://raw.githubusercontent.com/Debian/apt/main/doc/sources.list.5.xml' \
+		'runner-image-source-tree https://api.github.com/repos/actions/runner-images/git/trees/main?recursive=1' \
+		'runner-firsthand-issues https://api.github.com/search/issues q=repo:actions/runner-images is:issue "azure.archive.ubuntu.com" "Connection timed out" created:<2026-01-01 per_page=5 page=1 sort=created order=asc' \
+		'playwright-firsthand-issues https://api.github.com/search/issues q=repo:microsoft/playwright is:issue "azure.archive.ubuntu.com" "Connection timed out" created:<2026-01-01 per_page=5 page=1 sort=created order=asc' \
+		'runner-image-apt-source https://raw.githubusercontent.com/actions/runner-images/ubuntu24/20261012.334/images/ubuntu/scripts/build/configure-apt.sh' \
+		'runner-image-apt-sources https://raw.githubusercontent.com/actions/runner-images/ubuntu24/20261012.334/images/ubuntu/scripts/build/configure-apt-sources.sh' \
+		'Explicit public retrieval: make inspect-presentation-browser-dependency-source-live; each request has connect=10s total=20s bytes<=2097152 retries=0 redirects=0; no authentication' \
+		'AGENT_NEXT target=inspect-presentation-browser-dependency-source outcome=plan research_only=true gate_evidence=false release_ready=false next_owner=inspect-presentation-browser-dependency-source-live next_action=explicit-live-retrieval-after-owned-receiving issue_relevance=unverified apt_repair=unverified'
+
+inspect-presentation-browser-dependency-source-live:
+	@set -eu; \
+		inspect_public_source() { \
+			gludd_source_name="$$1"; gludd_source_url="$$2"; shift 2; \
+			printf "\nBROWSER_SOURCE_BEGIN name=%s url=%s\n" "$$gludd_source_name" "$$gludd_source_url"; \
+			gludd_source_rc=0; \
+			env -i PATH="$$PATH" LC_ALL=C curl --disable \
+				--connect-timeout 10 --max-time 20 --max-filesize 2097152 --retry 0 \
+				--location --max-redirs 0 --proto '=https' --proto-redir '=https' --tlsv1.2 \
+				--proxy '' --noproxy '*' --fail-with-body --silent --show-error \
+				--write-out '\nBROWSER_SOURCE_HTTP http_code=%{http_code} url=%{url_effective}\n' \
+				"$$@" "$$gludd_source_url" || gludd_source_rc=$$?; \
+			printf "\nBROWSER_SOURCE_END name=%s native_status=%s\n" "$$gludd_source_name" "$$gludd_source_rc"; \
+			if [ "$$gludd_source_rc" -ne 0 ]; then \
+				case "$$gludd_source_rc" in \
+					22) gludd_source_changed_input=verified-pinned-source-or-public-HTTP-access ;; \
+					28) gludd_source_changed_input=verified-source-endpoint-or-network-availability ;; \
+					47) gludd_source_changed_input=reviewed-direct-HTTPS-source-without-redirect ;; \
+					*) gludd_source_changed_input=proven-source-or-transport-correction ;; \
+				esac; \
+				printf 'AGENT_NEXT target=inspect-presentation-browser-dependency-source-live outcome=failed failed_source=%s native_status=%s research_only=true gate_evidence=false release_ready=false next_owner=show-lines next_action=inspect-raw-failure-and-repair-proven-input changed_input=%s no_unchanged_retry=true preserve_prior_raw=true\n' \
+					"$$gludd_source_name" "$$gludd_source_rc" "$$gludd_source_changed_input"; \
+				exit "$$gludd_source_rc"; \
+			fi; \
+		}; \
+		inspect_public_source playwright-dependencies 'https://raw.githubusercontent.com/microsoft/playwright/v1.63.0/packages/playwright-core/src/server/registry/dependencies.ts'; \
+		inspect_public_source playwright-native-dependencies 'https://raw.githubusercontent.com/microsoft/playwright/v1.63.0/packages/playwright-core/src/server/registry/nativeDeps.ts'; \
+		inspect_public_source apt-conf-upstream 'https://raw.githubusercontent.com/Debian/apt/main/doc/apt.conf.5.xml'; \
+		inspect_public_source apt-sources-upstream 'https://raw.githubusercontent.com/Debian/apt/main/doc/sources.list.5.xml'; \
+		inspect_public_source runner-image-source-tree 'https://api.github.com/repos/actions/runner-images/git/trees/main?recursive=1'; \
+		inspect_public_source runner-firsthand-issues 'https://api.github.com/search/issues' --get \
+			--data-urlencode 'q=repo:actions/runner-images is:issue "azure.archive.ubuntu.com" "Connection timed out" created:<2026-01-01' \
+			--data-urlencode 'per_page=5' --data-urlencode 'page=1' --data-urlencode 'sort=created' --data-urlencode 'order=asc'; \
+		inspect_public_source playwright-firsthand-issues 'https://api.github.com/search/issues' --get \
+			--data-urlencode 'q=repo:microsoft/playwright is:issue "azure.archive.ubuntu.com" "Connection timed out" created:<2026-01-01' \
+			--data-urlencode 'per_page=5' --data-urlencode 'page=1' --data-urlencode 'sort=created' --data-urlencode 'order=asc'; \
+		inspect_public_source runner-image-apt-source 'https://raw.githubusercontent.com/actions/runner-images/ubuntu24/20261012.334/images/ubuntu/scripts/build/configure-apt.sh'; \
+		inspect_public_source runner-image-apt-sources 'https://raw.githubusercontent.com/actions/runner-images/ubuntu24/20261012.334/images/ubuntu/scripts/build/configure-apt-sources.sh'; \
+		printf '%s\n' 'BROWSER_SOURCE_INSPECTION completed=true requests=9 gate_evidence=false' \
+			'AGENT_NEXT target=inspect-presentation-browser-dependency-source-live outcome=observed research_only=true gate_evidence=false release_ready=false next_owner=show-lines next_action=retain-and-review-raw-primary-source-and-issue-bodies issue_relevance=unverified apt_repair=unverified'
+
+
 build-ansible-execution-environment:
 	@# Literal ANSIBLE_EE_RUNTIME -> GLUDD_EE_BUILD_RUNTIME; ANSIBLE_EE_IMAGE -> GLUDD_EE_BUILD_IMAGE.
 	@# Literal ANSIBLE_EE_CONTEXT -> GLUDD_EE_BUILD_CONTEXT; optional Docker fields preserve inherited defaults.
@@ -1397,6 +1648,56 @@ relock:
 		set -- --profile "$$GLUDD_DEPENDENCY_PROFILE_RELOCK_PROFILE"; \
 	fi; \
 	UV_NO_SYNC=0 $(UV) run --no-project --python 3.11 python scripts/dependency_profiles.py $(if $(filter 1,$(DEPENDENCY_PROFILE_RELOCK_VALIDATE_ONLY)),check,lock) --root "$(CURDIR)" --manifest config/dependency_profiles.toml --uv "$(UV)" "$$@"
+
+# Fixed public inputs only; no caller URL, token, output path or source selector.
+.PHONY: inspect-node-audit-source
+inspect-node-audit-source:
+	@if [ "$(MAKECMDGOALS)" != inspect-node-audit-source ]; then echo 'inspect-node-audit-source must be invoked directly' >&2; exit 2; fi
+	@set -eu; \
+		case "$$GLUDD_NODE_AUDIT_SOURCE_VALIDATE_ONLY" in 0|1) ;; *) echo 'NODE_AUDIT_SOURCE_VALIDATE_ONLY must be literal 0 or 1' >&2; exit 2;; esac; \
+		if [ "$$GLUDD_NODE_AUDIT_SOURCE_VALIDATE_ONLY" = 1 ]; then \
+			printf '%s\n' \
+				'NODE_AUDIT_SOURCE_INSPECTION plan_only=true network=false requests=9 gate_evidence=false release_ready=false' \
+				'toml-arrays https://api.github.com/advisories/GHSA-4qx8-w7c3-pj3p' \
+				'toml-dotted-keys https://api.github.com/advisories/GHSA-9j65-hcg3-gc64' \
+				'toml-integers https://api.github.com/advisories/GHSA-9qmh-m7c6-f92p' \
+				'zod-collections https://api.github.com/advisories/GHSA-mrhx-c7xc-m3w5' \
+				'toml-published https://registry.npmjs.org/toml/latest' \
+				'zod-published https://registry.npmjs.org/zod/latest' \
+				'plugin-published https://registry.npmjs.org/@opencode-ai%2fplugin/latest' \
+				'effect-published-tags https://registry.npmjs.org/-/package/effect/dist-tags' \
+				'zod-firsthand-issue https://api.github.com/repos/colinhacks/zod/issues/1872' \
+				'Public request bounds: connect=10s total=20s bytes<=2097152 retries=0 redirects=0; no authentication' \
+				'AGENT_NEXT target=inspect-node-audit-source outcome=planned research_only=true gate_evidence=false release_ready=false next_action=explicit-mode0-public-retrieval fix_availability=unverified'; \
+		else \
+			inspect_node_source() { \
+				gludd_node_source_name="$$1"; gludd_node_source_url="$$2"; \
+				printf '\nNODE_AUDIT_SOURCE_BEGIN name=%s url=%s\n' "$$gludd_node_source_name" "$$gludd_node_source_url"; \
+				gludd_node_source_status=0; \
+				env -i PATH="$$PATH" LC_ALL=C curl --disable \
+					--connect-timeout 10 --max-time 20 --max-filesize 2097152 --retry 0 \
+					--location --max-redirs 0 --proto '=https' --proto-redir '=https' --tlsv1.2 \
+					--proxy '' --noproxy '*' --fail-with-body --silent --show-error \
+					--write-out '\nNODE_AUDIT_SOURCE_HTTP http_code=%{http_code} url=%{url_effective}\n' \
+					"$$gludd_node_source_url" || gludd_node_source_status=$$?; \
+				printf '\nNODE_AUDIT_SOURCE_END name=%s native_status=%s\n' "$$gludd_node_source_name" "$$gludd_node_source_status"; \
+				if [ "$$gludd_node_source_status" -ne 0 ]; then \
+					printf 'AGENT_NEXT target=inspect-node-audit-source outcome=failed failed_source=%s native_status=%s research_only=true gate_evidence=false release_ready=false next_owner=show-lines next_action=retain-raw-failure-and-repair-proven-source-or-transport-input no_unchanged_retry=true\n' "$$gludd_node_source_name" "$$gludd_node_source_status"; \
+					exit "$$gludd_node_source_status"; \
+				fi; \
+			}; \
+			inspect_node_source toml-arrays 'https://api.github.com/advisories/GHSA-4qx8-w7c3-pj3p'; \
+			inspect_node_source toml-dotted-keys 'https://api.github.com/advisories/GHSA-9j65-hcg3-gc64'; \
+			inspect_node_source toml-integers 'https://api.github.com/advisories/GHSA-9qmh-m7c6-f92p'; \
+			inspect_node_source zod-collections 'https://api.github.com/advisories/GHSA-mrhx-c7xc-m3w5'; \
+			inspect_node_source toml-published 'https://registry.npmjs.org/toml/latest'; \
+			inspect_node_source zod-published 'https://registry.npmjs.org/zod/latest'; \
+			inspect_node_source plugin-published 'https://registry.npmjs.org/@opencode-ai%2fplugin/latest'; \
+			inspect_node_source effect-published-tags 'https://registry.npmjs.org/-/package/effect/dist-tags'; \
+			inspect_node_source zod-firsthand-issue 'https://api.github.com/repos/colinhacks/zod/issues/1872'; \
+			printf '%s\n' 'NODE_AUDIT_SOURCE_INSPECTION completed=true requests=9 raw_http_only=true' \
+				'AGENT_NEXT target=inspect-node-audit-source outcome=raw-completed research_only=true gate_evidence=false release_ready=false fix_availability=unverified next_action=review-primary-patched-ranges-and-published-metadata-before-any-lock-change'; \
+		fi
 
 node-deps-sync:
 	@if [ "$(NODE_DEPS_VALIDATE_ONLY)" = "1" ]; then \
@@ -1616,14 +1917,29 @@ fix-logger-imports:
 ruff-audit:
 	@$(UV) run python scripts/ruff_plugins/return_type_checker.py
 
+# Bind package discovery to this physical Make checkout before installed editables.
+# Keep inherited search carriers and each command's original config/cache policy.
 typecheck:
-	@$(UV) run mypy -p general_ludd
-	@$(UV) run mypy --config-file config/mypy-tests.toml tests/unit/test_config_gaps.py
+	@gludd_mypy_root=$$(pwd -P) || { gludd_mypy_status=$$?; printf 'AGENT_NEXT target=typecheck outcome=failed phase=source-root native_status=%s input=physical-working-directory next_action=repair-current-directory gate_evidence=false ci_evidence=false release_ready=false\n' "$$gludd_mypy_status" >&2; exit "$$gludd_mypy_status"; }; \
+	if MYPYPATH="$$gludd_mypy_root/src:$$gludd_mypy_root/scripts$${MYPYPATH:+:$$MYPYPATH}" $(UV) run mypy -p general_ludd; then \
+		if MYPYPATH="$$gludd_mypy_root/src:$$gludd_mypy_root/scripts$${MYPYPATH:+:$$MYPYPATH}" $(UV) run mypy --config-file config/mypy-tests.toml tests/unit/test_config_gaps.py; then \
+			printf '%s\n' 'AGENT_NEXT target=typecheck outcome=passed native_status=0 measured=general_ludd-and-configured-test-file next_owner=calling-workflow gate_evidence=false ci_evidence=false release_ready=false: Both native typing commands passed; complete remaining checks and exact-SHA CI before promotion.' >&2; \
+		else gludd_mypy_status=$$?; \
+			printf 'AGENT_NEXT target=typecheck outcome=failed phase=configured-test native_status=%s input=current-checkout-src-scripts next_action=repair-native-type-or-source-path-error gate_evidence=false ci_evidence=false release_ready=false\n' "$$gludd_mypy_status" >&2; \
+			exit "$$gludd_mypy_status"; fi; \
+	else gludd_mypy_status=$$?; \
+		printf 'AGENT_NEXT target=typecheck outcome=failed phase=package native_status=%s input=current-checkout-src-scripts next_action=repair-native-type-or-source-path-error gate_evidence=false ci_evidence=false release_ready=false\n' "$$gludd_mypy_status" >&2; \
+		exit "$$gludd_mypy_status"; fi
 
 # Pre-commit needs the full package analysis without writing a disposable cache.
 # os.devnull is /dev/null on Unix and nul on Windows; make selects equivalently.
 _precommit-mypy:
-	@$(UV) run mypy --cache-dir="$(MYPY_NULL_CACHE)" -p general_ludd
+	@gludd_mypy_root=$$(pwd -P) || { gludd_mypy_status=$$?; printf 'AGENT_NEXT target=_precommit-mypy outcome=failed phase=source-root native_status=%s input=physical-working-directory next_action=repair-current-directory gate_evidence=false ci_evidence=false release_ready=false\n' "$$gludd_mypy_status" >&2; exit "$$gludd_mypy_status"; }; \
+	if MYPYPATH="$$gludd_mypy_root/src:$$gludd_mypy_root/scripts$${MYPYPATH:+:$$MYPYPATH}" $(UV) run mypy --cache-dir="$(MYPY_NULL_CACHE)" -p general_ludd; then \
+		printf '%s\n' 'AGENT_NEXT target=_precommit-mypy outcome=passed native_status=0 measured=general_ludd next_owner=calling-pre-commit gate_evidence=false ci_evidence=false release_ready=false: Package typing passed; remaining native hooks and exact-SHA proof stay required.' >&2; \
+	else gludd_mypy_status=$$?; \
+		printf 'AGENT_NEXT target=_precommit-mypy outcome=failed phase=package native_status=%s input=current-checkout-src-scripts next_action=repair-native-type-or-source-path-error gate_evidence=false ci_evidence=false release_ready=false\n' "$$gludd_mypy_status" >&2; \
+		exit "$$gludd_mypy_status"; fi
 
 test:
 	@if [ -n "$(TESTFILE)" ]; then \

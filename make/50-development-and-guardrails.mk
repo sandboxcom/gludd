@@ -7,23 +7,15 @@
 # If `development` doesn't exist locally, create it from `master` first.
 # Usage: make agent-worktree-dev BRANCH=agent-fix-slurm
 agent-worktree-dev:
-	@[ -n "$(BRANCH)" ] || { echo "Usage: make agent-worktree-dev BRANCH=agent-<name>"; exit 1; }
-	@git rev-parse --verify development 2>/dev/null || { echo "Creating development branch from master..."; git branch development master; }
-	@WORKTREE_PATH="/tmp/gludd-worktrees/$(BRANCH)"; \
-	mkdir -p /tmp/gludd-worktrees; \
-	git worktree add "$$WORKTREE_PATH" -b "$(BRANCH)" development 2>/dev/null || git worktree add "$$WORKTREE_PATH" "$(BRANCH)"; \
-	echo "WORKTREE_PATH=$$WORKTREE_PATH"; \
-	echo "Worktree ready at $$WORKTREE_PATH on branch $(BRANCH) (base: development)"
+	@[ -n '$(subst ','"'"',$(BRANCH))' ] || { echo "Usage: make agent-worktree-dev BRANCH=agent-<name>"; echo "AGENT_NEXT target=$@ outcome=refused native_status=1 next_action=supply-BRANCH gate_evidence=false release_ready=false" >&2; exit 1; }
+	$(call _agent-worktree-create,development,development,$(ACTIVE_WORKSTREAM_REGISTRY))
 
-# Merge a subagent's worktree branch back to `development` (--no-ff).
-# Checks out development, merges the feature branch, then returns to the
-# previous branch. Usage: make agent-merge-dev BRANCH=agent-fix-slurm
+# Retired: a caller may not select another worker's development checkout.
+.PHONY: agent-merge-dev
 agent-merge-dev:
-	@[ -n "$(BRANCH)" ] || { echo "Usage: make agent-merge-dev BRANCH=agent-<name>"; exit 1; }
-	@git checkout development && \
-	git merge --no-ff "$(BRANCH)" -m "merge: $(BRANCH) worktree work into development" && \
-	git checkout - && \
-	echo "Merged $(BRANCH) into development"
+	@printf '%s\n' 'RETIRED: agent-merge-dev cannot establish a pinned, accepted development receiver.' >&2; \
+	printf '%s\n' 'AGENT_NEXT target=agent-merge-dev outcome=retired native_status=2 gate_evidence=false release_ready=false; preserve candidate/index/refs/checkpoints; independently review immutable SOURCE and use development-merge-forward MODE=content APPLY=0 from the actual clean development receiver; a plan or unchanged ancestry proves no new merge/gate; an already accepted exact integration commit may use guarded development-fast-forward with full expected-before/after SHAs; obtain required native acceptance and exact-SHA proof before sign-off' >&2; \
+	exit 2
 
 # Complete an in-progress merge commit after conflicts are resolved.
 # Usage: make merge-commit-nv MSG='merge: ...'
@@ -38,12 +30,15 @@ worktree-commit-changes: _gate-fresh-check _commit-lint-guard
 	@git add -A && git commit -m "$(MSG)"
 
 # Push the development branch to the sandboxcom remote.
-development-push: check-clean-tree ci-busy-check _push-rate-guard
-	@$(MAKE) ci-busy-check BRANCH=development
-	@$(MAKE) require-sandboxcom-ssh-key
-	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom development
-	@$(MAKE) verify-remote BRANCH=development SHA=$$(git rev-parse development)
-	@echo "Development branch pushed and verified"
+.PHONY: development-push
+development-push: check-clean-tree ci-busy-check
+	@if [ "$(_publication-native-mode)" != execute ]; then echo "AGENT_NEXT target=development-push outcome=planned mode=$(_publication-native-mode) gate_evidence=false release_ready=false: Native inspection starts no authentication, publication, runtime admission or hosted observation." >&2; exit 0; fi; \
+	gludd_development_branch=$$(git branch --show-current) || { gludd_development_rc=$$?; printf 'AGENT_NEXT target=development-push outcome=failed phase=candidate native_status=%s gate_evidence=false release_ready=false: Repair the native branch lookup before selecting the development candidate.\n' "$$gludd_development_rc" >&2; exit "$$gludd_development_rc"; }; \
+	if [ "$$gludd_development_branch" != development ]; then echo "AGENT_NEXT target=development-push outcome=refused phase=candidate native_status=2 gate_evidence=false release_ready=false: Select the actual development checkout before normal guarded publication; detached or another current branch cannot authorize this shortcut." >&2; exit 2; fi; \
+	gludd_development_head=$$(git rev-parse --verify HEAD^{commit}) || { gludd_development_rc=$$?; printf 'AGENT_NEXT target=development-push outcome=failed phase=candidate native_status=%s gate_evidence=false release_ready=false: Repair the native fullSHA lookup before selecting the development candidate.\n' "$$gludd_development_rc" >&2; exit "$$gludd_development_rc"; }; \
+	$(MAKE) --no-print-directory ci-busy-check BRANCH=development || exit $$?; \
+	$(MAKE) --no-print-directory git-push-sandboxcom SSH_KEY="$(SSH_KEY)" PUSH_BRANCH=development PUBLISH_EXPECTED_BRANCH="$$gludd_development_branch" PUBLISH_EXPECTED_SHA="$$gludd_development_head" || { gludd_development_rc=$$?; printf 'AGENT_NEXT target=development-push outcome=failed phase=publication native_status=%s branch=development sha=%s gate_evidence=false release_ready=false: Preserve the canonical publication failure and reconcile that input; transport/history may already have applied. Do not retry unchanged or infer hosted/deployment success.\n' "$$gludd_development_rc" "$$gludd_development_head" >&2; exit "$$gludd_development_rc"; }; \
+	printf 'AGENT_NEXT target=development-push outcome=published native_status=0 branch=development sha=%s gate_evidence=false release_ready=false: The normal publisher verified this saved candidate; retain required exact-SHA hosted CI, full-gate and deployment proofs.\n' "$$gludd_development_head" >&2
 
 # Force-push the development branch (when rebase rewrites history).
 development-force-push:
@@ -91,25 +86,30 @@ development-fast-forward: _gate-mutation-guard main-worktree-guard
 # required so an ancestry-only (-s ours) decision remains visible and auditable.
 # APPLY defaults to 0; APPLY=1 is fail-closed outside a clean development tree.
 # Usage: make development-merge-forward SOURCE=<ref> MODE=content|ancestry-only APPLY=0|1
+.PHONY: development-merge-forward
 development-merge-forward:
-	@SOURCE_VALUE='$(SOURCE)'; MODE_VALUE='$(MODE)'; APPLY_VALUE='$(APPLY)'; \
+	@agent_next() { printf '%s\n' "AGENT_NEXT target=development-merge-forward outcome=$$1 phase=$$2 gate_evidence=false release_ready=false: $$3" >&2; }; \
+	refuse() { agent_next refused "$$1" 'Use worktree-state; repair the reported SOURCE/MODE/APPLY or branch/clean prerequisite before retrying; no gate or release proof.'; exit 2; }; \
+	fail() { agent_next failed "$$1" 'Retain the failure, wait for native transaction cleanup, inspect worktree-state and repair the actual input before retrying; cleanup and release proof remain unverified.'; exit 1; }; \
+	SOURCE_VALUE='$(SOURCE)'; MODE_VALUE='$(MODE)'; APPLY_VALUE='$(APPLY)'; \
 	if [ -z "$$APPLY_VALUE" ]; then APPLY_VALUE=0; fi; \
-	if [ -z "$$SOURCE_VALUE" ]; then echo "Usage: make development-merge-forward SOURCE=<ref> MODE=content|ancestry-only APPLY=0|1"; exit 2; fi; \
-	case "$$MODE_VALUE" in content|ancestry-only) ;; *) echo "MODE must be explicitly set to content or ancestry-only"; exit 2 ;; esac; \
-	case "$$APPLY_VALUE" in 0|1) ;; *) echo "APPLY must be 0 or 1"; exit 2 ;; esac; \
+	if [ -z "$$SOURCE_VALUE" ]; then echo "Usage: make development-merge-forward SOURCE=<ref> MODE=content|ancestry-only APPLY=0|1"; refuse source; fi; \
+	case "$$MODE_VALUE" in content|ancestry-only) ;; *) echo "MODE must be explicitly set to content or ancestry-only"; refuse mode ;; esac; \
+	case "$$APPLY_VALUE" in 0|1) ;; *) echo "APPLY must be 0 or 1"; refuse apply ;; esac; \
 	if [ "$$MODE_VALUE" = ancestry-only ]; then \
-		case "$$SOURCE_VALUE" in master|refs/heads/master|*/master) echo "ancestry-only mode is forbidden for master"; exit 2 ;; esac; \
+		case "$$SOURCE_VALUE" in master|refs/heads/master|*/master) echo "ancestry-only mode is forbidden for master"; refuse mode ;; esac; \
 		echo "WARNING: mode=ancestry-only strategy=ours records ancestry while preserving development content"; \
 	fi; \
-	if ! SOURCE_SHA=$$(git rev-parse --verify "$${SOURCE_VALUE}^{commit}" 2>/dev/null); then echo "Invalid SOURCE ref: $$SOURCE_VALUE"; exit 2; fi; \
+	if ! SOURCE_SHA=$$(git rev-parse --verify "$${SOURCE_VALUE}^{commit}" 2>/dev/null); then echo "Invalid SOURCE ref: $$SOURCE_VALUE"; refuse source; fi; \
 	if [ "$$APPLY_VALUE" = 0 ]; then \
 		echo "MERGE_FORWARD_DRY_RUN source=$$SOURCE_VALUE mode=$$MODE_VALUE apply=0 sha=$$SOURCE_SHA"; \
 		echo "no repository changes were made"; \
+		agent_next planned inputs 'After validating APPLY, this plan checks only SOURCE and mode; branch, clean state, capacity and tests are unverified. Before APPLY=1, use worktree-state and make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0 with documented variables; repair failed prerequisites first.'; \
 		exit 0; \
 	fi; \
 	CURRENT_BRANCH="$$(git branch --show-current)"; \
-	if [ "$$CURRENT_BRANCH" != "development" ]; then echo "APPLY=1 requires current branch development (found: $$CURRENT_BRANCH)"; exit 2; fi; \
-	if [ -n "$$(git status --porcelain)" ]; then echo "APPLY=1 requires a clean development worktree"; exit 2; fi; \
+	if [ "$$CURRENT_BRANCH" != "development" ]; then echo "APPLY=1 requires current branch development (found: $$CURRENT_BRANCH)"; refuse branch; fi; \
+	if [ -n "$$(git status --porcelain)" ]; then echo "APPLY=1 requires a clean development worktree"; refuse clean-state; fi; \
 	MERGE_STARTED=1; \
 	abort_merge() { if [ "$$MERGE_STARTED" -eq 1 ]; then git restore --worktree -- . >/dev/null 2>&1 || true; git merge --abort >/dev/null 2>&1 || true; fi; }; \
 	trap abort_merge EXIT HUP INT TERM; \
@@ -117,31 +117,34 @@ development-merge-forward:
 		if ! git merge --no-ff --no-commit -X ours "$$SOURCE_SHA"; then \
 			echo "Structural conflict while merging $$SOURCE_VALUE; aborting transaction"; \
 			git diff --name-only --diff-filter=U; \
-			exit 1; \
+			fail merge; \
 		fi; \
 	else \
-		if ! git merge --no-ff -s ours --no-commit "$$SOURCE_SHA"; then echo "Ancestry-only merge failed; aborting transaction"; exit 1; fi; \
+		if ! git merge --no-ff -s ours --no-commit "$$SOURCE_SHA"; then echo "Ancestry-only merge failed; aborting transaction"; fail merge; fi; \
 	fi; \
 	if ! git rev-parse --verify -q MERGE_HEAD >/dev/null; then \
 		MERGE_STARTED=0; trap - EXIT HUP INT TERM; \
 		echo "MERGE_FORWARD_NOOP source=$$SOURCE_VALUE is already an ancestor of development"; \
+		agent_next unchanged ancestry 'No source was applied and no new gate ran. Inspect current native observations and obtain missing exact-SHA gate, CI, deployment and reviewed-head proof through their existing owners.'; \
 		exit 0; \
 	fi; \
 	UNMERGED="$$(git diff --name-only --diff-filter=U)"; \
-	if [ -n "$$UNMERGED" ]; then echo "Structural conflict remains; aborting transaction"; echo "$$UNMERGED"; exit 1; fi; \
+	if [ -n "$$UNMERGED" ]; then echo "Structural conflict remains; aborting transaction"; echo "$$UNMERGED"; fail merge; fi; \
 	if ! $(UV) run pre-commit run detect-secrets --all-files; then \
-		if git diff --quiet -- .secrets.baseline; then echo "Secret scan failed without a baseline metadata update; aborting transaction"; exit 1; fi; \
+		if git diff --quiet -- .secrets.baseline; then echo "Secret scan failed without a baseline metadata update; aborting transaction"; fail secrets; fi; \
 		git add .secrets.baseline; \
-		if ! $(UV) run pre-commit run detect-secrets --all-files; then echo "Secret scan still fails after baseline metadata refresh; aborting transaction"; exit 1; fi; \
+		if ! $(UV) run pre-commit run detect-secrets --all-files; then echo "Secret scan still fails after baseline metadata refresh; aborting transaction"; fail secrets; fi; \
 	fi; \
-	if ! $(MAKE) --no-print-directory collect-check; then echo "Collection check failed; aborting transaction"; exit 1; fi; \
-	if ! $(MAKE) --no-print-directory _commit-lint-guard; then echo "Lint guard failed; aborting transaction"; exit 1; fi; \
-	if ! $(MAKE) --no-print-directory gate-refresh GATE_REFRESH_VALIDATE_ONLY=0; then echo "Merged-tree gate refresh failed; aborting transaction"; exit 1; fi; \
-	if ! git diff --cached --name-only -z | xargs -0 $(UV) run pre-commit run --files; then echo "Merged-tree pre-commit checks failed; aborting transaction"; exit 1; fi; \
-	if ! $(MAKE) --no-print-directory _gate-fresh-check; then echo "Gate freshness check failed; aborting transaction"; exit 1; fi; \
-	if ! git commit -n -m "merge-forward: MODE=$$MODE_VALUE SOURCE=$$SOURCE_VALUE SHA=$$SOURCE_SHA into development"; then echo "Merge commit failed; aborting transaction"; exit 1; fi; \
+	if ! $(MAKE) --no-print-directory collect-check; then echo "Collection check failed; aborting transaction"; fail collection; fi; \
+	if ! $(MAKE) --no-print-directory _commit-lint-guard; then echo "Lint guard failed; aborting transaction"; fail lint; fi; \
+	if ! $(MAKE) --no-print-directory gate-refresh GATE_REFRESH_VALIDATE_ONLY=0; then echo "Merged-tree gate refresh failed; aborting transaction"; fail gate; fi; \
+	if ! git diff --cached --name-only -z | xargs -0 $(UV) run pre-commit run --files; then echo "Merged-tree pre-commit checks failed; aborting transaction"; fail pre-commit; fi; \
+	if ! $(MAKE) --no-print-directory _gate-fresh-check; then echo "Gate freshness check failed; aborting transaction"; fail gate; fi; \
+	if ! git commit -n -m "merge-forward: MODE=$$MODE_VALUE SOURCE=$$SOURCE_VALUE SHA=$$SOURCE_SHA into development"; then echo "Merge commit failed; aborting transaction"; fail commit; fi; \
 	MERGE_STARTED=0; trap - EXIT HUP INT TERM; \
-	echo "MERGE_FORWARD_APPLIED source=$$SOURCE_VALUE mode=$$MODE_VALUE sha=$$SOURCE_SHA"
+	echo "MERGE_FORWARD_APPLIED source=$$SOURCE_VALUE mode=$$MODE_VALUE sha=$$SOURCE_SHA"; \
+	agent_next passed commit 'Retain the native merged-tree gate receipt and obtain missing exact-SHA CI, deployment and reviewed-head proof through existing owners before guarded promotion; this prompt is not release evidence.'; \
+	exit 0
 
 # Reconcile several already-reviewed, semantically superseded refs in one
 # ancestry-only transaction. The octopus ours merge records every parent while
@@ -183,16 +186,12 @@ development-merge-forward-batch:
 	MERGE_STARTED=0; trap - EXIT HUP INT TERM; \
 	echo "MERGE_FORWARD_BATCH_APPLIED sources=$$SOURCE_COUNT mode=ancestry-only shas=$$SOURCE_SHAS"
 
-# Merge development into master for release prep.
-# Requires CI-green on the development tip before allowing the merge.
-development-merge-to-master: merge-ready
-	@echo "Checking CI green on development tip..."
-	@$(MAKE) require-ci-green SHA=$$(git rev-parse development) || { echo "CI not green on development tip. Aborting."; exit 1; }
-	@echo "CI green confirmed. Merging development into master..."
-	@git checkout master && \
-	git merge --no-ff development -m "merge: development into master for release" && \
-	git checkout - && \
-	echo "Merged development into master"
+# Retired: only release-promote owns exact-source development-to-master promotion.
+.PHONY: development-merge-to-master
+development-merge-to-master:
+	@printf '%s\n' 'RETIRED: development-merge-to-master bypassed the canonical release owner.' >&2; \
+	printf '%s\n' 'AGENT_NEXT target=development-merge-to-master outcome=retired native_status=2 gate_evidence=false release_ready=false; use make release-promote TAG=v0.1.2 MSG=release-notes RELEASE_PROMOTE_VALIDATE_ONLY=1 RELEASE_PROMOTE_PUBLISH=0 REVIEWED_HEAD_INTEGRATION_RECEIPT= for a policy/topology plan only; real promotion still requires the genuine reviewed-head receipt, exact development SHA, complete local gate, hosted/deployment evidence and canonical main fast-forward guards; no Git or publication was attempted' >&2; \
+	exit 2
 
 # Create the development branch from current master if it doesn't exist.
 development-start:
@@ -213,7 +212,7 @@ preflight: disk-cleanup-preflight check-plugin-liveness
 	@echo "========================================"
 	@$(UV) run python -c "import json, sys; from general_ludd.quality.preflight import run_preflight; r = run_preflight(); json.dump(r, sys.stdout, indent=2); sys.exit(0 if r['overall'] == 'PASS' else 1)"
 
-test-and-commit: _commit-lock-acquire
+_commit-locked-test-and-commit: _commit-lock-acquire
 	@echo "Running preflight checks..."
 	@$(MAKE) preflight
 	@echo "Running tests before commit..."
@@ -933,7 +932,17 @@ _ci-verdict-history-guard:
 # every FAILED push attempt (pre-push hook rejections, rate-limit blocks),
 # forcing a fresh 10-minute cooldown verdict for a push that never happened.
 _record-push-verdict:
-	@$(PYTHON) scripts/ci_check_cooldown.py record-push
+	@gludd_record_sha="$$GLUDD_PUSH_VERDICT_SHA"; \
+	if [ "$$GLUDD_PUBLISH_PURPOSE" = feature-ci ]; then \
+		if [ -z "$$gludd_record_sha" ] || [ "$$GLUDD_PUBLISH_EXPECTED_SHA" != "$$gludd_record_sha" ]; then \
+			echo "RECORD-PUSH-FAILED: diagnostic saved SHA does not match the landed source" >&2; exit 2; \
+		fi; \
+		$(PYTHON) scripts/ci_check_cooldown.py record-push "$$gludd_record_sha" "$$GLUDD_PUBLISH_EXPECTED_BRANCH" feature-ci; \
+	elif [ -n "$$GLUDD_PUBLISH_PURPOSE" ] && [ "$$GLUDD_PUBLISH_PURPOSE" != canonical ]; then \
+		echo "RECORD-PUSH-FAILED: unrecognized publication purpose" >&2; exit 2; \
+	elif [ -n "$$gludd_record_sha" ]; then \
+		$(PYTHON) scripts/ci_check_cooldown.py record-push "$$gludd_record_sha"; \
+	else $(PYTHON) scripts/ci_check_cooldown.py record-push; fi
 
 # AA034 — _pre-commit-stash-audit: detects pre-commit auto-fix stash conflicts.
 # Pre-commit hooks auto-fix files (trailing whitespace, eof) via stash/unstash.
@@ -982,15 +991,16 @@ _session-close-audit:
 check-assert-deps:
 	@$(UV) run python scripts/check_assert_deps.py
 
-# AA043 — _edit-commit-atomicity-guard: prevents committing when stashed changes
-# may be lost. When pre-commit hooks stash edits, the commit proceeds without
-# the edited content. Guard checks if working tree matches index before commit;
-# if there are unstaged changes that match known stash contents, warns agent.
+# AA043 — _edit-commit-atomicity-guard: advisory working-tree/index observation.
+# Preserve the existing PASS; unstaged changes do not establish lost edits or a
+# Git stash. Pre-commit can restore private patches; compare owned change evidence.
 _edit-commit-atomicity-guard:
 	@if ! git diff --quiet; then \
 		echo "EDIT-COMMIT-ATOMICITY: working tree has unstaged changes."; \
-		echo "If pre-commit hooks stashed edits, the commit will NOT include them."; \
-		echo "Run 'make git-stash-pop' to check for stashed pre-commit fixes. See AA043."; \
+		echo "Unstaged changes alone do not prove lost edits or a Git stash; pre-commit may restore private patches."; \
+		echo "Run 'make worktree-state' and 'make git-staged' in separate invocations; compare exact owned worktree/index paths with the intended change and checkpoint."; \
+		echo "Preserve intentional unrelated edits; reconcile only proven owned differences through the existing narrow Make owner."; \
+		echo "AGENT_NEXT target=_edit-commit-atomicity-guard outcome=observed scope=unstaged-observation gate_evidence=false release_ready=false next_owner=worktree-state"; \
 	fi
 	@echo "_edit-commit-atomicity-guard: PASS"
 

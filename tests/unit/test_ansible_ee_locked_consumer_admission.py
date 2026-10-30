@@ -21,9 +21,12 @@ def test_locked_ee_consumer_runs_before_publication_without_replacing_full_gate(
         argument.removeprefix("TESTFILES=").split()
         for argument in shlex.split(result.stdout) if argument.startswith("TESTFILES=")
     ]
-    assert assignments
-    for cohort in ("test_ansible_ee_locked_consumer.py", "test_ansible_ee_locked_consumer_admission.py"):
-        assert assignments[0].count(f"tests/unit/{cohort}") == 1
+    assert len(assignments) == 3
+    locked = "tests/unit/test_ansible_ee_locked_consumer.py"
+    contract = "tests/unit/test_ansible_ee_locked_consumer_admission.py"
+    assert [cohort.count(locked) for cohort in assignments] == [0, 0, 1]
+    assert [cohort.count(contract) for cohort in assignments] == [1, 0, 0]
+    assert assignments[2][-4] == locked
     manifest = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
     family = next(entry for entry in manifest["families"] if entry["id"] == "ee-locked-archive-context-consumer")
     assert family == {

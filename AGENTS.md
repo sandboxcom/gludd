@@ -2,12 +2,111 @@
 
 ## Release Proof Throughput (READ FIRST)
 
+The operator's 2026-10-23 request to maximize parallel implementation and hosted
+CI work overrides the default three-agent/two-owner ceiling below for this
+active release audit. Use six independent implementation lanes in isolated
+registered worktrees (at most6 concurrent worktree agents), with one
+Git/publication writer. Admit at most four local
+test cohorts while observed worker demand, current load and disk permit;
+the existing eight-worker resource ceiling and final95percent disk limit stay.
+Reserve test slots explicitly; coding and source review continue while tests or
+hosted CI run. A blocked hosted lane names its actual prerequisite and pending
+request; continue eligible independent repairs without unchanged failed retries.
+Before every dispatch wave run make check-system-load. Keep one public HTTP
+research owner. Read-only Main audits do not authorize source edits. Set the
+installed runtime explicitly on status readers as well as tests. The [pipeline/agentic audit](docs/features/GHA_PIPELINE_PROMOTION_AUDIT.md)
+records actual failures, native repairs, phase ownership and missing proofs.
+
+### KNOWN GAP history: linked-worktree locking
+
+A linked worktree uses a .git file; the old directory-only lock path broke
+repository-wide exclusion. Current git_automation/locking.py reads bounded
+gitdir and commondir metadata for the common repository. Preserve its native
+identity, fork, re-entry and async ownership controls. Use the existing Make
+transaction owner and its actual receipts; creation/registration readiness
+does not certify locking, the complete gate or exact-SHA promotion. The
+[locking record](docs/features/GIT_REPOSITORY_MUTEX.md) retains the source and
+proof boundaries for this historical gap.
+
+Diagnostic GHA belongs in the implementation loop, before release sign-off.
+Use feature branches for changes, development for integration and master for
+promotion. A finished release candidate is not a prerequisite for diagnostic CI.
+GitHub must have the selected source when testing new code; existing published
+source can instead use the existing guarded rerun/dispatch owners. Keep each
+owner's actual prerequisites, original runtime bounds and native failure status.
+Do not apply final local release capacity or workflow-file authorization as a
+blanket prerequisite for an Actions operation on already published source.
+Explicit PUBLISH_PURPOSE=feature-ci publication checks source, remote binding and
+published workflow provenance, then retains native guards, hooks, saved-SHA
+transport/verification and diagnostic signaling. It runs no local canonical
+EE/promotion/runtime replay. Its success is publication/signal evidence only;
+inspect the actual hosted gate and terminal run before claiming test success.
+Canonical publication and every integration/release proof keep their full gates.
+Read actual service responses: missing workflow-file scope alone is not an
+Actions API refusal. Do not change shared account consent without the existing
+explicit operator/account authorization.
+
+Before another local repair wave, name the diagnostic hosted owner, purpose,
+branch, full source SHA, run and attempt, and the useful changed input. Obtain an
+actual accepted request/queued or active run, or record its exact native refusal
+and missing input. A plan, message, source patch or local test is not hosted
+execution. Keep one bounded native observer for that run while independent
+source work continues. Preserve earlier failures; debug logging is diagnostic
+input, not a code fix or release proof. Never repeat a known unchanged failure
+merely because time elapsed. Source publication, diagnostic CI, development
+integration, master deployment and version-tag publication have separate
+outcomes; retain every canonical branch, coverage, ZDD and promotion gate.
+
+Use checkout-owned CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json and
+observation paths for feature publication. Main paths can propagate through
+explicit Make CLI assignments and MAKEFLAGS/MAKEOVERRIDES into a confined
+pre-push collection; repair that caller input and capture offending key names
+without dumping values. Preserve native Git-local sanitation, enabled plugins
+and confinement. Put the selected installed runtime in both run-watched and its
+actual CMD. Both native mypy owners capture shell pwd -P inside their actual
+recipe and select that physical directory's src/scripts before installed
+editables. CURDIR can be overridden by CLI or -e; keep its caller value and
+unrelated carriers but never use it as the physical source identity. Preserve
+configured stubs, installed typing dependencies and native failure status.
+Read the [pre-push source record](docs/features/GITHUB_PUBLICATION_HTTPS.md#pre-push-source-identity-and-checkout-owned-inputs)
+before another publication attempt.
+ci-await snapshot1 returns only a baseline run ID (or0); native0 supplies no
+terminal CI result and writes no observation. Validate-only returns native0 for a plan.
+Regular snapshot0 uses the actual event/workflow/branch/full SHA and owns its
+observation; pending/timeout remains unproved. Whole-run queued can coexist
+with running/completed jobs: read the exact native job summary. Root owns the
+bounded release observer while independent implementation/receiving continues;
+never dispatch a CI-poll subagent. The pipeline audit retains actual examples.
+
+Before attributing a hosted failure to an earlier phase, read that exact run,
+attempt and job's native step result through ci-job-failure-context. Workflow
+source order and a failed-step-only summary do not prove another step was skipped
+or failed. A passed earlier step removes that particular diagnostic prerequisite;
+it does not make the whole job green, resolve a failure family or prove a speed
+improvement. Keep all eight downstream shard intervals unknown when the gate
+barrier prevents their execution. The pipeline audit retains the actual attempt2
+runtime-pass/Node-failure correction and its bounded native lookup.
+
+Read actual scanner argv/process evidence before reserving local test workers.
+The current full scan requests five workers; staged hooks use a separate serial
+entrypoint. Do not assign one owner's width to another. Status lease labels do
+not acquire weighted capacity. Reserve room for overlapping native scans; the
+[phase record](docs/features/GHA_PIPELINE_PROMOTION_AUDIT.md) retains the identified
+coordination gap without claiming it is repaired or adding a release exemption.
+
+Confined Make fixtures must receive the real target's complete .PHONY and
+provider/include context. A touch-mode failure in an incomplete fixture does not
+establish a production parser defect. New inline Python metadata bootstraps use
+the existing native -P boundary and preserve explicit PYTHONPATH carriers; prove
+an active same-entrypoint import-shadow witness. Keep copied environment fields
+repr=False so a failed fixture cannot dump ambient carriers.
+
 1. During release stabilization, prioritize the active milestone and its required repairs. Do not start unrelated backlog work or pad dispatch waves while release blockers remain.
 2. Keep one proof owner and one explicit missing-proof record per milestone task; use [Release Proof Throughput](docs/features/RELEASE_PROOF_THROUGHPUT.md). Distinguish implementation, focused acceptance, source review, full gate, exact-SHA CI, and completion.
 3. Before candidate sealing, final combined replay, or a full gate, run `make release-proof-admission RELEASE_PROOF_ADMISSION_VALIDATE_ONLY=0`. Plan mode and passing scheduling admission are NEVER gate or release evidence.
 4. Failed capacity/configuration/ownership prerequisites block expensive final proof. Repair the actual prerequisite; a changed HEAD, elapsed time or observer ID does not justify retrying the same failure.
 5. Identify blockers by failing owner/node and actual failing input. Preserve failed evidence and name the changed input needed; never add another scanner, runner, daemon or proof cache.
-6. Bounded failing-first repairs, required per-commit collection and normal policy-guarded development CI repair pushes remain allowed. Batch known independent CI repairs before another hosted run. Use native ci-failure-status/ci-failure-repair for actual open families before an environment-only handoff; the mandatory Make guide names the repair-owned run-watched route for internal checks. Keep local repair receipts separate from hosted and deployment proof. Hosted and publication admission verify the exact pinned EE manifest, then run the canonical promotion prerequisite through the existing separately labeled90/60 watched owner before the unchanged original90/60 runtime replay and transport. Preserve canonical manifest/runtime/release settings and failure propagation; prerequisite failure starts neither replay nor transport. The mandatory Make guide and process-boundary record name each stage and its proof limits. Failed image availability requires native atomic refresh and independent exact-digest verification, never mutable substitution. The offline publication plan executes none of these checks and grants no proof.
+6. Bounded failing-first repairs, required per-commit collection and normal policy-guarded development CI repair pushes remain allowed. Batch known independent CI repairs before another hosted run. Use native ci-failure-status/ci-failure-repair for actual open families before an environment-only handoff; the mandatory Make guide names the repair-owned run-watched route for internal checks. Keep local repair receipts separate from hosted and deployment proof. Hosted admission and canonical publication admission verify the exact pinned EE manifest, then run the canonical promotion prerequisite through the existing separately labeled90/60 watched owner before the unchanged original90/60 runtime replay and transport. Preserve canonical manifest/runtime/release settings and failure propagation; prerequisite failure starts neither replay nor transport. The mandatory Make guide and process-boundary record name each stage and its proof limits. Failed image availability requires native atomic refresh and independent exact-digest verification, never mutable substitution. The offline publication plan executes none of these checks and grants no proof.
 7. Promote cheap deterministic failures into the existing executable admission owner with failing-first routing tests; retain authoritative full-gate replay, coverage, fatal warnings and original assertion intent.
 8. After prerequisites clear, freeze one candidate, obtain independent source review, run combined acceptance, the complete canonical gate and hosted CI for that exact SHA. Do not edit it during final proof.
 9. Source-only approval and green focus never close a backlog item. Tick TASKS.md only with actual green full-gate evidence and required exact-SHA proofs. Preserve failures and immutable candidate refs.
@@ -15,14 +114,336 @@
 11. Do not manually update generated current handoff or observation JSON. Use `make ci-await` or `make pipeline-status`; preserve manual/history evidence as such. Configuration JSON is not a generated observation. Pending/lookup-error/timeout must invalidate prior current success.
 12. Hosted timing comes from immutable `make ci-run-summary CI_RUN_SUMMARY_SHARD_TIMINGS=1`, retaining exact run/SHA, all eight shards and censored/unknown intervals. The report is diagnostic-only, never gate or release authority. Measure the exact hosted scheduling SHA before claiming improvement.
 
+## Fast repair loop and compatible candidate batches
+
+Use this sequence with the existing Make owners and release rules above.
+The [throughput decision](docs/features/RELEASE_PROOF_THROUGHPUT.md) retains
+measurements, rejected approaches and the missing release proofs.
+
+1. Resume from TASKS.md, BUGS.md, config/ratchet.yml and SESSION.md. Use
+   work-item/active-work-status and worktree-state for current task, owner,
+   branch and source. Consume the existing owner's terminal receipt before
+   starting another execution of that work; a yielded session is still active.
+   Serialize identical native CMD strings across runtimes when the reservation
+   owner refuses overlap; outer runtime variables or a new RUN_ID do not clear
+   that reservation. Its exact terminal receipt establishes the changed ownership.
+2. Prefer a small batch of compatible, already implemented release-required
+   changes when their ownership, source and individual criteria are known.
+   Two is a conservative pilot, not a measured optimum; one coupled repair is valid. Keep one
+   shared-file/Git writer and the existing agent/testing concurrency ceilings.
+   Do not add unrelated backlog work to fill a batch.
+3. Write and run the narrow failing regression, then repair its actual input.
+   Run cheap lint, strict typing, make check-test-env-writes, target-contract
+   and existing file line limits before broad positive receiving. Make-reading
+   tests also run the existing logical-Makefile AST check first; its native
+   owner and explicit command are in the mandatory guide.
+   Pytest fixtures use monkeypatch.setenv;
+   generated child programs receive an explicit copied environment through
+   subprocess or os.execve, retaining unrelated carriers and parent state.
+   Copied environment fields use repr=False; failures show owned fields rather
+   than ambient credentials. Preserve the actual failed receipt privately.
+   Evaluation/injection controls need a native unguarded witness
+   that executes the same payload, variable and origin; quote owned marker paths,
+   remove only the owned witness and retain the guarded no-evaluation assertion.
+   An inert payload cannot prove an evaluation guard. Changed Make targets also need their documented behavior;
+   preserve expected refusal statuses. For promoted failures, update the native
+   manifest, independent seeds/counts and literal rosters together, then drain
+   all eight current check-gate-failure-promotions pins (six predecessors plus
+   two Make consumers) before the complete routing cohort.
+   Literal Make script audits use the existing layout owner's HTTP(S)-aware
+   classifier. Preserve the original local missing-file assertion and use
+   confined present/missing files plus mixed URL/local separator controls.
+   Preserve the fresh-HELP file exclusion from MAIN; route this exact audit
+   selector through existing TAIL before the original last profile guard. Keep
+   independent TAIL counts synchronized; the eight-pin roster also owns that
+   exclusion, selector count and original final position.
+   The [script-reference record](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md#literal-script-reference-admission-after-fa50e0b)
+   retains the full-gate failure, additive regression and exact early route.
+4. Form one deduplicated acceptance union from complete changed test owners and
+   affected consumers. Run that union on each required installed runtime after
+   the known repairs are ready. Keep each item's criteria/evidence separate.
+   Retain mandatory normal collection for every small complete source commit;
+   carry its review receipt into the next substantive receiving change when
+   possible instead of creating repeated metadata-only proof cycles.
+5. Reuse a passed receipt only for its actual unchanged source, tests,
+   configuration, interpreter and scope. Preserve old failures and source refs.
+   A handoff edit alone does not justify repeating accepted source tests, and an
+   old receipt never supplies a new exact-SHA gate, CI or deployment result.
+6. After actual prerequisites clear, freeze one candidate for independent
+   review, combined acceptance, the complete canonical gate and exact-SHA hosted
+   and deployment proofs. A shared green gate can support multiple items only
+   when every item's own acceptance criteria also have the required evidence.
+7. Use run-watched or the existing observed native owner for long operations,
+   with documented variables, visible progress and native terminal status.
+   Drain each exact exec session before dependent edits, commits or replacement
+   execution. Use make ps for test/audit processes and active-work-status for
+   ownership; ps-gludd shows daemons and cannot prove model/audit idleness.
+   Keep model-agent names/status separate from OS PIDs.
+8. Record the failing owner/input, RED/GREEN counts, runtime/ref, receipt path,
+   proof scope and exact next Make action in the owning feature and tracking
+   files. Source review, collection, focused acceptance and final proof retain
+   distinct authority. Reuse the native owners; no second observer or cache.
+   On an all-green partial cohort followed by a timeout, preserve the missing
+   child as unproved. Profile the actual slow input before another original-bound
+   replay; paired trace spans are not CPU, critical path or forecast savings.
+   The [clean-SHA record](docs/features/RUNTIME_ADMISSION_CLEAN_SHA.md) retains
+   the native failure and bounded two-owner receiving process.
+   A private confcutdir omits Main's import harness. Verify one original native
+   child across its actual CWD change before profiling; preserve Main root,
+   src and scripts paths where the original child needs them. An import failure
+   is failed diagnostic input, counts toward the profile bound and proves no
+   speed benefit. Receive final fixtures in the ordinary canonical harness.
+   Keep run-watched OBSERVED_ROOT project-private (for example .gate-logs/observed);
+   owned TMP log/output paths are separate. A refused start creates no new receipt.
+   Inspect the actual fixture entrypoint/include graph before attributing startup:
+   a standalone Make fragment does not measure probes in the root entrypoint.
+   Use descriptive private test entrypoint names: a file named tests.py can shadow
+   Main's tests package even when Main root/src/scripts are on PYTHONPATH.
+   Native control fixtures must own their explicit Make/pytest inputs: isolate
+   inherited MAKEFLAGS/MFLAGS/MAKEOVERRIDES and PYTEST_ARGS when they would
+   override those controls. Preserve unrelated carriers, ordinary/-e precedence
+   and original assertions. Recover reused cohort filenames/argv from the native
+   receipt before launch; zero-case collection refusal supplies no acceptance.
+   The existing runtime owner overlaps MAIN2 with sequential fresh HELP1/TAIL1,
+   retaining all three raw commands and original selectors in the same stanza.
+   Literal ID= on each child selects test-files' existing PID-owned basetemp;
+   inherited identifiers can otherwise make concurrent children delete each
+   other's scratch. HELP failure skips TAIL; every ordinary outcome joins MAIN
+   and retains all statuses. The existing outer observer owns timeout/signal
+   descendant drain. At most two admission cohorts/three execution workers is
+   not a global process or resource-lease claim. Keep the original90/60 watched
+   boundary and prove actual receiving/runtime interactions; synthetic barriers
+   and native124/143 controls establish no performance improvement.
+   Route tests inspect the literal child command independently of recipe-line
+   prefix, retaining exact three-child counts, selectors, flags and mutation checks.
+   Changes to the observer command envelope, prerequisite pins or cohort schedule
+   require the complete tests/unit/test_runtime_publish_admission.py consumer in
+   the receiving union, alongside changed routing owners. Its native envelope and
+   exact target/assignment assertions remain; inventory order is separate from
+   actual barrier, status and descendant-drain proof.
+   On a batch-push transport refusal, retain the native reason and intended SHA.
+   Missing workflow scope requires real account authorization; no unchanged retry
+   or older-remote substitution. After that input changes, use verify-state,
+   normal batch-push, full-SHA verify-remote and native exact-SHA CI observation.
+
+Native status readers must preserve the index as well as working bytes. The
+existing git-status owner uses Git's no-optional-locks mode, retains native
+failures and emits observation-only guidance. On a hook/index conflict, reconcile
+owned state and preserve the failed evidence; use index-only git-unstage-files
+for exact owned paths before committing the status-owner repair first. Do not
+attribute an uncaptured writer or delete locks. The [status record](docs/features/GIT_STATUS_READONLY.md)
+retains the real failure, native write witness and receiving/promotion scope.
+Native trace roles come from the actual pytest session config, not inherited
+worker environment labels. Preserve carriers, original controller/worker pairs
+and profile restoration; test ordinary teardown and a newer/restored owner.
+The [role record](docs/features/XDIST_TRACE_SUMMARY.md#native-session-role-and-lifecycle-boundary-s9842026-10-22-utc)
+retains separate RED/coverage/runtime receipts and proof limits.
+
+Structural Make checks must inspect the complete literal rule. Fixed character
+windows can hide valid commands and borrow neighboring-target evidence. Keep
+original assertions and add padded native-source positives plus missing-command
+and neighboring-target negatives. The
+[publication record](docs/features/GITHUB_PUBLICATION_HTTPS.md#complete-verify-remote-recipe-evidence-2026-10-23-utc)
+retains the actual P05 failure and independent native Git proof limits.
+Complete release gates use the existing 21600-second outer default; smaller
+bounds are diagnostic. Keep all child/phase deadlines and release settings,
+drain the exact terminal owner, and retain every unfinished lane as unproved.
+Progress percentages and ETAs are diagnostic as lane counts become known.
+
+Keep current TASKS/BUGS/SESSION handoffs bounded. Retain detailed decisions in
+the owning feature and historical source refs. Retrieve an old full header
+through native git-show-file-to at its explicit immutable SHA when needed;
+never concatenate every prior incident into the current paragraph. Preserve
+the actual ledger records, failed receipts and required completion proofs.
+
+### Diagnostic feature branches before promotion
+
+Keep feature to development to master promotion. After narrow acceptance and a
+normal source commit, use the existing normal publisher with explicit
+PUBLISH_PURPOSE=feature-ci, saved feature/** or diagnostic/** branch/full SHA and
+a verified published baseline. Run diagnostic GHA before waiting for final
+release readiness or unrelated local acceptance. Once its real exact-SHA run is
+accepted, continue independent local repairs/receiving while the hosted run
+executes. Preserve every normal hook, workflow-history and promotion guard.
+The [publication guide](.agents/policy/key-make-targets.md#normal-source-publication-and-diagnostic-feature-ci)
+owns the exact interface; manual dispatch is diagnostic evidence with its actual
+event, never canonical push or deployment proof.
+
+Use checkout-owned CI_FAILURE_LEDGER and observation paths. A Main path passed
+through Make CLI assignments can also enter MAKEFLAGS/MAKEOVERRIDES and trigger
+the worktree confinement guard. Repair that caller input; identify offending
+keys without dumping environment values and never weaken the guard. Shared
+installed tooling does not establish source identity: both native mypy owners
+must check this checkout's source while retaining installed typing dependencies,
+configured stubs, inherited unrelated carriers and native failures. Read the
+[pre-push record](docs/features/GITHUB_PUBLICATION_HTTPS.md#pre-push-source-identity-and-checkout-owned-inputs)
+before another publication attempt.
+
+### Make results teach the next action
+
+After a watched pass, drain the exact session and verify observed-status for its
+actual command, receipt, native exit and required trace/report. Batch independently
+needed reads within admitted capacity and inspect every result; after verification,
+continue the already authorized next Make action without another planning turn.
+A refusal, failure or incomplete observation keeps its existing repair path.
+
+Candidate hosted proof requires the canonical exact-SHA push event. Keep the
+existing release-candidate/** push route and all deployment/publication guards;
+manual dispatch is operational evidence, not canonical push proof. Use the
+existing pipeline-status producer with PIPELINE_STATUS_OUTPUT owned by the same
+repo and branch; preserve another branch's record and let the producer refresh
+SHA/state. Missing runs and pending stay nonzero. Normal policy-guarded repair
+publication is allowed while final proof is blocked; native publication guards
+still apply, and source-only approval never clears their refusal.
+Candidate pushes trigger hosted validation; master Pages deployment and version-tag
+release publication have separate required conditions. Use the [trigger/proof map](docs/features/RELEASE_PROOF_THROUGHPUT.md#active-handoff-and-hosted-authority)
+before attributing a GHA result to deployment or release.
+For the measured SSH-remote/HTTPS-login mismatch, use the existing repo-local
+`make git-configure-sandboxcom-https SANDBOXCOM_HTTPS_VALIDATE_ONLY=1` plan,
+then mode0 only within authorized publication work. The [HTTPS owner](docs/features/GITHUB_PUBLICATION_HTTPS.md)
+retains native fail-closed authentication, local helper/remote scope, partial-write
+reconciliation and actual tests. Configuration is not push or CI evidence;
+retain normal batch-push, exact verify-remote and native pipeline-status proofs.
+
+For the measured SSH-remote/HTTPS-login mismatch, use the existing repo-local
+`make git-configure-sandboxcom-https SANDBOXCOM_HTTPS_VALIDATE_ONLY=1` plan,
+then mode0 only within authorized publication work. The [HTTPS owner](docs/features/GITHUB_PUBLICATION_HTTPS.md)
+retains native fail-closed authentication, local helper/remote scope, partial-write
+reconciliation and actual tests. Configuration is not push or CI evidence;
+retain normal batch-push, exact verify-remote and native pipeline-status proofs.
+
+Keep admission dependencies distinct from escalation dependencies. HumanTodo
+service/config/store/auth facts govern filing that request. Actual capacity
+clearance permits the existing nine-owner admission even while filing remains
+pending; every native owner and final proof still applies. Claim filing only
+with its real returned ID. Diagnose the blocked native input instead of adding
+an unrelated prerequisite to the release gate. Canonical volume pressure is a
+hard limit; generated scratch is a soft cleanup trigger. Native preflight may
+admit protected/recent scratch when volume is healthy and inspection/cleanup
+have no errors. disk-check is a stricter diagnostic, not a replacement admission
+owner. Read native reasons before selecting cleanup; no threshold is changed.
+
+work-item emits advisory stderr prompts from its native result branch while
+stdout retains machine-readable JSON. Plan mode does not select focus or check
+active-ledger eligibility; prepare-runtime is administrative. Status pointers do
+not prove current workers or acceptance. Reconcile potentially applied state after
+a refusal, then repair its actual input before retrying the native owner.
+
+Agent-facing target output should include outcome-specific guidance from the
+existing result owner. On refusal/failure, identify the actual failed input,
+retain its native status/artifacts and name the narrow repair or prerequisite.
+On success, state what was measured and the next required owner, including
+missing gate/exact-SHA proof. Retained SESSION collection paragraphs name their
+fixed source/ref and native receipt; never inherit a changing current header.
+The existing first-child SESSION node rejects direct relative claims; source
+review still owns semantic attribution. Its hash parser follows the existing
+hex-letter evidence boundary, excluding numeric dates/counts while retaining
+native verification of the first real hash. Keep additive boundary negatives
+and complete persistence/snapshot receiving; never reorder prose to hide a
+parser defect. The [SESSION record](docs/features/STATUS_SNAPSHOT_PORTABILITY.md#hex-letter-session-hash-boundary-s9842026-10-22-utc)
+retains the actual runtime failure and source-only repair scope. Emit terminal-success guidance only after all
+required children finish successfully. Preserve exit codes, original assertions,
+fatal warnings, coverage, cleanup and promotion gates. Guidance is advisory
+context for the model; native measurements and the established gates remain
+authoritative. A zero integration plan validates only its documented inputs;
+unchanged ancestry runs no new gate. Repair failed capacity/ownership before
+applying, and retain missing exact-SHA proofs after an applied merge. The [result contract](docs/features/MAKE_RESULT_GUIDANCE.md)
+and [native merge contract](docs/features/GIT_MERGE_NO_COMMIT.md) retain the
+actual output branches, negative controls, decisions and proof limits.
+Guarded-target parse refusals teach both quote-values and split-goals repairs.
+Keep one guarded target per invocation; correctly quoted values do not permit
+intentional extra goals. Use separate Make invocations and drain their native
+sessions, retaining the original parse-time status and execution guard.
+run-watched reports its native result and directs observed-status to the exact
+command/receipt. Check that scope before interpreting success; a first-child
+receipt cannot certify later commands outside its watcher. Refusal/failure needs
+its actual input/owner repaired and changed evidence before retry. The [watcher record](docs/features/MAKE_RESULT_GUIDANCE.md#watched-command-scope-and-result-prompts)
+retains shell/positional semantics, failing-first controls and acceptance limits.
+release-proof-admission planned output executes no live prerequisites; blocked
+output names the actual failed owner and requires changed input before retry.
+Only terminal passed output follows every admission child, and it still grants
+no full-gate/exact-SHA proof. Capacity uses existing native lifecycle/HumanTodo
+owners; check-mode null, configuration or API refusal never means a filed task.
+Preserve a refused request as unfiled until its service prerequisite changes.
+HumanTodo check mode performs no write; require the real returned ID and requested
+state before claiming filing/resolution. Missing, unusable or mismatched IDs on
+HTTP success mean write_outcome=unverified: reconcile before retrying. Read the
+existing human-todo-module outcome prompt, retain native errors/status and never
+put a raw PSK in JSON/argv or infer credential binding from ambient server auth.
+An approved controller binding can be passed explicitly by name through native
+Ansible env lookup; reject missing/empty values and retain the [native auth controls](docs/features/MAKE_RESULT_GUIDANCE.md#explicit-controller-credentials).
+
+Before diagnosing pytest timing, verify that the actual test-files consumer
+loads the existing trace plugin and records matching protocol pairs. An allocated
+path or summary exit0 with no events grants no timing/cause/performance evidence.
+Use the native summary's stderr AGENT_NEXT outcome while retaining its unchanged
+stdout JSON and native status. Require focused green with the actual recursive
+carriers before broad receiving; measure the complete coverage profile and run
+remaining complete callers normally. Keep fixture recorders authoritative under
+-e, native process-owned basetemps and the logical-Makefile guard intact.
+Keep nested trace identities separate and use
+pytest-owned fixtures instead of unbounded archive copies. The
+[native consumer record](docs/features/XDIST_TRACE_SUMMARY.md#native-consumers-and-result-guidance-s984-2026-10-22-utc)
+retains ordinary/-e literal controls, real hosted failures and exact proof limits.
+
+For Pages native archive preparation, use make presentation-browser-apt-source PRESENTATION_BROWSER_APT_VALIDATE_ONLY=1 for the offline plan; only the owned hosted workflow runs literal0. Preserve unknown-file/platform refusal, atomic exact-line scope, native failure/cleanup, controller interpreter and the original installer/launch/browser/coverage gates. The [archive-input record](docs/features/PRESENTATION_JAVASCRIPT_COVERAGE.md#guarded-hosted-archive-input-s9842026-10-22-utc) retains actual receiving, source contracts and next proof; preparation success supplies no package, deployment or release evidence.
+
+Use the bounded browser-source inspection plan/live Make owners for hosted dependency research; their native guidance separates raw retrieval from issue relevance, apt repair and release proof. The [browser research record](docs/features/PRESENTATION_JAVASCRIPT_COVERAGE.md#bounded-public-dependency-research-s984-2026-10-22-utc) retains fixed primary/firsthand source bounds, exact failure input, and the unchanged install/browser/coverage gates. A source URL or transport failure needs a proven input correction before another retrieval.
+
+When appending a failure family, conform every independent count literal and open-ended tail pin while retaining all predecessor assertions; complete routing owners before coverage. A failed exact edit/static result stops dependent tool batches, even if another independent command passes. The [archive receiving record](docs/features/PRESENTATION_JAVASCRIPT_COVERAGE.md#guarded-hosted-archive-input-s9842026-10-22-utc) retains the actual missed-pin and refused-edit incidents.
+
+For a test that only checks a command's input boundary, use the exact current native recipe in a small owned workspace, keep the original assertions and real tool, add an outside-root decoy and ordinary/-e mutation controls, and run complete affected owners on both runtimes. The [confined search-input record](docs/features/RUNTIME_SEARCH_INPUT.md) retains actual RED/receiving and timing limits; reducing fixture input never proves a hosted saving or relaxes the original admission.
+
+A legacy whole guardrail test owner can recursively run global collection/lint/Ansible checks. Form focused cohorts from complete affected policy classes and structural nodes; retain every global check in the canonical gate and mandatory normal commit collection. Identify a timeout's exact unfinished node through the native trace summary, preserve the failed receipt and original child bounds, and never infer its cause from another runtime's last node. The [browser receiving record](docs/features/PRESENTATION_JAVASCRIPT_COVERAGE.md#focused-acceptance-must-not-recurse-into-global-checks) retains the concrete scope correction.
+
+9. When the next release step requires external user input, retain the open task,
+   actual failed evidence and the existing pending input request. Ask once, then
+   use the host's interruptible input/event tool with waits no longer than60s.
+   Keep the pending-work latch active. Do not finalize into repeated stop
+   challenges, rerun unchanged failures or manufacture source/receipt-only changes.
+   A new challenge token, elapsed time or handoff SHA is no changed prerequisite.
+   Resume the native owner only after its actual required input changes.
+   For GitHub workflow authorization, use make github-auth-status and the offline
+   make github-workflow-auth GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY=1
+   GITHUB_WORKFLOW_AUTH_ACCOUNT= preview. Read actual account/scopes; CLI0 is not
+   workflow write authority. Mode0 requests account consent for the existing
+   shared GH credential and requires explicit operator instruction plus an
+   explicit selected account. Preserve native failures and reconcile possible
+   credential changes through the read owner before another consent attempt.
+   The [authorization record](docs/features/GITHUB_PUBLICATION_HTTPS.md#make-owned-workflow-consent-receiving-afterd54d7a5)
+   owns the interface; normal publication, gate and exact-SHA proof remain required.
+
 ## Make Target Selection Contract
 
-Watched pytest diagnostics opt into the existing native trace with RUN_WATCHED_PYTEST_TRACE=1; mode0 preserves ordinary/inherited behavior. Publication owns mode1 for both watchers, without changing90/60,2/1/1 or proof authority. Native trace_path/run_id and failed artifacts remain producer-owned; no trace/cause/performance claim may be inferred from a different run. Explicit empty RUN_ID/LOG use existing automatic native identities, not a manual fixture. Optional observer arguments preserve CMD's shell positional parameters; retain the native two-mode regression. See the mandatory guide and [publication trace record](docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#retain-a-native-trace-for-publication-admission-2026-10-21).
+Watched pytest diagnostics opt into the existing native trace with RUN_WATCHED_PYTEST_TRACE=1; mode0 preserves ordinary/inherited behavior. Canonical publication owns mode1 for both watchers, without changing90/60,2/1/1 or proof authority. Native trace_path/run_id and failed artifacts remain producer-owned; no trace/cause/performance claim may be inferred from a different run. Explicit empty RUN_ID/LOG use existing automatic native identities, not a manual fixture. Optional observer arguments preserve CMD's shell positional parameters; retain the native two-mode regression. See the mandatory guide and [publication trace record](docs/features/PIPELINE_STATUS_PROCESS_BOUNDARY.md#retain-a-native-trace-for-publication-admission-2026-10-21).
 
 Before project work, read `make help`, then the mandatory [key Make targets](.agents/policy/key-make-targets.md) before selecting/changing a target. Follow its bounded current-tracking reads and ordered evidence-to-action recipe for release work, including existing-work preservation, complete selected criteria and canonical promotion. Choose the narrowest target. Set every documented target variable explicitly. `config/make_target_contract.json` records each agent-facing target and safe example. After a target change, run `make check-make-target-contract` and its documented behavioral example before claiming it works. Add and test a missing target first. Compatibility cleanup targets delegate to the existing native prune/retirement owner: clean-stale-worktrees and agent-cleanup default to plan, preserve branch refs/locks/checkpoints/active ownership and require explicit literal policy. agent-cleanup requires the exact BRANCH and canonical WORKTREE; a model must never replace a refused native retirement with force removal. For hosted cancellation, that guide and the Pages coverage feature name native annotation/context retrieval, whole-job versus child budgets and required JS0-to-JS1-to-deployment dependencies; a generic cancelled log or legacy retrieval exit0 is not a cause or CI verdict. For runtime attribution, the same guide names test-xdist-trace-summary with explicit LOG, RUN_ID, TRACE_SUMMARY_TIMINGS=1 and TRACE_SUMMARY_MEMORY=0|1; the linked record distinguishes early direct-goal literal protection from native prerequisite/target-specific context and retains the measured GNU Make version. Process-local controller waits do not identify worker CPU, and diagnostic spans provide no gate or CI-repair authority.
 Disk's temporary display delegates to the existing tmp-gludd-usage owner for one human-size-sorted largest40 view; it is not exhaustive inventory or deletion authority. A1000-entry JSON cap retains incomplete/nonzero status; choose a known allowlisted narrower root without widening bounds. See [native disk attribution](docs/features/CACHE_RESOURCE_INVENTORY.md#native-temporary-size-attribution-2026-10-21).
 
 The watchdog secrets check uses the existing native observer for the complete process lifecycle; a direct-child timeout alone does not drain descendants. Keep the 60-second scan, 300-second cooldown and current installed interpreter. Legacy/default test fixtures must confine command workspace as well as state and mock the actual adapter seam before an integration call. Preserve exact timeout/signal evidence and unknown-after-interruption semantics. See the [watchdog lifecycle](docs/features/WATCHDOG_SECRETS_LIFECYCLE.md). Historical observer pointers cannot produce owners when the complete native process snapshot contains no stream_command.py command; the cleanup owner preserves gate PID/lock protection in that empty case. A live observer still requires complete metadata and retains both display-cap refusals. Never treat a truncated display, CWD alone or an unverified PID as termination authority.
+
+A native gate and its bound gate-wait process can be separate trees. The existing
+task-watchdog protection owner binds exactly one literal expected PID and the
+registered root before protecting the waiter's complete tree. Preserve protection
+through terminal drain using the existing current native producer identity and
+canonical-command validator after PID/marker retirement. An occupied PID's
+original start/PGID, registered CWD and gate role must still match; re-read that
+association during native signal validation, never infer a successful gate.
+Group actual waiters by observed CWD rather than probing empty historical roots.
+The existing family179 case checks live and terminal behavior. Normalize native
+start-token presentation only through the existing cleanup normalizer; never
+rewrite producer identity. Keep terminal zombies in the complete census. After
+matching recorded start/PGID, require positive native terminal observation plus
+the existing owned/gone identity outcome before retaining waiter association;
+owned alone is insufficient. Reused/foreign stay refused, unknown inspection
+cannot authorize signals. Fixture censuses must own the same native adapter
+responses; retain the actual two-adapter whitespace witness. On actual signals,
+attribute the sender from native logs; do not infer it from a test or stale task.
+A confirmed new defect during frozen proof needs retained RED, native controlled
+gate termination and exact session drain before edits. Keep the other guard alive
+and verify native startup acknowledgement after the reviewed repair. The
+[waiter record](docs/features/GATE_WAITER_PROTECTION.md) retains the failed proof,
+negative controls, eight-pin promotion and complete acceptance scope.
 
 Full-tree secret checks reuse the existing readonly baseline owner with --scan-cores; upstream scan --baseline can return zero after adding findings. The owner compares its private pre/post inventories through the existing canonical baseline manager's finding_counts, preserves native failures and rejects baseline overrides through pinned native grammar before settings postprocessing. The same namespace refuses native plugin-list, truthy-string and allowlisted-only modes because they return before inventory refresh; empty --string=, regex values and literal filenames keep upstream meaning. Default hook behavior remains unchanged. Recorder fixtures execute the real wrapper and capture actual outer/child argv independently; never invent a transport token to satisfy an old pin. The [security record](docs/security/audit-observability.md#full-scan-refresh-and-finding-admission-2026-10-21) preserves failing-first controls, native source/caller coverage, full-target behaviors and release proof limits.
 
@@ -30,7 +451,7 @@ Coverage scope follows native execution evidence. The shared auditor's imported 
 
 The existing coverage-files owner captures and exports private GLUDD_COVERAGE_SOURCE_ROOT from physical pwd -P; use that owner for the required-variable watchdog profile. Canonical source identity remains fixed across child CWD changes, with all canonical files and85/75 BOTH preserved. Altered fixture copies keep distinct source bytes. See [source identity](docs/features/COVERAGE_SOURCE_IDENTITY.md).
 
-Temporary pytest children that retain project configuration with -c must bind --rootdir and --confcutdir to the same physical owned fixture root; assert those values in the actual child while retaining plugins, outcomes and fatal warnings. Lifecycle/observer tests also require native process inspection: preserve /bin/ps or sysctl denial as failed evidence and use the authorized host Make boundary; never substitute an empty inventory or weaken cleanup. See [source identity and fixture scope](docs/features/COVERAGE_SOURCE_IDENTITY.md).
+Temporary pytest children that retain project configuration with -c must bind --rootdir and --confcutdir to the same physical owned fixture root; assert those values in the actual child while retaining plugins, outcomes and fatal warnings. Lifecycle/observer tests also require native process inspection: preserve /bin/ps or sysctl denial as failed evidence and use the authorized host Make boundary; never substitute an empty inventory or weaken cleanup. See [source identity and fixture scope](docs/features/COVERAGE_SOURCE_IDENTITY.md) and the [native duration comparison](docs/features/INTEGRATION_ADMISSION.md#git-task-handoff-admission-and-confined-duration-fixtures-2026-10-22-utc), which pins the baseline and instrumented children independently.
 
 Cache diagnostics use the bounded cache-resource-inventory owner; cache-disk/disk-user-caches are recipe-free aliases. Its sole shared-UV inventory exception is the fixed /tmp/gludd-uv-cache-public-v2 leaf under the resolved trusted temporary parent, without resolving that leaf into allowlist authority. It grants no generic removal, parent/sibling/descendant access or arbitrary GLUDD_UV_CACHE_DIR admission. Measure that exact root before selecting cleanup; largest40 omission never proves absence or a byte bound. A negligible complete measurement does not justify a prune for capacity. The mandatory guide and owning cache record retain the actual five-child20KiB result and its proof limits. Generic cache removal never owns managed tool caches or proof/temp roots; plan and apply share the same refusal. Its contract's managed-cache example expects exit2; successful plan/apply controls run under native test-files with a confined synthetic HOME. Never create a real cache fixture or retry a refused managed path as apply. Broad cache-clean/clean-gh-run-logs/clean-all-caches entrypoints are retired. See [cache policy](docs/features/CACHE_RESOURCE_INVENTORY.md#native-cache-policy-alignment-2026-10-21).
 
@@ -417,35 +838,36 @@ Older non-isolated new-file preference and~5–6 worktree-disk cap remain source
 
 ### Worktree-per-subagent (file-editing tasks MANDATORY)
 
-Any mutating subagent gets isolated branch+worktree agent-<short-descriptive-name>; no shared main files, push, master merge or own subagents. Main orchestrator lifecycle:
-`make agent-worktree BRANCH=agent-<name>`→WORKTREE_PATH=/tmp/gludd-worktrees/agent-<name>; agent edits/commits there; main merges/cleans. Existing branch redispatch attaches fresh worktree.
-Legacy example `make agent-merge BRANCH=agent-<name>` means --no-ff master fan-in; current development-first discipline/lifecycle uses `make agent-merge-dev BRANCH=<name>`. Both example forms remain preserved, not independent authority to bypass current guards.
-`make agent-worktree-list` diagnoses. No isolated agents live→clean-worktree-venvs. docs/ORCHESTRATION.md§4/§5 apply.
+Any mutating subagent gets an isolated registered branch/worktree and explicitly owned paths. The coordinator owns all project Git mutations and shared tracking.
+Use the native agent-worktree creation owner with explicit BRANCH and required BASE; consume its actual verified path/registration result before dispatch. On native refusal, reconcile partial state without reset, force removal or pruning.
+Use development-merge-forward with a reviewed pinned SOURCE, MODE=content and APPLY=0 from clean development for planning. Guarded apply, receiving acceptance and exact resulting-SHA proofs remain required. Legacy agent-merge, agent-merge-dev and worktree-merge-all are not promotion authority.
+Use agent-worktree-list, worktree-state and active-work-status to inspect actual ownership. An absent model agent or old status pointer does not authorize cleanup.
 
 ### Git Worktree Lifecycle — Merge or Clean Up
 
-Every worktree MUST merge to development BEFORE cleanup: agent-merge-dev then IMMEDIATELY agent-cleanup, one atomic unit. No lingering after session; final list only main checkout. >24h unmerged worktree, missing remote branch or abandoned commits violates worktree-health-check; resolve all before gate green.
-worktree-merge-all attempts --no-ff development merges, reports conflicts and cleans successes. Health script checks age/reachability/remote. Older320MB/worktree and~5–6 concurrent worktree agents cap remain disk rationale, not override of3.
+Retain unreceived source worktrees and their dirty bytes, index, refs, ignored evidence, locks and checkpoints while proof is pending. A session boundary, age warning or missing remote is a diagnosed input, never authority to force integration or removal.
+After reviewed guarded integration, plan agent-cleanup with the exact BRANCH, canonical WORKTREE and AGENT_CLEANUP_VALIDATE_ONLY=1. Apply literal0 only with native ownership release and all merge/lock/archive fences; a zero plan has integrated or removed nothing. Never combine an unproved merge and cleanup into an assumed atomic success.
+Do not invoke worktree-merge-all for current work. The release audit retains its actual wrong-branch/foreign-autocommit/hidden-failure evidence and the separately reviewed retirement packet. Source-only retirement and canonical release completion remain different claims.
 
-#### ⚠️ KNOWN GAP: git locking is broken inside worktrees (read before running a wide worktree wave)
+#### Historical Git locking failure and current proof limits
 
-Historical verified2026-07-14 git_automation/locking.py git_repo_lock source locator treated .git as directory; worktree .git FILE fell back to in-process RLock, not cross-process. Read-only/own-branch routine commits stay low-risk; concurrent merge/tag/push MUST serialize main, no two owners same wave. The old proposed git-common-dir fix and docs/design/NEXT_RELEASE_BETA2_SPEC.md/docs/MULTITASKING_POLICY.md are context, not current-runtime verification.
+The verified2026-07-14 source treated a worktree .git file as a directory and fell back to an in-process RLock. Preserve that historical failure without treating it as current source verification. The existing common-directory mutex and native Make transaction each require their own reviewed source/receipts; see docs/features/GIT_REPOSITORY_MUTEX.md. Keep one Git/publication writer. A mutation-only receipt cannot certify later hosted observation; release the mutation mutex before waiting and prove the actual linked-writer boundary.
 
 ### Subagent dispatch reliability rules
 
 Every task needs timeout, under5min/default300000ms; split longer or main owns observable run. enforce-deadline records /tmp/gludd-task-deadlines.json, warns TASK DEADLINE EXCEEDED/stale; orchestrator resplits/replaces/foregrounds. task_watchdog polls5s, records kills to /tmp/gludd-task-killed.json and applies SIGTERM→SIGKILL through native owner.
-Use `make task CMD='...'`; GLUDD_TASK_DEADLINE_ENABLED=0 disables detection, GLUDD_TASK_TIMEOUT_MS sets limit; watchdog-auto starts owner. NEVER dispatch make gate (~40min) to subagent; main-loop observable background owner, not cancelled5min task. ONE focused task; file-editing dispatches must specify exactly one file. The source also permits multi-file tasks; retain that tension rather than choosing a looser scope. Read-only is reliable; prompt enough context. No filler refill.
+Use the existing run-watched owner with explicit project-private OBSERVED_ROOT, installed runtime and native command bounds. The old global-temp task wrapper is not the parallel execution route. Root owns the complete canonical gate through its existing observed owner and original bounds. Dispatch one coherent defect with an explicit minimal roster of production, test and documentation paths; do not assign one file then let the worker expand its scope. Preserve native cleanup, active reservations and exact terminal receipts. Read-only reviews can overlap independent code/tests; do not refill with unrelated backlog.
 
 ### Main-thread command restriction (ANTI-STALL RULE)
 
-Source allowlist: ci-verdict-fast(<1s), Task dispatch, ship-commit via subagent. NEVER run on the main thread: make gate/test-unit/test/qa/e2e/validate/lint/typecheck/collect/smoke, git-add-all/commit-no-verify/git-push-branch-nv and ANY>3s.
-The same source permits bounded foreground work with streams/heartbeats and later requires >~30s backgrounding; preserve this scope tension, not a blanket bypass. Serialized ship ownership remains mandatory.
+Root owns Git and publication. Launch long existing Make owners through nonblocking native sessions with visible progress, then continue independent code/review work in other registered worktrees. Code workers do not commit or publish.
+A yielded session remains active until its exact terminal receipt is consumed. Preserve its native bounds, stdout/status, cleanup and ownership; do not replace it or start dependent writes. A fast launch is not successful execution. Follow the mandatory guide's canonical gate owner instead of selecting a legacy shortcut from this historical runbook.
 
 #### Background-gate workflow (canonical way to run a long gate)
 
-gate-background returns<1s with native log/PID; continue useful work. gate-progress is preferred one-line state/%/elapsed/ETA/counts at natural breaks≤1/~2min (GATE_PROGRESS_COOLDOWN_SECS=120; GATE_PROGRESS_FORCE=1 only immediate genuine verdict). COOLDOWN still prints status/next poll; no stale-number polling.
+gate-background returns<1s with native log/PID; continue useful work. gate-progress is preferred one-line state/%/elapsed/ETA/counts at natural breaks≤1/~2min (GATE_PROGRESS_COOLDOWN_SECS=120; GATE_PROGRESS_FORCE=1 only immediate genuine verdict). COOLDOWN still prints status/next poll; no stale-number polling. Pace running-gate reads with `make gate-progress GATE_PROGRESS_SLEEP=120`, choosing 120–300 seconds (2–5 minutes). The native owner prints and flushes current status, then sleeps the requested interval only if that snapshot is RUNNING; a terminal or idle snapshot returns without that sleep. GATE_PROGRESS_SLEEP still defaults to0; this invocation guidance changes no owner or gate bound. Never rapid-fire bare `make gate-progress` polls.
 gate-status-check is for raw phase/terminal/.gate-status/last20-line failure diagnosis; gate-tail must not block main. gate-logs lists historical results; gate-kill TERM thenKILL after5s. On terminal ingest/act next: PASS→commit/push/verify; FAIL→named repair/gate-resume.
-No main make gate; gate-background only if nonblocking. Background markers “=== GATE PHASE: <name> ===”, terminal PASSED/FAILED and logs/PID remain.
+No main make gate; gate-background only if nonblocking. Background markers “=== GATE PHASE: <name> ===”, terminal PASSED/FAILED and logs/PID remain. NEVER run on the main thread; in particular, never run `make gate` on the main thread; use `make gate-background` for non-blocking execution.
 
 ### Steady-state dispatch (up to three useful agents)
 
@@ -534,6 +956,7 @@ Checking ci-status more than3 times in a row without code changes is a stop patt
 ## CRITICAL: CI Wait Productivity (DC.1)
 
 During CI waits, advance release-related work: fix tests, write structural tests, update docs or investigate slow shards. Dispatch subagents for concrete independent deliverables when useful; zero subagents is valid when none exist. CI waiting never justifies filler. Use up to three useful owners.
+A running LOCAL gate is also a CI wait, not a stop: keep exercising the hosted pipeline in parallel instead of only polling the local gate. While the local gate runs, capture the hosted baseline with `make ci-await BRANCH=<branch> CI_AWAIT_SNAPSHOT_ONLY=1 CI_AWAIT_WORKFLOW='Build and Release' CI_AWAIT_EVENT=push` (use its stdout run ID as CI_AWAIT_AFTER_RUN_ID for the upcoming push), read the last hosted run's `ci-run-summary`/`ci-failed-tests`/`ci-faillog`/`ci-pyinstaller-warning-audit` evidence against the exact artifact, and keep `verify-remote` push readiness current. The moment the local gate turns green, commit the prepared batch and `make batch-push` + `make verify-remote` immediately so hosted CI starts without a serial gap; then monitor hosted runs at natural breaks while continuing local work. Never let the hosted pipeline sit idle through a whole local gate with nothing but gate-progress polls.
 
 ## CRITICAL: Polling CI Is Not Work (DC.2)
 

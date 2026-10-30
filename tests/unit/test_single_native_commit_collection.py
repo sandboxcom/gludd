@@ -36,18 +36,26 @@ GUARDS = (
     "check-file-line-limits",
     "check-duplicate-code",
 )
-CAPTURE = r'''import json
+CAPTURE = r"""import json
 import os
 import sys
 from pathlib import Path
 
 args = sys.argv[1:]
+if args[:2] == ["run", "--active"]:
+    args = ["run"] + args[2:]
 name = Path(sys.argv[0]).name
 kind = "git" if name == "git" else "uv"
 if args and args[0] == "guard":
     kind = "guard"
 elif "scripts/stream_command.py" in args:
     kind = "tail" if "--tail" in args else "observe"
+if kind == "uv" and args[:2] == ["run", "python"]:
+    child_environment = dict(os.environ)
+    child_environment["CAPTURE_GUARD_CHILD"] = "1"
+    os.execve(sys.executable, [sys.executable, *args[2:]], child_environment)
+if kind == "git" and os.environ.get("CAPTURE_GUARD_CHILD") == "1" and args[:1] != ["--no-optional-locks"]:
+    kind = "guard-git"
 temp = os.environ.get("ANSIBLE_LOCAL_TEMP", "")
 event = {"kind": kind, "args": args, "ansible_tmp": temp,
          "tmp_exists": bool(temp and Path(temp).is_dir())}
@@ -61,12 +69,23 @@ if kind == "tail":
     print("123537 tests collected in 56.00s (capture fixture)")
     raise SystemExit(int(os.environ.get("TAIL_RC", "0")))
 if kind == "uv":
-    hook = args[-1]
+    assert args[:3] == ["run", "pre-commit", "run"]
+    hook = args[3]
     raise SystemExit(1 if hook == os.environ.get("FAIL_GUARD") else 0)
+if kind == "guard-git":
+    if args == ["write-tree"]:
+        print("guard-context-tree")
+    raise SystemExit(0)
 if args == ["rev-parse", "--local-env-vars"]:
     print("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_CONFIG_PARAMETERS", sep=chr(10))
 elif args == ["diff", "--cached", "--name-only"]:
     print(os.environ.get("STAGED_FILES", "src/feature.py\ntests/unit/test_feature.py"))
+elif args == ["--no-optional-locks", "diff", "--cached", "--name-only", "-z", "--"]:
+    names = os.environ.get("STAGED_FILES", "src/feature.py\ntests/unit/test_feature.py")
+    for filename in names.splitlines():
+        sys.stdout.buffer.write(os.fsencode(filename) + bytes((0,)))
+elif args == ["--no-optional-locks", "diff", "--cached", "--name-only", "--diff-filter=U", "-z", "--"]:
+    pass
 elif args == ["write-tree"]:
     counter = Path(os.environ["CAPTURE_LOG"] + ".trees")
     count = int(counter.read_text() if counter.exists() else "0") + 1
@@ -78,7 +97,7 @@ elif args == ["write-tree"]:
     print("changed-tree" if count > 1 and os.environ.get("INDEX_DRIFT") == "1" else "staged-tree")
 elif args == ["diff", "--cached", "--quiet"]:
     raise SystemExit(1)
-'''
+"""
 
 
 def _block(text: str, target: str) -> str:
@@ -95,7 +114,12 @@ def _source() -> str:
     blocks.extend(_block(tests, target) for target in ("test-count", "collect-check"))
     blocks.extend(
         _block(commits, target)
-        for target in ("_pre-commit-secrets-guard", "_pre-commit-content-guard", "ship-commit", "ship-commit-files")
+        for target in (
+            "_pre-commit-secrets-guard",
+            "_pre-commit-content-guard",
+            "_commit-locked-ship-commit",
+            "_commit-locked-ship-commit-files",
+        )
     )
     return "\n".join(blocks)
 
@@ -122,18 +146,36 @@ def _run(
         "git-add:\n\t@git add $(FILES)\n" + guard_blocks + "\n" + (text or _source()),
         encoding="utf-8",
     )
-    env = {key: value for key, value in os.environ.items() if key not in {"MAKEFLAGS", "MFLAGS", "MAKELEVEL"}}
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "CAPTURE_GUARD_CHILD"}
+    }
     log = tmp_path / "capture.jsonl"
     env.update({"PATH": f"{tmp_path}{os.pathsep}{env['PATH']}", "CAPTURE_LOG": str(log)})
     env.update(state or {})
+    # The native mutex is measured by test_make_commit_transaction. This existing
+    # capture seam still owns the unchanged guard/body/collection assertions.
+    selected_target = "_commit-locked-" + target if target in {"ship-commit", "ship-commit-files"} else target
     result = subprocess.run(
         [
-            "make", "--no-print-directory", target, "MSG=collection admission",
-            f"OBSERVED_ROOT={tmp_path / 'observed'}", "OBSERVED_HEARTBEAT_SECS=13",
-            "OBSERVED_QUIET_SECS=901", "OBSERVED_MAX_SECS=3601",
-            "OBSERVED_RETAIN_RUNS=7", "OBSERVED_TAIL_LINES=80",
+            "make",
+            "--no-print-directory",
+            selected_target,
+            "MSG=collection admission",
+            f"OBSERVED_ROOT={tmp_path / 'observed'}",
+            "OBSERVED_HEARTBEAT_SECS=13",
+            "OBSERVED_QUIET_SECS=901",
+            "OBSERVED_MAX_SECS=3601",
+            "OBSERVED_RETAIN_RUNS=7",
+            "OBSERVED_TAIL_LINES=80",
         ],
-        cwd=tmp_path, env=env, check=False, capture_output=True, text=True, timeout=20,
+        cwd=tmp_path,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=20,
     )
     events = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
     return result, events
@@ -152,16 +194,25 @@ def _collection_contract(event: CaptureEvent, tmp_path: Path, label: str) -> Non
     assert isinstance(args, list)
     assert args[args.index("--label") + 1] == label
     for name, expected in (
-        ("--root", str(tmp_path / "observed")), ("--heartbeat-secs", "13"),
-        ("--quiet-secs", "901"), ("--max-secs", "3601"), ("--retain-runs", "7"),
+        ("--root", str(tmp_path / "observed")),
+        ("--heartbeat-secs", "13"),
+        ("--quiet-secs", "901"),
+        ("--max-secs", "3601"),
+        ("--retain-runs", "7"),
     ):
         assert args[args.index(name) + 1] == expected
     assert "--quiet" in args and "--pytest-trace" in args
     lock = args.index("scripts/collection_lock.py")
     assert args[lock + 1] == "--run"
     pytest_at = args.index("pytest")
-    assert args[pytest_at + 1:] == [
-        "tests/", "--co", "-q", "-o", "verbosity_test_cases=-2", "-p", "scripts.xdist_trace_plugin",
+    assert args[pytest_at + 1 :] == [
+        "tests/",
+        "--co",
+        "-q",
+        "-o",
+        "verbosity_test_cases=-2",
+        "-p",
+        "scripts.xdist_trace_plugin",
     ]
     if label == "test-count":
         assert args.count("--no-sync") == 3
@@ -172,7 +223,9 @@ def _collection_contract(event: CaptureEvent, tmp_path: Path, label: str) -> Non
 
 
 def _success_contract(
-    result: subprocess.CompletedProcess[str], events: list[CaptureEvent], tmp_path: Path,
+    result: subprocess.CompletedProcess[str],
+    events: list[CaptureEvent],
+    tmp_path: Path,
 ) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
     observes = _observes(events)
@@ -183,10 +236,17 @@ def _success_contract(
     assert len(_commits(events)) == 1
     guards = {event["args"][1] for event in events if event["kind"] == "guard"}
     assert guards == set(GUARDS)
-    hooks = [event["args"][-1] for event in events if event["kind"] == "uv"]
+    hooks = [event["args"][3] for event in events if event["kind"] == "uv"]
     assert hooks == ["trailing-whitespace", "end-of-file-fixer", "detect-secrets-readonly"]
-    trees = [index for index, event in enumerate(events) if event["args"] == ["write-tree"]]
+    assert [event["args"] for event in events if event["kind"] == "uv"] == [
+        ["run", "pre-commit", "run", hook, "--files", *FILES.split()] for hook in hooks
+    ]
+    trees = [index for index, event in enumerate(events) if event["kind"] == "git" and event["args"] == ["write-tree"]]
     assert len(trees) == 2
+    context_trees = [
+        index for index, event in enumerate(events) if event["kind"] == "guard-git" and event["args"] == ["write-tree"]
+    ]
+    assert context_trees and max(context_trees) < trees[0]
     collected = events.index(observes[0])
     committed = events.index(_commits(events)[0])
     assert trees[0] < collected < trees[1] < committed
@@ -200,15 +260,22 @@ def test_ship_commit_owns_one_fresh_native_count_and_all_admission_guards(tmp_pa
 
 @pytest.mark.parametrize("target", ["test-count", "collect-check"])
 def test_collection_console_uses_native_file_counts_without_global_quiet_override(
-    tmp_path: Path, target: str,
+    tmp_path: Path,
+    target: str,
 ) -> None:
     result, events = _run(tmp_path, target=target)
     assert result.returncode == 0, result.stdout + result.stderr
     assert len(_observes(events)) == 1
     args = _observes(events)[0]["args"]
-    pytest_args = args[args.index("pytest") + 1:]
+    pytest_args = args[args.index("pytest") + 1 :]
     assert pytest_args == [
-        "tests/", "--co", "-q", "-o", "verbosity_test_cases=-2", "-p", "scripts.xdist_trace_plugin",
+        "tests/",
+        "--co",
+        "-q",
+        "-o",
+        "verbosity_test_cases=-2",
+        "-p",
+        "scripts.xdist_trace_plugin",
     ]
     assert "--no-summary" not in pytest_args
     assert "-qq" not in pytest_args and "-qqq" not in pytest_args
@@ -219,7 +286,8 @@ def test_collection_console_uses_native_file_counts_without_global_quiet_overrid
 
 @pytest.mark.parametrize("condition", ["success", "import-error", "warning-error", "missing-file"])
 def test_native_pytest_compact_collection_preserves_inventory_and_failure_diagnostics(
-    tmp_path: Path, condition: str,
+    tmp_path: Path,
+    condition: str,
 ) -> None:
     project = tmp_path / "collection-fixture"
     tests = project / "tests"
@@ -250,7 +318,8 @@ def test_native_pytest_compact_collection_preserves_inventory_and_failure_diagno
     )
     if condition in {"import-error", "warning-error"}:
         body = (
-            "raise RuntimeError('native collection import refusal')\n" if condition == "import-error"
+            "raise RuntimeError('native collection import refusal')\n"
+            if condition == "import-error"
             else "import warnings\nwarnings.warn('native collection warning refusal', UserWarning)\n"
         )
         (tests / "test_refusal.py").write_text(body, encoding="utf-8")
@@ -263,18 +332,30 @@ def test_native_pytest_compact_collection_preserves_inventory_and_failure_diagno
         trace = project / f"trace-{compact}.jsonl"
         env = dict(os.environ)
         env.pop("PYTEST_ADDOPTS", None)
-        env.update({
-            "PYTHONPATH": str(ROOT), "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
-            "GLUDD_XDIST_TRACE_LOG": str(trace), "GLUDD_XDIST_TRACE_RUN_ID": f"collection-{compact}",
-            "GLUDD_XDIST_TRACE_TRUNCATE": "1",
-        })
+        env.update(
+            {
+                "PYTHONPATH": str(ROOT),
+                "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+                "GLUDD_XDIST_TRACE_LOG": str(trace),
+                "GLUDD_XDIST_TRACE_RUN_ID": f"collection-{compact}",
+                "GLUDD_XDIST_TRACE_TRUNCATE": "1",
+            }
+        )
         command = [sys.executable, "-m", "pytest", *selections, "--co", "-q", "-W", "error"]
         if compact:
             command.extend(["-o", "verbosity_test_cases=-2"])
         command.extend(["-p", "scripts.xdist_trace_plugin"])
-        results.append(subprocess.run(
-            command, cwd=project, env=env, capture_output=True, text=True, check=False, timeout=20,
-        ))
+        results.append(
+            subprocess.run(
+                command,
+                cwd=project,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=20,
+            )
+        )
         snapshots.append(json.loads(snapshot.read_text(encoding="utf-8")) if snapshot.exists() else None)
         traces.append([json.loads(line) for line in trace.read_text().splitlines()] if trace.exists() else [])
     original, compact_result = results
@@ -316,7 +397,7 @@ def test_collection_failure_refuses_commit_and_preserves_bounded_diagnostics(tmp
     assert f"COLLECTION ERRORS DETECTED (rc={rc}" in result.stdout
     tails = [event["args"] for event in events if event["kind"] == "tail"]
     assert len(tails) == 1 and tails[0][tails[0].index("--tail") + 1] == "80"
-    assert sum(event["args"] == ["write-tree"] for event in events) == 1
+    assert sum(event["kind"] == "git" and event["args"] == ["write-tree"] for event in events) == 1
 
 
 @pytest.mark.parametrize("failure", ["first", "second", "both"])
@@ -328,7 +409,9 @@ def test_failed_native_tree_capture_refuses_before_unnecessary_work(tmp_path: Pa
     assert not _commits(events)
     assert len(_observes(events)) == (1 if failure == "second" else 0)
     assert "staged index changed" not in result.stderr
-    assert sum(event["args"] == ["write-tree"] for event in events) == (2 if failure == "second" else 1)
+    assert sum(event["kind"] == "git" and event["args"] == ["write-tree"] for event in events) == (
+        2 if failure == "second" else 1
+    )
 
 
 def test_success_tail_failure_also_refuses_commit(tmp_path: Path) -> None:
@@ -385,12 +468,18 @@ def test_each_commit_invocation_recollects_even_after_prior_success(tmp_path: Pa
     assert len(_observes(second_events)) == 1 and not _commits(second_events)
 
 
-@pytest.mark.parametrize("old,new", [
-    ("scripts/collection_lock.py --run", "scripts/collection_lock.py --resource bypass"),
-    ("pytest tests/ --co", "pytest tests/unit/ --co"),
-    ("--heartbeat-secs", "--missing-heartbeat-secs"),
-    ("ship-commit: _pre-commit-content-guard", "ship-commit:"),
-])
+@pytest.mark.parametrize(
+    "old,new",
+    [
+        ("scripts/collection_lock.py --run", "scripts/collection_lock.py --resource bypass"),
+        ("pytest tests/ --co", "pytest tests/unit/ --co"),
+        ("--heartbeat-secs", "--missing-heartbeat-secs"),
+        (
+            "_commit-locked-ship-commit: _commit-lock-acquire _pre-commit-content-guard",
+            "_commit-locked-ship-commit: _commit-lock-acquire",
+        ),
+    ],
+)
 def test_capture_contract_detects_owner_and_guard_mutations(tmp_path: Path, old: str, new: str) -> None:
     text = _source()
     assert old in text, f"mutation anchor disappeared: {old}"

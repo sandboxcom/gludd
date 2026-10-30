@@ -22,6 +22,12 @@ from coverage import Coverage
 from coverage.exceptions import CoverageException
 from scripts.makefile_layout import compose_makefile
 
+from tests.coverage_source_binding_fixtures import (
+    CoverageSourceFixture,
+    assert_native_coverage_source_binding,
+    create_coverage_source_fixture,
+)
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "scripts"
 EXPECTED_SHARDS = (
@@ -2255,3 +2261,53 @@ def test_coverage_files_exports_physical_checkout_to_changed_cwd_children(
     assert "--pytest-trace" in observed["argv"]
     assert "--quiet-secs" in observed["argv"]
     assert "--max-secs" in observed["argv"]
+
+    native_fixture_root = tmp_path / "native child binding"
+    native_fixture_root.mkdir()
+    native_fixture = create_coverage_source_fixture(native_fixture_root)
+    origin = (
+        "early-environment" if coverage_make_environment_override else
+        "command-line" if coverage_root_origin == "command-line" else "environment"
+    )
+    assert_native_coverage_source_binding(native_fixture, origin)
+
+
+@pytest.fixture
+def coverage_source_fixture(tmp_path: Path) -> CoverageSourceFixture:
+    """Build the reusable native source boundary without a second runner."""
+    return create_coverage_source_fixture(tmp_path)
+
+
+@pytest.mark.parametrize("coverage_origin", ("command-line", "early-environment"))
+def test_native_coverage_caller_root_mutant_selects_the_active_decoy(
+    coverage_source_fixture: CoverageSourceFixture, coverage_origin: str,
+) -> None:
+    """Replacing physical identity with caller CURDIR must select outside source."""
+    fixture = coverage_source_fixture
+    capture = 'GLUDD_COVERAGE_SOURCE_ROOT="$$(pwd -P)"'
+    assert fixture.producer_source.count(capture) == 1
+    fixture.producer.write_text(
+        fixture.producer_source.replace(capture, 'GLUDD_COVERAGE_SOURCE_ROOT="$(CURDIR)"', 1),
+        encoding="utf-8",
+    )
+    result = fixture.invoke(coverage_origin)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout)["source"] == "opposite-src"
+    assert fixture.marker.read_text(encoding="utf-8") == "active outside import\n"
+    assert fixture.environment == fixture.original_environment
+
+
+@pytest.mark.parametrize("coverage_origin", ("environment", "early-environment"))
+def test_native_coverage_source_binding_retains_child_failure(
+    coverage_source_fixture: CoverageSourceFixture, coverage_origin: str,
+) -> None:
+    """The source prefix preserves native child failure instead of hiding it."""
+    fixture = coverage_source_fixture
+    fixture.environment["OWNED_COVERAGE_NATIVE_EXIT"] = "23"
+    result = fixture.invoke(coverage_origin)
+    assert result.returncode == 2
+    assert "Error 23" in result.stderr
+    assert json.loads(result.stdout)["source"] == "current-src"
+    assert not fixture.marker.exists()
+    fixture.environment["OWNED_COVERAGE_NATIVE_EXIT"] = "0"
+    assert fixture.environment == fixture.original_environment

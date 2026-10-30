@@ -18,7 +18,7 @@ from scripts import makefile_layout
 from tests.unit.test_observed_command import _command, _current_status
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 154
+EXPECTED_FAMILY_COUNT = 180
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 EXPECTED_MAIN_PYTEST_FLAGS = (
@@ -41,41 +41,28 @@ PLUGIN_ISOLATION_SELECTORS = (
     "tests/unit/test_no_idle_monitoring_plugin.py::test_fallback_subagent_guard_precedes_delegated_handler",
 )
 PRESENTATION_MANIFEST_SELECTOR = (
-    "tests/unit/test_presentation_browser_runner.py::"
-    "test_javascript_viewport_child_reads_the_actual_producer_manifest"
+    "tests/unit/test_presentation_browser_runner.py::test_javascript_viewport_child_reads_the_actual_producer_manifest"
 )
 ROSTER = (
-    "tests/unit/test_ci_batch_receipts.py::"
-    "test_receipt_validation_refuses_unsafe_artifact_mode[2432]",
+    "tests/unit/test_ci_batch_receipts.py::test_receipt_validation_refuses_unsafe_artifact_mode[2432]",
     *APPROVED_PROMOTION_SELECTORS,
     "tests/unit/test_content_addressed_unit_lane.py::test_atomic_json_candidate_and_control_evidence",
     "tests/unit/test_owned_checkpoint_shared_worktree_admission.py::"
     "test_main_checkpoint_passes_peer_native_guard_with_all_saved_bytes_intact",
     "tests/unit/test_precommit_quality_guards.py::"
     "test_real_project_make_refuses_engine_expression_before_parse_or_export_execution",
-    "tests/unit/test_session_start_crash_recovery.py",
-    "tests/unit/test_hook_runtime_split_compat.py",
-    "tests/unit/test_gate_async.py",
-    "tests/unit/test_session_persistence_integration.py",
+    "tests/unit/test_session_start_crash_recovery.py", "tests/unit/test_hook_runtime_split_compat.py",
+    "tests/unit/test_gate_async.py", "tests/unit/test_session_persistence_integration.py",
     "tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::test_primary_objective_mentions_ci",
-    "tests/unit/test_start_gate_background.py",
-    "tests/unit/test_gate_run_lock.py",
-    "tests/unit/test_bulkhead_deep.py",
-    "tests/unit/test_bulkhead_admission.py",
-    "tests/unit/test_enhancement_ratio_plugin.py",
-    "tests/unit/test_pytest_param_fixture_collisions.py",
-    "tests/unit/test_ansible_runtime_artifacts.py",
-    "tests/unit/test_ansible_ee_full_warm_acceptance.py",
-    "tests/unit/test_ansible_ee_searx_acceptance.py",
-    "tests/unit/test_beta4_python_runtime_boundary.py",
-    "tests/unit/test_ansible_searxng_source_inspection.py",
-    "tests/unit/test_integration_admission_target.py",
-    "tests/unit/test_ci_failure_ledger.py",
-    "tests/unit/test_ci_failure_ledger_concurrency.py",
-    "tests/unit/test_proof_observations.py",
-    "tests/unit/test_ci_await_exact.py",
-    "tests/unit/test_ci_verdict_all_required.py",
-    "tests/unit/test_ci_verdict_structural_repair.py",
+    "tests/unit/test_start_gate_background.py", "tests/unit/test_gate_run_lock.py",
+    "tests/unit/test_bulkhead_deep.py", "tests/unit/test_bulkhead_admission.py",
+    "tests/unit/test_enhancement_ratio_plugin.py", "tests/unit/test_pytest_param_fixture_collisions.py",
+    "tests/unit/test_ansible_runtime_artifacts.py", "tests/unit/test_ansible_ee_full_warm_acceptance.py",
+    "tests/unit/test_ansible_ee_searx_acceptance.py", "tests/unit/test_beta4_python_runtime_boundary.py",
+    "tests/unit/test_ansible_searxng_source_inspection.py", "tests/unit/test_integration_admission_target.py",
+    "tests/unit/test_ci_failure_ledger.py", "tests/unit/test_ci_failure_ledger_concurrency.py",
+    "tests/unit/test_proof_observations.py", "tests/unit/test_ci_await_exact.py",
+    "tests/unit/test_ci_verdict_all_required.py", "tests/unit/test_ci_verdict_structural_repair.py",
     "tests/unit/test_secrets_baseline_compaction.py",
     "tests/unit/test_pipeline_status_exact_sha.py",
     "tests/unit/test_pipeline_status_job_progress.py",
@@ -104,14 +91,41 @@ ROSTER = (
     "tests/unit/test_make_uv_cache_sandbox.py::test_native_prune_preserves_real_child_status[native-failure]",
     "tests/unit/test_make_uv_cache_sandbox.py::test_native_prune_target_policy_refuses_invalid[UV_CACHE_PRUNE_TIMEOUT=0]",
     "tests/unit/test_cache_resource_policy.py::test_shared_uv_inventory_reports_complete_without_mutation",
-    "tests/unit/test_status_heartbeat_terminal.py",
+    "tests/unit/test_git_automation_locking_handoff.py::"
+    "test_live_task_handoff_cannot_allow_critical_section_overlap",
+    "tests/unit/test_git_automation_locking_handoff.py::"
+    "test_wait_for_result_binds_nested_use_to_consuming_task",
+    "tests/unit/test_git_merge_nc_safety.py::test_full_make_dirty_refusal_keeps_the_staged_source_test[command]",
+    "tests/unit/test_git_merge_nc_safety.py::"
+    "test_full_make_branch_data_stays_literal_before_startup[make-expression-command]",
+    "tests/unit/test_make_result_guidance.py::"
+    "test_promotion_make_guidance_waits_for_all_required_children[validator]",
+    "tests/unit/test_make_checker_guidance.py::"
+    "test_contract_native_input_error_guidance_retains_exit_one[include]",
+    "tests/unit/test_development_merge_forward_targets.py::"
+    "test_merge_forward_plan_guidance_does_not_admit_integration[True-content]",
+    "tests/unit/test_development_merge_forward_targets.py::test_merge_forward_guidance_runs_despite_namesake_file",
+    "tests/unit/test_gludd_human_todo_module.py::"
+    "test_success_without_usable_id_never_verifies_write[missing-present-200]",
+    "tests/unit/test_human_todo_make_target.py::test_human_todo_guidance_uses_actual_native_outcome[0-1]",
+    "tests/unit/test_run_watched_result_guidance.py::"
+    "test_native_status_drives_one_result_prompt_without_changing_argv[7]",
+    "tests/unit/test_run_watched_result_guidance.py::"
+    "test_namesake_file_cannot_suppress_native_observation_or_guidance",
+    "tests/unit/test_run_watched_command_boundary.py::"
+    "test_compound_tail_is_running_inside_one_terminal_receipt[7-0]",
+    "tests/unit/test_make_uv_execution_boundary.py::"
+    "test_guarded_multi_goal_refusal_teaches_both_input_repairs_before_any_body[quoted-markdown]",
+    "tests/unit/test_item_progress.py::test_native_work_item_status_guidance_preserves_owned_json[True]",
+    "tests/unit/test_release_pipeline_structure.py::TestReleaseCandidateHostedValidation::test_candidate_push_filters_preserve_existing_routes",
+    "tests/unit/test_test_files_native_trace.py::test_observer_trace_contains_real_matching_protocol_pairs[pass-serial]",
+    "tests/unit/test_xdist_trace_diagnostics.py::test_native_summary_cli_keeps_json_status_and_emits_guidance[trace_guidance_native_rows0-empty]",
+    "tests/unit/test_presentation_browser_apt_source.py::test_apt_mode_is_literal_at_real_make_startup[environment-override]",
+    "tests/unit/test_git_status_readonly.py::test_status_never_refreshes_native_index[inherited-one]",
     "tests/unit/test_task_ledger_validation.py",
-    "tests/unit/test_make_readonly_version.py",
-    "tests/unit/test_make_help_audit.py",
-    "tests/unit/test_clean_stale_resource_namespaces.py",
-    "tests/unit/test_native_temp_artifact_target.py",
-    "tests/unit/test_ci_run_summary_script.py",
-    "tests/unit/test_ci_run_summary_target.py",
+    "tests/unit/test_make_readonly_version.py", "tests/unit/test_make_help_audit.py",
+    "tests/unit/test_clean_stale_resource_namespaces.py", "tests/unit/test_native_temp_artifact_target.py",
+    "tests/unit/test_ci_run_summary_script.py", "tests/unit/test_ci_run_summary_target.py",
     "tests/unit/test_ci_workflow_integrity.py",
     "tests/unit/test_plugin_manifest_deep.py::TestHookValidity::test_no_duplicate_hooks_within_single_plugin",
     "tests/unit/test_plugin_session_start_deadlock.py::TestSessionStartNoDeadlock::"
@@ -138,7 +152,6 @@ ROSTER = (
     "tests/unit/test_azure_containerapp_coverage_target.py",
     "tests/unit/test_ee_owned_collection_runtime_metadata.py",
     "tests/unit/test_no_sleep_subagent.py",
-    "tests/unit/test_ansible_ee_locked_consumer.py",
     "tests/unit/test_native_builder_optional_formats.py",
     "tests/unit/test_native_format_profile_sync_target.py",
     "tests/unit/test_ansible_ee_locked_consumer_admission.py",
@@ -146,7 +159,6 @@ ROSTER = (
     "tests/unit/test_release_ee_collection_closure.py",
     "tests/unit/test_mcp_topics_manifest.py::test_independent_topic_sizing_has_one_native_dump_per_topic",
     "tests/unit/test_mcp_tool_gen.py",
-    "tests/unit/test_observed_command.py",
     "tests/unit/test_observer_retention_concurrency.py",
     "tests/unit/test_ci_collect_all_stress.py",
     "tests/unit/test_admission_cold_start_selection.py::test_real_admission_filters_only_never_selected_main_siblings",
@@ -190,6 +202,8 @@ ROSTER = (
     "tests/unit/test_import_time_deep.py::test_measurement_contract_parses_native_numeric_rows",
     "tests/unit/test_import_time_deep.py::test_measurement_contract_rejects_failed_children",
     "tests/unit/test_import_time_deep.py::test_measurement_contract_consumers_fail_for_missing_data",
+    "tests/unit/test_runtime_publish_admission.py::"
+    "test_green_runtime_owner_runs_once_before_normal_transport[False]",
 )
 
 
@@ -202,6 +216,12 @@ REVIEWED_FINALIZATION = (
     "tests/unit/test_task_watchdog.py::test_native_watchdog_start_requires_child_acknowledgement",
     "tests/unit/test_task_watchdog.py::test_native_start_serializes_existing_acknowledgement",
     "tests/unit/test_task_watchdog.py::test_unit_watchdog_fault_logs_belong_to_the_test_namespace",
+    "tests/unit/test_makefile_audit_deep.py::TestScriptReferencesExist::test_all_scripts_exist",
+    "tests/unit/test_task_watchdog.py::test_live_gate_bound_waiter_protects_the_complete_tree[make-pid]",
+    "tests/unit/test_push_discipline_checks.py::TestVerifyRemoteAfterPush::test_verify_remote_compares_sha",
+    "tests/unit/test_ansible_ee_locked_consumer.py",
+    "tests/unit/test_observed_command.py",
+    "tests/unit/test_status_heartbeat_terminal.py",
     "tests/unit/test_dependency_profiles.py::test_selected_profile_locks_preserve_controller_jsonpointer_requirement",
 )
 
@@ -243,6 +263,8 @@ def _capture_owner(tmp_path: Path, fail_phase: str) -> tuple[subprocess.Complete
         cwd=ROOT, text=True, capture_output=True, timeout=10,
     )
     rows = [json.loads(line) for line in record.read_text(encoding="utf-8").splitlines()]
+    # Canonical phase order compares the unchanged inventories, not entry timing.
+    rows.sort(key=lambda row: {"full": 0, "help": 1, "reviewed": 2}[row["phase"]])
     return result, rows
 
 
@@ -251,6 +273,13 @@ def test_runtime_admission_retains_entire_roster_and_fresh_help(tmp_path: Path) 
     assert result.returncode == 0, result.stdout + result.stderr
     assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
+    assert "tests/unit/test_makefile_audit_deep.py" not in str(rows[0]["files"])
+    tail = rows[2]["files"]
+    assert isinstance(tail, list) and len(tail) == 15
+    assert tail[-1] == (
+        "tests/unit/test_dependency_profiles.py::"
+        "test_selected_profile_locks_preserve_controller_jsonpointer_requirement"
+    )
     assert len({row["pid"] for row in rows}) == 3
     assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
     assert "-o verbosity_test_cases=-2" in str(rows[0]["flags"])
@@ -269,9 +298,304 @@ def test_runtime_admission_retains_entire_roster_and_fresh_help(tmp_path: Path) 
     assert "--dist loadgroup" in makefile_layout.compose_makefile(ROOT / "Makefile")
 
 
+def test_locked_ee_whole_owner_uses_existing_tail_with_original_inventory(tmp_path: Path) -> None:
+    """Route the complete profiled owner once while retaining the original native union."""
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert len(rows) == 3
+    selections: list[list[str]] = []
+    for row in rows:
+        files = row["files"]
+        assert isinstance(files, list) and all(isinstance(node, str) for node in files)
+        selections.append(files)
+    original_inventory = (*ROSTER, HELP, *REVIEWED_FINALIZATION)
+    assert len(original_inventory) == len(set(original_inventory)) == 155
+    assert Counter(node for files in selections for node in files) == Counter(original_inventory)
+    locked = "tests/unit/test_ansible_ee_locked_consumer.py"
+    coverage = [
+        sum(node == locked or node.startswith(locked + "::") for node in files)
+        for files in selections
+    ]
+    assert coverage == [0, 0, 1], (locked, coverage)
+    assert selections[2][-4:] == [
+        locked, "tests/unit/test_observed_command.py", "tests/unit/test_status_heartbeat_terminal.py",
+        "tests/unit/test_dependency_profiles.py::"
+        "test_selected_profile_locks_preserve_controller_jsonpointer_requirement",
+    ]
+    assert [len(files) for files in selections] == [139, 1, 15]
+    assert rows[2]["phase"] == "reviewed"
+
+
+def test_two_observer_whole_files_use_existing_tail_without_inventory_change(tmp_path: Path) -> None:
+    """Keep both entire observer modules in TAIL with the original exact inventory."""
+    original_selectors = (
+        "tests/unit/test_ci_batch_receipts.py::test_receipt_validation_refuses_unsafe_artifact_mode[2432]",
+        "tests/unit/test_env_var_audit_deep.py::TestGLUDDNamingConvention::test_no_trailing_underscore",
+        "tests/unit/test_env_var_audit_deep.py::TestGLUDDDocumentation::test_config_reference_documents_"
+        "live_vars",
+        "tests/unit/test_env_var_audit_deep.py::TestGLUDDDefaultConsistency::test_default_values_"
+        "consistent",
+        "tests/unit/test_backlog_audit_target.py::test_backlog_target_is_public_registered_and_documented",
+        "tests/unit/test_canonical_release_gate.py::test_actual_local_release_recipe_collects_later_"
+        "failures_in_one_invocation",
+        "tests/unit/test_collection_hook_environment.py::test_real_pre_push_collection_isolates_only_"
+        "native_git_local_environment",
+        "tests/unit/test_content_addressed_unit_lane.py::test_atomic_json_candidate_and_control_evidence",
+        "tests/unit/test_owned_checkpoint_shared_worktree_admission.py::test_main_checkpoint_passes_peer_"
+        "native_guard_with_all_saved_bytes_intact",
+        "tests/unit/test_precommit_quality_guards.py::test_real_project_make_refuses_engine_expression_"
+        "before_parse_or_export_execution",
+        "tests/unit/test_session_start_crash_recovery.py",
+        "tests/unit/test_hook_runtime_split_compat.py",
+        "tests/unit/test_gate_async.py",
+        "tests/unit/test_session_persistence_integration.py",
+        "tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::test_primary_objective_"
+        "mentions_ci",
+        "tests/unit/test_start_gate_background.py",
+        "tests/unit/test_gate_run_lock.py",
+        "tests/unit/test_bulkhead_deep.py",
+        "tests/unit/test_bulkhead_admission.py",
+        "tests/unit/test_enhancement_ratio_plugin.py",
+        "tests/unit/test_pytest_param_fixture_collisions.py",
+        "tests/unit/test_ansible_runtime_artifacts.py",
+        "tests/unit/test_ansible_ee_full_warm_acceptance.py",
+        "tests/unit/test_ansible_ee_searx_acceptance.py",
+        "tests/unit/test_beta4_python_runtime_boundary.py",
+        "tests/unit/test_ansible_searxng_source_inspection.py",
+        "tests/unit/test_integration_admission_target.py",
+        "tests/unit/test_ci_failure_ledger.py",
+        "tests/unit/test_ci_failure_ledger_concurrency.py",
+        "tests/unit/test_proof_observations.py",
+        "tests/unit/test_ci_await_exact.py",
+        "tests/unit/test_ci_verdict_all_required.py",
+        "tests/unit/test_ci_verdict_structural_repair.py",
+        "tests/unit/test_secrets_baseline_compaction.py",
+        "tests/unit/test_pipeline_status_exact_sha.py",
+        "tests/unit/test_pipeline_status_job_progress.py",
+        "tests/unit/test_ci_cancel_contract.py",
+        "tests/unit/test_release_proof_admission_target.py",
+        "tests/unit/test_replace_lines_make_target.py",
+        "tests/unit/test_native_line_edit_targets.py",
+        "tests/unit/test_trace_summary_make_inputs.py::test_summary_public_inputs_never_execute_make_or_"
+        "shell_data[backticks-LOG-False]",
+        "tests/unit/test_cache_resource_policy.py::test_prohibited_home_roots_refuse_before_"
+        "measurement[library-caches-inventory]",
+        "tests/unit/test_run_watched_trace.py::test_native_trace_option_preserves_default_off_and_exact_"
+        "on_argv[enabled]",
+        "tests/unit/test_observability_guardrails.py::test_disk_and_native_temp_owner_keep_largest_"
+        "entries[disk]",
+        "tests/unit/test_ci_named_shard_files.py::test_coverage_files_exports_physical_checkout_to_"
+        "changed_cwd_children[False-command-line]",
+        "tests/unit/test_watchdog_secrets_lifecycle.py::test_native_scan_owns_terminal_receipt_and_"
+        "descendants[timeout-124-timed_out]",
+        "tests/unit/test_watchdog.py::test_watchdog_fixture_confines_command_workspace",
+        "tests/unit/test_task_watchdog.py::test_terminal_status_cap_preserves_native_gate_"
+        "protection[absent-64]",
+        "tests/unit/test_clean_ci_shard_scratch.py::test_stale_scratch_nested_symlink_preserves_external_"
+        "target_modes[file]",
+        "tests/unit/test_detect_secrets_full_scan.py::test_successful_full_scan_rejects_added_identity_"
+        "or_occurrence[new-digest]",
+        "tests/unit/test_audit_coverage_suite_provenance.py::test_imported_cobertura_never_proves_e2e_"
+        "execution",
+        "tests/unit/test_make_uv_cache_sandbox.py::test_native_prune_preserves_real_child_"
+        "status[native-failure]",
+        "tests/unit/test_make_uv_cache_sandbox.py::test_native_prune_target_policy_refuses_invalid[UV_"
+        "CACHE_PRUNE_TIMEOUT=0]",
+        "tests/unit/test_cache_resource_policy.py::test_shared_uv_inventory_reports_complete_without_"
+        "mutation",
+        "tests/unit/test_git_automation_locking_handoff.py::test_live_task_handoff_cannot_allow_critical_"
+        "section_overlap",
+        "tests/unit/test_git_automation_locking_handoff.py::test_wait_for_result_binds_nested_use_to_"
+        "consuming_task",
+        "tests/unit/test_git_merge_nc_safety.py::test_full_make_dirty_refusal_keeps_the_staged_source_"
+        "test[command]",
+        "tests/unit/test_git_merge_nc_safety.py::test_full_make_branch_data_stays_literal_before_"
+        "startup[make-expression-command]",
+        "tests/unit/test_make_result_guidance.py::test_promotion_make_guidance_waits_for_all_required_"
+        "children[validator]",
+        "tests/unit/test_make_checker_guidance.py::test_contract_native_input_error_guidance_retains_"
+        "exit_one[include]",
+        "tests/unit/test_development_merge_forward_targets.py::test_merge_forward_plan_guidance_does_not_"
+        "admit_integration[True-content]",
+        "tests/unit/test_development_merge_forward_targets.py::test_merge_forward_guidance_runs_despite_"
+        "namesake_file",
+        "tests/unit/test_gludd_human_todo_module.py::test_success_without_usable_id_never_verifies_"
+        "write[missing-present-200]",
+        "tests/unit/test_human_todo_make_target.py::test_human_todo_guidance_uses_actual_native_"
+        "outcome[0-1]",
+        "tests/unit/test_run_watched_result_guidance.py::test_native_status_drives_one_result_prompt_"
+        "without_changing_argv[7]",
+        "tests/unit/test_run_watched_result_guidance.py::test_namesake_file_cannot_suppress_native_"
+        "observation_or_guidance",
+        "tests/unit/test_run_watched_command_boundary.py::test_compound_tail_is_running_inside_one_"
+        "terminal_receipt[7-0]",
+        "tests/unit/test_make_uv_execution_boundary.py::test_guarded_multi_goal_refusal_teaches_both_"
+        "input_repairs_before_any_body[quoted-markdown]",
+        "tests/unit/test_item_progress.py::test_native_work_item_status_guidance_preserves_owned_"
+        "json[True]",
+        "tests/unit/test_release_pipeline_structure.py::TestReleaseCandidateHostedValidation::test_"
+        "candidate_push_filters_preserve_existing_routes",
+        "tests/unit/test_test_files_native_trace.py::test_observer_trace_contains_real_matching_protocol_"
+        "pairs[pass-serial]",
+        "tests/unit/test_xdist_trace_diagnostics.py::test_native_summary_cli_keeps_json_status_and_emits_"
+        "guidance[trace_guidance_native_rows0-empty]",
+        "tests/unit/test_presentation_browser_apt_source.py::test_apt_mode_is_literal_at_real_make_"
+        "startup[environment-override]",
+        "tests/unit/test_git_status_readonly.py::test_status_never_refreshes_native_index[inherited-one]",
+        "tests/unit/test_status_heartbeat_terminal.py",
+        "tests/unit/test_task_ledger_validation.py",
+        "tests/unit/test_make_readonly_version.py",
+        "tests/unit/test_make_help_audit.py",
+        "tests/unit/test_clean_stale_resource_namespaces.py",
+        "tests/unit/test_native_temp_artifact_target.py",
+        "tests/unit/test_ci_run_summary_script.py",
+        "tests/unit/test_ci_run_summary_target.py",
+        "tests/unit/test_ci_workflow_integrity.py",
+        "tests/unit/test_plugin_manifest_deep.py::TestHookValidity::test_no_duplicate_hooks_within_"
+        "single_plugin",
+        "tests/unit/test_plugin_session_start_deadlock.py::TestSessionStartNoDeadlock::test_no_plugin_"
+        "denies_reads_at_session_start",
+        "tests/unit/test_process_overhead.py::TestProcessTokenOverhead::test_anti_stop_plugins_are_lean",
+        "tests/unit/test_enforcement_executable_modes.py::test_enforcement_runtime_surfaces_have_"
+        "executable_git_mode",
+        "tests/unit/test_subagent_output_clean.py::TestSubagentOutputClean::test_all_tool_execute_before_"
+        "hooks_have_subagent_guard",
+        "tests/unit/test_no_idle_monitoring_plugin.py::test_fallback_subagent_guard_precedes_delegated_"
+        "handler",
+        "tests/unit/test_v011_exact_gate_repair_contract.py::test_all_six_exact_gate_repairs_remain_"
+        "green_together",
+        "tests/unit/test_secrets_scan_resources.py",
+        "tests/unit/test_css_lint_target.py::test_lint_css_dependency_config_and_contract_are_exactly_"
+        "pinned",
+        "tests/unit/test_gate_status_attestation.py::test_repository_identity_batches_only_fresh_"
+        "metadata_with_equivalent_digests",
+        "tests/unit/test_ci_stylelint_workflow.py",
+        "tests/security/test_ci_workflow.py",
+        "tests/unit/test_workflow_safe_parser.py",
+        "tests/unit/test_self_improve_private_policy_ci_contract.py",
+        "tests/unit/test_ci_shards_log_context.py",
+        "tests/unit/test_ci_shards_log_context_bounds.py",
+        "tests/unit/test_makefile_syntax.py",
+        "tests/unit/test_makefile_layout.py::test_each_invocation_reads_each_validated_source_once",
+        "tests/unit/test_makefile_layout.py::test_composition_emits_validated_bytes_and_revalidates_next_"
+        "invocation",
+        "tests/unit/test_makefile_targets_deep.py",
+        "tests/unit/test_azure_containerapp_coverage_target.py",
+        "tests/unit/test_ee_owned_collection_runtime_metadata.py",
+        "tests/unit/test_no_sleep_subagent.py",
+        "tests/unit/test_ansible_ee_locked_consumer.py",
+        "tests/unit/test_native_builder_optional_formats.py",
+        "tests/unit/test_native_format_profile_sync_target.py",
+        "tests/unit/test_ansible_ee_locked_consumer_admission.py",
+        "tests/unit/test_release_asset_matrix.py",
+        "tests/unit/test_release_ee_collection_closure.py",
+        "tests/unit/test_mcp_topics_manifest.py::test_independent_topic_sizing_has_one_native_dump_per_"
+        "topic",
+        "tests/unit/test_mcp_tool_gen.py",
+        "tests/unit/test_observed_command.py",
+        "tests/unit/test_observer_retention_concurrency.py",
+        "tests/unit/test_ci_collect_all_stress.py",
+        "tests/unit/test_admission_cold_start_selection.py::test_real_admission_filters_only_never_"
+        "selected_main_siblings",
+        "tests/unit/test_presentation_browser_runner.py::test_javascript_viewport_child_reads_the_actual_"
+        "producer_manifest",
+        "tests/unit/test_presentation_make_targets.py::test_native_browser_preserves_unset_empty_and_"
+        "explicit_worker_environment[1-command-line-None-NPROC]",
+        "tests/unit/test_presentation_make_targets.py::test_native_browser_preserves_unset_empty_and_"
+        "explicit_worker_environment[1-command-line-None-GLUDD_XDIST_WORKERS]",
+        "tests/unit/test_markdown_docs_deep.py::test_all_internal_links_resolve",
+        "tests/unit/test_markdown_docs_deep.py::test_relative_links_do_not_escape_repo",
+        "tests/unit/test_branch_discipline_checks.py::TestWorktreeCleanupAfterMerge::test_agent_cu_"
+        "removes_worktree",
+        "tests/unit/test_branch_discipline_checks.py::TestWorktreeCleanupAfterMerge::test_agent_cu_"
+        "preserves_branch_and_release_evidence",
+        "tests/unit/test_execution_adapter_protocols.py::test_core_protocols_do_not_claim_data_member_"
+        "validation",
+        "tests/unit/test_status_snapshot.py::TestStatusSnapshot::test_session_md_has_markers",
+        "tests/unit/test_status_snapshot.py::TestStatusSnapshot::test_validation_refuses_invalid_session_"
+        "structure_without_writes",
+        "tests/unit/test_status_snapshot.py::TestStatusSnapshot::test_repeated_native_rewrite_keeps_one_"
+        "header_and_surrounding_handoff[absent]",
+        "tests/unit/test_active_work_status.py::test_process_inventory_does_not_promote_resource_"
+        "directory_names[pytest]",
+        "tests/unit/test_agent_watchdog_lifecycle.py::test_native_sigterm_during_acquisition_releases_"
+        "the_actual_lease[fsync]",
+        "tests/unit/test_agent_watchdog_lifecycle.py::test_native_start_acknowledges_one_child_and_stop_"
+        "drains",
+        "tests/unit/test_agent_worktree_targets.py::TestAgentWorktreeRecipeShape::test_agent_cleanup_"
+        "delegates_to_registered_native_retirement",
+        "tests/unit/test_agent_worktree_targets.py::TestAgentWorktreeLifecycle::test_agent_cleanup_"
+        "removes_worktree[False]",
+        "tests/unit/test_task_watchdog.py::test_watchdog_absence_refusal_names_the_exact_pid_and_"
+        "cwd[True]",
+        "tests/unit/test_active_work_status.py::test_process_inventory_preserves_python_module_argument_"
+        "forms",
+        "tests/unit/test_code_intelligence_import_boundary.py::test_extractor_import_does_not_load_"
+        "introspection_or_database",
+        "tests/unit/test_list_files_target.py::test_listing_missing_input_preserves_native_failure",
+        "tests/unit/test_import_time_deep.py::test_measurement_contract_parses_native_numeric_rows",
+        "tests/unit/test_import_time_deep.py::test_measurement_contract_rejects_failed_children",
+        "tests/unit/test_import_time_deep.py::test_measurement_contract_consumers_fail_for_missing_data",
+        "tests/unit/test_runtime_publish_admission.py::test_green_runtime_owner_runs_once_before_normal_"
+        "transport[False]",
+        "tests/unit/test_makefile_audit_deep.py::TestHelpNoDupTargets::test_no_duplicate_help_entries",
+        "tests/unit/test_reviewed_head_inputs.py::test_historical_focus_binds_candidate_adapter_blobs_"
+        "not_inspecting_files",
+        "tests/unit/test_reviewed_head_inputs.py::test_finalization_accepts_actual_native_background_"
+        "producer_command",
+        "tests/unit/test_reviewed_head_inputs.py::test_native_focus_commands_preserve_watchdog_ownership",
+        "tests/unit/test_task_watchdog.py::test_watchdog_destructive_boundary_requires_registered_"
+        "ownership",
+        "tests/unit/test_task_watchdog.py::test_watchdog_handoff_confirms_exit_after_metadata_changes",
+        "tests/unit/test_task_watchdog.py::test_native_watchdog_start_requires_child_acknowledgement",
+        "tests/unit/test_task_watchdog.py::test_native_start_serializes_existing_acknowledgement",
+        "tests/unit/test_task_watchdog.py::test_unit_watchdog_fault_logs_belong_to_the_test_namespace",
+        "tests/unit/test_makefile_audit_deep.py::TestScriptReferencesExist::test_all_scripts_exist",
+        "tests/unit/test_task_watchdog.py::test_live_gate_bound_waiter_protects_the_complete_"
+        "tree[make-pid]",
+        "tests/unit/test_push_discipline_checks.py::TestVerifyRemoteAfterPush::test_verify_remote_"
+        "compares_sha",
+        "tests/unit/test_dependency_profiles.py::test_selected_profile_locks_preserve_controller_"
+        "jsonpointer_requirement",
+    )
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert len(rows) == 3
+    selections: list[list[str]] = []
+    for row in rows:
+        files = row["files"]
+        assert isinstance(files, list) and all(isinstance(node, str) for node in files)
+        selections.append(files)
+    assert len(original_selectors) == len(set(original_selectors)) == 155
+    assert Counter(node for files in selections for node in files) == Counter(original_selectors)
+    moved = (
+        "tests/unit/test_ansible_ee_locked_consumer.py",
+        "tests/unit/test_observed_command.py",
+        "tests/unit/test_status_heartbeat_terminal.py",
+    )
+    for file in moved:
+        coverage = [
+            sum(node == file or node.startswith(file + "::") for node in files)
+            for files in selections
+        ]
+        assert coverage == [0, 0, 1], (file, coverage)
+        assert selections[2].count(file) == 1
+    assert [len(files) for files in selections] == [139, 1, 15]
+    assert selections[0] == [node for node in original_selectors[:142] if node not in moved]
+    assert selections[1] == [original_selectors[142]]
+    original_tail = list(original_selectors[143:])
+    assert len(original_tail) == 12
+    assert selections[2] == original_tail[:-1] + list(moved) + original_tail[-1:]
+    assert selections[2][-1] == (
+        "tests/unit/test_dependency_profiles.py::"
+        "test_selected_profile_locks_preserve_controller_jsonpointer_requirement"
+    )
+
+
 @pytest.mark.parametrize(
     ("fail_phase", "expected_phases"),
-    [("full", ["full"]), ("help", ["full", "help"]), ("reviewed", ["full", "help", "reviewed"])],
+    [("full", ["full", "help", "reviewed"]), ("help", ["full", "help"]),
+     ("reviewed", ["full", "help", "reviewed"])],
 )
 def test_runtime_admission_propagates_each_owner_failure_without_replay(
     tmp_path: Path, fail_phase: str, expected_phases: list[str],
@@ -1001,7 +1325,7 @@ def test_coverage_suite_provenance_failure_has_one_exact_native_route(tmp_path: 
         if index:
             assert node not in selection
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 154
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
     assert payload["families"][149]["id"] == "native-full-scan-success-inventory"
     assert payload["families"][150] == {
         "id": "coverage-native-suite-provenance",
@@ -1065,7 +1389,7 @@ def test_uv_prune_native_failure_has_one_exact_native_route(tmp_path: Path) -> N
         assert node.split("::", 1)[0] not in selection
     assert counts == [1, 0, 0]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 154
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
     assert payload["families"][150]["id"] == "coverage-native-suite-provenance"
     assert payload["families"][151] == {
         "id": "uv-prune-native-failure-status",
@@ -1101,7 +1425,7 @@ def test_uv_prune_inherited_policy_has_one_exact_native_route(tmp_path: Path) ->
     assert counts == [1, 0, 0]
     assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 154
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
     assert payload["families"][151]["id"] == "uv-prune-native-failure-status"
     assert payload["families"][152] == {
         "id": "uv-prune-inherited-policy-context", "owner_target": OWNER,
@@ -1132,7 +1456,7 @@ def test_shared_uv_inventory_has_one_exact_native_route(tmp_path: Path) -> None:
     assert all(node.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 154
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
     assert payload["families"][152]["id"] == "uv-prune-inherited-policy-context"
     assert payload["families"][153] == {
         "id": "shared-uv-cache-inventory-exposure", "owner_target": OWNER,
@@ -1147,3 +1471,436 @@ def test_shared_uv_inventory_has_one_exact_native_route(tmp_path: Path) -> None:
     assert len(payload["runtime_contract"]["phases"]) == 21
     assert sum(item["max_seconds"] for item in payload["runtime_contract"]["phases"]) == 2850
     assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
+
+
+@pytest.mark.parametrize(("promoted_family", "node_selector"), (
+    ("git-async-live-owner-handoff",
+     "tests/unit/test_git_automation_locking_handoff.py::"
+     "test_live_task_handoff_cannot_allow_critical_section_overlap"),
+    ("git-async-completed-owner-adoption",
+     "tests/unit/test_git_automation_locking_handoff.py::"
+     "test_wait_for_result_binds_nested_use_to_consuming_task"),
+))
+def test_git_handoff_failures_have_exact_native_routes(
+    tmp_path: Path, promoted_family: str, node_selector: str,
+) -> None:
+    """Fail before fanout if either independently exposed handoff regresses."""
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    selections = []
+    for row in rows:
+        selection = row["files"]
+        assert isinstance(selection, list)
+        selections.append(selection)
+    assert [selection.count(node_selector) for selection in selections] == [1, 0, 0]
+    assert all(node_selector.split("::", 1)[0] not in selection for selection in selections)
+    assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
+    payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
+    assert payload["families"][153]["id"] == "shared-uv-cache-inventory-exposure"
+    assert payload["families"][154:156] == [
+        {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
+         "node": selected_node, "full_gate_phase": "test"}
+        for family_id, selected_node in (
+            ("git-async-live-owner-handoff",
+             "tests/unit/test_git_automation_locking_handoff.py::"
+             "test_live_task_handoff_cannot_allow_critical_section_overlap"),
+            ("git-async-completed-owner-adoption",
+             "tests/unit/test_git_automation_locking_handoff.py::"
+             "test_wait_for_result_binds_nested_use_to_consuming_task"),
+        )
+    ]
+    assert any(family["id"] == promoted_family for family in payload["families"][154:156])
+    assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
+    phase = next(item for item in payload["runtime_contract"]["phases"]
+                 if item["name"] == "pytest-runtime-compatibility")
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert len(payload["runtime_contract"]["phases"]) == 21
+    assert sum(item["max_seconds"] for item in payload["runtime_contract"]["phases"]) == 2850
+    assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
+
+
+MAKE_GUIDANCE_PROMOTIONS = (
+    ("git-merge-no-commit-dirty-preservation",
+     "tests/unit/test_git_merge_nc_safety.py::test_full_make_dirty_refusal_keeps_the_staged_source_test[command]"),
+    ("git-merge-no-commit-literal-branch",
+     "tests/unit/test_git_merge_nc_safety.py::test_full_make_branch_data_stays_literal_before_startup[make-expression-command]"),
+    ("make-promotion-terminal-result-guidance",
+     "tests/unit/test_make_result_guidance.py::test_promotion_make_guidance_waits_for_all_required_children[validator]"),
+    ("make-contract-layout-error-guidance",
+     "tests/unit/test_make_checker_guidance.py::test_contract_native_input_error_guidance_retains_exit_one[include]"),
+)
+
+
+INTEGRATION_GUIDANCE_PROMOTIONS = (
+    ("development-merge-forward-plan-guidance",
+     "tests/unit/test_development_merge_forward_targets.py::"
+     "test_merge_forward_plan_guidance_does_not_admit_integration[True-content]"),
+    ("development-merge-forward-namesake",
+     "tests/unit/test_development_merge_forward_targets.py::test_merge_forward_guidance_runs_despite_namesake_file"),
+)
+
+
+HUMAN_TODO_PROMOTIONS = (
+    ("human-todo-response-identity",
+     "tests/unit/test_gludd_human_todo_module.py::"
+     "test_success_without_usable_id_never_verifies_write[missing-present-200]"),
+    ("human-todo-check-mode-guidance",
+     "tests/unit/test_human_todo_make_target.py::test_human_todo_guidance_uses_actual_native_outcome[0-1]"),
+)
+
+
+WATCHED_COMMAND_PROMOTIONS = (
+    ("run-watched-native-outcome-guidance",
+     "tests/unit/test_run_watched_result_guidance.py::"
+     "test_native_status_drives_one_result_prompt_without_changing_argv[7]"),
+    ("run-watched-namesake-execution",
+     "tests/unit/test_run_watched_result_guidance.py::"
+     "test_namesake_file_cannot_suppress_native_observation_or_guidance"),
+    ("run-watched-complete-command",
+     "tests/unit/test_run_watched_command_boundary.py::"
+     "test_compound_tail_is_running_inside_one_terminal_receipt[7-0]"),
+)
+
+
+GUARDED_GOAL_PROMOTIONS = (
+    ("make-guarded-goal-outcome-guidance",
+     "tests/unit/test_make_uv_execution_boundary.py::"
+     "test_guarded_multi_goal_refusal_teaches_both_input_repairs_before_any_body[quoted-markdown]"),
+)
+
+
+CANDIDATE_PROOF_PROMOTIONS = (
+    ("release-candidate-push-workflow-triggers",
+     "tests/unit/test_release_pipeline_structure.py::TestReleaseCandidateHostedValidation::"
+     "test_candidate_push_filters_preserve_existing_routes"),
+    ("pytest-native-trace-protocol", "tests/unit/test_test_files_native_trace.py::"
+     "test_observer_trace_contains_real_matching_protocol_pairs[pass-serial]"),
+    ("trace-summary-result-guidance", "tests/unit/test_xdist_trace_diagnostics.py::"
+     "test_native_summary_cli_keeps_json_status_and_emits_guidance[trace_guidance_native_rows0-empty]"),
+    ("presentation-hosted-apt-literal-mode", "tests/unit/test_presentation_browser_apt_source.py::"
+     "test_apt_mode_is_literal_at_real_make_startup[environment-override]"),
+    ("git-status-native-index-readonly", "tests/unit/test_git_status_readonly.py::"
+     "test_status_never_refreshes_native_index[inherited-one]"),
+    ("publication-native-command-envelope", "tests/unit/test_runtime_publish_admission.py::"
+     "test_green_runtime_owner_runs_once_before_normal_transport[False]"),
+    ("make-local-script-reference-boundary", "tests/unit/test_makefile_audit_deep.py::"
+     "TestScriptReferencesExist::test_all_scripts_exist"),
+    ("watchdog-bound-gate-waiter", "tests/unit/test_task_watchdog.py::"
+     "test_live_gate_bound_waiter_protects_the_complete_tree[make-pid]"),
+    ("verify-remote-recipe-boundary", "tests/unit/test_push_discipline_checks.py::"
+     "TestVerifyRemoteAfterPush::test_verify_remote_compares_sha"),
+)
+
+WORK_ITEM_PROMOTIONS = (
+    ("work-item-administrative-result-guidance",
+     "tests/unit/test_item_progress.py::test_native_work_item_status_guidance_preserves_owned_json[True]"),
+)
+
+
+@pytest.mark.parametrize(
+    ("promoted_family", "node_selector"),
+    (MAKE_GUIDANCE_PROMOTIONS + INTEGRATION_GUIDANCE_PROMOTIONS
+     + HUMAN_TODO_PROMOTIONS + WATCHED_COMMAND_PROMOTIONS + GUARDED_GOAL_PROMOTIONS + WORK_ITEM_PROMOTIONS
+     + CANDIDATE_PROOF_PROMOTIONS),
+)
+def test_make_safety_and_guidance_have_exact_native_routes(
+    tmp_path: Path, promoted_family: str, node_selector: str,
+) -> None:
+    """Keep each witnessed cheap failure in its exact existing cohort."""
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    selections = []
+    for row in rows:
+        selection = row["files"]
+        assert isinstance(selection, list)
+        selections.append(selection)
+    expected = [0, 0, 1] if promoted_family in {
+        "make-local-script-reference-boundary", "watchdog-bound-gate-waiter", "verify-remote-recipe-boundary",
+    } else [1, 0, 0]
+    assert [selection.count(node_selector) for selection in selections] == expected
+    assert all(node_selector.split("::", 1)[0] not in selection for selection in selections)
+    assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
+    payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
+    assert [family["id"] for family in payload["families"][154:156]] == [
+        "git-async-live-owner-handoff", "git-async-completed-owner-adoption",
+    ]
+    assert payload["families"][156:160] == [
+        {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
+         "node": selected_node, "full_gate_phase": "test"}
+        for family_id, selected_node in MAKE_GUIDANCE_PROMOTIONS
+    ]
+    assert payload["families"][162:164] == [
+        {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
+         "node": selected_node, "full_gate_phase": "test"}
+        for family_id, selected_node in INTEGRATION_GUIDANCE_PROMOTIONS
+    ]
+    assert payload["families"][164:166] == [
+        {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
+         "node": selected_node, "full_gate_phase": "test"}
+        for family_id, selected_node in HUMAN_TODO_PROMOTIONS
+    ]
+    assert payload["families"][166:169] == [
+        {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
+         "node": selected_node, "full_gate_phase": "test"}
+        for family_id, selected_node in WATCHED_COMMAND_PROMOTIONS
+    ]
+    assert payload["families"][169:] == [
+        {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
+         "node": selected_node, "full_gate_phase": "test"}
+        for family_id, selected_node in GUARDED_GOAL_PROMOTIONS + WORK_ITEM_PROMOTIONS + CANDIDATE_PROOF_PROMOTIONS
+    ]
+    if (promoted_family, node_selector) in CANDIDATE_PROOF_PROMOTIONS:
+        family_slice = slice(171, None)
+    elif (promoted_family, node_selector) in WORK_ITEM_PROMOTIONS:
+        family_slice = slice(170, 171)
+    elif (promoted_family, node_selector) in GUARDED_GOAL_PROMOTIONS:
+        family_slice = slice(169, 170)
+    elif (promoted_family, node_selector) in WATCHED_COMMAND_PROMOTIONS:
+        family_slice = slice(166, 169)
+    elif (promoted_family, node_selector) in HUMAN_TODO_PROMOTIONS:
+        family_slice = slice(164, 166)
+    elif (promoted_family, node_selector) in INTEGRATION_GUIDANCE_PROMOTIONS:
+        family_slice = slice(162, 164)
+    else:
+        family_slice = slice(156, 160)
+    assert any(family["id"] == promoted_family for family in payload["families"][family_slice])
+    assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
+    phase = next(item for item in payload["runtime_contract"]["phases"]
+                 if item["name"] == "pytest-runtime-compatibility")
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert len(payload["runtime_contract"]["phases"]) == 21
+    assert sum(item["max_seconds"] for item in payload["runtime_contract"]["phases"]) == 2850
+    assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
+
+
+# Native scheduling controls use the actual owner and actual test-files recipe.
+# Only UV is replaced by this bounded fixture; no real-UV/pytest speed is claimed.
+_OVERLAP_UV_FIXTURE = r"""
+import json, os, signal, subprocess, sys, time
+from pathlib import Path
+args = sys.argv[1:]
+assert args[:4] == ["run", "python", "-m", "pytest"]
+root = Path(os.environ["GLUDD_OVERLAP_FIXTURE_ROOT"])
+phase = "help" if args[4] == os.environ["GLUDD_OVERLAP_HELP"] else (
+    "reviewed" if args[4] == os.environ["GLUDD_OVERLAP_TAIL"] else "full")
+mode = os.environ["GLUDD_OVERLAP_MODE"]
+bt = Path(next(arg.split("=", 1)[1] for arg in args if arg.startswith("--basetemp=")))
+sentinel = bt / (phase + "-owned")
+sentinel.write_text(phase)
+def emit(event, **extra):
+    row = dict(phase=phase, event=event, pid=os.getpid(), time=time.monotonic(),
+               args=args, bt=str(bt), identifier=os.environ.get("ID"),
+               nproc=os.environ["NPROC"], workers=os.environ["GLUDD_XDIST_WORKERS"],
+               ansible=os.environ["ANSIBLE_LOCAL_TEMP"], **extra)
+    descriptor = os.open(root / "events.jsonl", os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    try:
+        os.write(descriptor, (json.dumps(row) + "\n").encode())
+    finally:
+        os.close(descriptor)
+def wait_for(name):
+    deadline = time.monotonic() + 2.0
+    while not (root / name).exists():
+        if time.monotonic() > deadline:
+            emit("barrier-error", missing=name)
+            raise SystemExit(73)
+        time.sleep(0.005)
+emit("start")
+(root / (phase + "-start")).touch()
+if mode == "hold":
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    child = subprocess.Popen([
+        sys.executable, "-c",
+        "import signal; signal.signal(signal.SIGTERM, signal.SIG_IGN); signal.alarm(4); signal.pause()",
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    emit("descendant", child_pid=child.pid)
+    # Bounded self-exit remains a fixture fallback if host inspection is denied.
+    deadline = time.monotonic() + 4.0
+    while time.monotonic() < deadline:
+        time.sleep(0.01)
+    child.wait(timeout=2)
+    emit("finish", status=75)
+    raise SystemExit(75)
+if phase == "full":
+    wait_for("help-start")
+    if mode != "fail-main":
+        wait_for("help-finish" if mode == "fail-help" else "reviewed-finish")
+else:
+    wait_for("full-start")
+    if mode == "fail-main" and phase == "help":
+        wait_for("full-finish")
+status = {"fail-main": 17, "fail-help": 7, "fail-tail": 23}.get(mode, 0)
+failed_phase = {"fail-main": "full", "fail-help": "help", "fail-tail": "reviewed"}.get(mode)
+status = status if phase == failed_phase else 0
+if not sentinel.exists():
+    status = 83
+emit("finish", status=status)
+(root / (phase + "-finish")).touch()
+raise SystemExit(status)
+"""
+
+
+def _overlap_time(row: dict[str, object]) -> float:
+    value = row["time"]
+    assert isinstance(value, (int, float))
+    return float(value)
+
+
+def _overlap_rows(path: Path) -> list[dict[str, object]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, object]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        row: object = json.loads(line)
+        assert isinstance(row, dict) and all(isinstance(key, str) for key in row)
+        rows.append(row)
+    return rows
+
+
+def _overlap_fixture(
+    tmp_path: Path, mode: str, *, owner_body: str | None = None,
+) -> tuple[Path, Path, dict[str, str]]:
+    root = tmp_path.resolve()
+    uv = root / "uv fixture.py"
+    uv.write_text(_OVERLAP_UV_FIXTURE, encoding="utf-8")
+    child = root / "native-test-files.mk"
+    child.write_text(
+        f"UV := {shlex.quote(sys.executable)} {shlex.quote(str(uv))}\n"
+        f".PHONY: test-files\ntest-files:\n{_stanza('test-files')}\n",
+        encoding="utf-8",
+    )
+    owner = root / "owner.mk"
+    owner.write_text(
+        f"MAKE := make --no-print-directory -f {shlex.quote(str(child))}\n"
+        f".PHONY: {OWNER}\n{OWNER}:\n{owner_body or _stanza(OWNER)}\n",
+        encoding="utf-8",
+    )
+    environment = {key: value for key, value in os.environ.items()
+                   if key not in {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "ID"}}
+    environment.update({
+        "ID": "overlap-fixture-" + root.name,
+        "GLUDD_OVERLAP_FIXTURE_ROOT": str(root),
+        "GLUDD_OVERLAP_MODE": mode,
+        "GLUDD_OVERLAP_HELP": HELP,
+        "GLUDD_OVERLAP_TAIL": REVIEWED_FINALIZATION[0],
+    })
+    return owner, root / "events.jsonl", environment
+
+
+def _overlap_run(
+    tmp_path: Path, mode: str, *, owner_body: str | None = None,
+) -> tuple[subprocess.CompletedProcess[str], list[dict[str, object]]]:
+    owner, record, environment = _overlap_fixture(tmp_path, mode, owner_body=owner_body)
+    result = subprocess.run(
+        ["make", "--no-print-directory", "-f", str(owner), OWNER],
+        cwd=tmp_path.resolve(), env=environment, capture_output=True, text=True,
+        check=False, timeout=10,
+    )
+    return result, _overlap_rows(record)
+
+
+@pytest.mark.parametrize("overlap_native_mode", ["pass", "fail-main", "fail-help", "fail-tail"])
+def test_native_overlap_joins_main_and_preserves_each_side_status(
+    tmp_path: Path, overlap_native_mode: str,
+) -> None:
+    result, rows = _overlap_run(tmp_path, overlap_native_mode)
+    expected_phases = {"full", "help"} if overlap_native_mode == "fail-help" else {"full", "help", "reviewed"}
+    starts = {row["phase"]: row for row in rows if row["event"] == "start"}
+    finishes = {row["phase"]: row for row in rows if row["event"] == "finish"}
+    assert set(starts) == set(finishes) == expected_phases, result.stdout + result.stderr
+    assert len(starts) == len([row for row in rows if row["event"] == "start"])
+    assert len({row["pid"] for row in starts.values()}) == len(expected_phases)
+    assert len({row["bt"] for row in starts.values()}) == len(expected_phases)
+    for phase, row in starts.items():
+        assert row["identifier"] == ""
+        assert row["ansible"] == str(Path(str(row["bt"])) / "ansible-local")
+        assert not Path(str(row["bt"])).exists()
+        assert (row["nproc"], row["workers"]) == (("2", "2") if phase == "full" else ("1", "1"))
+        arguments = row["args"]
+        assert isinstance(arguments, list) and all(isinstance(argument, str) for argument in arguments)
+        expected = list(ROSTER) if phase == "full" else [HELP] if phase == "help" else list(REVIEWED_FINALIZATION)
+        assert arguments[4:4 + len(expected)] == expected
+        assert "-W" in arguments and arguments[arguments.index("-W") + 1] == "error"
+    # Barriers require actual overlap; no wall-time threshold claims a speedup.
+    assert _overlap_time(starts["full"]) < _overlap_time(finishes["help"])
+    assert _overlap_time(starts["help"]) < _overlap_time(finishes["full"])
+    if "reviewed" in starts:
+        assert _overlap_time(finishes["help"]) < _overlap_time(starts["reviewed"])
+        if overlap_native_mode != "fail-main":
+            assert _overlap_time(finishes["reviewed"]) < _overlap_time(finishes["full"])
+    active: set[str] = set()
+    for row in rows:
+        phase = str(row["phase"])
+        if row["event"] == "start":
+            active.add(phase)
+        elif row["event"] == "finish":
+            active.remove(phase)
+        assert len(active) <= 2
+        assert sum(2 if member == "full" else 1 for member in active) <= 3
+    assert not active
+    if overlap_native_mode == "pass":
+        assert result.returncode == 0, result.stdout + result.stderr
+    else:
+        native_status = {"fail-main": 17, "fail-help": 7, "fail-tail": 23}[overlap_native_mode]
+        assert result.returncode != 0 and f"Error {native_status}" in result.stderr
+    assert "runtime-cohort-join" in result.stdout
+    outcome = "passed" if overlap_native_mode == "pass" else "failed"
+    guidance = result.stdout + result.stderr
+    assert f"AGENT_NEXT target={OWNER} outcome={outcome}" in guidance
+    assert "gate_evidence=false release_ready=false" in guidance
+    assert "make ci-failure-status" in guidance
+
+
+def test_native_overlap_rejects_shared_basetemp_mutation(tmp_path: Path) -> None:
+    body = _stanza(OWNER)
+    assert body.count("test-files ID=") == 3
+    result, rows = _overlap_run(tmp_path, "pass", owner_body=body.replace("test-files ID=", "test-files"))
+    assert result.returncode != 0
+    starts = [row for row in rows if row["event"] == "start"]
+    assert len({row["bt"] for row in starts}) == 1
+    assert any(row.get("status") == 83 for row in rows)
+
+
+@pytest.mark.parametrize("overlap_observer_end", ["timeout", "signal"])
+def test_existing_observer_drains_both_overlap_branches_and_descendants(
+    tmp_path: Path, overlap_observer_end: str,
+) -> None:
+    import signal
+    import time
+
+    owner, record, environment = _overlap_fixture(tmp_path, "hold")
+    # Reuse the existing native helper, replacing only its test child command.
+    command = _command(
+        tmp_path, "", "--heartbeat-secs", "0.1", "--quiet-secs", "0",
+        "--max-secs", "1.5" if overlap_observer_end == "timeout" else "8",
+        run_id="native-overlap-" + overlap_observer_end,
+    )
+    boundary = command.index("--")
+    command[boundary + 1:] = ["make", "--no-print-directory", "-f", str(owner), OWNER]
+    with subprocess.Popen(
+        command, cwd=tmp_path.resolve(), env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    ) as process:
+        if overlap_observer_end == "signal":
+            deadline = time.monotonic() + 4
+            while len([row for row in _overlap_rows(record) if row["event"] == "descendant"]) < 2:
+                assert process.poll() is None
+                assert time.monotonic() < deadline
+                time.sleep(0.01)
+            process.send_signal(signal.SIGTERM)
+        stdout, stderr = process.communicate(timeout=12)
+    expected_status = 124 if overlap_observer_end == "timeout" else 143
+    assert process.returncode == expected_status, (stdout + stderr).decode()
+    status = _current_status(tmp_path)
+    assert status["exit_code"] == expected_status
+    assert status["state"] == ("timed_out" if overlap_observer_end == "timeout" else "interrupted")
+    rows = _overlap_rows(record)
+    assert {row["phase"] for row in rows if row["event"] == "start"} == {"full", "help"}
+    owned = {int(str(row["pid"])) for row in rows}
+    owned.update(int(str(row["child_pid"])) for row in rows if "child_pid" in row)
+    for pid in owned:
+        inspected = subprocess.run(
+            ["/bin/ps", "-p", str(pid), "-o", "pid="],
+            capture_output=True, text=True, check=False, timeout=5,
+        )
+        assert inspected.returncode == 1 and not inspected.stdout.strip(), inspected.stderr

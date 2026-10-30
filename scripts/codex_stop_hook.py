@@ -7,9 +7,12 @@ import json
 import secrets
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from scripts.task_scope import task_inventory
+if TYPE_CHECKING:
+    from task_scope import task_inventory
+else:
+    from scripts.task_scope import task_inventory
 
 
 def _root_from_event(event: dict[str, Any]) -> Path:
@@ -55,7 +58,10 @@ def handle(event: dict[str, Any]) -> dict[str, Any]:
     task_count, backlog_count, ratchet_count, scope_label = _pending(root)
     if not task_count and not ratchet_count:
         return {"continue": True}
-    from scripts.item_progress import progress_status
+    if TYPE_CHECKING:
+        from item_progress import progress_status
+    else:
+        from scripts.item_progress import progress_status
 
     try:
         progress = progress_status(root)
@@ -84,6 +90,14 @@ def handle(event: dict[str, Any]) -> dict[str, Any]:
             "commits or passing unit tests do not complete the item. "
             "Use the native work-item status and bounded watched owner; do not repeat unchanged failures."
         )
+    reason += (
+        " For required external input, keep the item open and retain the failed proof "
+        "and pending input request; ask once. Wait through the host's interruptible "
+        "input/event tool in intervals no longer than 60 seconds; do not finalize, "
+        "do not repeat unchanged failures, and do not create source or receipt-only "
+        "changes to satisfy this hook. Elapsed time or a new challenge token is not "
+        "a changed prerequisite."
+    )
     return {"decision": "block", "reason": reason}
 
 

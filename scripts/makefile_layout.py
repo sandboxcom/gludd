@@ -82,3 +82,22 @@ def compose_makefile(entrypoint: Path) -> str:
         else:
             output.append(line)
     return "".join(output)
+
+
+def local_script_references(text: str) -> set[str]:
+    """Return literal project script paths, excluding HTTP(S) source tokens.
+
+    Consume remote source tokens before matching embedded scripts/ fragments.
+    Quotes, whitespace and shell separators end that exclusion so a following
+    local command retains the original missing-file admission.
+    """
+    refs: set[str] = set()
+    for match in re.finditer(
+        r"""(?i:https?)://[^\s\"'`<>;&|()]+|"""
+        r"(?P<project>scripts/[a-zA-Z_][a-zA-Z0-9_./-]+\.(?:py|sh|mjs))",
+        text,
+    ):
+        reference = match.group("project")
+        if reference is not None:
+            refs.add(reference)
+    return refs

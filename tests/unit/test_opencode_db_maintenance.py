@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import os
 import sqlite3
 import subprocess
+import sys
 import time
 from contextlib import closing
 from pathlib import Path
@@ -1086,6 +1088,364 @@ def test_backup_compaction_prunes_fixture_and_writes_separate_database(
     assert _row_count(output, "session") == 1
     assert any("phase=compact status=pruned" in line for line in progress)
     assert any("phase=compact status=complete" in line for line in progress)
+
+
+@pytest.mark.parametrize("vacuum_mode", (0, 1, 2))
+def test_stats_storage_preserves_cold_wal_files_and_rows(
+    tmp_path: Path, vacuum_mode: int,
+) -> None:
+    module = _load_maintenance()
+    assert module.__file__ is not None
+    assert Path(module.__file__).resolve() == SCRIPT.resolve()
+    database = tmp_path / "opencode.db"
+    payload = b"owned-private-payload" * 400
+    writer = sqlite3.connect(database)
+    try:
+        writer.execute(f"PRAGMA auto_vacuum={vacuum_mode}")
+        assert writer.execute("PRAGMA journal_mode=WAL").fetchone() == ("wal",)
+        writer.execute("CREATE TABLE private_rows (id INTEGER PRIMARY KEY, payload BLOB)")
+        writer.executemany(
+            "INSERT INTO private_rows VALUES (?, ?)",
+            ((index, payload) for index in range(1, 33)),
+        )
+        writer.commit()
+        writer.execute("DELETE FROM private_rows WHERE id > 1")
+        writer.commit()
+        artifacts = tuple(Path(f"{database}{suffix}") for suffix in ("", "-wal", "-shm"))
+        assert all(path.is_file() for path in artifacts)
+        before = {
+            path: (path.read_bytes(), path.stat().st_mode)
+            for path in artifacts
+        }
+        progress: list[str] = []
+
+        module.inspect_database(
+            database, tmp_path, "stats", _config(module), emit=progress.append,
+        )
+
+        # SQL readonly retains DB/WAL data; native SHM coordination is diagnostic.
+        assert all(path.is_file() for path in artifacts)
+        after = {
+            path: (path.read_bytes(), path.stat().st_mode)
+            for path in artifacts
+        }
+        assert {path: value[1] for path, value in after.items()} == {
+            path: value[1] for path, value in before.items()
+        }
+        assert after[database][0] == before[database][0]
+        assert after[artifacts[1]][0] == before[artifacts[1]][0]
+        print(
+            f"native-stats-shm mode={vacuum_mode} "
+            f"before_sha256={hashlib.sha256(before[artifacts[2]][0]).hexdigest()} "
+            f"after_sha256={hashlib.sha256(after[artifacts[2]][0]).hexdigest()} "
+            f"bytes_changed={str(before[artifacts[2]][0] != after[artifacts[2]][0]).lower()}",
+            flush=True,
+        )
+        assert writer.execute("SELECT id, payload FROM private_rows").fetchall() == [
+            (1, payload),
+        ]
+        assert "phase=stats table=private_rows rows=1" in progress
+        assert all("owned-private-payload" not in line for line in progress)
+        observed = next(
+            (line for line in progress if line.startswith("phase=stats-storage ")),
+            None,
+        )
+        assert observed is not None, progress
+        fields = dict(word.split("=", 1) for word in observed.split())
+        expected = {
+            name: writer.execute(statement).fetchone()[0]
+            for name, statement in (
+                ("page_size_bytes", "PRAGMA page_size"),
+                ("page_count", "PRAGMA page_count"),
+                ("freelist_count", "PRAGMA freelist_count"),
+                ("auto_vacuum", "PRAGMA auto_vacuum"),
+            )
+        }
+        assert fields == {
+            "phase": "stats-storage",
+            **{name: str(value) for name, value in expected.items()},
+            "reusable_page_bytes": str(
+                expected["page_size_bytes"] * expected["freelist_count"],
+            ),
+            "physical_reclaimable_bytes": "unknown",
+            "mutation": "false",
+            "readonly_scope": "sql-data",
+            "shm_coordination": "possible",
+        }
+    finally:
+        writer.close()
+
+
+def test_stats_storage_has_one_snapshot_during_a_native_wal_write(tmp_path: Path) -> None:
+    module = _load_maintenance()
+    database = tmp_path / "opencode.db"
+    with closing(sqlite3.connect(database)) as writer:
+        writer.execute("PRAGMA journal_mode=WAL")
+        writer.execute("CREATE TABLE first_rows (id INTEGER)")
+        writer.execute("CREATE TABLE second_rows (payload BLOB)")
+        writer.commit()
+        page_row = writer.execute("PRAGMA page_count").fetchone()
+        assert page_row is not None
+        before_pages = int(page_row[0])
+        inserted = False
+        progress: list[str] = []
+
+        def insert_after_first_count(message: str) -> None:
+            nonlocal inserted
+            progress.append(message)
+            if not inserted and message == "phase=stats table=first_rows rows=0":
+                writer.execute("INSERT INTO second_rows VALUES (?)", (b"private-data" * 100_000,))
+                writer.commit()
+                inserted = True
+
+        module.inspect_database(
+            database, tmp_path, "stats", _config(module), emit=insert_after_first_count,
+        )
+
+        assert inserted
+        assert "phase=stats table=second_rows rows=0" in progress
+        assert writer.execute("SELECT COUNT(*) FROM second_rows").fetchone() == (1,)
+        after_page_row = writer.execute("PRAGMA page_count").fetchone()
+        assert after_page_row is not None and int(after_page_row[0]) > before_pages
+        measurement = next(line for line in progress if line.startswith("phase=stats-storage "))
+        assert f"page_count={before_pages} " in measurement
+        assert all("private-data" not in line for line in progress)
+
+
+@pytest.mark.parametrize(
+    "statement,scalar",
+    [
+        ("PRAGMA page_size", None),
+        ("PRAGMA page_count", ()),
+        ("PRAGMA page_count", (1, 2)),
+        ("PRAGMA page_count", ("not-an-integer",)),
+        ("PRAGMA page_count", (True,)),
+        ("PRAGMA page_size", (0,)),
+        ("PRAGMA page_count", (-1,)),
+        ("PRAGMA freelist_count", (-1,)),
+        ("PRAGMA freelist_count", (1_000_000_000,)),
+        ("PRAGMA auto_vacuum", (3,)),
+    ],
+)
+def test_stats_storage_invalid_native_scalar_never_reports_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    statement: str, scalar: tuple[object, ...] | None,
+) -> None:
+    module = _load_maintenance()
+    database = tmp_path / "opencode.db"
+    _fixture_db(database, old_ms=1, recent_ms=2)
+    before = database.read_bytes()
+    original_connect = module._connect_read_only
+
+    class ScalarCursor:
+        def fetchone(self) -> tuple[object, ...] | None:
+            return scalar
+
+    class ScalarConnection:
+        def __init__(self, actual: sqlite3.Connection) -> None:
+            self.actual = actual
+
+        def execute(self, sql: str) -> sqlite3.Cursor | ScalarCursor:
+            if sql == statement:
+                return ScalarCursor()
+            return self.actual.execute(sql)
+
+        def close(self) -> None:
+            self.actual.close()
+
+    def connect(
+        path: Path, config: object, deadline: float, *, emit: object, phase: str,
+    ) -> ScalarConnection:
+        actual = original_connect(path, config, deadline, emit=emit, phase=phase)
+        assert isinstance(actual, sqlite3.Connection)
+        return ScalarConnection(actual)
+
+    monkeypatch.setattr(module, "_connect_read_only", connect)
+    progress: list[str] = []
+    with pytest.raises(module.MaintenanceError, match="readonly storage metadata"):
+        module.inspect_database(
+            database, tmp_path, "stats", _config(module), emit=progress.append,
+        )
+    assert not any(line.startswith("phase=stats-storage ") for line in progress)
+    assert database.read_bytes() == before
+
+
+@pytest.mark.parametrize("failure", ("missing", "corrupt", "busy"))
+def test_stats_storage_native_cli_failures_keep_their_status_and_input(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], failure: str,
+) -> None:
+    module = _load_maintenance()
+    database = tmp_path / "opencode.db"
+    expected = 2
+    writer: sqlite3.Connection | None = None
+    if failure == "corrupt":
+        database.write_bytes(b"owned-corrupt-database")
+    elif failure == "busy":
+        _fixture_db(database, old_ms=1, recent_ms=2)
+        writer = sqlite3.connect(database)
+        writer.execute("BEGIN EXCLUSIVE")
+        expected = 4
+    before = database.read_bytes() if database.exists() else None
+    try:
+        status = module.main([
+            "stats", "--db", str(database), "--data-dir", str(tmp_path),
+            "--timeout-seconds", "0.1", "--busy-timeout-ms", "20",
+        ])
+        output = capsys.readouterr()
+        assert status == expected
+        assert ("BUSY:" if failure == "busy" else "ERROR:") in output.err
+        assert "phase=stats-storage " not in output.out
+        assert (database.read_bytes() if database.exists() else None) == before
+    finally:
+        if writer is not None:
+            writer.rollback()
+            writer.close()
+
+
+def test_stats_storage_obeys_native_deadline_without_terminal_metadata(tmp_path: Path) -> None:
+    module = _load_maintenance()
+    database = tmp_path / "opencode.db"
+    _fixture_db(database, old_ms=1, recent_ms=2)
+    before = database.read_bytes()
+    progress: list[str] = []
+    delayed = False
+
+    def emit(message: str) -> None:
+        nonlocal delayed
+        progress.append(message)
+        if not delayed and message.startswith("phase=stats table="):
+            time.sleep(0.12)
+            delayed = True
+
+    with pytest.raises(module.MaintenanceTimeoutError, match="time budget"):
+        module.inspect_database(
+            database, tmp_path, "stats",
+            _config(module, timeout_seconds=0.1, busy_timeout_ms=1), emit=emit,
+        )
+    assert delayed
+    assert not any(line.startswith("phase=stats-storage ") for line in progress)
+    assert database.read_bytes() == before
+
+
+def test_stats_storage_uses_the_existing_readonly_connection_and_fixed_queries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_maintenance()
+    database = tmp_path / "opencode.db"
+    _fixture_db(database, old_ms=1, recent_ms=2)
+    original_connect = module._connect_read_only
+    calls: list[str] = []
+
+    class RecordingConnection:
+        def __init__(self, actual: sqlite3.Connection) -> None:
+            self.actual = actual
+
+        def execute(self, statement: str) -> sqlite3.Cursor:
+            calls.append(statement)
+            return self.actual.execute(statement)
+
+        def close(self) -> None:
+            self.actual.close()
+
+    def connect(
+        path: Path, config: object, deadline: float, *, emit: object, phase: str,
+    ) -> RecordingConnection:
+        actual = original_connect(path, config, deadline, emit=emit, phase=phase)
+        assert isinstance(actual, sqlite3.Connection)
+        assert actual.execute("PRAGMA query_only").fetchone() == (1,)
+        return RecordingConnection(actual)
+
+    monkeypatch.setattr(module, "_connect_read_only", connect)
+    progress: list[str] = []
+    module.inspect_database(
+        database, tmp_path, "stats", _config(module), emit=progress.append,
+    )
+    assert calls[0] == "BEGIN"
+    assert [sql for sql in calls if sql.startswith("PRAGMA ")] == [
+        "PRAGMA page_size", "PRAGMA page_count", "PRAGMA freelist_count", "PRAGMA auto_vacuum",
+    ]
+    assert all(sql == "BEGIN" or sql.startswith(("SELECT ", "PRAGMA ")) for sql in calls)
+    assert progress[-1].startswith("phase=stats-storage ")
+    assert "physical_reclaimable_bytes=unknown" in progress[-1]
+    assert "readonly_scope=sql-data shm_coordination=possible" in progress[-1]
+
+
+@pytest.mark.parametrize("environment_override", (False, True))
+def test_stats_storage_make_and_validate_only_keep_the_native_contract(
+    tmp_path: Path, environment_override: bool,
+) -> None:
+    database = tmp_path / "opencode.db"
+    _fixture_db(database, old_ms=1, recent_ms=2)
+    source = compose_makefile(MAKEFILE)
+    start = source.index("\nopencode-db-stats:")
+    end = source.index("\nopencode-db-schema:", start)
+    block = source[start:end]
+    fixture = tmp_path / "stats-contract.mk"
+    fixture.write_text(
+        ".PHONY: opencode-db-stats\n" + block,
+    )
+    environment = dict(os.environ)
+    for name in ("MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES"):
+        environment.pop(name, None)
+    before = database.read_bytes()
+    flags = ("-e",) if environment_override else ()
+    common = [
+        "make", *flags, "--no-print-directory", "-f", str(fixture), "opencode-db-stats",
+        f"SYSTEM_PYTHON={sys.executable}",
+        f"OPENCODE_DB={database}", f"OPENCODE_DATA_DIR={tmp_path}",
+        "OPENCODE_DB_TIMEOUT_SECONDS=2", "OPENCODE_DB_BUSY_TIMEOUT_MS=20",
+    ]
+    live = subprocess.run(
+        [*common, "OPENCODE_MAINTENANCE_VALIDATE_ONLY=0"],
+        cwd=ROOT, env=environment, capture_output=True, text=True, check=False, timeout=10,
+    )
+    assert live.returncode == 0, (live.stdout, live.stderr)
+    assert "phase=stats-storage " in live.stdout
+    assert "physical_reclaimable_bytes=unknown" in live.stdout
+    assert "old-session" not in live.stdout and "old-message" not in live.stdout
+    planned = subprocess.run(
+        [*common, "OPENCODE_MAINTENANCE_VALIDATE_ONLY=1"],
+        cwd=ROOT, env=environment, capture_output=True, text=True, check=False, timeout=10,
+    )
+    assert planned.returncode == 0, (planned.stdout, planned.stderr)
+    assert "phase=validate status=ok action=stats" in planned.stdout
+    assert "phase=stats-storage " not in planned.stdout
+    assert database.read_bytes() == before
+
+
+def test_stats_storage_last_native_query_cannot_outlive_the_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_maintenance()
+    database = tmp_path / "opencode.db"
+    _fixture_db(database, old_ms=1, recent_ms=2)
+    original_connect = module._connect_read_only
+    delayed = False
+
+    def connect(
+        path: Path, config: object, deadline: float, *, emit: object, phase: str,
+    ) -> sqlite3.Connection:
+        actual = original_connect(path, config, deadline, emit=emit, phase=phase)
+        assert isinstance(actual, sqlite3.Connection)
+
+        def delay(statement: str) -> None:
+            nonlocal delayed
+            if statement == "PRAGMA auto_vacuum":
+                time.sleep(0.12)
+                delayed = True
+
+        actual.set_trace_callback(delay)
+        return actual
+
+    monkeypatch.setattr(module, "_connect_read_only", connect)
+    progress: list[str] = []
+    with pytest.raises(module.MaintenanceTimeoutError):
+        module.inspect_database(
+            database, tmp_path, "stats",
+            _config(module, timeout_seconds=0.1, busy_timeout_ms=1), emit=progress.append,
+        )
+    assert delayed
+    assert not any(line.startswith("phase=stats-storage ") for line in progress)
 
 
 @pytest.mark.parametrize("report", ("disk", "stats", "schema", "sample"))

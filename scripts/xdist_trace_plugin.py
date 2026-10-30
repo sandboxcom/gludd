@@ -250,9 +250,14 @@ def _finish_profile(config: pytest.Config, exitstatus: int | None) -> bool:
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:
-    """Finalize a started profile once even when session completion is interrupted."""
-    if not _finish_profile(config, None):
-        raise pytest.UsageError("pytest-cprofile: incomplete diagnostic publication")
+    """Finalize profiles and release only this config's active trace context."""
+    global _ACTIVE_TRACE_CONFIG
+    try:
+        if not _finish_profile(config, None):
+            raise pytest.UsageError("pytest-cprofile: incomplete diagnostic publication")
+    finally:
+        if _ACTIVE_TRACE_CONFIG is config:
+            _ACTIVE_TRACE_CONFIG = None
 
 
 def _configured_trace_path() -> Path:
@@ -272,7 +277,13 @@ def _run_id() -> str:
 
 
 def _worker_id() -> str:
-    return os.environ.get("PYTEST_XDIST_WORKER", "controller")
+    config = _ACTIVE_TRACE_CONFIG
+    if config is None or _is_controller(config):
+        return "controller"
+    worker_id: object = getattr(config, "workerinput", {})["workerid"]
+    if not isinstance(worker_id, str) or not worker_id:
+        raise ValueError("native xdist worker identity is missing or invalid")
+    return worker_id
 
 
 def _loadavg() -> list[float]:
@@ -422,9 +433,7 @@ def _pin_profile_trace(config: pytest.Config) -> None:
             config.add_cleanup(lambda: pytest_unconfigure(config))
     if state is not None:
         _profile_route(state)
-        _ACTIVE_TRACE_CONFIG = config
-    else:
-        _ACTIVE_TRACE_CONFIG = None
+    _ACTIVE_TRACE_CONFIG = config
 
 
 def _write_profile_trace(state: _ProfileState, line: str) -> None:

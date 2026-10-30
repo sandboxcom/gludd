@@ -56,7 +56,7 @@ if sys.platform != "win32":
 
 a = Analysis(
     ['src/general_ludd/cli.py'],
-    pathex=['src'],
+    pathex=['src', 'scripts'],
     binaries=[],
     datas=datas,
     hiddenimports=[
@@ -84,6 +84,11 @@ a = Analysis(
         'general_ludd.models.router',
         'general_ludd.db.models',
         'general_ludd.db.repository',
+        # Keep the native mutex and its dynamically imported frozen observer in
+        # the compiled module graph. The source checkout loads the observer by
+        # exact filename; frozen code uses the bootloader's normal import machinery.
+        'general_ludd.git_automation.locking',
+        'stream_command',
         # SQLAlchemy resolves the sqlite+aiosqlite dialect from the configured
         # database URL at runtime. PyInstaller cannot follow that entry-point
         # lookup, so keep the core async driver explicit in the frozen graph.
@@ -118,7 +123,7 @@ a = Analysis(
         'azure.identity',
         'azure.mgmt',
     ],
-    hookspath=[],
+    hookspath=['scripts/pyinstaller_hooks'],
     hooksconfig={},
     runtime_hooks=[],
     # The beta4 core executable and Ansible controller are separate Python

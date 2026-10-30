@@ -1,15 +1,20 @@
 {
   "version": 1,
   "targets": [
+    {"name":"git-push-sandboxcom","make_variables":["PUBLISH_PURPOSE","PUBLISH_BASELINE_REF","PUBLISH_BASELINE_SHA","PUBLISH_EXPECTED_BRANCH","PUBLISH_EXPECTED_SHA","WORK_ITEM_ID","SSH_KEY"],"behavior":"make git-push-sandboxcom --question PUBLISH_PURPOSE=canonical PUBLISH_BASELINE_REF= PUBLISH_BASELINE_SHA= PUBLISH_EXPECTED_BRANCH= PUBLISH_EXPECTED_SHA= WORK_ITEM_ID= SSH_KEY=/tmp/gludd-contract-absent-key","expected_result":"Phony query returns1 without auth, runtime, transport or CI and supplies no proof. Default canonical keeps every existing admission/guard. Explicit feature-ci requires a saved fullSHA/pair, feature/** or diagnostic/**, no force, and independently published master/main/development or release-candidate/** baseline with native branch grammar and unchanged workflow bytes/history; normal hooked transport records/verifies the saved SHA. Both purposes then require the existing exact-SHA dispatcher to return an accepted or reused Build run; a posttransport signaling refusal stays nonzero and requires exact-identity reconciliation rather than unchanged repush. Signal visibility is no terminal CI, canonical push, gate, deployment or release authority."}, {"name":"development-push","make_variables":["SSH_KEY"],"behavior":"make development-push --question SSH_KEY=/tmp/gludd-contract-absent-key","expected_result":"Native phony query returns 1 without auth/runtime/transport/target touch/hosted observation. Real publication requires the actual development checkout and delegates the saved branch/fullSHA through the normal publisher; query supplies no proof."},
+    {"name":"_pre-commit-content-guard","make_variables":["FILE_LINE_LIMIT_POLICY","DUPLICATE_CODE_CONFIG","DUPLICATE_CODE_ENGINE"],"behavior":"make _pre-commit-content-guard FILE_LINE_LIMIT_POLICY=config/file_line_limits.json DUPLICATE_CODE_CONFIG=config/duplicate_code.json DUPLICATE_CODE_ENGINE=/Users/shawnwilson/gludd/.opencode/node_modules/.bin/jscpd","expected_result":"Owned staged-content preflight only: native whitespace/EOF/secrets, strict staged line limits and duplicate baseline/candidate guards. Fixers may change owned files; preserve failure and reconcile index/working bytes. This is not collection, a commit, full-gate, hosted or release proof."}, {"name": "check-test-env-writes", "make_variables": [], "behavior": "make check-test-env-writes", "expected_result": "Static read-only guard: zero requires no bare test environment writes; violations retain nonzero. Use monkeypatch for pytest fixtures and an explicit copied environment for generated children. No runtime, full-gate or CI authority."},
+    {"name": "batch-push", "make_variables": ["COMMIT_THRESHOLD", "SSH_KEY"], "behavior": "make batch-push COMMIT_THRESHOLD=1 SSH_KEY=/tmp/gludd-contract-absent-key", "expected_result": "Nonzero refusal; threshold 1 is forbidden. Below the default5 threshold returns0 without publication or signaling unless the original explicit force policy admits it. Eligible batches keep all eight outer guards and one canonical admission, direct hooked saved-SHA transport, native named-branch upstream association, explicit saved-SHA verdict, full remote verification and required accepted/reused Build run. No nested publisher or duplicate guard replay is introduced. Earlier guard/admission refusal supplies no runtime, publication or CI evidence; returned runs supply no terminal or release proof."},
+    {"name": "github-auth-status", "make_variables": [], "behavior": "make github-auth-status", "expected_result": "Native read-only account/scopes; authentication failure remains nonzero. A zero exit supplies no workflow write, gate or release authority."}, {"name": "github-workflow-auth", "make_variables": ["GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY", "GITHUB_WORKFLOW_AUTH_ACCOUNT"], "behavior": "make github-workflow-auth GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY=1 GITHUB_WORKFLOW_AUTH_ACCOUNT=sandboxcom", "expected_result": "Offline preview only; operator owns explicit mode 0 account consent. No authentication, credential mutation, publication, gate or CI evidence."}, {"name": "git-configure-sandboxcom-https", "make_variables": ["SANDBOXCOM_HTTPS_VALIDATE_ONLY"], "behavior": "make git-configure-sandboxcom-https SANDBOXCOM_HTTPS_VALIDATE_ONLY=1"},
+    {"name": "verify-remote", "make_variables": ["BRANCH", "SHA", "SSH_KEY"], "behavior": "make verify-remote BRANCH=gludd-contract-absent SHA=0000000000000000000000000000000000000000 SSH_KEY=/tmp/gludd-contract-absent-key"},
+    {"name": "_local-model-ollama-install-check", "make_variables": ["_OLLAMA_BIN"], "behavior": "make _local-model-ollama-install-check _OLLAMA_BIN="},
+    {"name": "git-status", "make_variables": [], "behavior": "make git-status"},
+    {"name": "inspect-presentation-browser-dependency-source", "make_variables": [], "behavior": "make inspect-presentation-browser-dependency-source"},
+    {"name": "inspect-presentation-browser-dependency-source-live", "make_variables": [], "behavior": "make inspect-presentation-browser-dependency-source-live"},
     {"name": "ps-gludd", "make_variables": [], "behavior": "make ps-gludd"},
     {"name": "list-files", "make_variables": ["DIR"], "behavior": "make list-files DIR=.agents/policy"},
     {"name": "replace-lines", "make_variables": ["FILE", "START", "END", "NEW_FILE"], "behavior": "make replace-lines FILE=/tmp/gludd-text-contract.txt START=1 END=1 NEW_FILE=/tmp/gludd-text-contract-replacement.txt"},
     {"name": "human-todo-module", "make_variables": ["HUMAN_TODO_ARGS_JSON", "HUMAN_TODO_VALIDATE_ONLY"], "behavior": "make human-todo-module HUMAN_TODO_ARGS_JSON='{\"title\":\"Make HumanTodo contract\",\"body\":\"Validation only\",\"agent_id\":\"gludd-release-staging\",\"timeout\":5}' HUMAN_TODO_VALIDATE_ONLY=1"},
-    {
-      "name": "write-text-b64",
-      "make_variables": ["FILE", "TEXT_B64"],
-      "behavior": "make write-text-b64 FILE=/tmp/gludd-text-contract.txt TEXT_B64=YWxwaGEK"
-    },
+    {"name": "write-text-b64", "make_variables": ["FILE", "TEXT_B64"], "behavior": "make write-text-b64 FILE=/tmp/gludd-text-contract.txt TEXT_B64=YWxwaGEK"},
     {
       "name": "replace-text-b64",
       "make_variables": ["FILE", "OLD_B64", "NEW_B64"],
@@ -80,6 +85,7 @@
       ],
       "behavior": "make check-molecule-yaml MOLECULE_YAML_LINT_TIMEOUT_SECONDS=120 MOLECULE_YAML_VALIDATE_ONLY=1"
     },
+    {"name": "git-merge-nc", "make_variables": ["BR"], "behavior": "make git-merge-nc BR=''"},
     {
       "name": "git-owned-checkpoint-push",
       "make_variables": [
@@ -498,15 +504,14 @@
     },
     {
       "name": "ci-rerun",
-      "make_variables": [
-        "RUN",
-        "CI_FAILURE_REPOSITORY",
-        "CI_FAILURE_LEDGER",
-        "CI_RERUN_ALLOW_UNCHANGED",
-        "CI_RERUN_REASON",
-        "CI_FAILURE_VALIDATE_ONLY"
-      ],
-      "behavior": "make ci-rerun RUN=123 CI_FAILURE_REPOSITORY=sandboxcom/gludd CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_RERUN_ALLOW_UNCHANGED=0 CI_RERUN_REASON=none CI_FAILURE_VALIDATE_ONLY=1"
+      "make_variables": ["RUN", "CI_FAILURE_REPOSITORY", "CI_FAILURE_LEDGER", "CI_RERUN_ALLOW_UNCHANGED",
+        "CI_RERUN_REASON", "CI_RERUN_DEBUG", "CI_RERUN_FAILED_ONLY", "CI_FAILURE_VALIDATE_ONLY"],
+      "behavior": "make ci-rerun RUN=123 CI_FAILURE_REPOSITORY=sandboxcom/gludd CI_FAILURE_LEDGER=.gludd/ci-failure-ledger.json CI_RERUN_ALLOW_UNCHANGED=0 CI_RERUN_REASON=none CI_RERUN_DEBUG=1 CI_RERUN_FAILED_ONLY=1 CI_FAILURE_VALIDATE_ONLY=1"
+    },
+    {
+      "name": "ci-rerun-help",
+      "make_variables": [],
+      "behavior": "make ci-rerun-help"
     },
     {
       "name": "ci-recover-runner-acquisition",
@@ -609,7 +614,7 @@
       ],
       "behavior": "make check-release-failure-ledger RELEASE_FAILURE_LEDGER=docs/releases/beta-release-failures.json"
     },
-    {
+    {"name": "agent-merge-dev", "make_variables": [], "behavior": "make agent-merge-dev", "expected_status": 2}, {"name": "agent-merge", "make_variables": [], "behavior": "make agent-merge", "expected_status": 2}, {"name": "worktree-merge-all", "make_variables": [], "behavior": "make worktree-merge-all", "expected_status": 2}, {"name": "development-merge-to-master", "make_variables": [], "behavior": "make development-merge-to-master", "expected_status": 2}, {
       "name": "release-promote",
       "make_variables": [
         "TAG",
@@ -910,6 +915,7 @@
       ],
       "behavior": "make node-deps-relock NODE_DEPS_VALIDATE_ONLY=1 NODE_DEPS_NPM_USERCONFIG=/dev/null NODE_DEPS_NPM_CACHE=/tmp/gludd-npm-cache-public-v1 NODE_DEPS_NPM_REGISTRY=https://registry.npmjs.org NODE_DEPS_NPM_UPDATE_NOTIFIER=false"
     },
+    {"name": "inspect-node-audit-source", "make_variables": ["NODE_AUDIT_SOURCE_VALIDATE_ONLY"], "behavior": "make inspect-node-audit-source NODE_AUDIT_SOURCE_VALIDATE_ONLY=1"},
     {
       "name": "node-deps-audit",
       "make_variables": [
@@ -1428,20 +1434,7 @@
       "make_variables": [],
       "behavior": "make check-dispatch-dedup"
     },
-    {
-      "name": "ci-trigger-committed-head",
-      "make_variables": [
-        "EXAMPLE",
-        "REF",
-        "REMOTE",
-        "REPO",
-        "WORKFLOW",
-        "DISCOVERY_POLLS",
-        "CONFIRM_POLLS",
-        "POLL_INTERVAL"
-      ],
-      "behavior": "make ci-trigger-committed-head EXAMPLE=1 REF=release/beta3-candidate REMOTE=sandboxcom REPO=sandboxcom/gludd WORKFLOW='Build and Release' DISCOVERY_POLLS=1 CONFIRM_POLLS=1 POLL_INTERVAL=0"
-    },
+    {"name":"ci-trigger-committed-head","make_variables":["EXAMPLE","REF","REMOTE","REPO","WORKFLOW","DISCOVERY_POLLS","CONFIRM_POLLS","POLL_INTERVAL","PUBLISH_PURPOSE","PUBLISH_EXPECTED_BRANCH","PUBLISH_EXPECTED_SHA","PUBLISH_BASELINE_REF","PUBLISH_BASELINE_SHA"],"behavior":"make ci-trigger-committed-head EXAMPLE=1 REF=feature/contract REMOTE=sandboxcom REPO=sandboxcom/gludd WORKFLOW='Build and Release' DISCOVERY_POLLS=1 CONFIRM_POLLS=1 POLL_INTERVAL=0 PUBLISH_PURPOSE=feature-ci PUBLISH_EXPECTED_BRANCH=feature/contract PUBLISH_EXPECTED_SHA=0123456789abcdef0123456789abcdef01234567 PUBLISH_BASELINE_REF=master PUBLISH_BASELINE_SHA=abcdef0123456789abcdef0123456789abcdef01","expected_result":"Network-free example prints a synthetic exact-SHA URL and planned guidance; no source/remote/auth/lookup/dispatch check or CI evidence. Live feature-ci validates fixed repository/branch/fullSHA and published workflow provenance, rechecks saved identity before dispatch and confirms only that exact SHA. Existing discovery/lock/marker/confirmation remain authoritative; canonical defaults retain ordinary behavior."},
     {
       "name": "ci-record-verdict",
       "make_variables": [
@@ -1633,14 +1626,13 @@
       ],
       "behavior": "make git-show-commit C=e4c9b68aea0ff59cab77a06747471e248e9e0601"
     },
-    {
-      "name": "git-show-full",
-      "make_variables": [
-        "SHA"
-      ],
-      "behavior": "make git-show-full SHA=e4c9b68aea0ff59cab77a06747471e248e9e0601"
-    },
+    {"name": "git-show-full", "make_variables": ["SHA"], "behavior": "make git-show-full SHA=e4c9b68aea0ff59cab77a06747471e248e9e0601"},
     {"name": "git-is-ancestor", "make_variables": ["A", "B"], "behavior": "make git-is-ancestor A=HEAD B=HEAD"},
+    {
+      "name": "git-compare-commits",
+      "make_variables": ["GIT_COMPARE_BASE", "GIT_COMPARE_HEAD"],
+      "behavior": "make git-compare-commits GIT_COMPARE_BASE=4604eeccc90ce9e89e575a8641ba1213a15f9925 GIT_COMPARE_HEAD=4604eeccc90ce9e89e575a8641ba1213a15f9925"
+    },
     {
       "name": "git-patch-equivalence",
       "make_variables": [
@@ -1780,7 +1772,7 @@
         "CI_AWAIT_SNAPSHOT_ONLY",
         "CI_AWAIT_OBSERVATION_OUTPUT"
       ],
-      "behavior": "make ci-await BRANCH=v0.1.1 TIMEOUT=5400 SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa CI_AWAIT_WORKFLOW='Build and Release' CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL=10 CI_AWAIT_AFTER_RUN_ID=0 CI_AWAIT_VALIDATE_ONLY=1 CI_AWAIT_SNAPSHOT_ONLY=0 CI_AWAIT_OBSERVATION_OUTPUT=/tmp/gludd-contract-ci-await.json"
+      "behavior": "make ci-await BRANCH=v0.1.1 TIMEOUT=5400 SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa CI_AWAIT_WORKFLOW='Build and Release' CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL=10 CI_AWAIT_AFTER_RUN_ID=0 CI_AWAIT_VALIDATE_ONLY=1 CI_AWAIT_SNAPSHOT_ONLY=0 CI_AWAIT_OBSERVATION_OUTPUT=/tmp/gludd-contract-ci-await.json", "expected_result": "Validate-only returns native0 for configuration only, with no query/wait/observation write. Snapshot-only returns native0 and numeric ID or0 for lookup only, preserving stdout/baseline callers and existing observation bytes; stderr states no terminal CI/gate/release authority. Regular mode retains native terminal success/failure/pending-timeout statuses and producer-owned observations. Use the same selector/after-ID to observe the current run; a returned baseline ID selects only later runs. Live exact producer-owned feature Build dispatch feedback binds the saved branch/fullSHA/purpose and the generation captured once before the first lookup. Pending remains native2/non-green and may acknowledge existing history only after complete native publication; counter and canonical state stay unchanged. Stale, incomplete, error and duplicate input cannot reset debt. Only exact current terminal upgrade retains terminal reset semantics; diagnostic feedback never grants canonical push/deployment/release proof."
     },
     {
       "name": "coverage-files",
@@ -1801,22 +1793,22 @@
     {
       "name": "observed-status",
       "make_variables": [
-        "OBSERVED_LABEL",
+        "PYTHON", "OBSERVED_LABEL",
         "RUN_ID",
         "OBSERVED_ROOT",
         "OBSERVED_STALE_SECS"
       ],
-      "behavior": "make observed-status OBSERVED_LABEL=run-watched RUN_ID=contract-run-watched OBSERVED_ROOT=.gate-logs/observed OBSERVED_STALE_SECS=90"
+      "behavior": "make observed-status PYTHON=python3 OBSERVED_LABEL=run-watched RUN_ID=contract-run-watched OBSERVED_ROOT=.gate-logs/observed OBSERVED_STALE_SECS=90"
     },
     {
       "name": "observed-tail",
       "make_variables": [
-        "OBSERVED_LABEL",
+        "PYTHON", "OBSERVED_LABEL",
         "RUN_ID",
         "OBSERVED_ROOT",
         "OBSERVED_TAIL_LINES"
       ],
-      "behavior": "make observed-tail OBSERVED_LABEL=run-watched RUN_ID=contract-run-watched OBSERVED_ROOT=.gate-logs/observed OBSERVED_TAIL_LINES=80"
+      "behavior": "make observed-tail PYTHON=python3 OBSERVED_LABEL=run-watched RUN_ID=contract-run-watched OBSERVED_ROOT=.gate-logs/observed OBSERVED_TAIL_LINES=80"
     },
     {
       "name": "run-watched",
@@ -2104,27 +2096,23 @@
       ],
       "behavior": "make require-dual-track-green SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa DUAL_TRACK_CI_VALIDATE_ONLY=1"
     },
+    {"name": "agent-worktree", "make_variables": ["BRANCH", "ACTIVE_WORKSTREAM_REGISTRY"], "behavior": "make agent-worktree BRANCH= ACTIVE_WORKSTREAM_REGISTRY="},
+    {"name": "agent-worktree-base", "make_variables": ["BRANCH", "BASE", "ACTIVE_WORKSTREAM_REGISTRY"], "behavior": "make agent-worktree-base BRANCH= BASE= ACTIVE_WORKSTREAM_REGISTRY="},
+    {"name": "agent-worktree-dev", "make_variables": ["BRANCH", "ACTIVE_WORKSTREAM_REGISTRY"], "behavior": "make agent-worktree-dev BRANCH= ACTIVE_WORKSTREAM_REGISTRY="},
     {
       "name": "workstream-register",
-      "make_variables": [
-        "BRANCH",
-        "WORKTREE",
-        "ACTIVE_WORKSTREAM_REGISTRY"
-      ],
+      "make_variables": ["BRANCH", "WORKTREE", "ACTIVE_WORKSTREAM_REGISTRY"],
       "behavior": "make workstream-register BRANCH=contract/workstream WORKTREE=/tmp/gludd-workstream-contract ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json"
     },
     {
       "name": "workstream-unregister",
-      "make_variables": [
-        "BRANCH",
-        "ACTIVE_WORKSTREAM_REGISTRY"
-      ],
-      "behavior": "make workstream-unregister BRANCH=contract/workstream ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json"
+      "make_variables": ["BRANCH", "WORKTREE", "WORKSTREAM_EXPECTED_HEAD", "ACTIVE_WORKSTREAM_REGISTRY"],
+      "behavior": "make workstream-unregister BRANCH=contract/workstream WORKTREE=/tmp/gludd-workstream-contract WORKSTREAM_EXPECTED_HEAD=0000000000000000000000000000000000000000 ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json # Expected nonzero: absent native owner; no ownership is released"
     },
     {
       "name": "agent-cleanup",
-      "make_variables": ["BRANCH", "WORKTREE", "ACTIVE_WORKSTREAM_REGISTRY", "AGENT_CLEANUP_VALIDATE_ONLY"],
-      "behavior": "make agent-cleanup BRANCH=contract/retirement WORKTREE=/tmp/gludd-worktrees/contract-retirement ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json AGENT_CLEANUP_VALIDATE_ONLY=1"
+      "make_variables": ["BRANCH", "WORKTREE", "ACTIVE_WORKSTREAM_REGISTRY", "AGENT_CLEANUP_VALIDATE_ONLY", "AGENT_CLEANUP_PURPOSE", "AGENT_CLEANUP_EXPECTED_HEAD"],
+      "behavior": "make agent-cleanup BRANCH=contract/retirement WORKTREE=/tmp/gludd-worktrees/contract-retirement ACTIVE_WORKSTREAM_REGISTRY=/tmp/gludd-active-workstream-contract.json AGENT_CLEANUP_VALIDATE_ONLY=1 AGENT_CLEANUP_PURPOSE=merged AGENT_CLEANUP_EXPECTED_HEAD='' # Expected nonzero: absent native owner; no retirement"
     },
     {
       "name": "clean-stale-worktrees",
@@ -2240,7 +2228,7 @@
         "GATE_MAX_FILES_PER_BATCH",
         "GATE_BATCH_WORKERS"
       ],
-      "behavior": "make gate-background-observed GATE_TIMEOUT=7200 GATE_POLL_INTERVAL=60 GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=1 GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1"
+      "behavior": "make gate-background-observed GATE_TIMEOUT=21600 GATE_POLL_INTERVAL=60 GATE_BACKGROUND_OBSERVED_VALIDATE_ONLY=1 GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1"
     },
     {
       "name": "vendor-presentation-assets",
@@ -2278,14 +2266,13 @@
       "behavior": "make presentation-browser-install PRESENTATION_BROWSER_INSTALL_VALIDATE_ONLY=1 PRESENTATION_BROWSER_ENGINES='chromium webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser PRESENTATION_BROWSER_INSTALL_TIMEOUT=600"
     },
     {
+      "name": "presentation-browser-apt-source",
+      "make_variables": ["PRESENTATION_BROWSER_APT_VALIDATE_ONLY"],
+      "behavior": "make presentation-browser-apt-source PRESENTATION_BROWSER_APT_VALIDATE_ONLY=1"
+    },
+    {
       "name": "presentation-browser-install-deps",
-      "make_variables": [
-        "PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY",
-        "PRESENTATION_BROWSER_ENGINES",
-        "PRESENTATION_BROWSER_ROOT",
-        "PRESENTATION_BROWSER_OUTPUT",
-        "PRESENTATION_BROWSER_INSTALL_TIMEOUT"
-      ],
+      "make_variables": ["PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY", "PRESENTATION_BROWSER_ENGINES", "PRESENTATION_BROWSER_ROOT", "PRESENTATION_BROWSER_OUTPUT", "PRESENTATION_BROWSER_INSTALL_TIMEOUT"],
       "behavior": "make presentation-browser-install-deps PRESENTATION_BROWSER_DEPS_VALIDATE_ONLY=1 PRESENTATION_BROWSER_ENGINES='webkit' PRESENTATION_BROWSER_ROOT=/tmp/gludd-playwright-browsers PRESENTATION_BROWSER_OUTPUT=/tmp/gludd-presentation-browser PRESENTATION_BROWSER_INSTALL_TIMEOUT=600"
     },
     {
@@ -2395,7 +2382,8 @@
     {
       "name": "worktree-cleanup-merged",
       "make_variables": [],
-      "behavior": "make worktree-cleanup-merged"
+      "behavior": "make worktree-cleanup-merged",
+      "expected_result": "Native status 2/refused; no inventory, child tools, mutation or cleanup. Preserve the configured registry and reconcile exact native branch/path/full SHA before using the existing selected validate-only owner; no empty registry override, guessed file, force removal or implicit unregister."
     },
     {
       "name": "watchdog-start",
@@ -2491,6 +2479,7 @@
         "RUNTIME_DIAGNOSTIC_CONSOLE"
       ],
       "behavior": "make runtime-startup-archive RUNTIME_DIAGNOSTIC_VALIDATE_ONLY=1 OBSERVED_ROOT=.gate-logs/observed OBSERVED_LABEL=v012-312-startup-profile RUN_ID=imports-f634b76-20261018 RUNTIME_DIAGNOSTIC_SOURCE_SHA=f634b7662a4122c6c96262f1656dc5088da03b96 RUNTIME_DIAGNOSTIC_ARCHIVE=/tmp/gludd-runtime-startup-contract-plan RUNTIME_DIAGNOSTIC_CONSOLE='[]'"
-    }
+    },
+    {"name":"git-owned-checkpoint-repair-link","make_variables":["GIT_CHECKPOINT_WORKTREE","GIT_CHECKPOINT_ADMIN_DIR","GIT_CHECKPOINT_SHA","GIT_CHECKPOINT_EXPECTED_HEAD","GIT_CHECKPOINT_EXPECTED_BRANCH","GIT_CHECKPOINT_VALIDATE_ONLY"],"behavior":"make git-owned-checkpoint-repair-link GIT_CHECKPOINT_WORKTREE=/tmp/gludd-checkpoint-absent GIT_CHECKPOINT_ADMIN_DIR=/tmp/gludd-checkpoint-admin-absent GIT_CHECKPOINT_SHA=0000000000000000000000000000000000000000 GIT_CHECKPOINT_EXPECTED_HEAD=0000000000000000000000000000000000000000 GIT_CHECKPOINT_EXPECTED_BRANCH=agent-checkpoint-contract GIT_CHECKPOINT_VALIDATE_ONLY=1","expected_result":"Expected Make2 refusal for absent owned metadata; validation writes nothing and provides no repair, commit or release proof."}
   ]
 }

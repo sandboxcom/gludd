@@ -282,7 +282,6 @@ def build_remediation_plan(
         blockers = tuple(
             sorted(f"{entry.get('branch', '<detached>')}@{entry.get('path', '<unknown>')}" for entry in prunable)
         )
-        branches = sorted({branch for entry in prunable if isinstance((branch := entry.get("branch")), str) and branch})
         steps.append(
             RemediationStep(
                 code="prunable_worktree_registration",
@@ -290,25 +289,21 @@ def build_remediation_plan(
                 validate_argv=(
                     "make",
                     "wt-prune-safe",
-                    "ACTIVE_WORKSTREAM_REGISTRY=",
                     "WT_PRUNE_VALIDATE_ONLY=1",
                 ),
-                owner_release_argv=tuple(("make", "workstream-unregister", f"BRANCH={branch}") for branch in branches),
-                apply_argv=(
-                    "make",
-                    "wt-prune-safe",
-                    "ACTIVE_WORKSTREAM_REGISTRY=",
-                    "WT_PRUNE_VALIDATE_ONLY=0",
-                ),
+                owner_release_argv=(),
+                apply_argv=None,
                 requires_owner_confirmation=True,
                 resolution=(
-                    "Run validate-only first. An owner may unregister only its exact "
-                    "completed workstream; validate again and apply only when no "
-                    "unrelated candidate would be removed."
+                    "Inspect validate-only with the native default registry. Cleanup is deferred: "
+                    "these diagnostics lack a verified canonical WORKTREE, immutable EXPECTED_HEAD "
+                    "and matching native ownership tuple. Reconcile the original workstream owner; "
+                    "only that verified owner may plan exact release and retirement."
                 ),
                 safety=(
-                    "Dirty, locked, active, unmerged, or mixed-reason worktrees remain "
-                    "blocking and receive no cleanup instruction."
+                    "No branch-only unregister or bulk apply command is authorized by diagnostics. "
+                    "Dirty, locked, active, unmerged, or mixed-reason worktrees remain blocking; "
+                    "native ownership, archive, checkpoint and ref-preservation fences still apply."
                 ),
             )
         )

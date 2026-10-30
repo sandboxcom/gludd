@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import time
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
@@ -20,6 +21,7 @@ from general_ludd.self_improve.codex_comparison import (
     PlannerFeedbackExchange,
     ProposalManifest,
 )
+from general_ludd.self_improve.managed_runner import AttemptResult
 from general_ludd.self_improve.model_lifecycle import AcquiredModel, ModelArtifactIdentity
 from general_ludd.self_improve.runtime import (
     MakeResult,
@@ -37,6 +39,13 @@ from general_ludd.self_improve.runtime import (
     proposal_scope_matches,
     quality_defaults_for_paths,
 )
+from general_ludd.self_improve.runtime_validation import (
+    line_count_from_patch,
+    validate_sha,
+    validate_target_and_variables,
+    warning_count,
+)
+from tests.self_improve_native_fixtures import controlled_retirement_result, controlled_revision_result
 
 
 def _manifest() -> ProposalManifest:
@@ -876,8 +885,10 @@ def test_evaluate_attempt_covers_green_commit_and_cleanup(
             timeout: int = 120,
             read_only: bool = False,
         ) -> MakeResult:
-            del variables, timeout, read_only
+            del timeout, read_only
             output = "patch-equivalent=1" if target == "git-patch-equivalence" else ""
+            if target == "git-show-commit":
+                return controlled_revision_result((variables or {})["C"], "c" * 40)
             return MakeResult(("make", target), 0, output, "", 0.1)
 
     candidate = CandidateRunner()
@@ -893,8 +904,12 @@ def test_evaluate_attempt_covers_green_commit_and_cleanup(
             timeout: int = 120,
             read_only: bool = False,
         ) -> MakeResult:
-            del variables, timeout, read_only
-            return MakeResult(("make", target), 0, "", "", 0.1)
+            del timeout, read_only
+            if target == "git-show-commit":
+                return controlled_revision_result((variables or {})["C"], "c" * 40)
+            return controlled_retirement_result(
+                target, dict(variables or {}), branch="candidate", worktree=tmp_path, head="c" * 40,
+            )
 
     progress: list[str] = []
     result = runner_module.evaluate_attempt(
@@ -912,7 +927,9 @@ def test_evaluate_attempt_covers_green_commit_and_cleanup(
     assert result.evidence.cleanup_passed is True
     assert result.evidence.commit_count == 1
     assert "make test-count" in candidate.commands
-    assert document.read_text(encoding="utf-8").endswith("Body\n")
+    assert not tmp_path.exists()
+    archived = tmp_path.with_name(tmp_path.name + "-retired-0") / relative
+    assert archived.read_text(encoding="utf-8").endswith("Body\n")
     phases = [event.split(" phase=", 1)[1].split()[0] for event in progress]
     assert phases == [
         "apply",
@@ -982,6 +999,14 @@ def test_commit_candidate_surfaces_only_allowlisted_guard_category(
                 )
             return MakeResult(("make", target), 0, "", "", 0.1)
 
+        def run_command(self, command: str, *, timeout: int = 900) -> MakeResult:
+            raise AssertionError("failed commit fixture must not execute a command")
+
+        def run_observable(
+            self, target: str, variables: dict[str, str], *, timeout: float,
+        ) -> MakeResult:
+            raise AssertionError("failed commit fixture must not execute inference")
+
     proposal = _manifest()
     reference = CodexReference(
         baseline_sha="a" * 40,
@@ -992,7 +1017,7 @@ def test_commit_candidate_surfaces_only_allowlisted_guard_category(
         elapsed_seconds=1.0,
     )
     progress: list[str] = []
-    state = runner_module._AttemptState(runner_module.time.monotonic(), [], [])
+    state = runner_module._AttemptState(time.monotonic(), [], [])
 
     runner_module._commit_candidate(
         CandidateRunner(),
@@ -1151,24 +1176,28 @@ def test_approval_rejects_bound_proposal_or_manifest_drift() -> None:
 
 
 def test_runner_validation_helpers_fail_closed() -> None:
+    assert runner_module.__dict__["_warning_count"] is warning_count
+    assert runner_module.__dict__["_line_count_from_patch"] is line_count_from_patch
+    assert runner_module.__dict__["_validate_target_and_variables"] is validate_target_and_variables
+    assert runner_module.__dict__["_validate_sha"] is validate_sha
     assert runner_module._is_safe_make_command("make test-files") is True
     assert runner_module._is_safe_make_command("python -m pytest") is False
     assert runner_module._is_safe_make_command("make 'unterminated") is False
-    assert runner_module._warning_count("WARNING one\n0 warnings\nwarning two") == 2
-    assert runner_module._line_count_from_patch("--- a\n+++ b\n-old\n+new\n") == 2
+    assert warning_count("WARNING one\n0 warnings\nwarning two") == 2
+    assert line_count_from_patch("--- a\n+++ b\n-old\n+new\n") == 2
     with pytest.raises(ValueError, match="unsafe Make target"):
-        runner_module._validate_target_and_variables("bad target", {})
+        validate_target_and_variables("bad target", {})
     with pytest.raises(ValueError, match="unsafe Make variable"):
-        runner_module._validate_target_and_variables("good", {"bad": "x"})
+        validate_target_and_variables("good", {"bad": "x"})
     with pytest.raises(ValueError, match="unsafe value"):
-        runner_module._validate_target_and_variables("good", {"VALUE": "x\n"})
+        validate_target_and_variables("good", {"VALUE": "x\n"})
     with pytest.raises(ValueError, match="exactly 40"):
-        runner_module._validate_sha("sha", "bad")
+        validate_sha("sha", "bad")
 
 
-def _attempt_result(*, accepted: bool) -> runner_module.AttemptResult:
+def _attempt_result(*, accepted: bool) -> AttemptResult:
     proposal = _manifest()
-    return runner_module.AttemptResult(
+    return AttemptResult(
         comparison=ComparisonResult(
             accepted=accepted,
             score=100.0 if accepted else 70.0,
@@ -1277,6 +1306,55 @@ def test_planner_feedback_exchange_rejects_ambiguous_json() -> None:
             PlannerFeedbackExchange.from_json(raw)
 
 
+class _BenchmarkContextRunner:
+    """Supply strict controlled baseline cleanup inputs without native proof."""
+
+    def __init__(self, worktree: Path) -> None:
+        self.worktree = worktree
+        self.targets: list[str] = []
+
+    def run(
+        self, target: str, variables: dict[str, str] | None = None, *,
+        timeout: int = 120, read_only: bool = False,
+    ) -> MakeResult:
+        del timeout, read_only
+        self.targets.append(target)
+        values = dict(variables or {})
+        if target == "git-show-commit":
+            assert values == {"C": "refs/heads/context"}
+            return controlled_revision_result(values["C"], "a" * 40)
+        return controlled_retirement_result(
+            target, values, branch="context", worktree=self.worktree, head="a" * 40,
+        )
+
+
+def _benchmark_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> _BenchmarkContextRunner:
+    """Keep disposable context separate from task and model fixture state."""
+    context = tmp_path / "baseline-context"
+    context.mkdir()
+    controlled = _BenchmarkContextRunner(context)
+    monkeypatch.setattr(runner_module, "MakeRunner", lambda _root: controlled)
+    monkeypatch.setattr(
+        runner_module, "create_worktree", lambda *_args: (context, "context"),
+    )
+    return controlled
+
+
+def _assert_benchmark_context_retired(
+    controlled: _BenchmarkContextRunner, task_file: Path,
+) -> None:
+    """Require actual fixture retirement while persistent inputs survive."""
+    assert controlled.targets == [
+        "agent-cleanup", "workstream-unregister", "agent-cleanup", "agent-cleanup",
+        "git-show-commit",
+    ]
+    assert not controlled.worktree.exists()
+    assert task_file.is_file()
+    assert (task_file.parent / "model.gguf").is_file()
+
+
 def _benchmark_args(task_file: Path, *, max_attempts: int = 1) -> argparse.Namespace:
     model_path = task_file.parent / "model.gguf"
     model_path.write_bytes(b"GGUF test model")
@@ -1324,24 +1402,8 @@ def test_run_benchmark_prefers_accepted_mechanical_candidate(
     )
     accepted = _attempt_result(accepted=True)
 
-    class RootRunner:
-        def __init__(self, _root: Path) -> None:
-            pass
-
-        def run(
-            self,
-            target: str,
-            variables: dict[str, str] | None = None,
-            *,
-            timeout: int = 120,
-            read_only: bool = False,
-        ) -> MakeResult:
-            del variables, timeout, read_only
-            return MakeResult(("make", target), 0, "", "", 0.1)
-
-    monkeypatch.setattr(runner_module, "MakeRunner", RootRunner)
+    context = _benchmark_context(tmp_path, monkeypatch)
     monkeypatch.setattr(runner_module, "build_reference", lambda *_args: reference)
-    monkeypatch.setattr(runner_module, "create_worktree", lambda *_args: (tmp_path, "context"))
     monkeypatch.setattr(runner_module, "build_prompt", lambda *_args: "bounded prompt")
     monkeypatch.setattr(
         runner_module,
@@ -1356,6 +1418,7 @@ def test_run_benchmark_prefers_accepted_mechanical_candidate(
     )
 
     assert runner_module.run_benchmark(_benchmark_args(task_file)) is accepted
+    _assert_benchmark_context_retired(context, task_file)
 
 
 def test_run_benchmark_retries_rejected_local_output_with_evidence(
@@ -1374,30 +1437,14 @@ def test_run_benchmark_retries_rejected_local_output_with_evidence(
     accepted = _attempt_result(accepted=True)
     prompts: list[str] = []
 
-    class RootRunner:
-        def __init__(self, _root: Path) -> None:
-            pass
-
-        def run(
-            self,
-            target: str,
-            variables: dict[str, str] | None = None,
-            *,
-            timeout: int = 120,
-            read_only: bool = False,
-        ) -> MakeResult:
-            del variables, timeout, read_only
-            return MakeResult(("make", target), 0, "", "", 0.1)
-
     def propose(_runner: object, _model: Path, prompt: str) -> ProposalManifest:
         prompts.append(prompt)
         if len(prompts) == 1:
             raise ValueError("incomplete JSON tail")
         return _manifest()
 
-    monkeypatch.setattr(runner_module, "MakeRunner", RootRunner)
+    context = _benchmark_context(tmp_path, monkeypatch)
     monkeypatch.setattr(runner_module, "build_reference", lambda *_args: reference)
-    monkeypatch.setattr(runner_module, "create_worktree", lambda *_args: (tmp_path, "context"))
     monkeypatch.setattr(runner_module, "build_prompt", lambda *_args: "bounded prompt")
     monkeypatch.setattr(runner_module, "generate_mechanical_proposal", lambda *_args: None)
     monkeypatch.setattr(runner_module, "generate_local_proposal", propose)
@@ -1412,6 +1459,7 @@ def test_run_benchmark_retries_rejected_local_output_with_evidence(
     assert "source=worker_tail" in prompts[1]
     assert "detail=<redacted>" in prompts[1]
     assert "incomplete JSON tail" not in prompts[1]
+    _assert_benchmark_context_retired(context, task_file)
 
 
 def test_run_benchmark_returns_final_rejected_comparison(
@@ -1429,30 +1477,15 @@ def test_run_benchmark_returns_final_rejected_comparison(
     )
     rejected = _attempt_result(accepted=False)
 
-    class RootRunner:
-        def __init__(self, _root: Path) -> None:
-            pass
-
-        def run(
-            self,
-            target: str,
-            variables: dict[str, str] | None = None,
-            *,
-            timeout: int = 120,
-            read_only: bool = False,
-        ) -> MakeResult:
-            del variables, timeout, read_only
-            return MakeResult(("make", target), 0, "", "", 0.1)
-
-    monkeypatch.setattr(runner_module, "MakeRunner", RootRunner)
+    context = _benchmark_context(tmp_path, monkeypatch)
     monkeypatch.setattr(runner_module, "build_reference", lambda *_args: reference)
-    monkeypatch.setattr(runner_module, "create_worktree", lambda *_args: (tmp_path, "context"))
     monkeypatch.setattr(runner_module, "build_prompt", lambda *_args: "bounded prompt")
     monkeypatch.setattr(runner_module, "generate_mechanical_proposal", lambda *_args: None)
     monkeypatch.setattr(runner_module, "generate_local_proposal", lambda *_args: _manifest())
     monkeypatch.setattr(runner_module, "evaluate_attempt", lambda *_args, **_kwargs: rejected)
 
     assert runner_module.run_benchmark(_benchmark_args(task_file)) is rejected
+    _assert_benchmark_context_retired(context, task_file)
 
 
 def test_main_publishes_json_and_fails_for_unaccepted_result(

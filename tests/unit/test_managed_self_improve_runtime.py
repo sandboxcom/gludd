@@ -29,6 +29,7 @@ from general_ludd.self_improve.runtime import (
     prepare_managed_self_improve_plan,
 )
 from general_ludd.small_models.evidence_store import CapabilityEvidenceStore
+from tests.self_improve_native_fixtures import controlled_retirement_result, controlled_revision_result
 
 
 def _task() -> TaskSpec:
@@ -95,6 +96,7 @@ class _FakeMakeRunner:
         self.repo_root = repo_root
         self.attempt_root = attempt_root
         self.calls = calls
+        self.branch = ""
 
     def run(
         self,
@@ -104,11 +106,20 @@ class _FakeMakeRunner:
         timeout: int = 120,
         read_only: bool = False,
     ) -> MakeResult:
-        del variables, timeout, read_only
+        del timeout, read_only
+        values = dict(variables or {})
         self.calls.append(target)
+        head = ("c" if "repo-commit" in self.calls else "a") * 40
+        if target in {"agent-cleanup", "workstream-unregister"}:
+            return controlled_retirement_result(
+                target, values, branch=self.branch, worktree=self.attempt_root, head=head,
+            )
+        if target == "git-show-commit":
+            return controlled_revision_result(values["C"], head)
         if target == "agent-merge-dev":
             raise AssertionError("managed runtime must never merge a live branch")
         if target == "agent-worktree-base":
+            self.branch = values["BRANCH"]
             self.attempt_root.mkdir(parents=True, exist_ok=True)
             output = f"WORKTREE_PATH={self.attempt_root}\n"
         elif target == "git-patch-equivalence":
@@ -128,7 +139,7 @@ class _FakeMakeRunner:
         target: str,
         variables: dict[str, str],
         *,
-        timeout: int,
+        timeout: float,
     ) -> MakeResult:
         del variables, timeout
         raise AssertionError(f"mechanical plan unexpectedly requested inference: {target}")
@@ -140,6 +151,7 @@ class _PreparationRunner:
     def __init__(self, context_root: Path, calls: list[str]) -> None:
         self.context_root = context_root
         self.calls = calls
+        self.branch, self.head = "", ""
 
     def run(
         self,
@@ -149,8 +161,15 @@ class _PreparationRunner:
         timeout: int = 120,
         read_only: bool = False,
     ) -> MakeResult:
-        del variables, timeout, read_only
+        del timeout, read_only
+        values = dict(variables or {})
         self.calls.append(target)
+        if target in {"agent-cleanup", "workstream-unregister"}:
+            return controlled_retirement_result(
+                target, values, branch=self.branch, worktree=self.context_root, head=self.head,
+            )
+        if target == "git-show-commit":
+            return controlled_revision_result(values["C"], self.head)
         output = ""
         if target == "git-show-name-only":
             output = "\n".join(
@@ -162,6 +181,7 @@ class _PreparationRunner:
         elif target == "git-show-full":
             output = "--- a/example.py\n+++ b/example.py\n-old\n+new\n"
         elif target == "agent-worktree-base":
+            self.branch, self.head = values["BRANCH"], values["BASE"]
             source = self.context_root / "src/general_ludd/example.py"
             source.parent.mkdir(parents=True, exist_ok=True)
             source.write_text("VALUE = 0\n", encoding="utf-8")
@@ -182,7 +202,7 @@ class _PreparationRunner:
         target: str,
         variables: dict[str, str],
         *,
-        timeout: int,
+        timeout: float,
     ) -> MakeResult:
         del target, variables, timeout
         raise AssertionError("plan preparation must never run inference")
@@ -234,8 +254,8 @@ def test_prepare_plan_binds_identity_round_trips_and_cleans_context(
     assert calls == [
         "git-show-name-only",
         "git-show-full",
-        "agent-worktree-base",
-        "agent-cleanup",
+        "agent-worktree-base", "agent-cleanup", "workstream-unregister",
+        "agent-cleanup", "agent-cleanup", "git-show-commit",
     ]
 
 
@@ -267,7 +287,11 @@ def test_prepare_plan_cleans_context_when_prompt_construction_fails(
             make_runner_factory=lambda _path: runner,
         )
 
-    assert calls[-2:] == ["agent-worktree-base", "agent-cleanup"]
+    assert calls[-6:] == [
+        "agent-worktree-base", "agent-cleanup", "workstream-unregister",
+        "agent-cleanup", "agent-cleanup", "git-show-commit",
+    ]
+    assert not runner.context_root.exists()
 
 
 def test_cli_benchmark_delegates_approved_plan_preparation(
@@ -493,7 +517,7 @@ def test_package_factory_uses_configured_capability_evidence_store(
 
     runner = build_managed_self_improve_runner(
         tmp_path,
-        root_runner=cast(object, object()),
+        root_runner=runtime_module.MakeRunner(tmp_path),
         self_improve_config={
             "capability_evidence": {
                 "schema_version": 1,
@@ -523,7 +547,7 @@ def test_package_factory_rejects_symlink_or_ambiguous_configured_evidence(
     with pytest.raises(ValueError, match="capability evidence"):
         build_managed_self_improve_runner(
             tmp_path,
-            root_runner=cast(object, object()),
+            root_runner=runtime_module.MakeRunner(tmp_path),
             self_improve_config={
                 "capability_evidence": {
                     "schema_version": 1,
@@ -532,13 +556,14 @@ def test_package_factory_rejects_symlink_or_ambiguous_configured_evidence(
             },
         )
 
-    def explicit_factory(_cache_root: Path) -> ManagedOutcomeAdapter:
+    def explicit_factory(cache_root: Path) -> ManagedOutcomeAdapter:
+        del cache_root
         return cast(ManagedOutcomeAdapter, object())
 
     with pytest.raises(ValueError, match="conflicts with explicit"):
         build_managed_self_improve_runner(
             tmp_path,
-            root_runner=cast(object, object()),
+            root_runner=runtime_module.MakeRunner(tmp_path),
             outcome_adapter_factory=explicit_factory,
             self_improve_config={
                 "capability_evidence": {

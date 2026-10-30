@@ -1,3 +1,8 @@
+# Keep no-commit merge branch data literal before startup or export children.
+override GLUDD_GIT_MERGE_NC_BR := $(value BR)
+export GLUDD_GIT_MERGE_NC_BR
+unexport BR
+
 # Item 17: Poll CI until green with periodic heartbeat
 ci-wait:
 	@INTERVAL=$${CI_WAIT_INTERVAL:-60}; MAX_WAIT=$${CI_WAIT_MAX:-3600}; ELAPSED=0; \
@@ -15,7 +20,8 @@ ci-wait:
 	echo "=== CI-WAIT: timed out after $$MAX_WAIT seconds ==="; exit 1
 
 # Poll CI for an exact identity until it reaches a TERMINAL state.
-# Exit codes: 0=SUCCESS, 1=FAILURE, 2=TIMEOUT (still pending).
+# Regular wait exits: 0=terminal success, 1=failure, 2=timeout (still pending).
+# Validate-only returns0 for a plan; snapshot-only returns0 for ID lookup, not observation/CI-green proof.
 # SHA/workflow/event are optional for backwards-compatible branch-only use.
 # Usage: make ci-await BRANCH=development TIMEOUT=3600 SHA=... CI_AWAIT_WORKFLOW='Build and Release' CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL=10 CI_AWAIT_AFTER_RUN_ID=0 CI_AWAIT_VALIDATE_ONLY=0 CI_AWAIT_SNAPSHOT_ONLY=0
 CI_AWAIT_OBSERVATION_OUTPUT ?= .gludd/ci-await.json
@@ -45,12 +51,145 @@ require-sandboxcom-ssh-key:
 	fi; \
 	echo "sandboxcom SSH key available: $$KEY"
 
-verify-remote: require-sandboxcom-ssh-key
-	@SHA=$(or $(SHA),$$(git rev-parse HEAD)); BR=$(or $(BRANCH),master); \
-	REMOTE=$$(GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/$$BR | awk '{print $$1}'); \
+# Existing GitHub CLI owns authentication and credential storage.
+define _github_workflow_auth_failure
+gludd_workflow_fail() { gludd_workflow_status=$$1; gludd_workflow_outcome=$$2; \
+	printf '%s\n' "AGENT_NEXT target=$$GLUDD_WORKFLOW_TARGET outcome=$$gludd_workflow_outcome native_status=$$gludd_workflow_status phase=$$GLUDD_WORKFLOW_PHASE credentials_may_have_changed=$$GLUDD_WORKFLOW_WRITES gate_evidence=false release_ready=false; preserve the native reason and reconcile existing account/credential state before retry; operator owns any consent and no push or CI proof follows" >&2; \
+	exit "$$gludd_workflow_status"; };
+endef
+
+define _github_workflow_gh_binary
+GLUDD_WORKFLOW_GH=$$(command -v gh) || { echo "gh is unavailable in the selected PATH" >&2; gludd_workflow_fail 127 failed; }; \
+case "$$GLUDD_WORKFLOW_GH" in /*) ;; *) echo "gh must resolve to an absolute executable" >&2; gludd_workflow_fail 127 refused ;; esac;
+endef
+
+.PHONY: github-auth-status github-workflow-auth
+github-auth-status:
+	@GLUDD_WORKFLOW_TARGET=github-auth-status; GLUDD_WORKFLOW_PHASE=gh-executable; GLUDD_WORKFLOW_WRITES=false; \
+	$(_github_workflow_auth_failure) \
+	$(_github_workflow_gh_binary) \
+	GLUDD_WORKFLOW_PHASE=authentication; \
+	"$$GLUDD_WORKFLOW_GH" auth status --hostname github.com || gludd_workflow_fail "$$?" failed; \
+	echo "AGENT_NEXT target=github-auth-status outcome=observed native_status=0 gate_evidence=false release_ready=false; interpret the actual accounts and scopes: a zero exit is read authentication, not workflow write authorization; for missing workflow scope preview make github-workflow-auth GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY=1 GITHUB_WORKFLOW_AUTH_ACCOUNT= and obtain operator consent before mode 0; do not repeat unchanged failed transport" >&2
+
+# Preview is offline; apply delegates account consent to the existing GitHub CLI.
+github-workflow-auth:
+	@GLUDD_WORKFLOW_TARGET=github-workflow-auth; GLUDD_WORKFLOW_PHASE=validate-mode; GLUDD_WORKFLOW_WRITES=false; \
+	$(_github_workflow_auth_failure) \
+	GLUDD_WORKFLOW_MODE="$$GLUDD_GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY"; \
+	GLUDD_WORKFLOW_ACCOUNT="$$GLUDD_GITHUB_WORKFLOW_AUTH_ACCOUNT"; \
+	case "$$GLUDD_WORKFLOW_MODE" in 0|1) ;; *) echo "GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY must be literal 0 or 1" >&2; gludd_workflow_fail 2 refused ;; esac; \
+	if [ "$$GLUDD_WORKFLOW_MODE" = 1 ]; then \
+		printf 'PLAN github-workflow-auth host=github.com additional_scope=workflow expected_account=%s credentials_changed=false auth_checked=false\n' "$$GLUDD_WORKFLOW_ACCOUNT"; \
+		echo "This requests additional workflow authority for the existing GitHub credential and its covered repositories. Review the selected account and obtain operator approval for GitHub consent." ; \
+		echo "AGENT_NEXT target=github-workflow-auth outcome=planned native_status=0 gate_evidence=false release_ready=false; operator-owned step: use GITHUB_WORKFLOW_AUTH_VALIDATE_ONLY=0 with an explicit GITHUB_WORKFLOW_AUTH_ACCOUNT only after account consent is authorized; preview performs no authentication, credential mutation, publication or CI" >&2; \
+		exit 0; \
+	fi; \
+	GLUDD_WORKFLOW_PHASE=account-input; \
+	[ -n "$$GLUDD_WORKFLOW_ACCOUNT" ] || { echo "Select the existing account explicitly with GITHUB_WORKFLOW_AUTH_ACCOUNT" >&2; gludd_workflow_fail 2 refused; }; \
+	GLUDD_WORKFLOW_PHASE=gh-executable; \
+	$(_github_workflow_gh_binary) \
+	GLUDD_WORKFLOW_PHASE=authentication; \
+	"$$GLUDD_WORKFLOW_GH" auth status --active --hostname github.com || gludd_workflow_fail "$$?" failed; \
+	GLUDD_WORKFLOW_PHASE=account-identity; \
+	GLUDD_WORKFLOW_ACTUAL=$$("$$GLUDD_WORKFLOW_GH" api user --hostname github.com --jq .login) || gludd_workflow_fail "$$?" failed; \
+	[ "$$GLUDD_WORKFLOW_ACTUAL" = "$$GLUDD_WORKFLOW_ACCOUNT" ] || { echo "The active GitHub account differs from the explicitly selected account" >&2; gludd_workflow_fail 2 refused; }; \
+	echo "Starting native GitHub consent for the selected existing account; approval occurs at GitHub."; \
+	GLUDD_WORKFLOW_PHASE=consent; GLUDD_WORKFLOW_WRITES=true; \
+	"$$GLUDD_WORKFLOW_GH" auth refresh --hostname github.com --scopes workflow || gludd_workflow_fail "$$?" failed; \
+	GLUDD_WORKFLOW_PHASE=post-authentication; \
+	"$$GLUDD_WORKFLOW_GH" auth status --active --hostname github.com || gludd_workflow_fail "$$?" failed; \
+	GLUDD_WORKFLOW_PHASE=post-identity; \
+	GLUDD_WORKFLOW_ACTUAL=$$("$$GLUDD_WORKFLOW_GH" api user --hostname github.com --jq .login) || gludd_workflow_fail "$$?" failed; \
+	[ "$$GLUDD_WORKFLOW_ACTUAL" = "$$GLUDD_WORKFLOW_ACCOUNT" ] || { echo "The post-consent account differs; reconcile the actual credential state" >&2; gludd_workflow_fail 2 refused; }; \
+	echo "AGENT_NEXT target=github-workflow-auth outcome=returned native_status=0 gate_evidence=false release_ready=false; inspect the actual scopes and account output; native consent returns no publication or CI proof; use make verify-state, normal guarded make batch-push and full expected-SHA remote/exact-SHA CI verification after authorization is established" >&2
+
+# Repo-local HTTPS publication; Foundation captures the mode before startup.
+# Only this recipe performs local configuration. Plan performs no auth/network IO.
+define _sandboxcom_publication_failure
+gludd_fail() { gludd_status=$$1; gludd_outcome=$$2; \
+	printf '%s\n' "AGENT_NEXT target=$$GLUDD_TARGET outcome=$$gludd_outcome native_status=$$gludd_status gate_evidence=false release_ready=false phase=$$GLUDD_PHASE writes_may_have_started=$$GLUDD_WRITES; preserve the native reason, repair that input and reconcile any partial repo-local configuration before retry; normal batch-push admission and hooks remain required" >&2; \
+	exit "$$gludd_status"; };
+endef
+
+define _sandboxcom_publication_remote_binding
+GLUDD_LOCAL_URL=$$(git config --local --get-all remote.sandboxcom.url) || gludd_fail "$$?" failed; \
+case "$$GLUDD_LOCAL_URL" in git@github.com:sandboxcom/gludd.git|https://github.com/sandboxcom/gludd.git) ;; *) echo "ERROR: sandboxcom requires one canonical repository-local GitHub URL." >&2; gludd_fail 2 refused ;; esac; \
+GLUDD_FETCH_URL=$$(git remote get-url --all sandboxcom) || gludd_fail "$$?" failed; \
+test "$$GLUDD_FETCH_URL" = "$$GLUDD_LOCAL_URL" || { echo "ERROR: sandboxcom fetch URL is rewritten or ambiguous." >&2; gludd_fail 2 refused; }; \
+GLUDD_PUSH_URL=$$(git remote get-url --push --all sandboxcom) || gludd_fail "$$?" failed; \
+case "$$GLUDD_PUSH_URL" in git@github.com:sandboxcom/gludd.git|https://github.com/sandboxcom/gludd.git) ;; *) echo "ERROR: sandboxcom requires one canonical GitHub push URL." >&2; gludd_fail 2 refused ;; esac;
+endef
+
+define _sandboxcom_publication_gh_helper
+GLUDD_GH_BIN=$$(command -v gh) || { echo "ERROR: gh is unavailable in the selected PATH." >&2; gludd_fail 127 failed; }; \
+case "$$GLUDD_GH_BIN" in /*) ;; *) echo "ERROR: gh must resolve to an absolute executable." >&2; gludd_fail 127 refused ;; esac; \
+GLUDD_GH_HELPER=$$("$(SYSTEM_PYTHON)" -P -c 'import shlex, sys; print("!" + shlex.quote(sys.argv[1]) + " auth git-credential")' "$$GLUDD_GH_BIN") || gludd_fail "$$?" failed;
+endef
+
+.PHONY: git-configure-sandboxcom-https _require-sandboxcom-git-auth verify-remote
+git-configure-sandboxcom-https:
+	@GLUDD_TARGET=git-configure-sandboxcom-https; GLUDD_PHASE=validate-mode; GLUDD_WRITES=false; \
+	$(_sandboxcom_publication_failure) \
+	GLUDD_MODE="$$GLUDD_SANDBOXCOM_HTTPS_VALIDATE_ONLY"; \
+	case "$$GLUDD_MODE" in 0|1) ;; *) echo "SANDBOXCOM_HTTPS_VALIDATE_ONLY must be 0 or 1" >&2; gludd_fail 2 refused ;; esac; \
+	GLUDD_PHASE=remote-binding; $(_sandboxcom_publication_remote_binding) \
+	GLUDD_PROPOSED_URL=$$(git ls-remote --get-url https://github.com/sandboxcom/gludd.git) || gludd_fail "$$?" failed; \
+	test "$$GLUDD_PROPOSED_URL" = https://github.com/sandboxcom/gludd.git || { echo "ERROR: proposed HTTPS URL is rewritten." >&2; gludd_fail 2 refused; }; \
+	if [ "$$GLUDD_MODE" = 1 ]; then \
+		echo "PLAN sandboxcom=https://github.com/sandboxcom/gludd.git repo_local=true credential_helper=gh writes=false auth_checked=false"; \
+		echo "AGENT_NEXT target=git-configure-sandboxcom-https outcome=planned native_status=0 gate_evidence=false release_ready=false; review the repo-local helper/fetch/push changes, then use SANDBOXCOM_HTTPS_VALIDATE_ONLY=0 for native authentication and configuration; plan is no auth, remote, push or CI proof" >&2; \
+		exit 0; \
+	fi; \
+	GLUDD_PHASE=helper-executable; $(_sandboxcom_publication_gh_helper) \
+	GLUDD_PHASE=authentication; "$$GLUDD_GH_BIN" auth status --active --hostname github.com || gludd_fail "$$?" failed; \
+	GLUDD_WRITES=true; GLUDD_PHASE=helper-reset; git config --local --replace-all credential.https://github.com.helper "" || gludd_fail "$$?" failed; \
+	GLUDD_PHASE=helper-install; git config --local --add credential.https://github.com.helper "$$GLUDD_GH_HELPER" || gludd_fail "$$?" failed; \
+	GLUDD_PHASE=fetch-url; git remote set-url sandboxcom https://github.com/sandboxcom/gludd.git || gludd_fail "$$?" failed; \
+	GLUDD_PHASE=push-url; git remote set-url --push sandboxcom https://github.com/sandboxcom/gludd.git || gludd_fail "$$?" failed; \
+	GLUDD_PHASE=postcheck; \
+	GLUDD_FETCH_URL=$$(git remote get-url --all sandboxcom) || gludd_fail "$$?" failed; \
+	GLUDD_PUSH_URL=$$(git remote get-url --push --all sandboxcom) || gludd_fail "$$?" failed; \
+	test "$$GLUDD_FETCH_URL" = https://github.com/sandboxcom/gludd.git && test "$$GLUDD_PUSH_URL" = https://github.com/sandboxcom/gludd.git || { echo "ERROR: native HTTPS remote postcheck failed." >&2; gludd_fail 2 refused; }; \
+	GLUDD_ACTUAL_HELPERS=$$(git config --local --get-all credential.https://github.com.helper) || gludd_fail "$$?" failed; \
+	GLUDD_EXPECTED_HELPERS=$$(printf '\n%s\n' "$$GLUDD_GH_HELPER"); \
+	test "$$GLUDD_ACTUAL_HELPERS" = "$$GLUDD_EXPECTED_HELPERS" || { echo "ERROR: native repo-local helper postcheck failed." >&2; gludd_fail 2 refused; }; \
+	echo "CONFIGURED sandboxcom=https://github.com/sandboxcom/gludd.git repo_local=true credentials_stored=false"; \
+	echo "AGENT_NEXT target=git-configure-sandboxcom-https outcome=configured native_status=0 gate_evidence=false release_ready=false; use verify-remote for an already-published exact branch/SHA; configuration supplies no remote-head, push, CI or deployment evidence and normal batch-push guards remain required" >&2
+
+_require-sandboxcom-git-auth:
+	@GLUDD_TARGET=verify-remote; GLUDD_PHASE=remote-binding; GLUDD_WRITES=false; \
+	$(_sandboxcom_publication_failure) \
+	$(_sandboxcom_publication_remote_binding) \
+	if [ "$$GLUDD_FETCH_URL" = git@github.com:sandboxcom/gludd.git ]; then \
+		GLUDD_PHASE=ssh-key; $(MAKE) --no-print-directory require-sandboxcom-ssh-key || gludd_fail "$$?" failed; \
+	else \
+		GLUDD_PHASE=helper-binding; $(_sandboxcom_publication_gh_helper) \
+		GLUDD_ACTUAL_HELPERS=$$(git config --local --get-all credential.https://github.com.helper) || gludd_fail "$$?" failed; \
+		GLUDD_EXPECTED_HELPERS=$$(printf '\n%s\n' "$$GLUDD_GH_HELPER"); \
+		test "$$GLUDD_ACTUAL_HELPERS" = "$$GLUDD_EXPECTED_HELPERS" || { echo "ERROR: configure the repo-local gh credential helper before HTTPS verification." >&2; gludd_fail 2 refused; }; \
+		GLUDD_PHASE=authentication; "$$GLUDD_GH_BIN" auth status --active --hostname github.com || gludd_fail "$$?" failed; \
+	fi
+
+verify-remote: _require-sandboxcom-git-auth
+	@GLUDD_TARGET=verify-remote; GLUDD_PHASE=expected-head; GLUDD_WRITES=false; \
+	$(_sandboxcom_publication_failure) \
+	SHA=$(or $(SHA),$$(git rev-parse HEAD)) || gludd_fail "$$?" failed; BR=$(or $(BRANCH),master); \
+	case "$$SHA" in ''|*[!0123456789abcdefABCDEF]*) echo "ERROR: SHA must be a nonempty hexadecimal commit identity." >&2; gludd_fail 2 refused ;; esac; \
+	git check-ref-format "refs/heads/$$BR" || gludd_fail "$$?" failed; \
+	GLUDD_PHASE=remote-head; \
+	REMOTE_ROWS=$$(GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git ls-remote --exit-code --heads sandboxcom "refs/heads/$$BR") || gludd_fail "$$?" failed; \
+	REMOTE=$$(printf '%s\n' "$$REMOTE_ROWS" | cut -f1); \
 	echo "remote=$$REMOTE expected=$$SHA"; \
-	REMOTE_SHORT=$$(echo $$REMOTE | cut -c1-$${#SHA}); \
-	if [ "$$SHA" = "$$REMOTE_SHORT" ]; then echo "VERIFIED $$BR@$$SHA"; else echo "REMOTE MISMATCH: remote=$$REMOTE expected=$$SHA" && exit 1; fi
+	SHA_LENGTH=$$(printf '%s' "$$SHA" | wc -c | tr -d ' '); REMOTE_SHORT=$$(printf '%s\n' "$$REMOTE" | cut -c1-$$SHA_LENGTH); \
+	if [ "$$SHA" = "$$REMOTE_SHORT" ]; then \
+		echo "VERIFIED $$BR@$$SHA"; \
+		echo "AGENT_NEXT target=verify-remote outcome=verified native_status=0 gate_evidence=false release_ready=false; this exact heads-ref/SHA comparison is remote evidence only; use pipeline-status for all required exact-SHA workflows and retain normal publication/deployment gates" >&2; \
+	else \
+		echo "REMOTE MISMATCH: remote=$$REMOTE expected=$$SHA"; \
+		echo "AGENT_NEXT target=verify-remote outcome=failed native_status=1 gate_evidence=false release_ready=false; reconcile the actual remote branch and expected SHA before retry; no VERIFIED, CI or deployment claim follows" >&2; \
+		exit 1; \
+	fi
 
 # Create a signed annotated tag and push it to sandboxcom to trigger the tag-gated
 # release job (version -> gate -> builds -> release). Usage:
@@ -456,10 +595,26 @@ release-proof-admission: override UV := $(UV)
 
 release-proof-admission:
 	@WORK_TASK='$(subst ','"'"',$(value WORK_ITEM_ID))'; \
-	case "$$WORK_TASK" in *[!A-Za-z0-9._-]*) echo "ERROR: WORK_ITEM_ID must be literal task data"; echo "PROOF-ADMISSION-BLOCKED phase=release-proof-admission rc=2"; exit 2;; esac; \
-	case "$(RELEASE_PROOF_ADMISSION_VALIDATE_ONLY)" in 0|1) ;; *) echo "ERROR: RELEASE_PROOF_ADMISSION_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac; \
+	agent_next() { printf 'AGENT_NEXT target=release-proof-admission outcome=%s phase=%s gate_evidence=false release_ready=false: %s\n' "$$1" "$$2" "$$3" >&2; }; \
+	blocked_next() { \
+		case "$$1" in \
+			disk-cleanup-preflight) proof_next='The direct admission blocker is capacity. The canonical volume limit is hard; generated scratch is a soft cleanup trigger. Protected or recent scratch may be admitted when volume is healthy; native preflight still refuses inspection or cleanup errors. disk-check is diagnostic, not the admission owner. Use make disk for bounded diagnosis and native lifecycle owners only for proven eligible resources. HumanTodo is an escalation route when capacity needs operator action; retain an actual request ID, never a check-mode null or request configuration. A refused API request remains unfiled and needs a changed service prerequisite before API retry. Rerun documented mode0 admission after actual capacity clears, even if the request remains unfiled; all existing admission owners and final proofs remain required.' ;; \
+			gate-admission-config) proof_next='Repair the reported release policy inputs with make gate-admission-config; preserve canonical budgets, coverage and runtime settings.' ;; \
+			check-task-registration|check-task-integrity) proof_next='Repair the named TASKS.md or source registration input with the reported native Make owner; retain canonical IDs and immutable history.' ;; \
+			check-gate-failure-promotions) proof_next='Repair the named manifest, node or Make-wiring input with make check-gate-failure-promotions; all eight child pins and terminal success remain required.' ;; \
+			check-resource-ownership) proof_next='Repair the named resource owner or inventory input with make check-resource-ownership; keep RESOURCE_OWNERSHIP_WRITE=0 for admission and preserve existing leases.' ;; \
+			check-test-env-writes) proof_next='Repair the named test fixture or environment writer with make check-test-env-writes; confine test output instead of changing production observations.' ;; \
+			test-files) proof_next='Repair the actual failing source-contract node through the documented make test-files owner; preserve original assertions and fatal warnings.' ;; \
+			_pytest-runtime-compatibility-admission) proof_next='Read the original native watched receipt from run-watched; identify the actual failed node, unmet prerequisite or timeout cause before repair. Preserve the original 90/60 owner and do not substitute a focused pass.' ;; \
+			*) proof_next='Repair the reported native owner and its actual failing input.' ;; \
+		esac; \
+		agent_next blocked "$$1" "$$proof_next Retain failed native evidence and identify the changed input before retrying documented mode0 admission; no expensive final proof or task tick follows this result."; \
+	}; \
+	case "$$WORK_TASK" in *[!A-Za-z0-9._-]*) echo "ERROR: WORK_ITEM_ID must be literal task data"; echo "PROOF-ADMISSION-BLOCKED phase=release-proof-admission rc=2"; agent_next refused work-item-input 'Repair WORK_ITEM_ID as documented literal active-task data; no admission owner has run.'; exit 2;; esac; \
+	case "$(RELEASE_PROOF_ADMISSION_VALIDATE_ONLY)" in 0|1) ;; *) echo "ERROR: RELEASE_PROOF_ADMISSION_VALIDATE_ONLY must be 0 or 1"; agent_next refused validate-only 'Repair RELEASE_PROOF_ADMISSION_VALIDATE_ONLY to documented 0 or 1; no admission owner has run.'; exit 2 ;; esac; \
 	if [ "$(RELEASE_PROOF_ADMISSION_VALIDATE_ONLY)" = "1" ]; then \
 		echo "PROOF-ADMISSION-PLAN capacity -> gate-config -> task-registration -> task-integrity -> failure-promotions -> resource-ownership -> test-env-writes -> source-contracts -> runtime-compatibility; release_ready=false gate_evidence=false"; \
+		agent_next planned plan 'Capacity, configuration, resource ownership, source contracts and runtime are not executed. Inspect worktree-state and native work-item status; use documented mode0 only after actual prerequisites are changed or clear. Do not seal a candidate, run a full gate, publish or tick tasks from this plan.'; \
 		exit 0; \
 	fi; \
 	run_owner() { \
@@ -467,7 +622,8 @@ release-proof-admission:
 		echo "PROOF-ADMISSION-START phase=$$phase"; \
 		if [ "$$phase" = "_pytest-runtime-compatibility-admission" ]; then \
 			if $(UV) run python scripts/item_progress.py prepare-runtime --task "$$WORK_TASK"; then :; else \
-				rc=$$?; echo "PROOF-ADMISSION-BLOCKED phase=$$phase rc=$$rc"; exit "$$rc"; \
+				rc=$$?; echo "PROOF-ADMISSION-BLOCKED phase=$$phase rc=$$rc"; \
+				agent_next blocked "$$phase" 'Use documented make work-item focus and active-work-status to repair the actual active-task input; runtime child has not started. Retain native reasons and identify the changed input before retrying; no expensive final proof or task tick follows.'; exit "$$rc"; \
 			fi; \
 			runtime_run_id="proof-admission-$$(date -u +%Y%m%dT%H%M%SZ)-$$$$"; \
 			set -- run-watched WORK_ITEM_ID="$$WORK_TASK" GATE_TEST_PROFILE=release GATE_EXACT_SHA_RESUME=0 GATE_MAX_FILES_PER_BATCH=16 GATE_BATCH_WORKERS=1 \
@@ -479,7 +635,7 @@ release-proof-admission:
 		if $(MAKE) --no-print-directory "$$@"; then \
 			echo "PROOF-ADMISSION-PHASE-PASS phase=$$phase"; \
 		else \
-			rc=$$?; echo "PROOF-ADMISSION-BLOCKED phase=$$phase rc=$$rc"; exit "$$rc"; \
+			rc=$$?; echo "PROOF-ADMISSION-BLOCKED phase=$$phase rc=$$rc"; blocked_next "$$phase"; exit "$$rc"; \
 		fi; \
 	}; \
 	run_owner disk-cleanup-preflight DISK_CLEANUP_PREFLIGHT_VALIDATE_ONLY=0 DISK_CLEANUP_PREFLIGHT_DRY_RUN=1 DISK_CLEANUP_RECEIPT_GRACE_SECONDS=1800; \
@@ -491,11 +647,14 @@ release-proof-admission:
 	run_owner check-test-env-writes; \
 	run_owner test-files TESTFILES='tests/unit/test_guardrails.py::TestBashGuardrailPrompting::test_agents_md_lists_make_targets tests/unit/test_guardrails.py::TestTDDGuardrail::test_agents_md_tdd_lists_workflow_steps tests/unit/test_guardrails.py::TestGuardrailIntegrity::test_agents_md_has_guardrail_integrity_policy tests/unit/test_guardrails.py::TestTaskCompletionGuardrail::test_agents_md_has_completion_policy tests/unit/test_guardrails.py::TestTaskCompletionGuardrail::test_agents_md_completion_policy_forbids_early_stop tests/unit/test_no_home_directory_access.py::test_agents_md_documents_allowed_boundary tests/unit/test_no_home_directory_access.py::test_agents_md_lists_structural_test_as_enforcement tests/unit/test_markdown_docs_deep.py::test_all_internal_links_resolve tests/unit/test_oversized_document_splits.py tests/unit/test_spec_enforcement_t01_t29.py::TestT22T23T24GateStatusEvidence::test_t23_cite_pass_count_with_test_claim_policy tests/unit/test_behavioral_specs.py::TestAgentsMdPolicies::test_dispatch_floor_policy tests/unit/test_behavioral_specs.py::TestAgentsMdPolicies::test_ci_poll_subagents_forbidden tests/unit/test_e4_noqa_guardrail.py::TestAgentsMdRule::test_runtime_hook_layer_documented tests/unit/test_e4_noqa_guardrail.py::TestAgentsMdRule::test_behavior_pin_test_documented tests/unit/test_e4_noqa_guardrail.py::TestAgentsMdRule::test_guardrail_integrity_policy_cross_reference tests/unit/test_watchdog_deep.py::TestTaskWatchdogProcessIdentity::test_kill_skips_when_identity_changed tests/unit/test_xdist_pollution_guard.py::test_all_setenv_literals_are_in_leaky_env_vars tests/unit/test_deadline_enforcement_deep.py::TestKillProcessEdgeCases::test_sigterm_before_sigkill_ordering tests/unit/test_deadline_enforcement_deep.py::TestKillProcessEdgeCases::test_process_exited_during_sigterm_wait tests/unit/test_deadline_enforcement_deep.py::TestWatchdogSourceInvariants::test_kill_multiple_candidates tests/unit/test_watchdog_deep.py::TestTaskWatchdogConfiguration tests/unit/test_scoped_admission_targets.py tests/integration/test_gate_resume_preflights.py::test_preflights_skip_when_exact_sha_resume_receipt_exists tests/unit/test_operational_discipline_full.py::test_dc1_dispatch_examples tests/unit/test_operational_discipline_full.py::test_dc1_zero_subagents_allowed_without_filler tests/unit/test_precommit_quality_guards.py::test_engine_probe_owns_uv_without_discarding_native_make_carriers[owned-environment-overrides] tests/unit/test_push_discipline_checks_p2.py::TestP30NeverPushFixForwardToMaster::test_agents_forbids_fix_forward_to_master' PYTEST_ARGS='-q -W error -n 0'; \
 	run_owner _pytest-runtime-compatibility-admission; \
-	echo "PROOF-ADMISSION-PASS admitted_for_proof=true release_ready=false gate_evidence=false"
+	echo "PROOF-ADMISSION-PASS admitted_for_proof=true release_ready=false gate_evidence=false"; \
+	agent_next passed complete 'Admission prerequisites passed; keep one proof owner and freeze one exact candidate for independent source review, combined acceptance, canonical gate, exact-SHA hosted CI, deployment and reviewed-head promotion proof. Do not edit the frozen candidate or tick tasks from admission alone.'
 
 release-readiness:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-readiness TAG=v0.1.2 RELEASE_READINESS_VALIDATE_ONLY=0|1 RELEASE_COMPLETED_STAGES=stage,... RELEASE_OBSERVATIONS=stage=minutes,... REVIEWED_HEAD_INTEGRATION_RECEIPT=path RELEASE_CANDIDATE_SHA=full-sha RELEASE_READINESS_CI_BRANCH=source-branch-or-empty"; exit 2; }
-	@RELEASE_READINESS_VALIDATE_ONLY="$(RELEASE_READINESS_VALIDATE_ONLY)" \
+	@gludd_readiness_source_root=$$(pwd -P) || exit $$?; \
+		PYTHONPATH="$$gludd_readiness_source_root/src:$$gludd_readiness_source_root/scripts:$$gludd_readiness_source_root$${PYTHONPATH:+:$$PYTHONPATH}" \
+		RELEASE_READINESS_VALIDATE_ONLY="$(RELEASE_READINESS_VALIDATE_ONLY)" \
 		$(UV) run python scripts/release_readiness.py --root "$(CURDIR)" --tag "$(TAG)" \
 		--completed-stages "$(RELEASE_COMPLETED_STAGES)" \
 		--observations "$(RELEASE_OBSERVATIONS)" \
@@ -809,17 +968,81 @@ wt-prune-safe:
 		$(if $(value ACTIVE_WORKSTREAM_REGISTRY),--registry '$(subst ','"'"',$(value ACTIVE_WORKSTREAM_REGISTRY))') \
 		$(if $(filter 1,$(value WT_PRUNE_VALIDATE_ONLY)),--validate-only))
 
-# Read-only: which feature/* branches still have work NOT yet in master (the real
-# integration backlog). A branch absent here is already merged.
-# Merge a branch into the working tree WITHOUT committing (so its changes can be
-# gated together with other staged work, then committed once). Aborts cleanly on
-# conflict. Usage: make git-merge-nc BR=feature/xxx
+# Prepare a no-commit merge only from a clean checkout without an existing merge.
+# Keep caller work/checkpoints intact; abort only a newly opened matching conflict.
+# Refuse branch merge options/external drivers before preflight; merge with native ort.
+# Usage: make git-merge-nc BR=feature/xxx
+.PHONY: git-merge-nc
+git-merge-nc: override GLUDD_GIT_MERGE_NC_BR = $(value BR)
 git-merge-nc:
-	@[ -n "$(BR)" ] || { echo "Usage: make git-merge-nc BR=feature/xxx"; exit 1; }
-	@git merge --no-ff --no-commit "$(BR)" && echo "merged (uncommitted): $(BR)" || { echo "MERGE CONFLICT — aborting"; git merge --abort; exit 1; }
+	@gludd_merge_next() { \
+		if [ "$$1" = passed ]; then \
+			printf 'AGENT_NEXT target=git-merge-nc outcome=%s phase=%s gate_evidence=false release_ready=false: Inspect owned FILES with make git-diff-full, then run complete affected Make test owners and normal collection before commit.\n' "$$1" "$$2" >&2; \
+		else \
+			printf 'AGENT_NEXT target=git-merge-nc outcome=%s phase=%s gate_evidence=false release_ready=false: Inspect make worktree-state; preserve owned state and repair the reported input before retrying. Required gate and exact-SHA proofs remain pending.\n' "$$1" "$$2" >&2; \
+		fi; \
+	}; \
+	[ -n "$$GLUDD_GIT_MERGE_NC_BR" ] || { echo "Usage: make git-merge-nc BR=feature/xxx" >&2; gludd_merge_next refused usage; exit 2; }; \
+	MERGE_HEAD_PATH=$$(git rev-parse --git-path MERGE_HEAD) || { MERGE_CHECK_STATUS=$$?; gludd_merge_next failed metadata; exit "$$MERGE_CHECK_STATUS"; }; \
+	MERGE_AUTOSTASH_PATH=$$(git rev-parse --git-path MERGE_AUTOSTASH) || { MERGE_CHECK_STATUS=$$?; gludd_merge_next failed metadata; exit "$$MERGE_CHECK_STATUS"; }; \
+	if [ -e "$$MERGE_HEAD_PATH" ] || [ -L "$$MERGE_HEAD_PATH" ] || \
+		[ -e "$$MERGE_AUTOSTASH_PATH" ] || [ -L "$$MERGE_AUTOSTASH_PATH" ]; then \
+		echo "GIT_MERGE_NC_REFUSED existing merge/autostash state" >&2; gludd_merge_next refused existing; exit 2; \
+	fi; \
+	MERGE_WORK_STATUS=$$(git --no-optional-locks status --porcelain=v1 --untracked-files=all --ignore-submodules=none) || { MERGE_CHECK_STATUS=$$?; gludd_merge_next failed worktree; exit "$$MERGE_CHECK_STATUS"; }; \
+	if [ -n "$$MERGE_WORK_STATUS" ]; then \
+		echo "GIT_MERGE_NC_REFUSED dirty index/worktree/untracked files" >&2; gludd_merge_next refused worktree; exit 2; \
+	fi; \
+	MERGE_START_HEAD=$$(git rev-parse --verify HEAD) || { MERGE_CHECK_STATUS=$$?; gludd_merge_next failed reference; exit "$$MERGE_CHECK_STATUS"; }; \
+	MERGE_TARGET=$$(git rev-parse --verify --end-of-options "$$GLUDD_GIT_MERGE_NC_BR^{commit}") || { MERGE_CHECK_STATUS=$$?; gludd_merge_next failed reference; exit "$$MERGE_CHECK_STATUS"; }; \
+	$(or $(PYTHON),python3) -c 'import os, subprocess, sys; from pathlib import PurePosixPath; \
+	branch_result = subprocess.run(["git", "--no-optional-locks", "symbolic-ref", "--quiet", "HEAD"], stdout=subprocess.PIPE, check=False); \
+	branch_result.returncode not in (0, 1) and sys.exit(128 - branch_result.returncode if branch_result.returncode < 0 else branch_result.returncode); \
+	branch_name = os.fsdecode(branch_result.stdout.rstrip(b"\n")).removeprefix("refs/heads/"); \
+	options_result = subprocess.run(["git", "--no-optional-locks", "config", "get", "--null", "branch." + branch_name + ".mergeOptions"], stdout=subprocess.PIPE, check=False) if branch_result.returncode == 0 else None; \
+	options_result is not None and options_result.returncode not in (0, 1) and sys.exit(128 - options_result.returncode if options_result.returncode < 0 else options_result.returncode); \
+	options_result is not None and options_result.returncode == 0 and options_result.stdout != b"\0" and (print("GIT_MERGE_NC_REFUSED branch mergeOptions", file=sys.stderr), sys.exit(2)); \
+	driver_result = subprocess.run(["git", "--no-optional-locks", "config", "get", "--all", "--name-only", "--null", "--regexp", r"^merge\..*\.driver$$"], stdout=subprocess.PIPE, check=False); \
+	driver_result.returncode not in (0, 1) and sys.exit(128 - driver_result.returncode if driver_result.returncode < 0 else driver_result.returncode); \
+	driver_result.returncode == 0 and (print("GIT_MERGE_NC_REFUSED configured merge driver", file=sys.stderr), sys.exit(2)); \
+	merge_result = subprocess.run(["git", "--no-optional-locks", "merge-tree", "--write-tree", "--no-messages", "--name-only", "-z", sys.argv[1], sys.argv[2]], stdout=subprocess.PIPE, check=False); \
+	merge_result.returncode not in (0, 1) and sys.exit(128 - merge_result.returncode if merge_result.returncode < 0 else merge_result.returncode); \
+	tree_oid, tree_separator, _ = merge_result.stdout.partition(b"\0"); \
+	tree_separator or (print("GIT_MERGE_NC_REFUSED invalid merge-tree result", file=sys.stderr), sys.exit(2)); \
+	tree_result = subprocess.run(["git", "--no-optional-locks", "rev-parse", "--verify", "--end-of-options", os.fsdecode(tree_oid) + "^{tree}"], stdout=subprocess.PIPE, check=False); \
+	tree_result.returncode and sys.exit(128 - tree_result.returncode if tree_result.returncode < 0 else tree_result.returncode); \
+	incoming_result = subprocess.run(["git", "--no-optional-locks", "diff-tree", "--no-commit-id", "-r", "-z", "--name-only", "--no-renames", "--diff-filter=AMT", sys.argv[1], os.fsdecode(tree_result.stdout.strip()), "--"], stdout=subprocess.PIPE, check=False); \
+	incoming_result.returncode and sys.exit(128 - incoming_result.returncode if incoming_result.returncode < 0 else incoming_result.returncode); \
+	ignored_result = subprocess.run(["git", "--no-optional-locks", "ls-files", "-z", "--full-name", "--others", "--ignored", "--exclude-standard"], stdout=subprocess.PIPE, check=False); \
+	ignored_result.returncode and sys.exit(128 - ignored_result.returncode if ignored_result.returncode < 0 else ignored_result.returncode); \
+	incoming = {PurePosixPath(os.fsdecode(item)) for item in incoming_result.stdout.split(b"\0") if item}; \
+	ignored = {PurePosixPath(os.fsdecode(item)) for item in ignored_result.stdout.split(b"\0") if item}; \
+	collision = bool((incoming & ignored) or (incoming & {parent for path in ignored for parent in path.parents}) or (ignored & {parent for path in incoming for parent in path.parents})); \
+	collision and print("GIT_MERGE_NC_REFUSED ignored checkpoint collision", file=sys.stderr); sys.exit(2 if collision else 0)' "$$MERGE_START_HEAD" "$$MERGE_TARGET" || { MERGE_CHECK_STATUS=$$?; gludd_merge_next failed preflight; exit "$$MERGE_CHECK_STATUS"; }; \
+	if git -c merge.autoStash=false merge --strategy=ort --no-autostash --no-ff --no-commit --no-overwrite-ignore -- "$$MERGE_TARGET"; then \
+		printf 'merged (uncommitted): %s\n' "$$GLUDD_GIT_MERGE_NC_BR" || exit $$?; gludd_merge_next passed merge; exit $$?; \
+	else MERGE_STATUS=$$?; fi; \
+	printf 'GIT_MERGE_NC_FAILED merge_exit=%s\n' "$$MERGE_STATUS" >&2; \
+	if [ "$$MERGE_STATUS" -eq 1 ] && [ -f "$$MERGE_HEAD_PATH" ] && \
+		[ ! -L "$$MERGE_HEAD_PATH" ] && [ ! -e "$$MERGE_AUTOSTASH_PATH" ] && [ ! -L "$$MERGE_AUTOSTASH_PATH" ]; then \
+		MERGE_CURRENT_HEAD=$$(git rev-parse --verify HEAD) || { MERGE_CHECK_STATUS=$$?; gludd_merge_next failed ownership; exit "$$MERGE_CHECK_STATUS"; }; \
+		MERGE_OPENED_TARGET=$$(git rev-parse --verify MERGE_HEAD) || { MERGE_CHECK_STATUS=$$?; gludd_merge_next failed ownership; exit "$$MERGE_CHECK_STATUS"; }; \
+		if [ "$$MERGE_CURRENT_HEAD" = "$$MERGE_START_HEAD" ] && [ "$$MERGE_OPENED_TARGET" = "$$MERGE_TARGET" ]; then \
+			if git -c merge.autoStash=false merge --abort; then \
+				printf 'GIT_MERGE_NC_ABORTED merge_exit=%s abort_exit=0\n' "$$MERGE_STATUS" >&2; \
+			else \
+				MERGE_ABORT_STATUS=$$?; \
+				printf 'GIT_MERGE_NC_ABORT_FAILED merge_exit=%s abort_exit=%s\n' "$$MERGE_STATUS" "$$MERGE_ABORT_STATUS" >&2; \
+				gludd_merge_next failed abort; exit "$$MERGE_ABORT_STATUS"; \
+			fi; \
+		else echo "GIT_MERGE_NC_STATE_RETAINED merge ownership mismatch" >&2; fi; \
+	fi; \
+	gludd_merge_next failed merge; exit "$$MERGE_STATUS"
 
 # Selected merged owners retire through agent-cleanup or wt-prune-safe.
 # The historical force-prune recipe is intentionally unavailable.
+# Read-only: which feature/* branches still have work not yet in master.
+# A branch absent here is already merged.
 branches-unmerged:
 	@git branch --no-merged master | sed 's/^[+* ]*//' | grep -E '^(feature/|worktree-agent-)' | grep -v worktree-agent || echo "(all feature branches merged)"
 
@@ -1004,7 +1227,7 @@ test-hang-debug:
 lint-all:
 	@$(UV) run ruff check src tests collections scripts alembic tools molecule
 typecheck-all:
-	@$(UV) run mypy -p general_ludd
+	@MYPYPATH="$$(pwd -P)/src:$$(pwd -P)/scripts$${MYPYPATH:+:$$MYPYPATH}" $(UV) run mypy -p general_ludd
 	@$(UV) run mypy --explicit-package-bases tools
 
 # Scoped mypy on explicit files (bypasses tree-wide blockers like graylog.py).
@@ -1240,7 +1463,26 @@ ci-rerun: ci-view
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-rerun RUN=<run-id>"; exit 1; fi
 	@case "$(CI_RERUN_ALLOW_UNCHANGED)" in 0|1) ;; *) echo "CI_RERUN_ALLOW_UNCHANGED must be 0 or 1"; exit 2 ;; esac
 	@$(PYTHON) scripts/ci_failure_ledger.py guard-rerun --run "$(RUN)" --ledger "$(CI_FAILURE_LEDGER)" $(if $(filter 1,$(CI_RERUN_ALLOW_UNCHANGED)),--allow-unchanged --reason "$(CI_RERUN_REASON)",) $(if $(filter 1,$(CI_FAILURE_VALIDATE_ONLY)),--validate-only,)
-	@if [ "$(CI_FAILURE_VALIDATE_ONLY)" = "1" ]; then echo "CI_RERUN_VALIDATE_ONLY_PASS"; else gh run rerun -R "$(CI_FAILURE_REPOSITORY)" "$(RUN)"; fi
+	@ci_rerun_guide() { printf '%s\n' "AGENT_NEXT target=ci-rerun outcome=$$1 native_status=$$2 run=$(RUN) reason=$(CI_RERUN_REASON) debug=$$GLUDD_CI_RERUN_DEBUG failed_only=$$GLUDD_CI_RERUN_FAILED_ONLY gate_evidence=false release_ready=false $$3" >&2; }; \
+	if [ "$(CI_FAILURE_VALIDATE_ONLY)" = "1" ]; then \
+		printf 'CI_RERUN_VALIDATE_ONLY_PASS debug=%s failed_only=%s rerun_requested=false\n' "$$GLUDD_CI_RERUN_DEBUG" "$$GLUDD_CI_RERUN_FAILED_ONLY"; \
+		ci_rerun_guide planned 0 'next_owner=ci-rerun; offline plan performs no remote observation, ledger write or rerun request'; \
+	else \
+		set --; \
+		if [ "$$GLUDD_CI_RERUN_DEBUG" = 1 ]; then set -- "$$@" --debug; fi; \
+		if [ "$$GLUDD_CI_RERUN_FAILED_ONLY" = 1 ]; then set -- "$$@" --failed; fi; \
+		gh run rerun -R "$(CI_FAILURE_REPOSITORY)" "$(RUN)" "$$@"; CI_RERUN_STATUS=$$?; \
+		if [ "$$CI_RERUN_STATUS" -eq 0 ]; then \
+			ci_rerun_guide requested 0 'write_outcome=accepted next_owner=ci-run-summary; native zero accepts one request only; observe the exact run and attempt before claiming queued or completed work'; \
+		else \
+			ci_rerun_guide failed "$$CI_RERUN_STATUS" 'write_outcome=unknown next_owner=ci-run-summary; preserve native failure and reconcile the exact run/attempt before retrying a possibly applied request'; \
+		fi; \
+		exit "$$CI_RERUN_STATUS"; \
+	fi
+
+.PHONY: ci-rerun ci-rerun-help
+ci-rerun-help:
+	@gh run rerun --help
 
 # Recover one exact-SHA run only when all non-success jobs never started and
 # GitHub annotated each with its hosted-runner acquisition failure. The guard

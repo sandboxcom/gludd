@@ -1,5 +1,21 @@
 # Beta 4 Dual-Track CI Evidence
 
+## v0.1.2 hosted Linux warning-coordinate repair (2026-10-27 UTC)
+
+Diagnostic Build40448994419, attempt1/workflow_dispatch, evaluates exact source
+9b01c6296f2a24d39a95e0c6194bd118ac8824f8. Linux job122011474722 builds
+successfully, then fails its warning audit; later package/smoke steps are skipped.
+The complete native comparison retains915 transitive edges on each side and
+finds only one hook importer moving from the native temporary environment to
+the hosted .venv. The x86_64 policy adds only that exact reviewed digest.
+A separate four-case RED exposes alternate digests crossing architecture maps;
+selection now follows the normalized requested architecture after all maps validate.
+Original flags, project-import checks, pins, spec, native failures and gates remain.
+The [owning warning record](PYTHON314_AND_ARTIFACT_GATE_COMPATIBILITY.md#hosted-hook-coordinate-and-architecture-boundary-2026-10-27-utc)
+retains raw hashes, exact delta, RED/GREEN receipts, historical practitioner context
+and missing proof. This retained-report repair supplies no fresh Linux runtime,
+package smoke, full-gate, exact-SHA promotion, deployment or release proof.
+
 Status: implemented for the `v0.1.0-beta.4` candidate pipeline on 2026-08-26.
 
 ## Exact build-environment identity

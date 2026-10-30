@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 154
+EXPECTED_FAMILY_COUNT = 180
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -36,17 +36,13 @@ STRUCTURAL_PROMOTION_NODES = (
     "tests/unit/test_admission_cold_start_selection.py::test_real_admission_filters_only_never_selected_main_siblings",
     "tests/unit/test_runtime_admission_scheduling.py::test_native_git_metadata_query_count_executes_once_in_first_cohort",
     "tests/unit/test_gate_failure_promotion.py::test_async_canonical_profile_contract_fails_in_compatibility_admission_first",
+    "tests/unit/test_make_target_contract.py::test_key_make_targets_recommends_guarded_release_owners",
+    "tests/unit/test_makefile_targets_deep.py::TestVariableConsistency::test_no_bare_equals",
 )
 
 EXPECTED_RUNTIME_PHASES = [
     ("worktree-guard", "worktree-guard", "fast", 90, 60),
-    (
-        "check-gate-failure-promotions",
-        "check-gate-failure-promotions",
-        "fast",
-        90,
-        60,
-    ),
+    ("check-gate-failure-promotions", "check-gate-failure-promotions", "fast", 90, 60),
     ("check-duplicate-code", "check-duplicate-code", "standard", 180, 120),
     (
         "pytest-runtime-compatibility",
@@ -55,20 +51,8 @@ EXPECTED_RUNTIME_PHASES = [
         90,
         60,
     ),
-    (
-        "ansible-role-variable-prefix",
-        "_ansible-role-variable-prefix",
-        "fast",
-        90,
-        60,
-    ),
-    (
-        "cloud-iam-generation-parity",
-        "_cloud-iam-generation-parity",
-        "fast",
-        90,
-        60,
-    ),
+    ("ansible-role-variable-prefix", "_ansible-role-variable-prefix", "fast", 90, 60),
+    ("cloud-iam-generation-parity", "_cloud-iam-generation-parity", "fast", 90, 60),
     (
         "_dead-code-baseline-refresh",
         "_dead-code-baseline-refresh",
@@ -242,10 +226,12 @@ def test_native_reviewed_finalization_executes_in_bounded_early_admission(test_n
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
     assert node in executable
     assert 'tests/unit/test_reviewed_head_inputs.py"' not in executable
-    recipes = executable.split("\t@$(MAKE) --no-print-directory test-files")
+    recipes = executable.split("$(MAKE) --no-print-directory test-files")
     assert len(recipes) == 4
     selectors = recipes[3].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
-    assert len(selectors) == 9 and selectors.count(node) == 1
+    assert len(selectors) == 15 and selectors.count(node) == 1
+    assert selectors[-4] == "tests/unit/test_ansible_ee_locked_consumer.py"
+    assert selectors[-3:-1] == ["tests/unit/test_observed_command.py", "tests/unit/test_status_heartbeat_terminal.py"]
     assert node not in recipes[1] and node not in recipes[2]
     phase = next(item for item in manifest["runtime_contract"]["phases"] if item["target"] == family["owner_target"])
     assert (phase["budget_class"], phase["max_seconds"], phase["quiet_seconds"]) == ("fast", 90, 60)
@@ -262,7 +248,7 @@ def _target_stanza(makefile: str, target: str) -> str:
     ids=(
         "success", "manifest-pin-fails", "wiring-pin-fails",
         "roster-pin-fails", "cold-start-pin-fails", "native-flags-pin-fails",
-        "make-flags-pin-fails", "validator-fails",
+        "make-flags-pin-fails", "guide-pin-fails", "make-variable-pin-fails", "validator-fails",
     ),
 )
 def test_promotion_checker_executes_both_structural_pins_only_after_valid_manifest(
@@ -507,6 +493,12 @@ def test_hosted_fanout_requires_executed_runtime_admission() -> None:
     workflow = yaml.safe_load((ROOT / ".github/workflows/build.yml").read_text())
     jobs = workflow["jobs"]
     steps = jobs["gate"]["steps"]
+    budget_environments = [
+        workflow.get("env", {}), jobs["gate"].get("env", {}),
+        *(step.get("env", {}) for step in steps if "make run-watched" in step.get("run", "")),
+    ]
+    for budget_environment in budget_environments:
+        assert str(budget_environment.get("RUNTIME_PUBLISH_MAX_SECS", "90")) == "90"
     owners = [step for step in steps if "make _pytest-runtime-compatibility-admission" in step.get("run", "")]
     assert len(owners) == 1
     owner = owners[0]
@@ -518,16 +510,7 @@ def test_hosted_fanout_requires_executed_runtime_admission() -> None:
     assert steps.index(dependency_step) < steps.index(owner)
     assert "--set ci --environment .venv" in dependency_step["run"]
     assert jobs["gate"]["strategy"]["matrix"]["python-version"] == ["3.11", "3.12"]
-    for job_name in (
-        "test-shard",
-        "linux",
-        "macos",
-        "windows",
-        "termux",
-        "container",
-        "ansible-ee",
-        "game-building",
-    ):
+    for job_name in ("test-shard", "linux", "macos", "windows", "termux", "container", "ansible-ee", "game-building"):
         assert "gate" in jobs[job_name]["needs"]
 
 
@@ -1025,15 +1008,13 @@ def test_repaired_failures_execute_as_exact_nodes_before_fanout(
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
-    recipes = executable.split("\t@$(MAKE) --no-print-directory test-files")
+    recipes = executable.split("$(MAKE) --no-print-directory test-files")
     assert len(recipes) == 4
     selectors = recipes[1].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
     assert selectors.count(node) == 1
     assert node.split("::", 1)[0] not in selectors
     assert all(node not in recipe for recipe in recipes[2:])
-    assert (
-        EXPECTED_MAIN_MAKE_INVOCATION
-    ) in recipes[1]
+    assert EXPECTED_MAIN_MAKE_INVOCATION in recipes[1]
     phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == family["owner_target"])
     assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
     phases = payload["runtime_contract"]["phases"]
@@ -1562,7 +1543,7 @@ def test_duplicate_help_failure_runs_in_a_fresh_early_process() -> None:
         "full_gate_phase": "test",
     }
     owner = _target_stanza(compose_makefile(ROOT / "Makefile"), family["owner_target"])
-    recipes = owner.split("\t@$(MAKE) --no-print-directory test-files")
+    recipes = owner.split("$(MAKE) --no-print-directory test-files")
     assert len(recipes) == 4
     assert "tests/unit/test_makefile_audit_deep.py" not in recipes[1]
     assert f'TESTFILES="{node}"' in recipes[2]
@@ -1649,7 +1630,7 @@ def _assert_complete_early_runtime_cohort(
     )
     assert node in owner
     executable = "\n".join(line for line in owner.splitlines() if not line.startswith("#"))
-    recipes = executable.split("\t@$(MAKE) --no-print-directory test-files")
+    recipes = executable.split("$(MAKE) --no-print-directory test-files")
     assert len(recipes) == 4
     selectors = recipes[1].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
     assert selectors.count(test_file) == 1
@@ -1705,17 +1686,10 @@ def test_presentation_manifest_failure_executes_in_existing_early_owner() -> Non
 
 def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
-
     assert payload["full_gate_required"] is True
     assert [family["id"] for family in payload["families"]] == [
-        "dead-code-baseline-drift",
-        "coverage-gap-drift",
-        "resource-ownership-drift",
-        "claim-fence",
-        "project-isolation",
-        "concurrent-tick",
-        "mcp-workspace-containment",
-        "mcp-workspace-dispatch-jail",
+        "dead-code-baseline-drift", "coverage-gap-drift", "resource-ownership-drift", "claim-fence",
+        "project-isolation", "concurrent-tick", "mcp-workspace-containment", "mcp-workspace-dispatch-jail",
         "module-graph-classification-drift",
         "ansible-role-variable-prefix-drift",
         "cloud-iam-resource-pruning-trigger",
@@ -1833,8 +1807,7 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "session-gate-region-idempotence", "process-inventory-command-boundaries",
         "watchdog-acquisition-sigterm", "watchdog-native-ready-and-drain",
         "agent-cleanup-native-delegation", "agent-cleanup-retained-ref-retirement",
-        "watchdog-absence-refusal-context",
-        "process-inventory-python-module-forms",
+        "watchdog-absence-refusal-context", "process-inventory-python-module-forms",
         "code-intelligence-extractor-import-boundary", "native-directory-listing-producer-status",
         "importtime-native-numeric-columns", "importtime-failed-child-status",
         "importtime-missing-data-failure",
@@ -1846,6 +1819,19 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "watchdog-empty-observer-projection", "scratch-nested-symlink-permissions",
         "native-full-scan-success-inventory", "coverage-native-suite-provenance", "uv-prune-native-failure-status",
         "uv-prune-inherited-policy-context", "shared-uv-cache-inventory-exposure",
+        "git-async-live-owner-handoff", "git-async-completed-owner-adoption",
+        "git-merge-no-commit-dirty-preservation", "git-merge-no-commit-literal-branch",
+        "make-promotion-terminal-result-guidance", "make-contract-layout-error-guidance",
+        "make-guide-required-owner-command", "make-variable-recipe-context",
+        "development-merge-forward-plan-guidance", "development-merge-forward-namesake",
+        "human-todo-response-identity", "human-todo-check-mode-guidance",
+        "run-watched-native-outcome-guidance", "run-watched-namesake-execution", "run-watched-complete-command",
+        "make-guarded-goal-outcome-guidance", "work-item-administrative-result-guidance",
+        "release-candidate-push-workflow-triggers",
+        "pytest-native-trace-protocol", "trace-summary-result-guidance",
+        "presentation-hosted-apt-literal-mode", "git-status-native-index-readonly",
+        "publication-native-command-envelope", "make-local-script-reference-boundary", "watchdog-bound-gate-waiter",
+        "verify-remote-recipe-boundary",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -1938,6 +1924,8 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
 
 
 def test_make_wiring_and_target_contract_are_explicit() -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/build.yml").read_text())
+    assert str(workflow.get("env", {}).get("RUNTIME_PUBLISH_MAX_SECS", "90")) == "90"
     makefile = compose_makefile(ROOT / "Makefile")
     admission = _target_stanza(makefile, "integration-admission")
     owner = _target_stanza(makefile, "_project-dispatch-integration")
@@ -1946,7 +1934,6 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     variable_prefix_owner = _target_stanza(makefile, "_ansible-role-variable-prefix")
     cloud_iam_owner = _target_stanza(makefile, "_cloud-iam-generation-parity")
     runtime_compatibility_owner = _target_stanza(makefile, "_pytest-runtime-compatibility-admission")
-
     assert "check-gate-failure-promotions" in makefile.split("help:", 1)[0]
     assert "check-gate-failure-promotions  Validate owned fast-admission failure nodes" in makefile
     assert (
@@ -2024,20 +2011,14 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_enforce_objective_plugin.py::TestSESSIONmdIntegration::"
         "test_primary_objective_mentions_ci tests/unit/test_start_gate_background.py "
         "tests/unit/test_gate_run_lock.py tests/unit/test_bulkhead_deep.py "
-        "tests/unit/test_bulkhead_admission.py "
-        "tests/unit/test_enhancement_ratio_plugin.py "
-        "tests/unit/test_pytest_param_fixture_collisions.py "
-        "tests/unit/test_ansible_runtime_artifacts.py "
-        "tests/unit/test_ansible_ee_full_warm_acceptance.py "
-        "tests/unit/test_ansible_ee_searx_acceptance.py "
-        "tests/unit/test_beta4_python_runtime_boundary.py "
-        "tests/unit/test_ansible_searxng_source_inspection.py "
-        "tests/unit/test_integration_admission_target.py "
-        "tests/unit/test_ci_failure_ledger.py "
+        "tests/unit/test_bulkhead_admission.py " "tests/unit/test_enhancement_ratio_plugin.py "
+        "tests/unit/test_pytest_param_fixture_collisions.py " "tests/unit/test_ansible_runtime_artifacts.py "
+        "tests/unit/test_ansible_ee_full_warm_acceptance.py " "tests/unit/test_ansible_ee_searx_acceptance.py "
+        "tests/unit/test_beta4_python_runtime_boundary.py " "tests/unit/test_ansible_searxng_source_inspection.py "
+        "tests/unit/test_integration_admission_target.py " "tests/unit/test_ci_failure_ledger.py "
         "tests/unit/test_ci_failure_ledger_concurrency.py "
         "tests/unit/test_proof_observations.py tests/unit/test_ci_await_exact.py "
-        "tests/unit/test_ci_verdict_all_required.py "
-        "tests/unit/test_ci_verdict_structural_repair.py "
+        "tests/unit/test_ci_verdict_all_required.py " "tests/unit/test_ci_verdict_structural_repair.py "
         "tests/unit/test_secrets_baseline_compaction.py "
         "tests/unit/test_pipeline_status_exact_sha.py tests/unit/test_pipeline_status_job_progress.py "
         "tests/unit/test_ci_cancel_contract.py "
@@ -2061,25 +2042,53 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "test_stale_scratch_nested_symlink_preserves_external_target_modes[file] "
         "tests/unit/test_detect_secrets_full_scan.py::"
         "test_successful_full_scan_rejects_added_identity_or_occurrence[new-digest] "
-        "tests/unit/test_audit_coverage_suite_provenance.py::"
-        "test_imported_cobertura_never_proves_e2e_execution "
+        "tests/unit/test_audit_coverage_suite_provenance.py::test_imported_cobertura_never_proves_e2e_execution "
         "tests/unit/test_make_uv_cache_sandbox.py::test_native_prune_preserves_real_child_status[native-failure] "
         "tests/unit/test_make_uv_cache_sandbox.py::"
         "test_native_prune_target_policy_refuses_invalid[UV_CACHE_PRUNE_TIMEOUT=0] "
         "tests/unit/test_cache_resource_policy.py::test_shared_uv_inventory_reports_complete_without_mutation "
-        "tests/unit/test_status_heartbeat_terminal.py " "tests/unit/test_task_ledger_validation.py "
+        "tests/unit/test_git_automation_locking_handoff.py::"
+        "test_live_task_handoff_cannot_allow_critical_section_overlap "
+        "tests/unit/test_git_automation_locking_handoff.py::test_wait_for_result_binds_nested_use_to_consuming_task "
+        "tests/unit/test_git_merge_nc_safety.py::test_full_make_dirty_refusal_keeps_the_staged_source_test[command] "
+        "tests/unit/test_git_merge_nc_safety.py::"
+        "test_full_make_branch_data_stays_literal_before_startup[make-expression-command] "
+        "tests/unit/test_make_result_guidance.py::"
+        "test_promotion_make_guidance_waits_for_all_required_children[validator] "
+        "tests/unit/test_make_checker_guidance.py::test_contract_native_input_error_guidance_retains_exit_one[include] "
+        "tests/unit/test_development_merge_forward_targets.py::"
+        "test_merge_forward_plan_guidance_does_not_admit_integration[True-content] "
+        "tests/unit/test_development_merge_forward_targets.py::test_merge_forward_guidance_runs_despite_namesake_file "
+        "tests/unit/test_gludd_human_todo_module.py::"
+        "test_success_without_usable_id_never_verifies_write[missing-present-200] "
+        "tests/unit/test_human_todo_make_target.py::test_human_todo_guidance_uses_actual_native_outcome[0-1] "
+        "tests/unit/test_run_watched_result_guidance.py::"
+        "test_native_status_drives_one_result_prompt_without_changing_argv[7] "
+        "tests/unit/test_run_watched_result_guidance.py::"
+        "test_namesake_file_cannot_suppress_native_observation_or_guidance "
+        "tests/unit/test_run_watched_command_boundary.py::"
+        "test_compound_tail_is_running_inside_one_terminal_receipt[7-0] "
+        "tests/unit/test_make_uv_execution_boundary.py::"
+        "test_guarded_multi_goal_refusal_teaches_both_input_repairs_before_any_body[quoted-markdown] "
+        "tests/unit/test_item_progress.py::test_native_work_item_status_guidance_preserves_owned_json[True] "
+        "tests/unit/test_release_pipeline_structure.py::TestReleaseCandidateHostedValidation::"
+        "test_candidate_push_filters_preserve_existing_routes "
+        "tests/unit/test_test_files_native_trace.py::"
+        "test_observer_trace_contains_real_matching_protocol_pairs[pass-serial] "
+        "tests/unit/test_xdist_trace_diagnostics.py::"
+        "test_native_summary_cli_keeps_json_status_and_emits_guidance[trace_guidance_native_rows0-empty] "
+        "tests/unit/test_presentation_browser_apt_source.py::"
+        "test_apt_mode_is_literal_at_real_make_startup[environment-override] "
+        "tests/unit/test_git_status_readonly.py::test_status_never_refreshes_native_index[inherited-one] "
+        "tests/unit/test_task_ledger_validation.py "
         "tests/unit/test_make_readonly_version.py " "tests/unit/test_make_help_audit.py "
-        "tests/unit/test_clean_stale_resource_namespaces.py "
-        "tests/unit/test_native_temp_artifact_target.py "
-        "tests/unit/test_ci_run_summary_script.py "
-        "tests/unit/test_ci_run_summary_target.py "
-        "tests/unit/test_ci_workflow_integrity.py "
-        "tests/unit/test_plugin_manifest_deep.py::"
+        "tests/unit/test_clean_stale_resource_namespaces.py " "tests/unit/test_native_temp_artifact_target.py "
+        "tests/unit/test_ci_run_summary_script.py " "tests/unit/test_ci_run_summary_target.py "
+        "tests/unit/test_ci_workflow_integrity.py " "tests/unit/test_plugin_manifest_deep.py::"
         "TestHookValidity::test_no_duplicate_hooks_within_single_plugin "
         "tests/unit/test_plugin_session_start_deadlock.py::"
         "TestSessionStartNoDeadlock::test_no_plugin_denies_reads_at_session_start "
-        "tests/unit/test_process_overhead.py::"
-        "TestProcessTokenOverhead::test_anti_stop_plugins_are_lean "
+        "tests/unit/test_process_overhead.py::" "TestProcessTokenOverhead::test_anti_stop_plugins_are_lean "
         "tests/unit/test_enforcement_executable_modes.py::"
         "test_enforcement_runtime_surfaces_have_executable_git_mode "
         "tests/unit/test_subagent_output_clean.py::"
@@ -2088,13 +2097,11 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "test_fallback_subagent_guard_precedes_delegated_handler "
         "tests/unit/test_v011_exact_gate_repair_contract.py::"
         "test_all_six_exact_gate_repairs_remain_green_together "
-        "tests/unit/test_secrets_scan_resources.py "
-        "tests/unit/test_css_lint_target.py::"
+        "tests/unit/test_secrets_scan_resources.py " "tests/unit/test_css_lint_target.py::"
         "test_lint_css_dependency_config_and_contract_are_exactly_pinned "
         "tests/unit/test_gate_status_attestation.py::"
         "test_repository_identity_batches_only_fresh_metadata_with_equivalent_digests "
-        "tests/unit/test_ci_stylelint_workflow.py "
-        "tests/security/test_ci_workflow.py "
+        "tests/unit/test_ci_stylelint_workflow.py " "tests/security/test_ci_workflow.py "
         "tests/unit/test_workflow_safe_parser.py "
         "tests/unit/test_self_improve_private_policy_ci_contract.py "
         "tests/unit/test_ci_shards_log_context.py "
@@ -2107,7 +2114,6 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_azure_containerapp_coverage_target.py "
         "tests/unit/test_ee_owned_collection_runtime_metadata.py "
         "tests/unit/test_no_sleep_subagent.py "
-        "tests/unit/test_ansible_ee_locked_consumer.py "
         "tests/unit/test_native_builder_optional_formats.py "
         "tests/unit/test_native_format_profile_sync_target.py "
         "tests/unit/test_ansible_ee_locked_consumer_admission.py "
@@ -2115,9 +2121,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_release_ee_collection_closure.py "
         "tests/unit/test_mcp_topics_manifest.py::test_independent_topic_sizing_has_one_native_dump_per_topic "
         "tests/unit/test_mcp_tool_gen.py "
-        "tests/unit/test_observed_command.py "
-        "tests/unit/test_observer_retention_concurrency.py "
-        "tests/unit/test_ci_collect_all_stress.py "
+        "tests/unit/test_observer_retention_concurrency.py " "tests/unit/test_ci_collect_all_stress.py "
         "tests/unit/test_admission_cold_start_selection.py::"
         "test_real_admission_filters_only_never_selected_main_siblings "
         "tests/unit/test_presentation_browser_runner.py::"
@@ -2132,13 +2136,11 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "tests/unit/test_markdown_docs_deep.py::test_relative_links_do_not_escape_repo "
         "tests/unit/test_branch_discipline_checks.py::"
         "TestWorktreeCleanupAfterMerge::test_agent_cu_removes_worktree "
-        "tests/unit/test_branch_discipline_checks.py::"
-        "TestWorktreeCleanupAfterMerge::"
+        "tests/unit/test_branch_discipline_checks.py::" "TestWorktreeCleanupAfterMerge::"
         "test_agent_cu_preserves_branch_and_release_evidence "
         "tests/unit/test_execution_adapter_protocols.py::"
         "test_core_protocols_do_not_claim_data_member_validation "
-        "tests/unit/test_status_snapshot.py::TestStatusSnapshot::"
-        "test_session_md_has_markers "
+        "tests/unit/test_status_snapshot.py::TestStatusSnapshot::" "test_session_md_has_markers "
         "tests/unit/test_status_snapshot.py::TestStatusSnapshot::"
         "test_validation_refuses_invalid_session_structure_without_writes "
         "tests/unit/test_status_snapshot.py::TestStatusSnapshot::"
@@ -2159,14 +2161,13 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "test_process_inventory_preserves_python_module_argument_forms "
         "tests/unit/test_code_intelligence_import_boundary.py::"
         "test_extractor_import_does_not_load_introspection_or_database "
-        "tests/unit/test_list_files_target.py::"
-        "test_listing_missing_input_preserves_native_failure "
-        "tests/unit/test_import_time_deep.py::"
-        "test_measurement_contract_parses_native_numeric_rows "
-        "tests/unit/test_import_time_deep.py::"
-        "test_measurement_contract_rejects_failed_children "
-        "tests/unit/test_import_time_deep.py::"
-        "test_measurement_contract_consumers_fail_for_missing_data\"" in runtime_compatibility_owner
+        "tests/unit/test_list_files_target.py::test_listing_missing_input_preserves_native_failure "
+        "tests/unit/test_import_time_deep.py::test_measurement_contract_parses_native_numeric_rows "
+        "tests/unit/test_import_time_deep.py::test_measurement_contract_rejects_failed_children "
+        "tests/unit/test_import_time_deep.py::test_measurement_contract_consumers_fail_for_missing_data "
+        "tests/unit/test_runtime_publish_admission.py::"
+        "test_green_runtime_owner_runs_once_before_normal_transport[False]\""
+        in runtime_compatibility_owner
     )
     assert "-W error" in runtime_compatibility_owner
     assert "-n 0" in runtime_compatibility_owner
@@ -2481,8 +2482,7 @@ def test_trace_summary_literal_guard_keeps_one_native_case_before_fanout() -> No
     payload = json.loads(MANIFEST.read_text(encoding="utf-8"))
     node = ("tests/unit/test_trace_summary_make_inputs.py::"
             "test_summary_public_inputs_never_execute_make_or_shell_data[backticks-LOG-False]")
-    expected = {"id": "trace-summary-literal-inputs",
-                "owner_target": "_pytest-runtime-compatibility-admission",
+    expected = {"id": "trace-summary-literal-inputs", "owner_target": "_pytest-runtime-compatibility-admission",
                 "node_kind": "pytest_node", "node": node, "full_gate_phase": "test"}
     assert [family for family in payload["families"] if family["id"] == expected["id"]] == [expected]
     assert len(payload["families"]) == EXPECTED_FAMILY_COUNT

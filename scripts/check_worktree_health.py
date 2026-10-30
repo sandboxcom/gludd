@@ -264,8 +264,24 @@ def main() -> int:
         print(f"=== WORKTREE HEALTH: FAILED === ({len(violations)} violation(s))")
         for v in violations:
             print(v)
-        print("\nACTION REQUIRED: run `make worktree-merge-all` to merge viable branches,")
-        print("then `make agent-cleanup BRANCH=<name>` for branches that cannot be merged.")
+        print("\nACTION REQUIRED: inspect `make worktree-state` and `make active-work-status`.")
+        print(
+            "Review one selected SOURCE, then plan from clean development with "
+            "`make development-merge-forward SOURCE=<reviewed-ref> MODE=content APPLY=0`; "
+            "follow its guarded apply and proof requirements."
+        )
+        print(
+            "Retirement requires `make agent-cleanup BRANCH=<exact-branch> "
+            "WORKTREE=<canonical-worktree> AGENT_CLEANUP_VALIDATE_ONLY=1`, "
+            "then explicit mode0 only after native ownership release and merge checks; "
+            "preserve unmerged, active or locked worktrees and every checkpoint."
+        )
+        print(
+            "AGENT_NEXT target=worktree-health-check outcome=failed native_status=1 "
+            "gate_evidence=false release_ready=false; a zero integration or cleanup plan "
+            "has merged or cleaned nothing; repair the selected violation without bulk "
+            "autocommit, implicit pruning or force removal"
+        )
         return 1
     else:
         print("=== WORKTREE HEALTH: PASSED ===")

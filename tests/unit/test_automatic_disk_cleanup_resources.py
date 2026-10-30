@@ -2,21 +2,49 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import shutil
 import subprocess
+import sys
+from collections.abc import Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 import pytest
-from scripts import automatic_disk_cleanup
-from scripts.automatic_disk_cleanup import DiskSnapshot
-from scripts.makefile_layout import compose_makefile
-from scripts.prune_worktrees_safe import WorktreeRecord
+from coverage import Coverage
+from coverage.exceptions import CoverageException
+
+if TYPE_CHECKING:
+    import automatic_disk_cleanup
+    import check_disk_usage
+    import clean_ci_shard_scratch
+    import prune_worktrees_safe
+    from automatic_disk_cleanup import DiskSnapshot
+    from makefile_layout import compose_makefile
+    from prune_worktrees_safe import WorktreeRecord
+else:
+    from scripts import (
+        automatic_disk_cleanup,
+        check_disk_usage,
+        clean_ci_shard_scratch,
+        prune_worktrees_safe,
+    )
+    from scripts.automatic_disk_cleanup import DiskSnapshot
+    from scripts.makefile_layout import compose_makefile
+    from scripts.prune_worktrees_safe import WorktreeRecord
 
 from tests.unit.test_automatic_disk_cleanup import (
     ROOT,
     _record,
 )
+
+
+def _record_successful_cache_action(path: Path, observed: list[Path]) -> bool:
+    """Record the original successful cache adapter outcome."""
+    observed.append(path)
+    return True
 
 
 def _owned_terraform_workspace(root: Path, name: str = "a" * 24) -> Path:
@@ -50,9 +78,13 @@ def test_owned_terraform_provider_cleanup_preserves_state_and_proof(
     marker = workspace / ".gludd-azure-containerapp-live-proof.json"
     process_checks: list[Path] = []
 
+    def inspect_processes(path: Path) -> list[int]:
+        process_checks.append(path)
+        return []
+
     result = automatic_disk_cleanup.clean_owned_terraform_provider_caches(
         roots=(root,),
-        active_process_pids=lambda path: process_checks.append(path) or [],
+        active_process_pids=inspect_processes,
     )
 
     assert result == automatic_disk_cleanup.CleanupResult(
@@ -176,7 +208,7 @@ def test_owned_terraform_provider_cleanup_bounds_and_late_failures(
 def test_shared_uv_cache_prunes_only_after_two_idle_checks(tmp_path: Path) -> None:
     cache = tmp_path / "gludd-uv-cache-public-v2"
     cache.mkdir()
-    checks = iter(([], [], []))
+    checks: Iterator[list[int]] = iter(([], [], []))
     pruned: list[Path] = []
     cleaned: list[Path] = []
 
@@ -184,8 +216,8 @@ def test_shared_uv_cache_prunes_only_after_two_idle_checks(tmp_path: Path) -> No
         cache_root=cache,
         approved_cache_root=cache,
         active_uv_pids=lambda: next(checks),
-        run_prune=lambda path: pruned.append(path) is None,
-        run_clean=lambda path: cleaned.append(path) is None,
+        run_prune=lambda path: _record_successful_cache_action(path, pruned),
+        run_clean=lambda path: _record_successful_cache_action(path, cleaned),
         dry_run=False,
     )
 
@@ -231,8 +263,8 @@ def test_shared_uv_cache_preserves_active_or_ambiguous_owners(tmp_path: Path) ->
         cache_root=cache,
         approved_cache_root=cache,
         active_uv_pids=lambda: next(final_reads),
-        run_prune=lambda path: pruned.append(path) is None,
-        run_clean=lambda path: cleaned.append(path) is None,
+        run_prune=lambda path: _record_successful_cache_action(path, pruned),
+        run_clean=lambda path: _record_successful_cache_action(path, cleaned),
     )
     assert pruned == [cache]
     assert cleaned == []
@@ -665,13 +697,13 @@ def test_default_node_package_manager_census_is_fail_closed(
         "791 /tmp/gludd-playwright-browsers/webkit/Playwright.sh\n"
     )
     monkeypatch.setattr(
-        automatic_disk_cleanup.subprocess,
+        subprocess,
         "run",
         lambda *args, **kwargs: subprocess.CompletedProcess(
             args[0], 0, process_output, ""
         ),
     )
-    monkeypatch.setattr(automatic_disk_cleanup.os, "getpid", lambda: 999)
+    monkeypatch.setattr(os, "getpid", lambda: 999)
 
     assert automatic_disk_cleanup._active_node_package_manager_pids(
         Path("/tmp/gludd-npm-cache-public-v1")
@@ -681,7 +713,7 @@ def test_default_node_package_manager_census_is_fail_closed(
     ) == [123, 456, 790, 791]
 
     monkeypatch.setattr(
-        automatic_disk_cleanup.subprocess,
+        subprocess,
         "run",
         lambda *args, **kwargs: (_ for _ in ()).throw(OSError("unavailable")),
     )
@@ -706,7 +738,9 @@ def test_preflight_is_noop_when_both_thresholds_are_healthy(capsys: pytest.Captu
 
     assert result == 0
     assert cleanup_calls == 0
-    assert "phase=inspect status=healthy" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "phase=inspect status=healthy" in output
+    assert "action=remove-worktree" not in output
 
 
 def test_preflight_cleans_then_rechecks_both_thresholds(capsys: pytest.CaptureFixture[str]) -> None:
@@ -960,18 +994,18 @@ def test_canonical_inspection_and_worktree_discovery_are_reused(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setattr(
-        automatic_disk_cleanup.check_disk_usage,
+        check_disk_usage,
         "_gludd_tmp_inspection",
         lambda: (12.5, []),
     )
     monkeypatch.setattr(
-        automatic_disk_cleanup.check_disk_usage, "_disk_usage_pct", lambda: 33.0
+        check_disk_usage, "_disk_usage_pct", lambda: 33.0
     )
     main = tmp_path / "main"
     main.mkdir()
     porcelain = f"worktree {main}\nHEAD abc\nbranch refs/heads/development\n"
     monkeypatch.setattr(
-        automatic_disk_cleanup.prune_worktrees_safe,
+        prune_worktrees_safe,
         "_git",
         lambda *args: subprocess.CompletedProcess(args, 0, porcelain, ""),
     )
@@ -982,7 +1016,7 @@ def test_canonical_inspection_and_worktree_discovery_are_reused(
     ]
 
     monkeypatch.setattr(
-        automatic_disk_cleanup.prune_worktrees_safe,
+        prune_worktrees_safe,
         "_git",
         lambda *args: subprocess.CompletedProcess(args, 0, "", ""),
     )
@@ -998,7 +1032,7 @@ def test_git_common_evidence_root_and_integration_fail_closed(
     common = tmp_path / ".git"
     common.mkdir()
     monkeypatch.setattr(
-        automatic_disk_cleanup.prune_worktrees_safe,
+        prune_worktrees_safe,
         "_git",
         lambda *args, **_kwargs: subprocess.CompletedProcess(
             args, 0, f"{common}\n", ""
@@ -1011,7 +1045,7 @@ def test_git_common_evidence_root_and_integration_fail_closed(
         automatic_disk_cleanup._integration_points([])
 
     monkeypatch.setattr(
-        automatic_disk_cleanup.prune_worktrees_safe,
+        prune_worktrees_safe,
         "_git",
         lambda *args, **_kwargs: subprocess.CompletedProcess(args, 1, "", "bad"),
     )
@@ -1028,7 +1062,7 @@ def test_git_common_evidence_root_rejects_non_directory(
     not_a_directory = tmp_path / "git-common-file"
     not_a_directory.write_text("not a directory\n", encoding="utf-8")
     monkeypatch.setattr(
-        automatic_disk_cleanup.prune_worktrees_safe,
+        prune_worktrees_safe,
         "_git",
         lambda *args, **_kwargs: subprocess.CompletedProcess(
             args, 0, f"{not_a_directory}\n", ""
@@ -1047,7 +1081,7 @@ def test_integration_points_skip_unavailable_empty_and_invalid_refs(
 ) -> None:
     main = _record(tmp_path / "main", "development")
 
-    def one_valid(*args: str, **_kwargs) -> subprocess.CompletedProcess[str]:
+    def one_valid(*args: str, **_kwargs: object) -> subprocess.CompletedProcess[str]:
         if args[:2] == ("-C", str(main.path)):
             return subprocess.CompletedProcess(args, 0, "main-head\n", "")
         if args[:2] == ("rev-parse", "--verify"):
@@ -1059,13 +1093,13 @@ def test_integration_points_skip_unavailable_empty_and_invalid_refs(
         raise AssertionError(args)
 
     monkeypatch.setattr(
-        automatic_disk_cleanup.prune_worktrees_safe, "_git", one_valid
+        prune_worktrees_safe, "_git", one_valid
     )
     assert automatic_disk_cleanup._integration_points([main]) == (
         automatic_disk_cleanup.IntegrationPoint("main-head", 42),
     )
 
-    def no_valid(*args: str, **_kwargs) -> subprocess.CompletedProcess[str]:
+    def no_valid(*args: str, **_kwargs: object) -> subprocess.CompletedProcess[str]:
         if args[:2] == ("-C", str(main.path)):
             return subprocess.CompletedProcess(args, 0, "bad-time\n", "")
         if args[:2] == ("rev-parse", "--verify"):
@@ -1080,7 +1114,7 @@ def test_integration_points_skip_unavailable_empty_and_invalid_refs(
         raise AssertionError(args)
 
     monkeypatch.setattr(
-        automatic_disk_cleanup.prune_worktrees_safe, "_git", no_valid
+        prune_worktrees_safe, "_git", no_valid
     )
     with pytest.raises(
         automatic_disk_cleanup.DiskInspectionError,
@@ -1094,27 +1128,27 @@ def test_default_uv_process_and_prune_helpers(
 ) -> None:
     process_output = "bad-line\nnot-a-pid /usr/bin/uv\n123 /usr/bin/uv run\n456 python test.py\n"
     monkeypatch.setattr(
-        automatic_disk_cleanup.subprocess,
+        subprocess,
         "run",
         lambda *args, **kwargs: subprocess.CompletedProcess(
             args[0], 0, process_output, ""
         ),
     )
-    monkeypatch.setattr(automatic_disk_cleanup.os, "getpid", lambda: 999)
+    monkeypatch.setattr(os, "getpid", lambda: 999)
     assert automatic_disk_cleanup._active_uv_process_pids() == [123]
 
-    monkeypatch.setattr(automatic_disk_cleanup.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
     assert automatic_disk_cleanup._run_uv_cache_prune(tmp_path) is False
 
     observed: dict[str, object] = {}
 
-    def run(*args, **kwargs):
+    def run(*args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         observed["args"] = args[0]
         observed["env"] = kwargs["env"]
         return subprocess.CompletedProcess(args[0], 0, "", "")
 
-    monkeypatch.setattr(automatic_disk_cleanup.shutil, "which", lambda _name: "/bin/uv")
-    monkeypatch.setattr(automatic_disk_cleanup.subprocess, "run", run)
+    monkeypatch.setattr(shutil, "which", lambda _name: "/bin/uv")
+    monkeypatch.setattr(subprocess, "run", run)
     assert automatic_disk_cleanup._run_uv_cache_prune(tmp_path) is True
     assert observed["args"] == ["/bin/uv", "cache", "prune"]
     environment = observed["env"]
@@ -1124,7 +1158,7 @@ def test_default_uv_process_and_prune_helpers(
     assert observed["args"] == ["/bin/uv", "cache", "clean"]
 
     monkeypatch.setattr(
-        automatic_disk_cleanup.subprocess,
+        subprocess,
         "run",
         lambda *args, **kwargs: (_ for _ in ()).throw(OSError("unavailable")),
     )
@@ -1177,7 +1211,9 @@ def test_shared_uv_cache_additional_fail_closed_paths(tmp_path: Path) -> None:
     )
     assert initial_failure.errors == (f"{cache}:uv-process-inspection-failed",)
 
-    recheck_reads = iter(([], automatic_disk_cleanup.ProcessInspectionError("late")))
+    recheck_reads: Iterator[list[int] | automatic_disk_cleanup.ProcessInspectionError] = iter(
+        ([], automatic_disk_cleanup.ProcessInspectionError("late"))
+    )
 
     def fail_recheck() -> list[int]:
         value = next(recheck_reads)
@@ -1206,7 +1242,7 @@ def test_shared_uv_cache_additional_fail_closed_paths(tmp_path: Path) -> None:
     )
     assert prune_failure.errors == (f"{cache}:uv-cache-prune-failed",)
 
-    final_reads = iter(
+    final_reads: Iterator[list[int] | automatic_disk_cleanup.ProcessInspectionError] = iter(
         ([], [], automatic_disk_cleanup.ProcessInspectionError("final"))
     )
 
@@ -1278,13 +1314,13 @@ def test_default_cleanup_discovers_and_preserves_git_worktrees(
         lambda: registry_path,
     )
     monkeypatch.setattr(
-        automatic_disk_cleanup.clean_ci_shard_scratch,
+        clean_ci_shard_scratch,
         "_active_process_pids",
         lambda _path: [],
     )
     stale_file = tmp_path / "gludd-test-stale.json"
     monkeypatch.setattr(
-        automatic_disk_cleanup.clean_ci_shard_scratch,
+        clean_ci_shard_scratch,
         "clean_ci_shard_scratch",
         lambda **kwargs: {"removed": [str(stale_file)], "skipped": []},
     )
@@ -1465,7 +1501,7 @@ def test_main_dry_run_injects_non_mutating_cleanup(
         cleanup_modes.append(dry_run)
         return automatic_disk_cleanup.CleanupResult((), (), ())
 
-    def preflight(*, cleanup=None) -> int:
+    def preflight(*, cleanup: automatic_disk_cleanup.Cleanup | None = None) -> int:
         assert cleanup is not None
         cleanup()
         return 7
@@ -1489,7 +1525,7 @@ def test_main_configures_receipt_grace_and_enforces_minimum(
         observed_graces.append(receipt_grace_seconds)
         return automatic_disk_cleanup.CleanupResult((), (), ())
 
-    def preflight(*, cleanup=None) -> int:
+    def preflight(*, cleanup: automatic_disk_cleanup.Cleanup | None = None) -> int:
         assert cleanup is not None
         cleanup()
         return 7
@@ -1568,3 +1604,480 @@ def test_gate_lifecycle_documents_owned_node_cache_reclamation() -> None:
     assert "github.com/python/mypy/issues/15731" in document
     assert "github.com/python/mypy/issues/19489" in document
     assert "github.com/astral-sh/ruff/issues/12284" in document
+
+
+@pytest.fixture
+def retirement_plan_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> tuple[Path, WorktreeRecord, Path, str]:
+    """Confine native retirement observations to a real owned Git worktree."""
+    for name in (
+        "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
+        "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "0")
+    monkeypatch.setenv("GIT_AUTHOR_DATE", "@1000000000 +0000")
+    monkeypatch.setenv("GIT_COMMITTER_DATE", "@1000000000 +0000")
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    monkeypatch.chdir(repository)
+    _retirement_plan_git("init", "-b", "development")
+    _retirement_plan_git("config", "user.name", "Retirement plan")
+    _retirement_plan_git("config", "user.email", "retirement@example.invalid")
+    (repository / ".gitignore").write_text(
+        ".gate-logs/\n.venv/\nprivate.key\n", encoding="utf-8",
+    )
+    (repository / "owned.txt").write_bytes(b"base source\n")
+    _retirement_plan_git("add", ".gitignore", "owned.txt")
+    _retirement_plan_git("commit", "-m", "private plan base")
+    path = tmp_path / "gludd-worktrees" / "zz-retirement plan"
+    branch = "feature/retirement-plan"
+    _retirement_plan_git("worktree", "add", "-b", branch, str(path))
+    (path / "owned.txt").write_bytes(b"unmerged committed candidate\n")
+    _retirement_plan_git("-C", str(path), "add", "owned.txt")
+    _retirement_plan_git("-C", str(path), "commit", "-m", "completed private candidate")
+    proof = path / ".gate-logs" / "proof.json"
+    proof.parent.mkdir()
+    proof.write_bytes(b'{"retained":"actual fixture evidence"}\n')
+    record = WorktreeRecord(path.resolve(), branch, False)
+    head = _retirement_plan_git("-C", str(path), "rev-parse", "HEAD").strip()
+    archive_root = repository / ".git" / "gludd-release-evidence"
+    return repository, record, archive_root, head
+
+
+def _retirement_plan_git(*args: str) -> str:
+    """Execute native Git only inside the fixture's private repository."""
+    return subprocess.run(
+        ["git", *args], cwd=Path.cwd(), check=True, text=True, capture_output=True,
+        env={**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"},
+        timeout=30,
+    ).stdout
+
+
+def _retirement_plan_snapshot(
+    repository: Path, record: WorktreeRecord,
+) -> tuple[bytes, ...]:
+    """Retain refs, registrations, both indices, source and ignored evidence."""
+    index = Path(_retirement_plan_git(
+        "-C", str(record.path), "rev-parse", "--git-path", "index",
+    ).strip())
+    return (
+        _retirement_plan_git("show-ref", "--head").encode(),
+        _retirement_plan_git("worktree", "list", "--porcelain").encode(),
+        _retirement_plan_git(
+            "-C", str(record.path), "status", "--porcelain=v1", "-z",
+            "--ignored=matching", "--untracked-files=all",
+        ).encode(),
+        (repository / ".git" / "index").read_bytes(),
+        index.read_bytes(),
+        (record.path / ".git").read_bytes(),
+        (record.path / "owned.txt").read_bytes(),
+        (record.path / ".gate-logs" / "proof.json").read_bytes(),
+    )
+
+
+def test_native_materialization_dry_run_names_retirement_and_preserved_evidence(
+    retirement_plan_checkout: tuple[Path, WorktreeRecord, Path, str],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repository, record, archive_root, head = retirement_plan_checkout
+    before = _retirement_plan_snapshot(repository, record)
+    digest = hashlib.sha256((record.branch or "").encode()).hexdigest()[:12]
+    archive = archive_root / f"{digest}-{head}"
+
+    decision = automatic_disk_cleanup._remove_worktree_materialization(
+        record, dry_run=True, evidence_archive_root=archive_root,
+    )
+
+    assert decision == automatic_disk_cleanup.LifecycleDecision(
+        True, "would remove materialization",
+    )
+    assert capsys.readouterr().out == (
+        "phase=cleanup action=remove-worktree status=dry-run "
+        f"path={json.dumps(str(record.path))} branch={json.dumps(record.branch)} "
+        f"head={head} archive={json.dumps(str(archive))} "
+        "evidence_archival=required branch_ref=retained commit=retained "
+        "mutation=none capacity_proof=none integration_proof=none\n"
+    )
+    assert _retirement_plan_snapshot(repository, record) == before
+    assert not archive_root.exists()
+
+
+def test_native_materialization_plan_survives_capped_preflight_skip_summary(
+    retirement_plan_checkout: tuple[Path, WorktreeRecord, Path, str],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repository, record, archive_root, head = retirement_plan_checkout
+    before = _retirement_plan_snapshot(repository, record)
+    protected = [
+        _record(record.path.parent / f"aa-locked-{index:02}", f"feature/locked-{index}", locked=True)
+        for index in range(automatic_disk_cleanup.MAX_CLEANUP_DETAILS_PER_KIND + 5)
+    ]
+    records = [*protected, record]
+    lease = automatic_disk_cleanup.WorkstreamLease(
+        record.branch or "", record.path, 1_000_000_000,
+    )
+    results: list[automatic_disk_cleanup.CleanupResult] = []
+
+    def completed(
+        candidate: WorktreeRecord, current: automatic_disk_cleanup.WorkstreamLease,
+    ) -> automatic_disk_cleanup.LifecycleDecision:
+        decision = automatic_disk_cleanup._completion_proof(
+            candidate, current, integration_points=(), now_epoch=1_000_001_800,
+            receipt_grace_seconds=1800,
+        )
+        assert decision == automatic_disk_cleanup.LifecycleDecision(
+            True, "exact-head commit receipt beyond retirement grace",
+        )
+        return decision
+
+    def cleanup() -> automatic_disk_cleanup.CleanupResult:
+        result = automatic_disk_cleanup.clean_inactive_worktree_caches(
+            records=records, approved_roots=(record.path.parent,),
+            protected_paths=frozenset({repository}), repository_root=repository,
+            active_branches=lambda: frozenset({lease.branch}),
+            active_workstream_leases=lambda: {lease.branch: lease},
+            lifecycle_proof=completed, refresh_records=lambda: records,
+            active_process_pids=lambda _path: [],
+            remove_materialization=lambda candidate, dry_run: (
+                automatic_disk_cleanup._remove_worktree_materialization(
+                    candidate, dry_run, evidence_archive_root=archive_root,
+                )
+            ),
+            dry_run=True,
+        )
+        results.append(result)
+        return result
+
+    status = automatic_disk_cleanup.run_preflight(
+        inspect_usage=lambda: DiskSnapshot(scratch_mb=114.5, disk_pct=97.0),
+        cleanup=cleanup,
+    )
+
+    assert status == 1
+    assert len(results) == 1
+    result = results[0]
+    assert result.removed == ()
+    assert result.errors == ()
+    planned = f"{record.path}:would remove materialization"
+    assert planned in result.skipped
+    assert planned not in result.skipped[:20]
+    captured = capsys.readouterr()
+    action_lines = [
+        line for line in captured.out.splitlines()
+        if "action=remove-worktree status=dry-run" in line
+    ]
+    assert len(action_lines) == 1
+    assert f"path={json.dumps(str(record.path))}" in action_lines[0]
+    assert f"branch={json.dumps(record.branch)} head={head}" in action_lines[0]
+    assert "evidence_archival=required branch_ref=retained commit=retained" in action_lines[0]
+    assert "mutation=none capacity_proof=none integration_proof=none" in action_lines[0]
+    assert captured.out.count("action=skip pass=1 detail=") == 20
+    assert (
+        f"action=skip-summary pass=1 shown=20 omitted={len(result.skipped) - 20}"
+        in captured.out
+    )
+    assert f"detail={json.dumps(planned)}" not in captured.out
+    assert "reason=no-progress" in captured.err
+    assert "status=healthy" not in captured.out
+    assert _retirement_plan_snapshot(repository, record) == before
+    assert not archive_root.exists()
+    assert all(item.path.is_dir() for item in protected)
+
+
+@pytest.mark.parametrize(
+    ("mode", "reason"),
+    (
+        ("dirty", "dirty worktree"),
+        ("branch-drift", "branch ref does not preserve worktree HEAD"),
+        ("ignored-secret", "ignored worktree data is not regenerable (private.key)"),
+    ),
+)
+def test_native_refused_retirement_emits_no_plan_or_mutation(
+    retirement_plan_checkout: tuple[Path, WorktreeRecord, Path, str],
+    capsys: pytest.CaptureFixture[str], mode: str, reason: str,
+) -> None:
+    repository, record, archive_root, head = retirement_plan_checkout
+    if mode == "dirty":
+        (record.path / "owned.txt").write_bytes(b"retain active source edits\n")
+    elif mode == "branch-drift":
+        _retirement_plan_git("-C", str(record.path), "checkout", "--detach", head)
+        _retirement_plan_git("update-ref", f"refs/heads/{record.branch}", "development")
+    else:
+        (record.path / "private.key").write_bytes(b"retain private ignored bytes\n")
+    before = _retirement_plan_snapshot(repository, record)
+
+    decision = automatic_disk_cleanup._remove_worktree_materialization(
+        record, dry_run=True, evidence_archive_root=archive_root,
+    )
+
+    assert decision == automatic_disk_cleanup.LifecycleDecision(False, reason)
+    assert capsys.readouterr().out == ""
+    assert _retirement_plan_snapshot(repository, record) == before
+    assert not archive_root.exists()
+    if mode == "ignored-secret":
+        assert (record.path / "private.key").read_bytes() == b"retain private ignored bytes\n"
+
+
+def test_automatic_cleanup_coverage_requires_native_source_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GLUDD_COVERAGE_SOURCE_ROOT", raising=False)
+    with pytest.raises(CoverageException, match="GLUDD_COVERAGE_SOURCE_ROOT"):
+        Coverage(config_file=str(ROOT / "config" / "coverage_automatic_disk_cleanup.ini"))
+
+
+def test_automatic_cleanup_coverage_keeps_all_three_canonical_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    canonical = tmp_path / "canonical checkout"
+    canonical.mkdir()
+    monkeypatch.setenv("GLUDD_COVERAGE_SOURCE_ROOT", str(canonical))
+    profile = ROOT / "config" / "coverage_automatic_disk_cleanup.ini"
+    measurement = Coverage(config_file=str(profile))
+
+    assert measurement.get_option("run:include") == [
+        str(canonical / "scripts" / name)
+        for name in (
+            "automatic_disk_cleanup.py", "automatic_disk_cleanup_bytecode.py",
+            "staged_snapshot.py",
+        )
+    ]
+    assert measurement.get_option("run:branch") is True
+    assert measurement.get_option("run:parallel") is True
+    assert measurement.get_option("run:patch") == ["subprocess"]
+    assert measurement.get_option("run:omit") == []
+    assert measurement.get_option("report:omit") is None
+    assert "[paths]" not in profile.read_text(encoding="utf-8")
+
+
+def test_automatic_cleanup_coverage_separates_deleted_altered_child_copies(
+    tmp_path: Path,
+) -> None:
+    canonical = tmp_path / "canonical checkout"
+    altered = tmp_path / "altered child checkout"
+    reporting = tmp_path / "unrelated reporting cwd"
+    reporting.mkdir()
+    relative_paths = (
+        Path("scripts/automatic_disk_cleanup.py"),
+        Path("scripts/automatic_disk_cleanup_bytecode.py"),
+        Path("scripts/staged_snapshot.py"),
+    )
+    body = (
+        "def choose(flag):\n"
+        "    if flag:\n"
+        "        return 'child'\n"
+        "    return 'parent'\n"
+    )
+    for relative in relative_paths:
+        for root, content in (
+            (canonical, body),
+            (altered, body + "\ndef altered_unexecuted():\n    return 99\n"),
+        ):
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+        assert (canonical / relative).read_bytes() != (altered / relative).read_bytes()
+
+    child = tmp_path / "child.py"
+    driver = tmp_path / "driver.py"
+    record = tmp_path / "child-record.json"
+    child.write_text(
+        "import json, os, pathlib, runpy, sys\n"
+        "canonical, altered, record, *paths = sys.argv[1:]\n"
+        "for relative in paths:\n"
+        "    runpy.run_path(str(pathlib.Path(canonical) / relative))['choose'](True)\n"
+        "    runpy.run_path(str(pathlib.Path(altered) / relative))['choose'](False)\n"
+        "pathlib.Path(record).write_text(json.dumps({\n"
+        "    'root': os.environ.get('GLUDD_COVERAGE_SOURCE_ROOT'),\n"
+        "    'cwd': str(pathlib.Path.cwd()),\n"
+        "}), encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    driver.write_text(
+        "import os, pathlib, runpy, subprocess, sys\n"
+        "canonical, altered, child, record, *paths = sys.argv[1:]\n"
+        "for relative in paths:\n"
+        "    runpy.run_path(str(pathlib.Path(canonical) / relative))['choose'](False)\n"
+        "subprocess.run([sys.executable, child, canonical, altered, record, *paths],\n"
+        "               cwd=altered, env=os.environ.copy(), check=True, timeout=15)\n",
+        encoding="utf-8",
+    )
+    profile = ROOT / "config" / "coverage_automatic_disk_cleanup.ini"
+    environment = dict(os.environ)
+    environment.update(
+        GLUDD_COVERAGE_SOURCE_ROOT=str(canonical),
+        COVERAGE_FILE=str(tmp_path / ".coverage-native"),
+    )
+    report = tmp_path / "native-coverage.json"
+    actions = (
+        (
+            "run", f"--rcfile={profile}", str(driver), str(canonical), str(altered),
+            str(child), str(record), *(str(path) for path in relative_paths),
+        ),
+        ("combine", f"--rcfile={profile}"),
+        ("json", f"--rcfile={profile}", "-o", str(report)),
+    )
+    for index, action in enumerate(actions):
+        if index == 1:
+            assert json.loads(record.read_text(encoding="utf-8")) == {
+                "root": str(canonical), "cwd": str(altered),
+            }
+            for relative in relative_paths:
+                (altered / relative).unlink()
+        result = subprocess.run(
+            [sys.executable, "-m", "coverage", *action], cwd=reporting,
+            env=environment, capture_output=True, text=True, timeout=30, check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    document = cast(dict[str, object], json.loads(report.read_text(encoding="utf-8")))
+    measured = cast(dict[str, dict[str, object]], document["files"])
+    assert {Path(name).resolve() for name in measured} == {
+        canonical / relative for relative in relative_paths
+    }
+    for details in measured.values():
+        summary = cast(dict[str, int | float], details["summary"])
+        assert summary["num_branches"] == 2
+        assert summary["covered_branches"] == 2
+        assert summary["missing_branches"] == 0
+        assert summary["percent_covered"] == 100.0
+        assert details["missing_lines"] == []
+
+
+@pytest.mark.parametrize("optional_locks", (None, "1"), ids=("absent", "inherited-one"))
+def test_native_materialization_dry_run_preserves_index_with_native_refresh_witness(
+    retirement_plan_checkout: tuple[Path, WorktreeRecord, Path, str],
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    optional_locks: str | None,
+) -> None:
+    """A real ordinary status write must precede the guarded dry-run assertion."""
+    repository, record, archive_root, _head = retirement_plan_checkout
+    if optional_locks is None:
+        monkeypatch.delenv("GIT_OPTIONAL_LOCKS", raising=False)
+        assert "GIT_OPTIONAL_LOCKS" not in os.environ
+    else:
+        monkeypatch.setenv("GIT_OPTIONAL_LOCKS", optional_locks)
+        assert os.environ["GIT_OPTIONAL_LOCKS"] == "1"
+    tracked = record.path / "owned.txt"
+    tracked_bytes = tracked.read_bytes()
+    proof = record.path / ".gate-logs" / "proof.json"
+    proof_bytes = proof.read_bytes()
+    main_index = (repository / ".git" / "index").read_bytes()
+    index = Path(_retirement_plan_git(
+        "-C", str(record.path), "rev-parse", "--git-path", "index",
+    ).strip())
+    refs = _retirement_plan_git("show-ref", "--head")
+    registrations = _retirement_plan_git("worktree", "list", "--porcelain")
+
+    def index_state() -> tuple[bytes, int, int]:
+        metadata = index.stat()
+        return index.read_bytes(), metadata.st_mtime_ns, metadata.st_ino
+
+    metadata = tracked.stat()
+    os.utime(tracked, ns=(metadata.st_atime_ns, metadata.st_mtime_ns + 2_000_000_000))
+    before_witness = index_state()
+    witness = subprocess.run(
+        [
+            "git", "-C", str(record.path), "status", "--porcelain=v1", "-z",
+            "--untracked-files=all",
+        ],
+        cwd=repository, env=dict(os.environ), capture_output=True, text=True,
+        timeout=30, check=False,
+    )
+    assert witness.returncode == 0, witness.stderr
+    assert witness.stdout == ""
+    after_witness = index_state()
+    assert after_witness[0] != before_witness[0]
+    assert after_witness[1:] != before_witness[1:]
+
+    # Recreate the same native stale-stat input without running another status.
+    refreshed_metadata = tracked.stat()
+    os.utime(
+        tracked,
+        ns=(refreshed_metadata.st_atime_ns, refreshed_metadata.st_mtime_ns + 2_000_000_000),
+    )
+    before_owner = index_state()
+    decision = automatic_disk_cleanup._remove_worktree_materialization(
+        record, dry_run=True, evidence_archive_root=archive_root,
+    )
+
+    assert decision == automatic_disk_cleanup.LifecycleDecision(
+        True, "would remove materialization",
+    )
+    assert index_state() == before_owner
+    assert "action=remove-worktree status=dry-run" in capsys.readouterr().out
+    assert _retirement_plan_git("show-ref", "--head") == refs
+    assert _retirement_plan_git("worktree", "list", "--porcelain") == registrations
+    assert (repository / ".git" / "index").read_bytes() == main_index
+    assert tracked.read_bytes() == tracked_bytes
+    assert proof.read_bytes() == proof_bytes
+    assert not archive_root.exists()
+
+
+def test_native_git_adapter_keeps_required_index_lock(
+    retirement_plan_checkout: tuple[Path, WorktreeRecord, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Disabling optional refresh must preserve a competing mandatory add lock."""
+    repository, record, archive_root, _head = retirement_plan_checkout
+    monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "1")
+    tracked = record.path / "owned.txt"
+    tracked.write_bytes(b"explicit native add must honor the lock\n")
+    index = Path(_retirement_plan_git(
+        "-C", str(record.path), "rev-parse", "--git-path", "index",
+    ).strip())
+    lock = index.with_name(index.name + ".lock")
+    with lock.open("xb") as owned_lock:
+        owned_lock.write(b"owned competing lock\n")
+    lock.chmod(0o600)
+    before_index = (index.read_bytes(), index.stat().st_mtime_ns, index.stat().st_ino)
+    before_lock = (
+        lock.read_bytes(), lock.stat().st_mtime_ns, lock.stat().st_ino, lock.stat().st_mode,
+    )
+    refs = _retirement_plan_git("show-ref", "--head")
+
+    result = prune_worktrees_safe._git(
+        "-C", str(record.path), "add", "--", "owned.txt", check=False, timeout=30,
+    )
+
+    assert result.returncode == 128
+    assert "index.lock" in result.stderr
+    assert (index.read_bytes(), index.stat().st_mtime_ns, index.stat().st_ino) == before_index
+    assert (
+        lock.read_bytes(), lock.stat().st_mtime_ns, lock.stat().st_ino, lock.stat().st_mode,
+    ) == before_lock
+    assert _retirement_plan_git("show-ref", "--head") == refs
+    assert (repository / ".git" / "index").is_file()
+    assert not archive_root.exists()
+
+
+def test_native_git_adapter_keeps_explicit_index_mutation(
+    retirement_plan_checkout: tuple[Path, WorktreeRecord, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An authorized fixture add must still acquire and release its native lock."""
+    _repository, record, archive_root, _head = retirement_plan_checkout
+    monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "1")
+    tracked = record.path / "owned.txt"
+    payload = b"explicit native add remains effective\n"
+    tracked.write_bytes(payload)
+    index = Path(_retirement_plan_git(
+        "-C", str(record.path), "rev-parse", "--git-path", "index",
+    ).strip())
+    before_index = index.read_bytes()
+    refs = _retirement_plan_git("show-ref", "--head")
+
+    result = prune_worktrees_safe._git(
+        "-C", str(record.path), "add", "--", "owned.txt", check=False, timeout=30,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert index.read_bytes() != before_index
+    assert _retirement_plan_git("-C", str(record.path), "show", ":owned.txt").encode() == payload
+    assert _retirement_plan_git("show-ref", "--head") == refs
+    assert tracked.read_bytes() == payload
+    assert not index.with_name(index.name + ".lock").exists()
+    assert not archive_root.exists()

@@ -25,15 +25,19 @@ def _find_target_recipe(content: str, target: str) -> str:
 class TestM03PreMergeGateGreen:
     """M03 — merge targets verify gate or CI before merging."""
 
-    def test_development_merge_to_master_checks_ci(self):
+    def test_development_merge_to_master_checks_ci(self) -> None:
         content = compose_makefile(MAKEFILE)
         recipe = _find_target_recipe(content, "development-merge-to-master")
         assert recipe, "M03: development-merge-to-master must exist"
-        assert "merge-ready" in recipe or "require-ci-green" in recipe, (
-            "M03: development-merge-to-master must check merge readiness or require CI green before merging"
-        )
+        assert "outcome=retired" in recipe and "exit 2" in recipe
+        assert "release-promote" in recipe
+        assert "git checkout" not in recipe and "git merge" not in recipe
+        canonical = _find_target_recipe(content, "release-promote")
+        assert "DUAL_TRACK_CI_VALIDATE_ONLY=0" in canonical
+        assert "RELEASE_READINESS_VALIDATE_ONLY=0" in canonical
+        assert canonical.index("DUAL_TRACK_CI_VALIDATE_ONLY=0") < canonical.index("merge --ff-only")
 
-    def test_merge_ready_target_exists(self):
+    def test_merge_ready_target_exists(self) -> None:
         content = compose_makefile(MAKEFILE)
         recipe = _find_target_recipe(content, "merge-ready")
         assert recipe, "M03: merge-ready target must exist"
@@ -41,17 +45,17 @@ class TestM03PreMergeGateGreen:
             "M03: merge-ready must verify clean tree and merge readiness"
         )
 
-    def test_gated_merge_target_exists(self):
+    def test_gated_merge_target_exists(self) -> None:
         content = compose_makefile(MAKEFILE)
         recipe = _find_target_recipe(content, "gated-merge")
         assert recipe, "M03: gated-merge target must exist"
 
-    def test_ship_async_checks_gate_before_merge(self):
+    def test_ship_async_checks_gate_before_merge(self) -> None:
         content = compose_makefile(MAKEFILE)
         recipe = _find_target_recipe(content, "ship-async")
         assert recipe, "M03: ship-async target must exist"
 
-    def test_feature_done_runs_tests_before_merge(self):
+    def test_feature_done_runs_tests_before_merge(self) -> None:
         content = compose_makefile(MAKEFILE)
         recipe = _find_target_recipe(content, "feature-done")
         assert recipe, "M03: feature-done target must exist"

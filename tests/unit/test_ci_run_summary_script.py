@@ -549,3 +549,243 @@ def test_invalid_summary_inputs_fail_before_any_fetch(
     monkeypatch.setattr(module.subprocess, "run", lambda *_args, **_kwargs: pytest.fail("no lookup"))
     assert module.main(arguments) == 2
     assert "CI_RUN_SUMMARY_FETCH_START" not in capsys.readouterr().err
+
+
+def _summary_prompt(stderr: str) -> str:
+    lines = [
+        line for line in stderr.splitlines()
+        if line.startswith("AGENT_NEXT target=ci-run-summary ")
+    ]
+    assert len(lines) == 1, stderr
+    assert stderr.splitlines()[-1] == lines[0]
+    assert "authority=diagnostic-only" in lines[0]
+    assert "gate_evidence=false" in lines[0] and "release_ready=false" in lines[0]
+    return lines[0]
+
+
+def test_legacy_success_guidance_does_not_claim_immutable_run_validation(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script()
+    payload = _completed_run_payload()
+    payload["status"], payload["conclusion"] = "in_progress", None
+    assert _run(module, monkeypatch, payload) == 0
+    captured = capsys.readouterr()
+    assert "1 passed" in captured.out and "RUN 123" not in captured.out
+    prompt = _summary_prompt(captured.err)
+    for field in (
+        "outcome=passed", "native_status=0", "run_id=unknown", "head_sha=unknown",
+        "identity=unverified", "scope=legacy-listed-jobs", "next_owner=pipeline-status",
+    ):
+        assert field in prompt
+    assert "a" * 40 not in prompt
+
+
+@pytest.mark.parametrize(
+    ("raw_payload", "message"),
+    [
+        ("not-json", "invalid JSON"),
+        ("[]", "expected a JSON object"),
+        ('{"jobs": {}}', "jobs must be a JSON array"),
+        ('{"jobs": [null]}', "every job must be a JSON object"),
+        ('{"jobs": []}', "No jobs found in CI run."),
+    ],
+)
+def test_stdin_lookup_errors_never_emit_success_guidance(
+    raw_payload: str, message: str,
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script()
+    monkeypatch.setattr(sys, "stdin", io.StringIO(raw_payload))
+    monkeypatch.setattr(module.subprocess, "run", lambda *_args, **_kwargs: pytest.fail("no lookup"))
+    assert module.main() == 1
+    captured = capsys.readouterr()
+    assert message in captured.out + captured.err
+    prompt = _summary_prompt(captured.err)
+    assert "outcome=lookup-error" in prompt and "native_status=1" in prompt
+    assert "next_owner=ci-view" in prompt and "no_unchanged_rerun=true" in prompt
+    assert "outcome=passed" not in prompt and "head_sha=unknown" in prompt
+
+
+def test_stdin_read_failure_retains_status_and_emits_only_failure_guidance(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    class UnreadableInput(io.StringIO):
+        def read(self, size: int | None = -1) -> str:
+            raise OSError("owned unreadable stdin")
+
+    module = _load_script()
+    monkeypatch.setattr(sys, "stdin", UnreadableInput())
+    assert module.main() == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "failed to read JSON from stdin: owned unreadable stdin" in captured.err
+    prompt = _summary_prompt(captured.err)
+    assert "outcome=lookup-error" in prompt and "native_status=1" in prompt
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["--validate-only"],
+        ["--run", "bad\nprivate-invalid-input"],
+        ["--run", "123", "--repo", "bad\nprivate-invalid-input"],
+    ],
+)
+def test_script_refusal_guidance_omits_unvalidated_caller_text(
+    arguments: list[str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script()
+    monkeypatch.setattr(module.subprocess, "run", lambda *_args, **_kwargs: pytest.fail("no lookup"))
+    assert module.main(arguments) == 2
+    captured = capsys.readouterr()
+    assert captured.out == "" and "CI_RUN_SUMMARY_FETCH_START" not in captured.err
+    prompt = _summary_prompt(captured.err)
+    for field in (
+        "outcome=refused", "native_status=2", "head_sha=unknown",
+        "scope=offline-inputs", "next_owner=ci-run-summary",
+    ):
+        assert field in prompt
+    assert "private-invalid-input" not in captured.err
+
+
+@pytest.mark.parametrize("jobs", [{}, [None], []], ids=["not-array", "non-object-job", "empty-terminal"])
+def test_remote_job_schema_failure_retains_only_validated_run_identity(
+    jobs: object, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script()
+    payload = _completed_run_payload()
+    payload["jobs"] = jobs
+
+    def fetch(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload), stderr="")
+
+    monkeypatch.setattr(module.subprocess, "run", fetch)
+    assert module.main(["--run", "123"]) == 1
+    captured = capsys.readouterr()
+    assert "PASS " not in captured.out
+    prompt = _summary_prompt(captured.err)
+    for field in (
+        "outcome=lookup-error", "native_status=1", "run_id=123", "head_sha=" + "a" * 40,
+        "identity=validated-run-id-sha", "next_owner=ci-view",
+    ):
+        assert field in prompt
+
+
+def test_bound_stdin_timing_guidance_retains_its_distinct_source_scope(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script()
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(_timing_payload())))
+    monkeypatch.setattr(module.subprocess, "run", lambda *_args, **_kwargs: pytest.fail("no lookup"))
+    assert module.main(["--shard-timings"]) == 0
+    captured = capsys.readouterr()
+    report = _timing_report(captured.out)
+    assert len(cast(list[dict[str, object]], report["shards"])) == 8
+    prompt = _summary_prompt(captured.err)
+    for field in (
+        "outcome=passed", "native_status=0", "run_id=123", "repository=unknown",
+        "head_sha=" + "a" * 40, "identity=validated-stdin-id-sha",
+        "scope=stdin-listed-jobs-and-shard-timings", "next_owner=pipeline-status",
+    ):
+        assert field in prompt
+
+
+def test_unknown_timing_guidance_does_not_rewrite_successful_job_status(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    payload = _timing_payload()
+    cast(list[dict[str, object]], payload["jobs"])[2]["steps"] = []
+    result, calls = _run_timing_payload(_load_script(), monkeypatch, payload)
+    captured = capsys.readouterr()
+    rows = cast(list[dict[str, object]], _timing_report(captured.out)["shards"])
+    assert result == 0 and len(calls) == 1
+    assert rows[0]["state"] == "unknown" and rows[0]["test_step_seconds"] is None
+    prompt = _summary_prompt(captured.err)
+    assert "outcome=passed" in prompt and "native_status=0" in prompt
+    assert "next_owner=pipeline-status" in prompt
+
+
+def test_guidance_waits_until_required_timing_output_finishes(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script()
+
+    def interrupted_output(_payload: object, _run_id: str) -> None:
+        raise OSError("owned timing output interruption")
+
+    monkeypatch.setattr(module, "_print_shard_timings", interrupted_output)
+    with pytest.raises(OSError, match="owned timing output interruption"):
+        _run_timing_payload(module, monkeypatch, _timing_payload())
+    captured = capsys.readouterr()
+    assert "10 passed" in captured.out
+    assert "AGENT_NEXT target=ci-run-summary " not in captured.err
+
+
+def test_unknown_remote_status_does_not_claim_an_observed_job_failure(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script()
+    payload = _completed_run_payload()
+    payload.pop("status")
+
+    def fetch(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload), stderr="")
+
+    monkeypatch.setattr(module.subprocess, "run", fetch)
+    assert module.main(["--run", "123"]) == 1
+    captured = capsys.readouterr()
+    assert "1 passed" in captured.out
+    prompt = _summary_prompt(captured.err)
+    assert "outcome=lookup-error" in prompt and "native_status=1" in prompt
+    assert "outcome=failed" not in prompt and "outcome=passed" not in prompt
+
+
+@pytest.mark.parametrize(("conclusion", "expected_status"), [("success", 0), ("failure", 1)])
+def test_advisory_stderr_failure_preserves_the_existing_summary_result(
+    conclusion: str, expected_status: int,
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    class UnwritableAdvice(io.StringIO):
+        def write(self, text: str) -> int:
+            raise OSError("owned advisory stderr failure")
+
+    module = _load_script()
+    payload = _completed_run_payload()
+    cast(list[dict[str, object]], payload["jobs"])[0]["conclusion"] = conclusion
+    monkeypatch.setattr(sys, "stderr", UnwritableAdvice())
+    assert _run(module, monkeypatch, payload) == expected_status
+    output = capsys.readouterr().out
+    assert ("1 passed" if expected_status == 0 else "1 failed") in output
+
+
+@pytest.mark.parametrize(("conclusion", "expected_status"), [("success", 0), ("failure", 1)])
+def test_closed_standard_advice_stream_preserves_the_completed_summary_result(
+    conclusion: str, expected_status: int,
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script()
+    payload = _completed_run_payload()
+    cast(list[dict[str, object]], payload["jobs"])[0]["conclusion"] = conclusion
+    closed_advice = io.StringIO()
+    closed_advice.close()
+    monkeypatch.setattr(sys, "stderr", closed_advice)
+    assert _run(module, monkeypatch, payload) == expected_status
+    output = capsys.readouterr().out
+    assert ("1 passed" if expected_status == 0 else "1 failed") in output
+
+
+@pytest.mark.parametrize("source", ["remote-start", "invalid-stdin"])
+def test_closed_original_error_stream_remains_outside_advisory_handling(
+    source: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script()
+    closed_errors = io.StringIO()
+    closed_errors.close()
+    monkeypatch.setattr(sys, "stderr", closed_errors)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("not-json"))
+    monkeypatch.setattr(module.subprocess, "run", lambda *_args, **_kwargs: pytest.fail("no lookup"))
+    with pytest.raises(ValueError, match="I/O operation on closed file"):
+        module.main(["--run", "123"] if source == "remote-start" else [])
+    captured = capsys.readouterr()
+    assert captured.out == "" and "AGENT_NEXT target=ci-run-summary " not in captured.err

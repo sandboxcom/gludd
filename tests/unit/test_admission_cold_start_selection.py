@@ -113,9 +113,27 @@ def test_admission_contracts_reject_mutated_promoted_selectors(
         replacement = suffix
     elif mutation == "duplication":
         replacement = promoted_selector + " " + selected
-    else:
+    elif "::" in promoted_selector:
         assert mutation == "widening"
         replacement = promoted_selector.split("::", 1)[0] + suffix
+    else:
+        assert mutation == "widening"
+        # The new whole-file routes need active narrowing, not file-to-file identity.
+        narrowing = {
+            "tests/unit/test_ansible_ee_locked_consumer.py": (
+                "tests/unit/test_ansible_ee_locked_consumer.py::"
+                "test_native_create_consumes_sixteen_local_metadata_fixtures_once"
+            ),
+            "tests/unit/test_observed_command.py": (
+                "tests/unit/test_observed_command.py::"
+                "test_running_publication_requires_armed_and_restored_signal_handlers"
+            ),
+            "tests/unit/test_status_heartbeat_terminal.py": (
+                "tests/unit/test_status_heartbeat_terminal.py::"
+                "test_opted_in_continuous_heartbeat_stops_after_exact_complete_terminal_result"
+            ),
+        }
+        replacement = narrowing[promoted_selector] + suffix
     mutated_stanza = owner_stanza.replace(selected, replacement, 1)
     assert mutated_stanza != owner_stanza
     monkeypatch.setattr(

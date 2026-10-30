@@ -1,5 +1,43 @@
 # Release Packaging Contract
 
+## Fixedf1 clean builds and local artifact smoke (2026-10-27 UTC)
+
+Normal hook checkpoint f1aa82455ca1f78fc62ca7d09140af712dc37d70 has fresh
+131210 selected/131234 collected,24 deselected/0 errors,47.98s/native53.551s:
+test-count/20261026T232349Z-10864-561f670f.json. Native mutation passes69.338s:
+commit-transaction/20261026T232334Z-9628-da7b6373.json. Its prior focused
+acceptance/coverage and original skips below retain their exact scopes.
+
+At that clean fixed SHA, native macOS build passes62.112s using installed
+Python3.12.14/PyInstaller6.22.3/project UV0.13.1. The real local hook is processed;
+the complete raw build has zero WARNING/ERROR/CRITICAL messages and no ntdll.
+Receipt: v012-macos-clean-hook/v012-macos-clean-hook-f1aa824-20261026.json.
+Native executable outside-checkout version/help passes11.089s; read-only DMG
+checksum/mounted-byte comparison/version/help/unmount passes16.418s, at
+v012-macos-smoke/v012-macos-{native-smoke,dmg-smoke}-f1aa824-20261026.json.
+Mac tar creation/checksum/extracted-byte comparison/outside version/help passes
+14.831s; real wheel/sdist builds, separate fresh virtualenv installs, actual
+installed import origins and outside-checkout version/help pass23.772s on3.11.14,
+at v012-additional-artifacts/v012-{macos-tar,python-distributions}-f1aa824-20261026.json.
+
+| Fixedf1 diagnostic artifact | SHA256 |
+| --- | --- |
+| Mac executable | f9192092cf63e6bbcf0db45e0722ab425ac911b79e173f25232d2732cc4dc699 |
+| Mac ARM64 DMG | cdf1c526b8f2f2f98021d8f648aa08223e86273948b665bea4104aaa3c6a4bc4 |
+| Mac ARM64 tar | 8c1532fe72256015ac165356daeb52ec669e852453ff9bcc0c6a249ec7cba408 |
+| Wheel | a75679232c77d98c69caf0deb5de8ed146181740ddc1e4b5758e5d794dee8d3b |
+| Sdist | 00cade393288f1746159f517998492b5dcfec646bf06709fb1724b87f66e748d |
+
+Binary/DMG remain in ignored dist. The owned tar/Python directory was atomically
+moved into .gate-logs/release-artifacts-f1aa82455; all checksums were independently
+reverified after relocation, without changing bytes or ignore rules. Temporary
+virtualenvs/stages and the mounted DMG were cleaned; source stayed fixedf1 and
+returned clean. The manual REVIEW.txt there is dated history, including its then
+pending operator inputs, not a generated current observation. These local scopes
+are diagnostic artifacts, not final Node-source/Windows/Linux/container/EE,
+canonical hosted/tag publication, provenance or deployed-byte acceptance.
+No85/75 LINE AND BRANCH, cleanup, ZDD or release-matrix requirement changes.
+
 ## Scope
 
 Gludd release inputs are repository-owned build artifacts. The Debian control
@@ -151,3 +189,87 @@ cross-platform workflow coverage. The adversarial matrix test changes both
 internal identities and regenerates valid checksums, proving that outer naming
 cannot bypass the payload check. Release-wide gate and platform CI remain the
 authority for promotion.
+
+## Platform-local filelock ctypes analysis, 2026-10-26 UTC
+
+Native Darwin arm64 compilation at source
+`c7c01337e8482927eb74c87fee34059a3d5d45f3` uses Python3.12.14 and
+PyInstaller6.22.3. Its completed executable/DMG build and outside-checkout
+smokes remain evidence for those original bytes. The retained build log emits
+`Library ntdll required via ctypes not found`. Installed filelock4.0.12 loads
+`ntdll` at `filelock/_windows.py:58`, inside its `sys.platform == "win32"`
+branch. Its package initializer still imports `WindowsFileLock` on POSIX, so
+the Windows module and the existing spec comment must remain.
+
+PyInstaller's supported `excludedimports` is local to the hooked importer.
+The narrow `hook-filelock._windows.py` omits only that dead POSIX ctypes edge;
+on Windows it omits nothing. The relative `scripts/pyinstaller_hooks`
+registration preserves existing spec path conventions, all other ctypes
+consumers, Windows native locking, observer loading and PID ownership.
+The exact TDD registration names this required hook basename and its actual
+runpy tests; it grants no typing, coverage, frozen-runtime or release exemption.
+
+The unchanged private minimal consumer emits one actual ntdll analysis warning
+before the hook and zero with it. Both native frozen binaries preserve public
+Windows symbols, real POSIX contention/acquire-release and dynamic ctypes
+reachability, with no hidden imports or application modules. Native receipts:
+`.gate-logs/observed/ntdll-minimal-baseline/ntdll-minimal-baseline-nativeuv-c7c0133-20261026.json`
+(exit0/6.479s) and
+`.gate-logs/observed/ntdll-minimal-comparison/ntdll-minimal-comparison-c7c0133-20261026.json`
+(exit0/6.242s). Initial UV identity validation failed before building
+(exit2/0.561s). Both valid private logs separately retain two UV option warnings
+because `--no-sync` is redundant with `--no-project`; they are fixture setup
+diagnostics, and neither comparison is claimed globally warning-free.
+
+The module docstring and `excludedimports: list[str]` annotation add
+metadata to the tested private hook; its platform predicate and list values are
+unchanged. New source acceptance, exact-file 85/75 line/branch coverage on both
+installed runtimes, fresh full Gludd compilation/smoke and genuine Windows
+artifact acceptance remain separate. Existing Linux915 graph evidence remains
+Linux-only. No serving digest, process or published asset changes during this
+build-only repair; rollback selects the preceding build inputs and immutable
+serving release.
+
+Related firsthand reports
+[PyInstaller #1801](https://github.com/pyinstaller/pyinstaller/issues/1801)
+(2016, build success followed by a pythonnet runtime failure) and
+[PyInstaller #9381](https://github.com/pyinstaller/pyinstaller/issues/9381)
+(2026, Windows DLL search precedence) support those proof boundaries. Neither
+establishes the cause of this filelock4.0.12 bare-ntdll warning; the retained
+installed source and native baseline/comparison establish that attribution.
+
+The three new platform cases first fail only on the original empty hookspath:
+3FAIL0.56s/native1.722s at v012-filelock-hook-red/
+v012-filelock-hook-red311-8d2c97e-20261026.json. The initial watcher ownership
+refusal starts no test and creates no receipt; native work-item support then
+declares S98.5's direct S98.4 dependency. No observation JSON is hand-edited.
+
+The complete established owner passes8, including all five original bodies.
+Direct strict checks of the actual required hook filename and test file pass
+on EACH installed runtime. Initial Ruff/environment/resource/task checks pass
+native11.611s; resource inventory remains265. Staged secret/clone/TDD/docstring/
+line guards pass7.753s with zero new clones. The exact TDD entry explains the
+required non-importable basename; native TDD reports no remaining checkable
+staged source. Actual coverage and frozen acceptance retain their own authority.
+
+All16 complete packaging/TDD owners pass211 with6 original skips on EACH:
+Python3.11:9.44s/native10.742s and Python3.12:11.63s/native15.869s. Receipts are
+v012-filelock-hook-receiving/v012-filelock-hook-receiving{311,312}-8d2c97e-20261026.json.
+Each trace has437events/217complete pairs and zero issues, unfinished or failure
+reports. The six unchanged TestSystemdUnit cases require the generated
+dist/general-ludd.service, absent in this receiving fixture; no new skip lands.
+
+Native exact-file coverage passes8 EACH and measures only the real hook:
+2/2 statements,100percent lines, zero excluded lines and zero branch arcs.
+The three platform cases exercise both predicate values. Existing85aggregate/
+75each line AND branch floors remain unchanged. Receipts are coverage-files/
+20261026T231340Z-1915-0d3ca1af.json (3.106s) and
+20261026T231341Z-1916-0a6d9ce1.json (4.477s); JSON reports are
+.gate-logs/coverage-filelock-hook-{311,312}-8d2c97e-20261026.json.
+The native audits analyze exactly one file and retain all thresholds.
+
+Independent source review approves only the installed-API-local hook,
+registration and original-test retention. Normal guarded collection/commit,
+fresh clean-source full Gludd Mac compilation and outside-checkout executable/
+DMG smoke remain next. No build-warning, Windows, Linux, full-gate, hosted,
+deployment or stable-release success is inferred from these focused results.

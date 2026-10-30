@@ -28,6 +28,8 @@ from scripts.makefile_layout import compose_makefile
 if TYPE_CHECKING:
     import active_work_status as inventory_owner
     import kill_owned_gate as cleanup_owner
+    import resource_arbiter as resource_owner
+    import start_gate_background as background_owner
     import task_watchdog as watchdog
     from task_watchdog import (
         _parse_etime,
@@ -43,6 +45,8 @@ if TYPE_CHECKING:
 else:
     from scripts import active_work_status as inventory_owner
     from scripts import kill_owned_gate as cleanup_owner
+    from scripts import resource_arbiter as resource_owner
+    from scripts import start_gate_background as background_owner
     from scripts import task_watchdog as watchdog
     from scripts.task_watchdog import (
         _parse_etime,
@@ -944,6 +948,328 @@ def test_terminal_observer_without_live_owner_does_not_disable_owned_cleanup(
         killed_file=str(tmp_path / "kills.json"),
     ) == {"stale": 1, "killed": 1}
     assert sent == [(88888, signal.SIGTERM)]
+
+
+def _publish_waiter_gate_state(
+    root: Path, gate: cleanup_owner.ProcessRecord, *, finished: bool = False,
+) -> dict[str, object]:
+    """Use the native producer's identity, command, payload and state writer."""
+    paths = background_owner.GatePaths.for_root(root)
+    (root / "Makefile").write_text("gate:\n\t@:\n", encoding="utf-8")
+    identity = background_owner.GateIdentity("bound-waiter-run", gate.pid, gate.started_at, gate.pid, gate.pid)
+    payload = background_owner._state_payload(
+        identity=identity, paths=paths, namespace=resource_owner.project_namespace(root),
+        log_path=paths.log_dir / "gate-bound-waiter.log",
+        command=background_owner.gate_command("make", root / "Makefile"), timeout_seconds=7200,
+    )
+    background_owner._atomic_write_json(paths.state_file, payload)
+    if finished:
+        updates = {"state": "finished", "finished_at": background_owner._utc_now(), "termination_reason": "gate-exited"}
+        assert background_owner._merge_state(paths, identity, updates)
+        payload.update(updates)
+    return payload
+
+
+def _native_start_views(root: Path, gate: cleanup_owner.ProcessRecord) -> cleanup_owner.ProcessRecord:
+    """Pass one padded native timestamp through both real observation adapters."""
+    raw = "Thu Oct  1 07:00:00 2026"
+    result = subprocess.CompletedProcess(["/bin/ps"], 0, stdout="  " + raw + "\n", stderr="")
+    with patch.object(subprocess, "run", return_value=result):
+        state, producer_start = background_owner._probe_pid_started_at(gate.pid)
+    assert state == "present" and producer_start == raw
+    producer_gate = cleanup_owner.ProcessRecord(
+        gate.pid, gate.ppid, 400, gate.command, pgid=gate.pid, started_at=producer_start,
+    )
+    _publish_waiter_gate_state(root, producer_gate)
+    parsed = cleanup_owner._parse_ps_line(
+        f"{gate.pid} {gate.ppid} {gate.pid} {raw} {gate.command}"
+    )
+    assert parsed is not None and parsed.started_at != producer_start
+    assert cleanup_owner._normalized_start_identity(parsed.started_at) == (
+        cleanup_owner._normalized_start_identity(producer_start)
+    )
+    return parsed
+
+
+@pytest.fixture
+def _producer_waiter_poll(
+    _gate_waiter_poll: OwnedPoll, monkeypatch: pytest.MonkeyPatch,
+) -> tuple[OwnedPoll, dict[str, object]]:
+    monkeypatch.setattr(background_owner, "_process_is_terminal", lambda _pid: False)
+    monkeypatch.setattr(background_owner, "_process_state", lambda _identity: "owned")
+    root, records, _cwds, _deadlines, _sent = _gate_waiter_poll
+    gate = records[2]
+    payload = _publish_waiter_gate_state(root, gate)
+    records[2] = cleanup_owner.ProcessRecord(
+        gate.pid, gate.ppid, 400, shlex.join(background_owner.gate_command("make", root / "Makefile")),
+        pgid=gate.pid, started_at=gate.started_at,
+    )
+    (root / ".gate-background.pid").unlink()
+    return _gate_waiter_poll, payload
+
+
+@pytest.fixture
+def _gate_waiter_poll(_owned_poll: OwnedPoll) -> OwnedPoll:
+    root, records, cwds, _deadlines, _sent = _owned_poll
+    stamp = records[0].started_at
+    records.extend([
+        cleanup_owner.ProcessRecord(52000, 1, 400, "make gate-background-observed", started_at=stamp),
+        cleanup_owner.ProcessRecord(
+            52001, 52000, 400, f"make -f {root}/Makefile gate gludd_watchdog_owned_gate=1", started_at=stamp,
+        ),
+        cleanup_owner.ProcessRecord(
+            52002, 52000, 400,
+            "/Library/Developer/CommandLineTools/usr/bin/make --no-print-directory "
+            "gate-wait GATE_EXPECTED_PID=52001 GATE_POLL_INTERVAL=60", started_at=stamp,
+        ),
+        cleanup_owner.ProcessRecord(52003, 52002, 400, "/bin/sh -c native-wait-loop", started_at=stamp),
+        cleanup_owner.ProcessRecord(52004, 52003, 400, "sleep 60", started_at=stamp),
+    ])
+    cwds.update({record.pid: root for record in records})
+    (root / ".gate-background.pid").write_text("52001", encoding="utf-8")
+    return _owned_poll
+
+
+@pytest.mark.parametrize("gate_marker", ["pid", "lock"])
+@pytest.mark.parametrize("make_command", [
+    "make", "gmake", "/Library/Developer/CommandLineTools/usr/bin/make",
+])
+def test_live_gate_bound_waiter_protects_the_complete_tree(
+    tmp_path: Path, _gate_waiter_poll: OwnedPoll, gate_marker: str, make_command: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A native bound waiter is a sibling of the gate, not its descendant."""
+    root, records, _cwds, deadlines, sent = _gate_waiter_poll
+    waiter = records[3]
+    records[3] = cleanup_owner.ProcessRecord(
+        waiter.pid, waiter.ppid, 400,
+        f"{make_command} --no-print-directory gate-wait GATE_EXPECTED_PID=52001 GATE_POLL_INTERVAL=60",
+        started_at=waiter.started_at,
+    )
+    if gate_marker == "lock":
+        (root / ".gate-background.pid").unlink()
+        (root / ".gate-logs").mkdir()
+        (root / ".gate-logs/gate-run.lock").write_text('{"pid": 52001}', encoding="utf-8")
+    assert watchdog._protected_pids(records, (root,)) == {52000, 52001, 52002, 52003, 52004}
+    assert run_once(
+        deadlines_file=str(deadlines), stale_file=str(tmp_path / "missing-stale"),
+        killed_file=str(tmp_path / "kills.json"),
+    ) == {"stale": 1, "killed": 1}
+    assert sent == [(88888, signal.SIGTERM)]
+    assert {record.pid for record in records} == {52000, 52001, 52002, 52003, 52004}
+    gate = next(record for record in records if record.pid == 52001)
+    _publish_waiter_gate_state(root, gate, finished=True)
+    records.remove(gate)
+    (root / ".gate-background.pid").unlink(missing_ok=True)
+    (root / ".gate-logs/gate-run.lock").unlink(missing_ok=True)
+    assert watchdog._protected_pids(records, (root,)) == {52000, 52002, 52003, 52004}
+    assert sent == [(88888, signal.SIGTERM)]
+    native_gate = _native_start_views(root, gate)
+    records.append(native_gate)
+    assert watchdog._protected_pids(records, (root,)) == {52000, 52001, 52002, 52003, 52004}
+    records.remove(native_gate)
+    records.append(cleanup_owner.ProcessRecord(
+        native_gate.pid, native_gate.ppid, 400, "(make)",
+        pgid=native_gate.pgid, started_at=native_gate.started_at,
+    ))
+    _cwds[native_gate.pid] = None
+    monkeypatch.setattr(background_owner, "_process_is_terminal", lambda _pid: True)
+    monkeypatch.setattr(background_owner, "_process_state", lambda _identity: "gone")
+    assert {52000, 52002, 52003, 52004} <= watchdog._protected_pids(records, (root,))
+    assert sent == [(88888, signal.SIGTERM)]
+
+
+@pytest.mark.parametrize("boundary", [
+    "no-marker", "dead-gate", "wrong-pid", "unbound", "duplicate", "zero-pid",
+    "alternate-assignment", "extra-goal", "foreign-makefile", "not-make", "bad-quote",
+    "foreign-cwd", "unknown-cwd", "foreign-gate-cwd", "not-gate",
+])
+def test_gate_waiter_protection_requires_native_live_binding(
+    tmp_path: Path, _gate_waiter_poll: OwnedPoll, boundary: str,
+) -> None:
+    root, records, cwds, _deadlines, sent = _gate_waiter_poll
+    waiter = records[3]
+    command = {
+        "wrong-pid": "make gate-wait GATE_EXPECTED_PID=99999",
+        "unbound": "make gate-wait",
+        "duplicate": "make gate-wait GATE_EXPECTED_PID=52001 GATE_EXPECTED_PID=52001",
+        "zero-pid": "make gate-wait GATE_EXPECTED_PID=0",
+        "alternate-assignment": "make gate-wait GATE_EXPECTED_PID=52001 GATE_EXPECTED_PID:=99999",
+        "extra-goal": "make gate-wait gate GATE_EXPECTED_PID=52001",
+        "foreign-makefile": "make -f /foreign/Makefile gate-wait GATE_EXPECTED_PID=52001",
+        "not-make": "printf make gate-wait GATE_EXPECTED_PID=52001",
+        "bad-quote": 'make gate-wait GATE_EXPECTED_PID=52001 "',
+    }.get(boundary, waiter.command)
+    records[3] = cleanup_owner.ProcessRecord(
+        waiter.pid, waiter.ppid, 400, command, started_at=waiter.started_at,
+    )
+    if boundary == "no-marker":
+        (root / ".gate-background.pid").unlink()
+    elif boundary == "dead-gate":
+        records.remove(records[2])
+    elif boundary == "foreign-cwd":
+        cwds[waiter.pid] = tmp_path / "foreign"
+    elif boundary == "unknown-cwd":
+        cwds[waiter.pid] = None
+    elif boundary == "foreign-gate-cwd":
+        cwds[52001] = tmp_path / "foreign"
+    elif boundary == "not-gate":
+        gate = records[2]
+        records[2] = cleanup_owner.ProcessRecord(
+            gate.pid, gate.ppid, 400, "make test-unit", started_at=gate.started_at,
+        )
+    assert watchdog._protected_pids(records, (root,)).isdisjoint({52002, 52003, 52004})
+    assert sent == []
+
+
+
+@pytest.mark.parametrize("phase", ["running", "finished", "cancelled", "marker-retained", "occupied"])
+def test_native_gate_producer_protects_the_waiter_through_terminal_drain(
+    tmp_path: Path, _producer_waiter_poll: tuple[OwnedPoll, dict[str, object]], phase: str,
+) -> None:
+    poll, _payload = _producer_waiter_poll
+    root, records, _cwds, deadlines, sent = poll
+    gate = records[2]
+    if phase != "running" and phase != "occupied":
+        _publish_waiter_gate_state(root, gate, finished=True)
+    if phase != "occupied":
+        records.remove(gate)
+    if phase == "marker-retained":
+        (root / ".gate-background.pid").write_text(str(gate.pid), encoding="utf-8")
+    if phase == "cancelled":
+        cleanup_owner._publish_terminal_status(root, success=True, survivor_pids=[])
+        assert "ABORTED" in (root / ".gate-status").read_text(encoding="utf-8")
+    expected = {52000, 52002, 52003, 52004} | ({52001} if phase == "occupied" else set())
+    assert watchdog._protected_pids(records, (root,)) == expected
+    assert run_once(
+        deadlines_file=str(deadlines), stale_file=str(tmp_path / "missing-stale"),
+        killed_file=str(tmp_path / "kills.json"),
+    ) == {"stale": 1, "killed": 1}
+    assert sent == [(88888, signal.SIGTERM)]
+    assert {record.pid for record in records} == expected
+
+
+@pytest.mark.parametrize("boundary", [
+    "missing", "malformed", "root", "namespace", "pid", "schema", "start", "session",
+    "command-type", "noncanonical", "occupied-start", "occupied-cwd", "occupied-role",
+    "occupied-group", "waiter-cwd",
+])
+def test_native_gate_producer_cannot_override_missing_or_changed_association(
+    tmp_path: Path, _producer_waiter_poll: tuple[OwnedPoll, dict[str, object]], boundary: str,
+) -> None:
+    poll, payload = _producer_waiter_poll
+    root, records, cwds, _deadlines, sent = poll
+    gate = records[2]
+    if not boundary.startswith("occupied-"):
+        records.remove(gate)
+    if boundary == "root":
+        payload["project_root"] = str(tmp_path / "foreign")
+    elif boundary == "namespace":
+        payload["project_namespace"] = "foreign-project"
+    elif boundary == "pid":
+        payload["pid"] = 99999
+    elif boundary == "schema":
+        payload["schema_version"] = 99
+    elif boundary == "start":
+        payload["pid_started_at"] = ""
+    elif boundary == "session":
+        payload["session_id"] = 99999
+    elif boundary == "command-type":
+        payload["command"] = "make gate"
+    elif boundary == "noncanonical":
+        payload["command"] = ["make", "gate"]
+    elif boundary == "occupied-start":
+        records[2] = cleanup_owner.ProcessRecord(
+            gate.pid, gate.ppid, 400, gate.command, pgid=gate.pid, started_at="replacement-start",
+        )
+    elif boundary == "occupied-cwd":
+        cwds[gate.pid] = tmp_path / "foreign"
+    elif boundary == "occupied-role":
+        records[2] = cleanup_owner.ProcessRecord(
+            gate.pid, gate.ppid, 400, "make test-unit", pgid=gate.pid, started_at=gate.started_at,
+        )
+    elif boundary == "occupied-group":
+        records[2] = cleanup_owner.ProcessRecord(
+            gate.pid, gate.ppid, 400, gate.command, pgid=99999, started_at=gate.started_at,
+        )
+    elif boundary == "waiter-cwd":
+        cwds[52002] = tmp_path / "foreign"
+    state_file = background_owner.GatePaths.for_root(root).state_file
+    background_owner._atomic_write_json(state_file, payload)
+    if boundary == "missing":
+        state_file.unlink()
+    elif boundary == "malformed":
+        background_owner._atomic_write(state_file, "{broken")
+    assert watchdog._protected_pids(records, (root,)).isdisjoint({52002, 52003, 52004})
+    assert sent == []
+
+
+def test_native_gate_association_is_reread_before_any_waiter_signal(
+    monkeypatch: pytest.MonkeyPatch, _producer_waiter_poll: tuple[OwnedPoll, dict[str, object]],
+) -> None:
+    poll, payload = _producer_waiter_poll
+    root, records, _cwds, _deadlines, sent = poll
+    records.remove(records[2])
+    state_file = background_owner.GatePaths.for_root(root).state_file
+    state_file.unlink()
+    calls = 0
+
+    def snapshot(_root: Path) -> list[cleanup_owner.ProcessRecord]:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            background_owner._atomic_write_json(state_file, payload)
+        return list(records)
+
+    monkeypatch.setattr(cleanup_owner, "_records", snapshot)
+    waiter = next(record for record in records if record.pid == 52002)
+    with pytest.raises(ValueError, match="native protection changed"):
+        watchdog._terminate_verified(waiter, (root,))
+    assert calls >= 2 and sent == []
+
+
+
+def test_native_waiter_start_tokens_use_the_actual_adapter_whitespace_boundary(
+    _producer_waiter_poll: tuple[OwnedPoll, dict[str, object]],
+) -> None:
+    poll, _payload = _producer_waiter_poll
+    root, records, _cwds, _deadlines, sent = poll
+    records[2] = _native_start_views(root, records[2])
+    assert watchdog._protected_pids(records, (root,)) == {52000, 52001, 52002, 52003, 52004}
+    assert sent == []
+
+
+@pytest.mark.parametrize(("terminal", "native_state", "outcome"), [
+    (True, "gone", "protected"),
+    (True, "owned", "protected"),
+    (None, "unknown", "refused"),
+    (True, "unknown", "refused"),
+    (True, "reused", "unassociated"),
+    (False, "owned", "unassociated"),
+])
+def test_unreaped_gate_waiter_uses_native_terminal_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    _producer_waiter_poll: tuple[OwnedPoll, dict[str, object]],
+    terminal: bool | None, native_state: str, outcome: str,
+) -> None:
+    poll, _payload = _producer_waiter_poll
+    root, records, cwds, _deadlines, sent = poll
+    gate = records[2]
+    records[2] = cleanup_owner.ProcessRecord(
+        gate.pid, gate.ppid, 400, "(make)", pgid=gate.pgid, started_at=gate.started_at,
+    )
+    cwds[gate.pid] = None
+    monkeypatch.setattr(background_owner, "_process_is_terminal", lambda _pid: terminal)
+    monkeypatch.setattr(background_owner, "_process_state", lambda _identity: native_state)
+    waiter = next(record for record in records if record.pid == 52002)
+    if outcome == "refused":
+        with pytest.raises(ValueError, match="native gate terminal identity is unavailable"):
+            watchdog._terminate_verified(waiter, (root,))
+    elif outcome == "protected":
+        assert {52000, 52002, 52003, 52004} <= watchdog._protected_pids(records, (root,))
+    else:
+        assert watchdog._protected_pids(records, (root,)).isdisjoint({52002, 52003, 52004})
+    assert sent == []
 
 
 @pytest.mark.parametrize("terminal_count", [64, 65])

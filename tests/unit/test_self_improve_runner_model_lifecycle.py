@@ -23,7 +23,9 @@ from general_ludd.self_improve.codex_comparison import (
     ComparisonResult,
     ProposalManifest,
 )
+from general_ludd.self_improve.codex_gateway import _decode_compact_span_proposal
 from general_ludd.self_improve.managed_runner import (
+    AttemptResult,
     GeneratedProposal,
     PromptPlan,
     PromptShard,
@@ -38,7 +40,8 @@ from general_ludd.self_improve.model_lifecycle import (
     ModelAcquisitionPhase,
     ModelArtifactIdentity,
 )
-from general_ludd.self_improve.runtime import AttemptResult, MakeResult, PlanBoundProposal
+from general_ludd.self_improve.runtime import MakeResult, PlanBoundProposal
+from tests.self_improve_native_fixtures import controlled_retirement_result, controlled_revision_result
 
 runner = cast(Any, runtime_module)
 
@@ -243,7 +246,8 @@ def test_plan_identity_is_single_source_through_execution_and_outcome(
 
 
 class _RootRunner:
-    def __init__(self, _root: Path) -> None:
+    def __init__(self, worktree: Path) -> None:
+        self.worktree = worktree
         self.targets: list[str] = []
 
     def run(
@@ -254,9 +258,18 @@ class _RootRunner:
         timeout: int = 120,
         read_only: bool = False,
     ) -> MakeResult:
-        del variables, timeout, read_only
+        del timeout, read_only
         self.targets.append(target)
-        return MakeResult(("make", target), 0, "", "", 0.1)
+        values = dict(variables or {})
+        if target == "git-show-commit":
+            assert values == {"C": "refs/heads/context"}
+            assert not self.worktree.exists()
+            assert (self.worktree.parent / "model.gguf").is_file()
+            assert (self.worktree.parent / "cache").is_dir()
+            return controlled_revision_result(values["C"], "a" * 40)
+        return controlled_retirement_result(
+            target, values, branch="context", worktree=self.worktree, head="a" * 40,
+        )
 
 
 class _ReservationHandle:
@@ -349,12 +362,15 @@ def _wire_common(
     config = get_model("qwen2.5-coder-0.5b")
     assert config is not None
     candidate = PlannedModelCandidate(config, "a" * 40, 0.0, 0)
-    monkeypatch.setattr(runner, "MakeRunner", _RootRunner)
+    context_root = tmp_path / "baseline-context"
+    context_root.mkdir()
+    controlled_context = _RootRunner(context_root)
+    monkeypatch.setattr(runner, "MakeRunner", lambda _root: controlled_context)
     monkeypatch.setattr(runner, "build_reference", lambda *_args: _reference())
     monkeypatch.setattr(
         runner,
         "create_worktree",
-        lambda *_args: (tmp_path, "context"),
+        lambda *_args: (context_root, "context"),
     )
     monkeypatch.setattr(runner, "build_prompt", lambda *_args: "bounded prompt")
     monkeypatch.setattr(runner, "generate_mechanical_proposal", lambda *_args: None)
@@ -552,7 +568,7 @@ def test_production_factory_retains_compact_draft_for_one_syntax_repair(
         baseline_files=((path, "return 0\n"),),
         proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
     )
-    compact = comparison_module._decode_compact_span_proposal(
+    compact = _decode_compact_span_proposal(
         '{"e":[{"s":1,"n":1,"z":"return (\\n"}]}',
         focus_path=path,
     )
@@ -686,7 +702,7 @@ def test_v4_scope_rejection_event_emits_bounded_coordinate_telemetry(
         proposal_protocol=comparison_module.COMPACT_PROPOSAL_PROTOCOL_V4,
     )
     monkeypatch.setattr(runner, "build_prompt", lambda *_args: plan)
-    proposal = comparison_module._decode_compact_span_proposal(
+    proposal = _decode_compact_span_proposal(
         '{"e":[{"s":4,"n":0,"z":"PASSWORD=hunter2\\n"}]}',
         focus_path=path,
     )

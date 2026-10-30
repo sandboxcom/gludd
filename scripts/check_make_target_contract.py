@@ -17,11 +17,11 @@ if TYPE_CHECKING:
     from check_duplicate_targets import TARGET_VAR_ASSIGN_PATTERN
 
     from scripts.check_make_help import HELP_TARGET_RE
-    from scripts.makefile_layout import compose_makefile
+    from scripts.makefile_layout import MakefileLayoutError, compose_makefile
 else:
     from scripts.check_duplicate_targets import TARGET_VAR_ASSIGN_PATTERN
     from scripts.check_make_help import HELP_TARGET_RE
-    from scripts.makefile_layout import compose_makefile
+    from scripts.makefile_layout import MakefileLayoutError, compose_makefile
 
 TARGET_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_.-]*):")
 
@@ -129,14 +129,27 @@ def main(argv: list[str] | None = None) -> int:
         contract_path = Path(args[0])
     try:
         errors = validate_contract(makefile, load_contract(contract_path))
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, json.JSONDecodeError, MakefileLayoutError) as exc:
         print(f"make-target-contract: ERROR: {exc}")
+        print(
+            "AGENT_NEXT make-target-contract ERROR: repair the reported contract/Makefile input or parse error; "
+            "rerun make check-make-target-contract with the same inputs; do not retry an unchanged broad gate."
+        )
         return 1
     if errors:
         print("make-target-contract: FAIL")
         print("\n".join(f"  - {error}" for error in errors))
+        print(
+            "AGENT_NEXT make-target-contract FAIL: repair the listed target/help/variable/example inputs; "
+            "rerun make check-make-target-contract with the same inputs; do not retry an unchanged broad gate."
+        )
         return 1
     print(f"make-target-contract: PASS ({len(load_contract(contract_path)['targets'])} targets)")
+    print(
+        "AGENT_NEXT make-target-contract PASS: run the changed target's documented behavioral example, "
+        "set every variable explicitly and retain expected refusal/status; "
+        "contract PASS is not behavioral, gate or CI proof."
+    )
     return 0
 
 
