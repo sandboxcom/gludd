@@ -13,6 +13,11 @@ from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
+from tests.observed_command_native_fixtures import (
+    assert_native_import_shadow_control,
+    make_eof_heartbeat_case,
+)
+
 if TYPE_CHECKING:
     import stream_command
 else:
@@ -43,12 +48,7 @@ STATUS_FIELDS = {
 }
 
 
-def _command(
-    tmp_path: Path,
-    child: str,
-    *observer_args: str,
-    run_id: str = "run-1",
-) -> list[str]:
+def _command(tmp_path: Path, child: str, *observer_args: str, run_id: str = "run-1") -> list[str]:
     return [
         sys.executable,
         str(STREAM_RUNNER),
@@ -71,13 +71,9 @@ def _current_status(tmp_path: Path) -> dict[str, Any]:
     return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
 
 
-def test_observed_command_publishes_atomic_terminal_status_and_log(
-    tmp_path: Path,
-) -> None:
+def test_observed_command_publishes_atomic_terminal_status_and_log(tmp_path: Path) -> None:
     completed = subprocess.run(
-        _command(tmp_path, "print('visible child output', flush=True)"),
-        capture_output=True,
-        check=False,
+        _command(tmp_path, "print('visible child output', flush=True)"), capture_output=True, check=False
     )
 
     status = _current_status(tmp_path)
@@ -103,9 +99,7 @@ def test_observed_command_publishes_atomic_terminal_status_and_log(
 
 
 @pytest.mark.parametrize("artifact", ["run-1.json", "run-1.log", "run-1.pytest.jsonl", "custom.log", "dangling"])
-def test_observed_start_refuses_existing_artifacts_before_running_child(
-    tmp_path: Path, artifact: str,
-) -> None:
+def test_observed_start_refuses_existing_artifacts_before_running_child(tmp_path: Path, artifact: str) -> None:
     directory = tmp_path / "observed/demo"
     directory.mkdir(parents=True)
     current = directory / "current.json"
@@ -124,7 +118,9 @@ def test_observed_start_refuses_existing_artifacts_before_running_child(
     marker = tmp_path / "child-executed"
     result = subprocess.run(
         _command(tmp_path, f"from pathlib import Path; Path({str(marker)!r}).write_text('executed')", *log_args),
-        capture_output=True, check=False, timeout=10,
+        capture_output=True,
+        check=False,
+        timeout=10,
     )
     assert result.returncode == 125, result.stdout + result.stderr
     assert not marker.exists()
@@ -138,8 +134,7 @@ def test_observed_start_rejects_current_alias_as_writable_run_id(tmp_path: Path)
     current.parent.mkdir(parents=True)
     current.write_bytes(b"prior current receipt\n")
     result = subprocess.run(
-        _command(tmp_path, "print('must not run')", run_id="current"),
-        capture_output=True, check=False, timeout=10,
+        _command(tmp_path, "print('must not run')", run_id="current"), capture_output=True, check=False, timeout=10
     )
     assert result.returncode == 125, result.stdout + result.stderr
     assert current.read_bytes() == b"prior current receipt\n"
@@ -148,10 +143,12 @@ def test_observed_start_rejects_current_alias_as_writable_run_id(tmp_path: Path)
 
 def test_competing_observers_claim_one_run_identity_atomically(tmp_path: Path) -> None:
     marker = tmp_path / "child-executed"
-    child = (f"from pathlib import Path; import time; "
-             f"Path({str(marker)!r}).open('a').write('executed\\n'); time.sleep(0.2)")
-    processes = [subprocess.Popen(_command(tmp_path, child), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                 for _ in range(2)]
+    child = (
+        f"from pathlib import Path; import time; Path({str(marker)!r}).open('a').write('executed\\n'); time.sleep(0.2)"
+    )
+    processes = [
+        subprocess.Popen(_command(tmp_path, child), stdout=subprocess.PIPE, stderr=subprocess.PIPE) for _ in range(2)
+    ]
     outputs = [process.communicate(timeout=10) for process in processes]
     assert sorted(process.returncode for process in processes) == [0, 125], outputs
     assert marker.read_text().splitlines() == ["executed"]
@@ -170,9 +167,7 @@ def test_exclusive_atomic_status_claim_never_replaces_existing_evidence(tmp_path
     assert not list(tmp_path.glob(".*.tmp"))
 
 
-def test_log_created_after_start_check_is_not_truncated(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_log_created_after_start_check_is_not_truncated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     directory = tmp_path / "observed/demo"
     log_path = directory / "run-1.log"
     original_write = stream_command._atomic_write_json
@@ -184,8 +179,11 @@ def test_log_created_after_start_check_is_not_truncated(
 
     monkeypatch.setattr(stream_command, "_atomic_write_json", competing_log)
     result = stream_command.stream_command(
-        [sys.executable, "-c", "raise RuntimeError('must not run')"], log_path,
-        observed_root=tmp_path / "observed", label="demo", run_id="run-1",
+        [sys.executable, "-c", "raise RuntimeError('must not run')"],
+        log_path,
+        observed_root=tmp_path / "observed",
+        label="demo",
+        run_id="run-1",
     )
     assert result == 125
     assert log_path.read_bytes() == b"competing log evidence\n"
@@ -195,7 +193,7 @@ def test_log_created_after_start_check_is_not_truncated(
 
 
 def test_trace_allocated_after_precheck_preserves_competing_live_log(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     trace = tmp_path / "observed/demo/run-1.pytest.jsonl"
     release = tmp_path / "release-competing-child"
@@ -208,13 +206,18 @@ def test_trace_allocated_after_precheck_preserves_competing_live_log(
         original_write(path, payload, exclusive=exclusive)
         if not exclusive or path.name != "run-1.json":
             return
-        child = ("import time; from pathlib import Path; "
-                 "print('competing live log evidence', flush=True)\n"
-                 f"while not Path({str(release)!r}).exists(): time.sleep(0.01)")
-        competitors.append(subprocess.Popen(
-            _command(tmp_path, child, "--log", str(trace), run_id="other"),
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        ))
+        child = (
+            "import time; from pathlib import Path; "
+            "print('competing live log evidence', flush=True)\n"
+            f"while not Path({str(release)!r}).exists(): time.sleep(0.01)"
+        )
+        competitors.append(
+            subprocess.Popen(
+                _command(tmp_path, child, "--log", str(trace), run_id="other"),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        )
         deadline = time.monotonic() + 3
         while time.monotonic() < deadline:
             if trace.exists() and trace.read_bytes() == original_bytes:
@@ -224,15 +227,22 @@ def test_trace_allocated_after_precheck_preserves_competing_live_log(
         assert competitors[0].poll() is None
 
     monkeypatch.setattr(stream_command, "_atomic_write_json", claim_competing_log)
-    child = ("from pathlib import Path; from types import SimpleNamespace; "
-             "from scripts import xdist_trace_plugin; "
-             f"Path({str(marker)!r}).touch(); "
-             "xdist_trace_plugin.pytest_sessionstart(SimpleNamespace(config=None))")
+    child = (
+        "from pathlib import Path; from types import SimpleNamespace; "
+        "from scripts import xdist_trace_plugin; "
+        f"Path({str(marker)!r}).touch(); "
+        "xdist_trace_plugin.pytest_sessionstart(SimpleNamespace(config=None))"
+    )
     try:
         result = stream_command.stream_command(
-            [sys.executable, "-c", child], tmp_path / "observed/demo/run-1.log",
-            observed_root=tmp_path / "observed", label="demo", run_id="run-1",
-            pytest_trace=True, quiet=True, max_seconds=10,
+            [sys.executable, "-c", child],
+            tmp_path / "observed/demo/run-1.log",
+            observed_root=tmp_path / "observed",
+            label="demo",
+            run_id="run-1",
+            pytest_trace=True,
+            quiet=True,
+            max_seconds=10,
         )
         assert result == 125
         assert not marker.exists()
@@ -246,15 +256,15 @@ def test_trace_allocated_after_precheck_preserves_competing_live_log(
 
 
 def test_fresh_observed_trace_is_allocated_before_native_handoff_without_reset(tmp_path: Path) -> None:
-    child = ("import os; from pathlib import Path; from types import SimpleNamespace; "
-             "from scripts import xdist_trace_plugin; "
-             "trace = Path(os.environ['GLUDD_XDIST_TRACE_LOG']); "
-             "assert trace.exists() and trace.read_bytes() == b''; "
-             "assert os.environ['GLUDD_XDIST_TRACE_TRUNCATE'] == '0'; "
-             "xdist_trace_plugin.pytest_sessionstart(SimpleNamespace(config=None))")
-    result = subprocess.run(
-        _command(tmp_path, child, "--pytest-trace"), capture_output=True, check=False, timeout=10,
+    child = (
+        "import os; from pathlib import Path; from types import SimpleNamespace; "
+        "from scripts import xdist_trace_plugin; "
+        "trace = Path(os.environ['GLUDD_XDIST_TRACE_LOG']); "
+        "assert trace.exists() and trace.read_bytes() == b''; "
+        "assert os.environ['GLUDD_XDIST_TRACE_TRUNCATE'] == '0'; "
+        "xdist_trace_plugin.pytest_sessionstart(SimpleNamespace(config=None))"
     )
+    result = subprocess.run(_command(tmp_path, child, "--pytest-trace"), capture_output=True, check=False, timeout=10)
     assert result.returncode == 0, result.stdout + result.stderr
     status = _current_status(tmp_path)
     event = json.loads(Path(status["trace_path"]).read_text())
@@ -266,13 +276,19 @@ def test_retention_preserves_late_finishing_current_run_and_its_log(tmp_path: Pa
     old = stream_command._StatusPublisher(root, "demo", "old")
     newer = stream_command._StatusPublisher(root, "demo", "newer")
     status = stream_command._base_status(
-        label="demo", run_id="old", started_at="2026-10-14T00:00:00+00:00",
-        log_path=old.directory / "old.log", trace_path=None,
+        label="demo",
+        run_id="old",
+        started_at="2026-10-14T00:00:00+00:00",
+        log_path=old.directory / "old.log",
+        trace_path=None,
     )
     old.publish(status)
     other = stream_command._base_status(
-        label="demo", run_id="newer", started_at="2026-10-14T00:00:01+00:00",
-        log_path=newer.directory / "newer.log", trace_path=None,
+        label="demo",
+        run_id="newer",
+        started_at="2026-10-14T00:00:01+00:00",
+        log_path=newer.directory / "newer.log",
+        trace_path=None,
     )
     other.update(state="failed", exit_code=1)
     newer.publish(other)
@@ -286,9 +302,7 @@ def test_retention_preserves_late_finishing_current_run_and_its_log(tmp_path: Pa
     assert stream_command.observed_tail(root, "demo", run_id="current", lines=1) == 0
 
 
-def test_atomic_status_writer_fsyncs_then_replaces(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_atomic_status_writer_fsyncs_then_replaces(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     target = tmp_path / "status.json"
     replacements: list[tuple[Path, Path]] = []
     original_replace = os.replace
@@ -312,14 +326,7 @@ def test_atomic_status_writer_fsyncs_then_replaces(
 
 def test_quiet_child_emits_heartbeats_and_updates_status(tmp_path: Path) -> None:
     completed = subprocess.run(
-        _command(
-            tmp_path,
-            "import time; time.sleep(0.22)",
-            "--heartbeat-secs",
-            "0.03",
-            "--max-secs",
-            "2",
-        ),
+        _command(tmp_path, "import time; time.sleep(0.22)", "--heartbeat-secs", "0.03", "--max-secs", "2"),
         capture_output=True,
         check=False,
         timeout=5,
@@ -333,31 +340,31 @@ def test_quiet_child_emits_heartbeats_and_updates_status(tmp_path: Path) -> None
 
 
 def test_observer_keeps_monitoring_after_child_closes_output(tmp_path: Path) -> None:
-    completed = subprocess.run(
-        _command(
-            tmp_path,
-            "import os,time; os.close(1); os.close(2); time.sleep(0.15)",
-            "--heartbeat-secs",
-            "0.03",
-            "--max-secs",
-            "2",
-        ),
-        capture_output=True,
-        check=False,
-        timeout=5,
-    )
+    case = make_eof_heartbeat_case(tmp_path, _command)
+    completed = subprocess.run(case.command, capture_output=True, check=False, timeout=5, env=case.environment)
 
     status = _current_status(tmp_path)
     assert completed.returncode == 0
     assert completed.stdout.count(b"[observed demo] heartbeat") >= 2
     assert status["state"] == "passed"
+    case.assert_released(status)
+
+
+def test_eof_heartbeat_guard_rejects_child_banners_without_native_ticks(tmp_path: Path) -> None:
+    case = make_eof_heartbeat_case(tmp_path, _command, heartbeat_seconds="0", spoof_banners=True)
+    completed = subprocess.run(case.command, capture_output=True, check=False, timeout=5, env=case.environment)
+    assert completed.stdout.count(b"[observed demo] heartbeat") >= 2
+    assert completed.returncode == 124
+    case.assert_no_native_ticks(_current_status(tmp_path))
+
+
+def test_post_eof_metadata_has_active_native_import_shadow_control(tmp_path: Path) -> None:
+    assert_native_import_shadow_control(make_eof_heartbeat_case(tmp_path, _command), _command)
 
 
 def test_quiet_mode_captures_without_streaming_child_output(tmp_path: Path) -> None:
     completed = subprocess.run(
-        _command(tmp_path, "print('captured only', flush=True)", "--quiet"),
-        capture_output=True,
-        check=False,
+        _command(tmp_path, "print('captured only', flush=True)", "--quiet"), capture_output=True, check=False
     )
 
     status = _current_status(tmp_path)
@@ -367,11 +374,7 @@ def test_quiet_mode_captures_without_streaming_child_output(tmp_path: Path) -> N
 
 
 def test_observer_preserves_child_failure_code(tmp_path: Path) -> None:
-    completed = subprocess.run(
-        _command(tmp_path, "import sys; sys.exit(7)"),
-        capture_output=True,
-        check=False,
-    )
+    completed = subprocess.run(_command(tmp_path, "import sys; sys.exit(7)"), capture_output=True, check=False)
 
     status = _current_status(tmp_path)
     assert completed.returncode == 7
@@ -380,9 +383,7 @@ def test_observer_preserves_child_failure_code(tmp_path: Path) -> None:
     assert status["termination_reason"] is None
 
 
-def test_native_owned_group_zero_lifecycle_observation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_native_owned_group_zero_lifecycle_observation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Observe group-zero across retained exit and reap; never send a signal."""
     import errno
 
@@ -418,12 +419,13 @@ def test_native_owned_group_zero_lifecycle_observation(
     )
     process = subprocess.Popen(
         [sys.executable, "-c", leader_source, str(tmp_path)],
-        cwd=tmp_path, env=os.environ.copy(), start_new_session=True,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        cwd=tmp_path,
+        env=os.environ.copy(),
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
-    native_methods = {
-        name: getattr(process, name) for name in ("poll", "wait", "send_signal", "kill", "terminate")
-    }
+    native_methods = {name: getattr(process, name) for name in ("poll", "wait", "send_signal", "kill", "terminate")}
     native_wait = process.wait
     final_wait_calls = 0
     final_status: int | None = None
@@ -431,10 +433,14 @@ def test_native_owned_group_zero_lifecycle_observation(
     descendant_birth: float | None = None
     member_deadline: float | None = None
     evidence: dict[str, Any] = {
-        "runtime": sys.version.split()[0], "platform": sys.platform,
-        "leader_pid": process.pid, "physical_signals_sent": False,
-        "stages": [], "post_reap_absence_proved": False,
-        "leader_wait_budget": budget, "total_member_observation_budget": budget,
+        "runtime": sys.version.split()[0],
+        "platform": sys.platform,
+        "leader_pid": process.pid,
+        "physical_signals_sent": False,
+        "stages": [],
+        "post_reap_absence_proved": False,
+        "leader_wait_budget": budget,
+        "total_member_observation_budget": budget,
     }
 
     def forbidden_reap(*_args: object, **_kwargs: object) -> None:
@@ -561,16 +567,13 @@ def test_native_owned_group_zero_lifecycle_observation(
 
 
 @pytest.mark.parametrize("reader_mode", ("module", "status", "tail"))
-def test_passive_observer_readers_require_only_the_standard_library(
-    tmp_path: Path, reader_mode: str,
-) -> None:
+def test_passive_observer_readers_require_only_the_standard_library(tmp_path: Path, reader_mode: str) -> None:
     """Passive readers must not import the execution-only process dependency."""
     log = tmp_path / "observed" / "demo" / "run-1.log"
     log.parent.mkdir(parents=True)
     log.write_text("owned passive line\n", encoding="utf-8")
     payload = stream_command._base_status(
-        label="demo", run_id="run-1", started_at=stream_command._utc_now(),
-        log_path=log, trace_path=None,
+        label="demo", run_id="run-1", started_at=stream_command._utc_now(), log_path=log, trace_path=None
     )
     payload.update(state="passed", exit_code=0)
     stream_command._StatusPublisher(tmp_path / "observed", "demo", "run-1").publish(payload)
@@ -586,13 +589,24 @@ def test_passive_observer_readers_require_only_the_standard_library(
         "sys.argv = sys.argv[2:]\n"
         "runpy.run_path(sys.argv[0], run_name='passive_reader_probe' if mode == 'module' else '__main__')\n"
     )
-    reader_arguments = [] if reader_mode == "module" else [
-        "--root", str(tmp_path / "observed"), "--label", "demo",
-        *(["--status"] if reader_mode == "status" else ["--tail", "1"]),
-    ]
+    reader_arguments = (
+        []
+        if reader_mode == "module"
+        else [
+            "--root",
+            str(tmp_path / "observed"),
+            "--label",
+            "demo",
+            *(["--status"] if reader_mode == "status" else ["--tail", "1"]),
+        ]
+    )
     completed = subprocess.run(
         [sys.executable, "-S", "-c", program, reader_mode, str(STREAM_RUNNER), *reader_arguments],
-        cwd=tmp_path, env=os.environ.copy(), capture_output=True, check=False, timeout=5,
+        cwd=tmp_path,
+        env=os.environ.copy(),
+        capture_output=True,
+        check=False,
+        timeout=5,
     )
 
     assert completed.returncode == 0, completed.stderr.decode()
@@ -615,31 +629,41 @@ def test_native_nonreaping_platform_capability_observation() -> None:
     if not callable(getattr(os, "waitid", None)):
         wait_missing.append("waitid")
     queue_names = (
-        "KQ_FILTER_PROC", "KQ_NOTE_EXIT", "KQ_EV_ADD", "KQ_EV_ENABLE",
-        "KQ_EV_ONESHOT", "KQ_EV_ERROR",
+        "KQ_FILTER_PROC",
+        "KQ_NOTE_EXIT",
+        "KQ_EV_ADD",
+        "KQ_EV_ENABLE",
+        "KQ_EV_ONESHOT",
+        "KQ_EV_ERROR",
     )
     queue_flags = {name: getattr(select, name, None) for name in queue_names}
     queue_missing = [name for name, value in queue_flags.items() if not isinstance(value, int)]
     for name in ("kqueue", "kevent"):
         if not callable(getattr(select, name, None)):
             queue_missing.append(name)
-    candidate = "waitid" if not wait_missing else (
-        "kqueue" if sys.platform == "darwin" and not queue_missing else "refused"
+    candidate = (
+        "waitid" if not wait_missing else ("kqueue" if sys.platform == "darwin" and not queue_missing else "refused")
     )
     evidence = {
-        "platform": sys.platform, "runtime": sys.version.split()[0],
+        "platform": sys.platform,
+        "runtime": sys.version.split()[0],
         "implementation": sys.implementation.name,
         "waitid_callable": callable(getattr(os, "waitid", None)),
-        "wait_flags": wait_flags, "wait_missing": wait_missing,
+        "wait_flags": wait_flags,
+        "wait_missing": wait_missing,
         "kqueue_callable": callable(getattr(select, "kqueue", None)),
         "kevent_callable": callable(getattr(select, "kevent", None)),
-        "queue_flags": queue_flags, "queue_missing": queue_missing,
+        "queue_flags": queue_flags,
+        "queue_missing": queue_missing,
         "optional_queue_flags": {"KQ_EV_RECEIPT": getattr(select, "KQ_EV_RECEIPT", None)},
         "select_source": getattr(select, "__file__", None),
         "select_origin": getattr(getattr(select, "__spec__", None), "origin", None),
         "selector_backend": selectors.DefaultSelector.__name__,
-        "backend_candidate": candidate, "native_behavior_proved": False,
-        "child_created": False, "kernel_queue_created": False, "waitid_called": False,
+        "backend_candidate": candidate,
+        "native_behavior_proved": False,
+        "child_created": False,
+        "kernel_queue_created": False,
+        "waitid_called": False,
     }
     print("NATIVE_NONREAPING_CAPABILITY " + json.dumps(evidence, sort_keys=True))
     for name in ("kqueue", "kevent"):
@@ -650,7 +674,7 @@ def test_native_nonreaping_platform_capability_observation() -> None:
 
 @pytest.mark.parametrize("registration_timing", ("before-exit", "after-zombie"))
 def test_native_kqueue_retained_leader_and_session_prerequisite(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, registration_timing: str,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, registration_timing: str
 ) -> None:
     """Observe retained leader/session identity and actual late registration."""
     import errno
@@ -661,15 +685,26 @@ def test_native_kqueue_retained_leader_and_session_prerequisite(
     queue_factory = getattr(select, "kqueue", None)
     event_factory = getattr(select, "kevent", None)
     required = ("KQ_FILTER_PROC", "KQ_NOTE_EXIT", "KQ_EV_ADD", "KQ_EV_ENABLE", "KQ_EV_ONESHOT", "KQ_EV_ERROR")
-    if not callable(queue_factory) or not callable(event_factory) or any(
-        not isinstance(getattr(select, name, None), int) for name in required
+    if (
+        not callable(queue_factory)
+        or not callable(event_factory)
+        or any(not isinstance(getattr(select, name, None), int) for name in required)
     ):
-        print("NATIVE_KQUEUE_PREREQUISITE " + json.dumps({
-            "runtime": sys.version.split()[0], "platform": sys.platform,
-            "registration_timing": registration_timing, "outcome": "refused-unavailable",
-            "child_created": False, "kernel_queue_created": False,
-            "session_prerequisite_proved": False,
-        }, sort_keys=True))
+        print(
+            "NATIVE_KQUEUE_PREREQUISITE "
+            + json.dumps(
+                {
+                    "runtime": sys.version.split()[0],
+                    "platform": sys.platform,
+                    "registration_timing": registration_timing,
+                    "outcome": "refused-unavailable",
+                    "child_created": False,
+                    "kernel_queue_created": False,
+                    "session_prerequisite_proved": False,
+                },
+                sort_keys=True,
+            )
+        )
         return
 
     assert signal.getsignal(signal.SIGCHLD) == signal.SIG_DFL, "Requires default SIGCHLD/no auto-reap"
@@ -697,12 +732,13 @@ def test_native_kqueue_retained_leader_and_session_prerequisite(
     )
     process = subprocess.Popen(
         [sys.executable, "-c", leader_source, str(tmp_path)],
-        cwd=tmp_path, env=os.environ.copy(), start_new_session=True,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        cwd=tmp_path,
+        env=os.environ.copy(),
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
-    methods = {
-        name: getattr(process, name) for name in ("poll", "wait", "send_signal", "kill", "terminate")
-    }
+    methods = {name: getattr(process, name) for name in ("poll", "wait", "send_signal", "kill", "terminate")}
     original_wait = process.wait
     forbidden_calls: list[str] = []
 
@@ -714,11 +750,17 @@ def test_native_kqueue_retained_leader_and_session_prerequisite(
         monkeypatch.setattr(process, name, forbidden_method)
 
     evidence: dict[str, object] = {
-        "runtime": sys.version.split()[0], "platform": sys.platform,
-        "registration_timing": registration_timing, "child_pid": process.pid,
-        "child_created": True, "kernel_queue_created": False,
-        "default_sigchld": True, "sole_reaper_contract": "owned-instance guards and one final Popen.wait",
-        "raw_events": [], "registration_errno": None, "session_prerequisite_proved": False,
+        "runtime": sys.version.split()[0],
+        "platform": sys.platform,
+        "registration_timing": registration_timing,
+        "child_pid": process.pid,
+        "child_created": True,
+        "kernel_queue_created": False,
+        "default_sigchld": True,
+        "sole_reaper_contract": "owned-instance guards and one final Popen.wait",
+        "raw_events": [],
+        "registration_errno": None,
+        "session_prerequisite_proved": False,
         "event_data_is_exit_code_authority": False,
     }
     queue = None
@@ -746,12 +788,20 @@ def test_native_kqueue_retained_leader_and_session_prerequisite(
         assert descendant.cwd() == str(tmp_path.resolve())
         assert os.getpgid(descendant_pid) == os.getsid(descendant_pid) == process.pid
         evidence["live_leader"] = {
-            "pid": leader.pid, "birth": leader_birth, "ppid": leader.ppid(),
-            "cwd": leader.cwd(), "pgid": os.getpgid(process.pid), "sid": os.getsid(process.pid),
+            "pid": leader.pid,
+            "birth": leader_birth,
+            "ppid": leader.ppid(),
+            "cwd": leader.cwd(),
+            "pgid": os.getpgid(process.pid),
+            "sid": os.getsid(process.pid),
         }
         evidence["live_descendant"] = {
-            "pid": descendant_pid, "birth": descendant_birth, "ppid": descendant.ppid(),
-            "cwd": descendant.cwd(), "pgid": os.getpgid(descendant_pid), "sid": os.getsid(descendant_pid),
+            "pid": descendant_pid,
+            "birth": descendant_birth,
+            "ppid": descendant.ppid(),
+            "cwd": descendant.cwd(),
+            "pgid": os.getpgid(descendant_pid),
+            "sid": os.getsid(descendant_pid),
         }
 
         if registration_timing == "after-zombie":
@@ -770,7 +820,8 @@ def test_native_kqueue_retained_leader_and_session_prerequisite(
         queue = queue_factory()
         evidence["kernel_queue_created"] = True
         event = event_factory(
-            process.pid, filter=select.KQ_FILTER_PROC,
+            process.pid,
+            filter=select.KQ_FILTER_PROC,
             flags=select.KQ_EV_ADD | select.KQ_EV_ENABLE | select.KQ_EV_ONESHOT,
             fflags=select.KQ_NOTE_EXIT,
         )
@@ -785,8 +836,13 @@ def test_native_kqueue_retained_leader_and_session_prerequisite(
         if native_error is None and not events:
             events = queue.control([], 1, 2)
         evidence["raw_events"] = [
-            {"ident": int(item.ident), "filter": int(item.filter), "flags": int(item.flags),
-             "fflags": int(item.fflags), "data": int(item.data)}
+            {
+                "ident": int(item.ident),
+                "filter": int(item.filter),
+                "flags": int(item.flags),
+                "fflags": int(item.fflags),
+                "data": int(item.data),
+            }
             for item in events
         ]
         errors = [int(item.data) for item in events if item.flags & select.KQ_EV_ERROR]
@@ -812,8 +868,11 @@ def test_native_kqueue_retained_leader_and_session_prerequisite(
         assert zombie.create_time() == leader_birth and zombie.ppid() == os.getpid()
         assert process.returncode is None
         evidence["retained_leader"] = {
-            "pid": zombie.pid, "birth": zombie.create_time(), "ppid": zombie.ppid(),
-            "state": zombie.status(), "returncode": process.returncode,
+            "pid": zombie.pid,
+            "birth": zombie.create_time(),
+            "ppid": zombie.ppid(),
+            "state": zombie.status(),
+            "returncode": process.returncode,
         }
         try:
             evidence["post_zombie_leader_pgid"] = os.getpgid(process.pid)
@@ -827,9 +886,12 @@ def test_native_kqueue_retained_leader_and_session_prerequisite(
         assert os.getpgid(descendant_pid) == os.getsid(descendant_pid) == process.pid
         assert not forbidden_calls
         evidence["fresh_live_descendant"] = {
-            "pid": fresh_descendant.pid, "birth": fresh_descendant.create_time(),
-            "ppid": fresh_descendant.ppid(), "state": fresh_descendant.status(),
-            "cwd": fresh_descendant.cwd(), "pgid": os.getpgid(descendant_pid),
+            "pid": fresh_descendant.pid,
+            "birth": fresh_descendant.create_time(),
+            "ppid": fresh_descendant.ppid(),
+            "state": fresh_descendant.status(),
+            "cwd": fresh_descendant.cwd(),
+            "pgid": os.getpgid(descendant_pid),
             "sid": os.getsid(descendant_pid),
         }
         evidence["session_prerequisite_proved"] = native_error is None and not errors
@@ -871,7 +933,7 @@ def test_native_kqueue_retained_leader_and_session_prerequisite(
 
 @pytest.mark.parametrize("close_boundary", ("stdout", "selector"))
 def test_close_failure_still_seals_status_and_restores_resources(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, close_boundary: str,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, close_boundary: str
 ) -> None:
     """Owned native close failures cannot skip other teardown or terminal receipt."""
     import selectors
@@ -935,14 +997,18 @@ def test_close_failure_still_seals_status_and_restores_resources(
 
     monkeypatch.setattr(Path, "open", tracked_open)
     monkeypatch.setattr(
-        stream_command, "subprocess",
-        SimpleNamespace(Popen=start_child, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT,
-                        TimeoutExpired=subprocess.TimeoutExpired),
+        stream_command,
+        "subprocess",
+        SimpleNamespace(
+            Popen=start_child, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT, TimeoutExpired=subprocess.TimeoutExpired
+        ),
     )
     monkeypatch.setattr(
-        stream_command, "selectors",
-        SimpleNamespace(DefaultSelector=create_selector, BaseSelector=selectors.BaseSelector,
-                        EVENT_READ=selectors.EVENT_READ),
+        stream_command,
+        "selectors",
+        SimpleNamespace(
+            DefaultSelector=create_selector, BaseSelector=selectors.BaseSelector, EVENT_READ=selectors.EVENT_READ
+        ),
     )
     # This control isolates finalization from the separately retained kernel
     # EPERM finding; its sole native child is already positively zombie.
@@ -952,9 +1018,13 @@ def test_close_failure_still_seals_status_and_restores_resources(
     try:
         try:
             returncode = stream_command.stream_command(
-                [sys.executable, "-c", "import os; os._exit(17)"], log,
-                observed_root=tmp_path / "observed", label="demo", run_id="run-1",
-                quiet=True, cwd=tmp_path,
+                [sys.executable, "-c", "import os; os._exit(17)"],
+                log,
+                observed_root=tmp_path / "observed",
+                label="demo",
+                run_id="run-1",
+                quiet=True,
+                cwd=tmp_path,
             )
         except OSError as error:
             failure = error
@@ -980,7 +1050,7 @@ def test_close_failure_still_seals_status_and_restores_resources(
 
 
 def test_fast_exited_posix_leader_is_retained_until_group_cleanup(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An already-zombie private child still needs cleanup before its sole reap."""
     from types import SimpleNamespace
@@ -1033,17 +1103,26 @@ def test_fast_exited_posix_leader_is_retained_until_group_cleanup(
             cleanup_finished = True
 
     monkeypatch.setattr(
-        stream_command, "subprocess",
-        SimpleNamespace(Popen=start_already_zombie, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT,
-                        TimeoutExpired=subprocess.TimeoutExpired),
+        stream_command,
+        "subprocess",
+        SimpleNamespace(
+            Popen=start_already_zombie,
+            PIPE=subprocess.PIPE,
+            STDOUT=subprocess.STDOUT,
+            TimeoutExpired=subprocess.TimeoutExpired,
+        ),
     )
     monkeypatch.setattr(stream_command, "_terminate_process_group", record_cleanup)
     try:
         returncode = stream_command.stream_command(
             [sys.executable, "-c", "import os; os._exit(17)"],
             tmp_path / "observed" / "demo" / "run-1.log",
-            observed_root=tmp_path / "observed", label="demo", run_id="run-1",
-            termination_grace_seconds=0.05, quiet=True, cwd=tmp_path,
+            observed_root=tmp_path / "observed",
+            label="demo",
+            run_id="run-1",
+            termination_grace_seconds=0.05,
+            quiet=True,
+            cwd=tmp_path,
         )
     finally:
         for child, (native_wait, native_poll) in zip(children, original_methods, strict=True):
@@ -1064,7 +1143,7 @@ def test_fast_exited_posix_leader_is_retained_until_group_cleanup(
 
 @pytest.mark.parametrize("post_reap_probe", ("native-live", "permission", "unknown"))
 def test_deferred_group_eperm_cannot_hide_a_live_original_descendant(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, post_reap_probe: str,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, post_reap_probe: str
 ) -> None:
     """A real live member remains failure after controlled signal refusals."""
     import errno
@@ -1119,9 +1198,7 @@ def test_deferred_group_eperm_cannot_hide_a_live_original_descendant(
         monkeypatch.setattr(child, "wait", wait_once)
         return child
 
-    def release_after_live_binding(
-        publisher: Any, payload: dict[str, object],
-    ) -> None:
+    def release_after_live_binding(publisher: Any, payload: dict[str, object]) -> None:
         native_publish(publisher, payload)
         if payload["state"] != "running" or identities:
             return
@@ -1166,9 +1243,11 @@ def test_deferred_group_eperm_cannot_hide_a_live_original_descendant(
             os.kill(pid, signum)
 
     monkeypatch.setattr(
-        stream_command, "subprocess",
-        SimpleNamespace(Popen=start_child, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT,
-                        TimeoutExpired=subprocess.TimeoutExpired),
+        stream_command,
+        "subprocess",
+        SimpleNamespace(
+            Popen=start_child, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT, TimeoutExpired=subprocess.TimeoutExpired
+        ),
     )
     monkeypatch.setattr(stream_command, "os", ControlledOS())
     monkeypatch.setattr(stream_command._StatusPublisher, "publish", release_after_live_binding)
@@ -1179,8 +1258,12 @@ def test_deferred_group_eperm_cannot_hide_a_live_original_descendant(
         returncode = stream_command.stream_command(
             [sys.executable, "-c", leader_source, str(tmp_path)],
             tmp_path / "observed" / "demo" / "run-1.log",
-            observed_root=tmp_path / "observed", label="demo", run_id="run-1",
-            termination_grace_seconds=0.05, quiet=True, cwd=tmp_path,
+            observed_root=tmp_path / "observed",
+            label="demo",
+            run_id="run-1",
+            termination_grace_seconds=0.05,
+            quiet=True,
+            cwd=tmp_path,
         )
         descendant_pid, descendant_birth = identities["descendant"]
         fresh = psutil.Process(descendant_pid)
@@ -1216,7 +1299,7 @@ def test_deferred_group_eperm_cannot_hide_a_live_original_descendant(
 
     assert returncode == 125 and live_at_return
     assert [item for item in events if item[0] == "reaped"] == [("reaped", 17, True)]
-    after_reap = events[events.index(("reaped", 17, True)) + 1:]
+    after_reap = events[events.index(("reaped", 17, True)) + 1 :]
     assert after_reap and all(kind == "group" and signum == 0 for kind, signum, _flag in after_reap)
     assert any(kind == "group" and signum == 0 and flag for kind, signum, flag in events)
     status = _current_status(tmp_path)
@@ -1225,7 +1308,7 @@ def test_deferred_group_eperm_cannot_hide_a_live_original_descendant(
 
 
 def test_failed_leader_with_closed_pipes_drains_positively_owned_descendant(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A terminal leader and EOF cannot certify its still-live owned session."""
     import psutil
@@ -1276,9 +1359,7 @@ def test_failed_leader_with_closed_pipes_drains_positively_owned_descendant(
 
     original_publish = stream_command._StatusPublisher.publish
 
-    def publish_with_identity_barrier(
-        publisher: stream_command._StatusPublisher, payload: dict[str, object],
-    ) -> None:
+    def publish_with_identity_barrier(publisher: stream_command._StatusPublisher, payload: dict[str, object]) -> None:
         original_publish(publisher, payload)
         if payload["state"] != "running" or positively_owned:
             return
@@ -1308,9 +1389,15 @@ def test_failed_leader_with_closed_pipes_drains_positively_owned_descendant(
         returncode = stream_command.stream_command(
             [sys.executable, "-c", leader_source, str(tmp_path)],
             tmp_path / "observed" / "demo" / "run-1.log",
-            observed_root=tmp_path / "observed", label="demo", run_id="run-1",
-            max_seconds=8, quiet_seconds=0, quiet=True,
-            termination_grace_seconds=0.05, environment=os.environ.copy(), cwd=tmp_path,
+            observed_root=tmp_path / "observed",
+            label="demo",
+            run_id="run-1",
+            max_seconds=8,
+            quiet_seconds=0,
+            quiet=True,
+            termination_grace_seconds=0.05,
+            environment=os.environ.copy(),
+            cwd=tmp_path,
         )
         live_at_return = [process.pid for process in live_owned()]
     finally:
@@ -1334,12 +1421,7 @@ def test_failed_leader_with_closed_pipes_drains_positively_owned_descendant(
 
 def test_observer_records_child_signal_with_shell_exit_semantics(tmp_path: Path) -> None:
     completed = subprocess.run(
-        _command(
-            tmp_path,
-            "import os,signal; os.kill(os.getpid(), signal.SIGTERM)",
-        ),
-        capture_output=True,
-        check=False,
+        _command(tmp_path, "import os,signal; os.kill(os.getpid(), signal.SIGTERM)"), capture_output=True, check=False
     )
 
     status = _current_status(tmp_path)
@@ -1350,7 +1432,7 @@ def test_observer_records_child_signal_with_shell_exit_semantics(tmp_path: Path)
 
 @pytest.mark.parametrize("contradiction", ("wrong-ppid", "changed-birth", "consumed-status"))
 def test_positive_child_identity_contradiction_cannot_authorize_numeric_cleanup(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, contradiction: str,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, contradiction: str
 ) -> None:
     """A positive contradiction cannot authorize actual numeric signal/reap boundaries."""
     from types import SimpleNamespace
@@ -1403,14 +1485,19 @@ def test_positive_child_identity_contradiction_cannot_authorize_numeric_cleanup(
         )
 
     controlled_psutil = SimpleNamespace(
-        Process=fresh_identity, process_iter=lambda: iter(()),
-        Error=psutil.Error, ZombieProcess=psutil.ZombieProcess,
-        NoSuchProcess=psutil.NoSuchProcess, STATUS_ZOMBIE=psutil.STATUS_ZOMBIE,
+        Process=fresh_identity,
+        process_iter=lambda: iter(()),
+        Error=psutil.Error,
+        ZombieProcess=psutil.ZombieProcess,
+        NoSuchProcess=psutil.NoSuchProcess,
+        STATUS_ZOMBIE=psutil.STATUS_ZOMBIE,
     )
     monkeypatch.setattr(
-        stream_command, "subprocess",
-        SimpleNamespace(Popen=PrivateChild, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT,
-                        TimeoutExpired=subprocess.TimeoutExpired),
+        stream_command,
+        "subprocess",
+        SimpleNamespace(
+            Popen=PrivateChild, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT, TimeoutExpired=subprocess.TimeoutExpired
+        ),
     )
     monkeypatch.setattr(stream_command, "os", ControlledOS())
     monkeypatch.setattr(stream_command, "psutil", controlled_psutil, raising=False)
@@ -1418,8 +1505,12 @@ def test_positive_child_identity_contradiction_cannot_authorize_numeric_cleanup(
         with monkeypatch.context() as local:
             local.setitem(sys.modules, "psutil", controlled_psutil)
             returncode = stream_command.stream_command(
-                ["controlled-no-native-child"], tmp_path / "observed" / "demo" / "run-1.log",
-                observed_root=tmp_path / "observed", label="demo", run_id="run-1", quiet=True,
+                ["controlled-no-native-child"],
+                tmp_path / "observed" / "demo" / "run-1.log",
+                observed_root=tmp_path / "observed",
+                label="demo",
+                run_id="run-1",
+                quiet=True,
             )
     finally:
         for pipe in pipes:
@@ -1436,7 +1527,7 @@ def test_positive_child_identity_contradiction_cannot_authorize_numeric_cleanup(
 
 @pytest.mark.parametrize("failure_kind", ("census", "member", "identity", "other-errno"))
 def test_group_absence_never_clears_an_independent_cleanup_failure(
-    monkeypatch: pytest.MonkeyPatch, failure_kind: str,
+    monkeypatch: pytest.MonkeyPatch, failure_kind: str
 ) -> None:
     """Native absence can reconcile group EPERM only, never another error."""
     import errno
@@ -1461,7 +1552,7 @@ def test_group_absence_never_clears_an_independent_cleanup_failure(
 
 @pytest.mark.parametrize("terminal_outcome", ("absent", "unknown"))
 def test_transient_post_reap_eperm_is_silent_only_after_verified_absence(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], terminal_outcome: str,
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], terminal_outcome: str
 ) -> None:
     """A potentially resolved observation is buffered without losing real failures."""
     import errno
@@ -1500,9 +1591,7 @@ def test_transient_post_reap_eperm_is_silent_only_after_verified_absence(
     assert calls == [(pid, 0), (pid, 0)]
 
 
-def test_unreaped_child_never_authorizes_a_post_reap_group_observation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_unreaped_child_never_authorizes_a_post_reap_group_observation(monkeypatch: pytest.MonkeyPatch) -> None:
     """A failed final wait leaves group EPERM unresolved without another signal."""
     import errno
     from types import SimpleNamespace
@@ -1523,7 +1612,7 @@ def test_unreaped_child_never_authorizes_a_post_reap_group_observation(
 
 
 def test_unavailable_child_inspection_still_cleans_the_private_pinned_child(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Unavailable inspection differs from positive foreign identity."""
     import psutil
@@ -1534,9 +1623,7 @@ def test_unavailable_child_inspection_still_cleans_the_private_pinned_child(
     children: list[tuple[subprocess.Popen[bytes], float, Any]] = []
     cleanup_pids: list[int] = []
 
-    def unavailable_state(
-        child: subprocess.Popen[bytes], _birth: float | None,
-    ) -> tuple[float, bool]:
+    def unavailable_state(child: subprocess.Popen[bytes], _birth: float | None) -> tuple[float, bool]:
         fresh = psutil.Process(child.pid)
         assert fresh.ppid() == os.getpid() and child.returncode is None
         children.append((child, fresh.create_time(), child.wait))
@@ -1552,8 +1639,12 @@ def test_unavailable_child_inspection_still_cleans_the_private_pinned_child(
         returncode = stream_command.stream_command(
             [sys.executable, "-c", "import time; time.sleep(1.5)"],
             tmp_path / "observed" / "demo" / "run-1.log",
-            observed_root=tmp_path / "observed", label="demo", run_id="run-1",
-            termination_grace_seconds=0.05, quiet=True, cwd=tmp_path,
+            observed_root=tmp_path / "observed",
+            label="demo",
+            run_id="run-1",
+            termination_grace_seconds=0.05,
+            quiet=True,
+            cwd=tmp_path,
         )
         assert len(children) == 1
         child, _birth, _native_wait = children[0]
@@ -1574,7 +1665,7 @@ def test_unavailable_child_inspection_still_cleans_the_private_pinned_child(
 
 @pytest.mark.parametrize("failed_group_signal", (None, signal.SIGTERM, signal.SIGKILL))
 def test_posix_group_cleanup_keeps_leader_unreaped_through_last_signal(
-    monkeypatch: pytest.MonkeyPatch, failed_group_signal: signal.Signals | None,
+    monkeypatch: pytest.MonkeyPatch, failed_group_signal: signal.Signals | None
 ) -> None:
     """Native group cleanup cannot delegate to a Popen method that polls/reaps."""
     from types import SimpleNamespace
@@ -1613,14 +1704,8 @@ def test_posix_group_cleanup_keeps_leader_unreaped_through_last_signal(
     def forbidden_member_wait(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("Native member drain must observe without reaping")
 
-    monkeypatch.setattr(
-        stream_command, "os",
-        SimpleNamespace(name="posix", killpg=signal_group, kill=signal_leader),
-    )
-    monkeypatch.setattr(
-        stream_command, "time",
-        SimpleNamespace(monotonic=lambda: clock[0], sleep=grace_sleep),
-    )
+    monkeypatch.setattr(stream_command, "os", SimpleNamespace(name="posix", killpg=signal_group, kill=signal_leader))
+    monkeypatch.setattr(stream_command, "time", SimpleNamespace(monotonic=lambda: clock[0], sleep=grace_sleep))
     monkeypatch.setattr(psutil, "process_iter", lambda: iter(()))
     monkeypatch.setattr(psutil, "wait_procs", forbidden_member_wait)
 
@@ -1644,12 +1729,12 @@ def test_posix_group_cleanup_keeps_leader_unreaped_through_last_signal(
         fallback_index = events.index(("leader-fallback", failed_group_signal))
         group_index = events.index(("group", failed_group_signal))
         assert group_index < fallback_index
-        assert all(kind != "group" for kind, _value in events[kill_index + 1:])
+        assert all(kind != "group" for kind, _value in events[kill_index + 1 :])
 
 
 @pytest.mark.parametrize("sigchld_policy", ("ignored", "custom"))
 def test_posix_observer_refuses_nondefault_reaper_before_child_start(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sigchld_policy: str,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sigchld_policy: str
 ) -> None:
     """A known competing/automatic-reap policy must not create an owned child."""
     from types import SimpleNamespace
@@ -1674,12 +1759,17 @@ def test_posix_observer_refuses_nondefault_reaper_before_child_start(
 
     monkeypatch.setattr(signal, "getsignal", observed_policy)
     monkeypatch.setattr(
-        stream_command, "subprocess",
+        stream_command,
+        "subprocess",
         SimpleNamespace(Popen=forbidden_child_start, PIPE=subprocess.PIPE, STDOUT=subprocess.STDOUT),
     )
     returncode = stream_command.stream_command(
-        ["controlled-unused-child"], tmp_path / "observed" / "demo" / "run-1.log",
-        observed_root=tmp_path / "observed", label="demo", run_id="run-1", quiet=True,
+        ["controlled-unused-child"],
+        tmp_path / "observed" / "demo" / "run-1.log",
+        observed_root=tmp_path / "observed",
+        label="demo",
+        run_id="run-1",
+        quiet=True,
     )
 
     assert returncode == 125
@@ -1714,23 +1804,13 @@ def test_observer_rejects_unsafe_names_and_invalid_durations(tmp_path: Path) -> 
     with pytest.raises(ValueError, match="command"):
         stream_command.stream_command([], tmp_path / "unused.log")
     with pytest.raises(ValueError, match="durations"):
-        stream_command.stream_command(
-            [sys.executable, "-c", "pass"],
-            tmp_path / "unused.log",
-            max_seconds=-1,
-        )
+        stream_command.stream_command([sys.executable, "-c", "pass"], tmp_path / "unused.log", max_seconds=-1)
     with pytest.raises(ValueError, match="grace"):
         stream_command.stream_command(
-            [sys.executable, "-c", "pass"],
-            tmp_path / "unused.log",
-            termination_grace_seconds=0,
+            [sys.executable, "-c", "pass"], tmp_path / "unused.log", termination_grace_seconds=0
         )
     with pytest.raises(ValueError, match="retain_runs"):
-        stream_command.stream_command(
-            [sys.executable, "-c", "pass"],
-            tmp_path / "unused.log",
-            retain_runs=0,
-        )
+        stream_command.stream_command([sys.executable, "-c", "pass"], tmp_path / "unused.log", retain_runs=0)
 
 
 @pytest.mark.parametrize(
@@ -1740,17 +1820,9 @@ def test_observer_rejects_unsafe_names_and_invalid_durations(tmp_path: Path) -> 
         (("--quiet-secs", "0.1"), "quiet-output-timeout"),
     ],
 )
-def test_observer_times_out_the_owned_process_group(
-    tmp_path: Path, limit_args: tuple[str, str], reason: str
-) -> None:
+def test_observer_times_out_the_owned_process_group(tmp_path: Path, limit_args: tuple[str, str], reason: str) -> None:
     completed = subprocess.run(
-        _command(
-            tmp_path,
-            "import time; time.sleep(10)",
-            "--heartbeat-secs",
-            "0.02",
-            *limit_args,
-        ),
+        _command(tmp_path, "import time; time.sleep(10)", "--heartbeat-secs", "0.02", *limit_args),
         capture_output=True,
         check=False,
         timeout=5,
@@ -1765,14 +1837,7 @@ def test_observer_times_out_the_owned_process_group(
 
 def test_observer_forwards_signals_and_records_interruption(tmp_path: Path) -> None:
     process = subprocess.Popen(
-        _command(
-            tmp_path,
-            "import time; time.sleep(10)",
-            "--heartbeat-secs",
-            "0.03",
-            "--max-secs",
-            "30",
-        ),
+        _command(tmp_path, "import time; time.sleep(10)", "--heartbeat-secs", "0.03", "--max-secs", "30"),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
@@ -1802,19 +1867,14 @@ def test_observer_forwards_signals_and_records_interruption(tmp_path: Path) -> N
 @pytest.mark.parametrize("watched_signal", [signal.SIGINT, signal.SIGTERM])
 @pytest.mark.parametrize("publication_fails", [False, True])
 def test_running_publication_requires_armed_and_restored_signal_handlers(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    watched_signal: signal.Signals,
-    publication_fails: bool,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, watched_signal: signal.Signals, publication_fails: bool
 ) -> None:
     previous_handler = signal.getsignal(watched_signal)
     published_handlers: list[Any] = []
     published_child_pids: list[int] = []
     original_publish = stream_command._StatusPublisher.publish
 
-    def record_running(
-        publisher: stream_command._StatusPublisher, payload: dict[str, object]
-    ) -> None:
+    def record_running(publisher: stream_command._StatusPublisher, payload: dict[str, object]) -> None:
         if payload["state"] == "running":
             published_handlers.append(signal.getsignal(watched_signal))
             published_child_pids.append(cast(int, payload["child_pid"]))
@@ -1844,16 +1904,12 @@ def test_running_publication_requires_armed_and_restored_signal_handlers(
 
 @pytest.mark.parametrize("watched_signal", [signal.SIGINT, signal.SIGTERM])
 def test_signal_received_at_running_publication_is_sealed(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    watched_signal: signal.Signals,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, watched_signal: signal.Signals
 ) -> None:
     previous_handler = signal.getsignal(watched_signal)
     original_publish = stream_command._StatusPublisher.publish
 
-    def interrupt_running(
-        publisher: stream_command._StatusPublisher, payload: dict[str, object]
-    ) -> None:
+    def interrupt_running(publisher: stream_command._StatusPublisher, payload: dict[str, object]) -> None:
         original_publish(publisher, payload)
         if payload["state"] == "running":
             handler = signal.getsignal(watched_signal)
@@ -1884,9 +1940,7 @@ def test_observer_log_open_failure_is_fail_closed(tmp_path: Path) -> None:
     blocked_log = tmp_path / "blocked.log"
     blocked_log.mkdir()
     completed = subprocess.run(
-        _command(tmp_path, "print('must not run')", "--log", str(blocked_log)),
-        capture_output=True,
-        check=False,
+        _command(tmp_path, "print('must not run')", "--log", str(blocked_log)), capture_output=True, check=False
     )
 
     status = _current_status(tmp_path)
@@ -1902,18 +1956,14 @@ def test_observer_status_write_failure_terminates_child_and_fails_closed(
     original_publish = stream_command._StatusPublisher.publish
     publish_count = 0
 
-    def fail_heartbeat_publish(
-        publisher: stream_command._StatusPublisher, payload: dict[str, object]
-    ) -> None:
+    def fail_heartbeat_publish(publisher: stream_command._StatusPublisher, payload: dict[str, object]) -> None:
         nonlocal publish_count
         publish_count += 1
         if publish_count >= 3:
             raise OSError("status volume unavailable")
         original_publish(publisher, payload)
 
-    monkeypatch.setattr(
-        stream_command._StatusPublisher, "publish", fail_heartbeat_publish
-    )
+    monkeypatch.setattr(stream_command._StatusPublisher, "publish", fail_heartbeat_publish)
 
     returncode = stream_command.stream_command(
         [sys.executable, "-c", "import time; time.sleep(10)"],
@@ -1964,11 +2014,7 @@ def test_pytest_trace_path_and_run_id_are_exported_to_child(tmp_path: Path) -> N
         "pathlib.Path(os.environ['GLUDD_XDIST_TRACE_LOG']).write_text("
         "os.environ['GLUDD_XDIST_TRACE_RUN_ID'], encoding='utf-8')"
     )
-    completed = subprocess.run(
-        _command(tmp_path, child, "--pytest-trace"),
-        capture_output=True,
-        check=False,
-    )
+    completed = subprocess.run(_command(tmp_path, child, "--pytest-trace"), capture_output=True, check=False)
 
     status = _current_status(tmp_path)
     assert completed.returncode == 0
@@ -2025,24 +2071,14 @@ def test_status_distinguishes_live_fresh_and_live_stale_runs(
     }
     current.write_text(json.dumps(payload), encoding="utf-8")
 
-    assert (
-        stream_command.observed_status(
-            tmp_path / "observed", "demo", stale_seconds=0.01
-        )
-        == 3
-    )
+    assert stream_command.observed_status(tmp_path / "observed", "demo", stale_seconds=0.01) == 3
     stale = json.loads(capsys.readouterr().out)
     assert stale["effective_state"] == "stale"
     assert stale["active"] is False
 
     payload["updated_at"] = stream_command._utc_now()
     current.write_text(json.dumps(payload), encoding="utf-8")
-    assert (
-        stream_command.observed_status(
-            tmp_path / "observed", "demo", stale_seconds=90
-        )
-        == 0
-    )
+    assert stream_command.observed_status(tmp_path / "observed", "demo", stale_seconds=90) == 0
     fresh = json.loads(capsys.readouterr().out)
     assert fresh["effective_state"] == "running"
     assert fresh["active"] is True
@@ -2062,9 +2098,7 @@ def test_status_and_tail_helpers_reject_invalid_inputs(tmp_path: Path) -> None:
         stream_command.observed_tail(tmp_path / "observed", "demo", lines=1)
 
 
-def test_retention_prunes_only_superseded_terminal_run_artifacts(
-    tmp_path: Path,
-) -> None:
+def test_retention_prunes_only_superseded_terminal_run_artifacts(tmp_path: Path) -> None:
     label_dir = tmp_path / "observed" / "demo"
     label_dir.mkdir(parents=True)
     (label_dir / "current.json").write_text("{}", encoding="utf-8")
@@ -2119,18 +2153,10 @@ def test_retention_prunes_only_superseded_terminal_run_artifacts(
     assert (label_dir / "current.json").exists()
 
 
-def test_observer_prunes_to_retention_bound_after_terminal_publish(
-    tmp_path: Path,
-) -> None:
+def test_observer_prunes_to_retention_bound_after_terminal_publish(tmp_path: Path) -> None:
     for index in range(1, 4):
         completed = subprocess.run(
-            _command(
-                tmp_path,
-                f"print('run-{index}', flush=True)",
-                "--retain-runs",
-                "2",
-                run_id=f"run-{index}",
-            ),
+            _command(tmp_path, f"print('run-{index}', flush=True)", "--retain-runs", "2", run_id=f"run-{index}"),
             capture_output=True,
             check=False,
         )
@@ -2155,9 +2181,7 @@ def test_status_and_tail_address_retained_terminal_run_after_current_advances(
 
     for run_id in ("run-1", "run-2"):
         log_path = (
-            tmp_path / "custom-retained.log"
-            if run_id == "run-1"
-            else tmp_path / "observed" / "demo" / f"{run_id}.log"
+            tmp_path / "custom-retained.log" if run_id == "run-1" else tmp_path / "observed" / "demo" / f"{run_id}.log"
         )
         returncode = stream_command.stream_command(
             [sys.executable, "-c", f"print('{run_id}', flush=True)"],
@@ -2171,25 +2195,12 @@ def test_status_and_tail_address_retained_terminal_run_after_current_advances(
         assert returncode == 0
 
     capsys.readouterr()
-    assert (
-        stream_command.observed_status(
-            tmp_path / "observed",
-            "demo",
-            run_id="run-1",
-            stale_seconds=90,
-        )
-        == 0
-    )
+    assert stream_command.observed_status(tmp_path / "observed", "demo", run_id="run-1", stale_seconds=90) == 0
     retained = json.loads(capsys.readouterr().out)
     assert retained["run_id"] == "run-1"
     assert retained["state"] == "passed"
 
-    assert (
-        stream_command.observed_tail(
-            tmp_path / "observed", "demo", run_id="run-1", lines=1
-        )
-        == 0
-    )
+    assert stream_command.observed_tail(tmp_path / "observed", "demo", run_id="run-1", lines=1) == 0
     assert capsys.readouterr().out == "run-1\n"
 
 
@@ -2234,9 +2245,7 @@ def test_current_run_id_alias_resolves_payload_identity_and_preserves_exact_look
         assert status["run_id"] == expected_run_id
 
 
-def test_current_run_id_alias_rejects_unsafe_payload_run_identity(
-    tmp_path: Path,
-) -> None:
+def test_current_run_id_alias_rejects_unsafe_payload_run_identity(tmp_path: Path) -> None:
     """A current pointer cannot use its payload to escape retained-run identity."""
 
     label_dir = tmp_path / "observed" / "demo"
@@ -2254,9 +2263,7 @@ def test_current_run_id_alias_rejects_unsafe_payload_run_identity(
     )
 
     with pytest.raises(ValueError, match="run_id must be a safe"):
-        stream_command._load_status(
-            tmp_path / "observed", "demo", run_id="current"
-        )
+        stream_command._load_status(tmp_path / "observed", "demo", run_id="current")
 
 
 def test_exact_terminal_lookup_obeys_retention_rotation(tmp_path: Path) -> None:
@@ -2277,17 +2284,10 @@ def test_exact_terminal_lookup_obeys_retention_rotation(tmp_path: Path) -> None:
         )
 
     with pytest.raises(FileNotFoundError):
-        stream_command.observed_status(
-            tmp_path / "observed",
-            "demo",
-            run_id="run-1",
-            stale_seconds=90,
-        )
+        stream_command.observed_status(tmp_path / "observed", "demo", run_id="run-1", stale_seconds=90)
 
 
-def test_retention_failure_after_child_exit_fails_closed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_retention_failure_after_child_exit_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     def fail_retention(_directory: Path, *, retain_runs: int) -> None:
         raise OSError(f"retention volume unavailable ({retain_runs})")
 
@@ -2316,9 +2316,7 @@ def test_tail_reads_only_a_bounded_snapshot_from_current_run(tmp_path: Path) -> 
     label_dir.mkdir(parents=True)
     log_path = label_dir / "run.log"
     log_path.write_text("".join(f"line-{index}\n" for index in range(100)), encoding="utf-8")
-    (label_dir / "current.json").write_text(
-        json.dumps({"log_path": str(log_path)}), encoding="utf-8"
-    )
+    (label_dir / "current.json").write_text(json.dumps({"log_path": str(log_path)}), encoding="utf-8")
 
     completed = subprocess.run(
         [

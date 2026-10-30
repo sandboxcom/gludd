@@ -972,3 +972,84 @@ Do not replay unchanged publication/startup/final admission because a diagnostic
 passes or HEAD changes. Fresh full gate/global coverage, all-shard exact-SHA CI,
 deployment acceptance and guarded promotion remain pending. All seven S98
 release items stay unchecked.
+
+## Deterministic EOF heartbeat fixture receiving (2026-10-30 UTC)
+
+Build40981019192 attempt1 at
+`6c5b690dda7d6dec7ea82e98ab16b0770b5b9411` fails3.12 job123820853490:
+TAIL has1FAIL/192PASS55.71s. The original EOF-monitoring test expects two
+heartbeat banners but receives one despite native child exit0. This is not an
+outer90-second timeout. The3.11 whole gate/runtime passes; all eight downstream
+shard intervals remain unknown/censored behind the failed barrier.
+
+The unchanged producer loops while a pipe registration or live child exists;
+EOF only unregisters the pipe. Each heartbeat publishes its native sequence
+before printing. A0.15-second child sleep lacks a scheduling premise for two
+cycles; the exact hosted delay or production cause remains unproved.
+The fixture now preserves the original three assertion ASTs,0.03s heartbeat,
+2s maximum and5s parent timeout while waiting for two NEW real sequence advances
+after closing1/2, verifying EBADF and binding its own native PID/owner/run status.
+
+New controls reject spoofed child console banners with native heartbeat0 and
+no release/timeout124, and prove a same-payload unguarded JSON-shadow marker
+before the native-P positive. Plain focus passes3 EACH
+(3115.45s/native6.642s;3125.78s/native7.299s),9events/3pairs/0issues each.
+The first whole13 coverage instead fails that new import-shadow control:
+1FAIL/672PASS285.81s/native287.649s,1350events/673pairs/1failed report.
+Its unguarded child produces no marker or output; the native observer continues
+31heartbeats and times out124/2.563s. Marker absence proves no shadow execution,
+not a measured module-cache cause. That failed receipt is retained.
+
+The common child now records a per-PID entry-cache boolean and performs one fresh
+child-local JSON import for BOTH unsafe/guarded paths. Coverage, PYTHONPATH,
+unrelated carriers and parent state remain. No native ticks/status are forged.
+Root-context Ruff/format/strict BOTH pass; an earlier private-path import grouping
+miss is retained and corrected by one AST-identical blank line. Current source
+pins are test1f30e751, helperbb4fc4a3 and registrationab857e25; all original53
+functions/301assertions remain, with only the EOF fixture body changing.
+Canonical formatting preserves other function ASTs and unchanged line caps.
+
+The supplemental real coverage/subprocess control passes3 EACH
+(3116.17s/native8.189s;3126.67s/native9.361s),9events/3pairs/0issues each.
+It measures the ENTIRE new fixture module:66/66lines,0measured branches,
+native85aggregate/75each audit passed. Generated child behavior is native control
+evidence, not measured helper branches or canonical four-provider coverage.
+The original Main12-owner profile retains its300/60 bound and all four complete
+production providers. Whole runtime publication admission retains600/180.
+Together those partitions preserve the same13completeowners without a duplicate
+full replay. Canonical12 now passes581 EACH on the frozen1f30/bb4/ab857 input:
+311107.61s/native109.938s and312118.42s/native121.413s, each
+1165events/581pairs/0failed reports/issues/unfinished. Both native exact statuses
+are terminal and verified.
+
+The unchanged four full-source profile passes85aggregate/75every-file line AND
+branch on both runtimes:1961/2195statements (89.3%) and729/856branches (85.2%).
+Per-file statement/branch counts are active-work378/440 and167/196;
+stream-command1020/1178 and379/462; summary244/247 and99/102;
+plugin319/330 and84/96. No measured file is below either per-file floor.
+Coverage-files receipts are
+`20261030T011742Z-91193-8dcce90b` and `20261030T011940Z-94804-d074b69c`;
+raw reports are `.gate-logs/coverage-eof-v2-canonical12-311-20261030.json` and
+`.gate-logs/coverage-eof-v2-canonical12-312-20261030.json`.
+Native audits are `.gate-logs/coverage-20261030T011932Z.json` and
+`.gate-logs/coverage-20261030T012141Z.json`. These are the existing four complete
+providers, not global project coverage or full-gate acceptance.
+
+Whole publication admission now passes92 EACH on the same frozen source:
+311133.38s/native134.854s and312135.25s/native136.766s, with
+187events/92pairs/0failed reports/issues/unfinished EACH. Both exact native
+commands and terminal statuses are verified, including UV return and cleanup0.
+The12+1 partitions complete the13-owner acceptance union on each runtime.
+The earlier failed combined13 receipt remains failed; these are separate
+receiving scopes. Normal checkpoint, new-SHA hosted CI, full gate, ZDD,
+artifact/deployment/release proof and any timing improvement remain unproved.
+
+The [official pytest flaky guide](https://docs.pytest.org/en/stable/explanation/flaky.html)
+describes uncontrolled state/timing as a source of intermittent results.
+In [firsthand pytest4563](https://github.com/pytest-dev/pytest/issues/4563),
+the2018-12-19 reporter requests0.1s sleep, measures0.317211s and exceeds a0.2s
+assertion; it closes2018-12-20. This is a historical timing-sensitive assertion failure, not
+this job's causal proof or a fix result. Root's bounded native read retains
+raw57bab9c3 and9aa64fdb. All earlier failures, canonical85/75 line AND branch,
+full-gate/exact-SHA CI, ZDD/promotion/release requirements and seven open S98
+criteria remain.
