@@ -19,6 +19,7 @@ from general_ludd.cli_commands import parser as _parser_impl
 from general_ludd.cli_commands import platform as _platform_impl
 from general_ludd.cli_commands import tui_views as _tui_views
 from general_ludd.cli_commands.manual import MAN_PAGE
+from general_ludd.cli_deploy_check import _psk_headers
 from general_ludd.cli_parser_cache import CommandGraphCache
 from general_ludd.integrity.fim_excludes import FIM_EXCLUDE_PATTERNS
 from general_ludd.integrity.scanner import FileIntegrityScanner
@@ -51,19 +52,21 @@ def _http_call(
     ok_codes: tuple[int, ...] = (200,),
 ) -> Any:
     try:
+        headers = _psk_headers()
+        auth_kwargs: dict[str, Any] = {"headers": headers} if "Authorization" in headers else {}
         m = method.upper()
         if m == "GET":
-            resp = httpx.get(url, params=params, timeout=timeout)
+            resp = httpx.get(url, params=params, timeout=timeout, **auth_kwargs)
         elif m == "POST":
-            resp = httpx.post(url, json=json, params=params, timeout=timeout)
+            resp = httpx.post(url, json=json, params=params, timeout=timeout, **auth_kwargs)
         elif m == "DELETE":
-            resp = httpx.delete(url, params=params, timeout=timeout)
+            resp = httpx.delete(url, params=params, timeout=timeout, **auth_kwargs)
         elif m == "PUT":
-            resp = httpx.put(url, json=json, params=params, timeout=timeout)
+            resp = httpx.put(url, json=json, params=params, timeout=timeout, **auth_kwargs)
         elif m == "PATCH":
-            resp = httpx.patch(url, json=json, params=params, timeout=timeout)
+            resp = httpx.patch(url, json=json, params=params, timeout=timeout, **auth_kwargs)
         else:
-            resp = httpx.request(method, url, json=json, params=params, timeout=timeout)
+            resp = httpx.request(method, url, json=json, params=params, timeout=timeout, **auth_kwargs)
         if resp.status_code in ok_codes:
             return resp.json()
         print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
@@ -1150,7 +1153,9 @@ def _cmd_model_router_set(args: argparse.Namespace) -> None:
 
 
 def _cmd_local_serve(args: argparse.Namespace) -> None:
+    startup_timeout = 120.0
     payload = {
+        "model_id": args.model,
         "engine": args.engine,
         "model_path": args.model,
         "model_name": args.model,
@@ -1158,12 +1163,13 @@ def _cmd_local_serve(args: argparse.Namespace) -> None:
         "port": args.port,
         "gpu_layers": args.gpu_layers,
         "context_size": args.context_size,
+        "startup_timeout": startup_timeout,
     }
     data = _http_call(
         "POST",
         f"{args.daemon_url}/admin/models/local/serve",
         json=payload,
-        timeout=30.0,
+        timeout=startup_timeout + 10.0,
         ok_codes=(200, 201),
     )
     if data is None:

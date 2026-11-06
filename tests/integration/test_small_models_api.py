@@ -1,17 +1,24 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 import sys
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+from httpx import ASGITransport, AsyncClient, Response
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from general_ludd.db.models import Base
 from general_ludd.small_models import ModelDownloader
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI
+    from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 PSK = "test-psk-sm"
 AUTH = {"Authorization": f"Bearer {PSK}"}
@@ -26,13 +33,20 @@ def _make_dummy_file(cache_dir: str, model_id: str) -> str:
     return str(file_path)
 
 
-async def _make_app(monkeypatch):
+async def _make_app(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    server_psk: str | None = PSK,
+) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession], AsyncClient, FastAPI]:
     engine = create_async_engine("sqlite+aiosqlite://", echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
-    monkeypatch.setenv("GLUDD_AUTH_PSK", PSK)
+    if server_psk is None:
+        monkeypatch.delenv("GLUDD_AUTH_PSK", raising=False)
+    else:
+        monkeypatch.setenv("GLUDD_AUTH_PSK", server_psk)
     from general_ludd.daemon import create_daemon_app
 
     app = create_daemon_app(tick_interval=1.0)
@@ -45,13 +59,13 @@ async def _make_app(monkeypatch):
 
 class TestSmallModelsDownload:
     @pytest.mark.asyncio
-    async def test_download_huggingface(self, monkeypatch):
+    async def test_download_huggingface(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, app = await _make_app(monkeypatch)
         with tempfile.TemporaryDirectory() as tmpdir:
             monkeypatch.setattr(app.state, "_model_downloader", ModelDownloader(cache_dir=tmpdir))
             dummy_path = _make_dummy_file(tmpdir, "microsoft/phi-2")
 
-            def _fake_download(*_a, **_kw):
+            def _fake_download(*_a: object, **_kw: object) -> str:
                 return dummy_path
 
             monkeypatch.setattr("huggingface_hub.hf_hub_download", _fake_download)
@@ -77,13 +91,13 @@ class TestSmallModelsDownload:
                 await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_download_ollama(self, monkeypatch):
+    async def test_download_ollama(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, app = await _make_app(monkeypatch)
         with tempfile.TemporaryDirectory() as tmpdir:
             monkeypatch.setattr(app.state, "_model_downloader", ModelDownloader(cache_dir=tmpdir))
             dummy_path = _make_dummy_file(tmpdir, "llama3.2:3b")
 
-            def _fake_snapshot(*_a, **_kw):
+            def _fake_snapshot(*_a: object, **_kw: object) -> str:
                 return str(Path(dummy_path).parent)
 
             monkeypatch.setattr("huggingface_hub.snapshot_download", _fake_snapshot)
@@ -105,13 +119,13 @@ class TestSmallModelsDownload:
                 await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_download_writes_file_to_disk(self, monkeypatch):
+    async def test_download_writes_file_to_disk(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, app = await _make_app(monkeypatch)
         with tempfile.TemporaryDirectory() as tmpdir:
             monkeypatch.setattr(app.state, "_model_downloader", ModelDownloader(cache_dir=tmpdir))
             dummy_path = _make_dummy_file(tmpdir, "test-org/test-model")
 
-            def _fake_download(*_a, **_kw):
+            def _fake_download(*_a: object, **_kw: object) -> str:
                 return dummy_path
 
             monkeypatch.setattr("huggingface_hub.hf_hub_download", _fake_download)
@@ -141,7 +155,7 @@ class TestSmallModelsDownload:
                 await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_download_missing_model_id_422(self, monkeypatch):
+    async def test_download_missing_model_id_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -156,7 +170,7 @@ class TestSmallModelsDownload:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_download_invalid_source_422(self, monkeypatch):
+    async def test_download_invalid_source_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -170,7 +184,7 @@ class TestSmallModelsDownload:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_download_no_auth_returns_401(self, monkeypatch):
+    async def test_download_no_auth_returns_401(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -185,7 +199,7 @@ class TestSmallModelsDownload:
 
 class TestSmallModelsQuantize:
     @pytest.mark.asyncio
-    async def test_quantize_q4(self, monkeypatch):
+    async def test_quantize_q4(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         with tempfile.TemporaryDirectory() as tmpdir:
             monkeypatch.setenv("GLUDD_MODELS_DIR", tmpdir)
@@ -214,7 +228,7 @@ class TestSmallModelsQuantize:
                 await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_quantize_q8(self, monkeypatch):
+    async def test_quantize_q8(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         with tempfile.TemporaryDirectory() as tmpdir:
             monkeypatch.setenv("GLUDD_MODELS_DIR", tmpdir)
@@ -240,7 +254,7 @@ class TestSmallModelsQuantize:
                 await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_quantize_missing_model_id_422(self, monkeypatch):
+    async def test_quantize_missing_model_id_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -254,7 +268,7 @@ class TestSmallModelsQuantize:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_quantize_invalid_method_422(self, monkeypatch):
+    async def test_quantize_invalid_method_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -268,7 +282,7 @@ class TestSmallModelsQuantize:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_quantize_no_auth_returns_401(self, monkeypatch):
+    async def test_quantize_no_auth_returns_401(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -283,7 +297,7 @@ class TestSmallModelsQuantize:
 
 class TestSmallModelsEvaluate:
     @pytest.mark.asyncio
-    async def test_evaluate_all_pass(self, monkeypatch):
+    async def test_evaluate_all_pass(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -306,7 +320,7 @@ class TestSmallModelsEvaluate:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_evaluate_partial_fail(self, monkeypatch):
+    async def test_evaluate_partial_fail(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -328,7 +342,7 @@ class TestSmallModelsEvaluate:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_evaluate_missing_model_id_422(self, monkeypatch):
+    async def test_evaluate_missing_model_id_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -342,7 +356,7 @@ class TestSmallModelsEvaluate:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_evaluate_missing_task_kind_422(self, monkeypatch):
+    async def test_evaluate_missing_task_kind_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -356,7 +370,7 @@ class TestSmallModelsEvaluate:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_evaluate_unknown_task_kind_422(self, monkeypatch):
+    async def test_evaluate_unknown_task_kind_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -370,7 +384,7 @@ class TestSmallModelsEvaluate:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_evaluate_no_auth_returns_401(self, monkeypatch):
+    async def test_evaluate_no_auth_returns_401(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -385,7 +399,7 @@ class TestSmallModelsEvaluate:
 
 class TestSmallModelsEvidence:
     @pytest.mark.asyncio
-    async def test_evidence_for_model(self, monkeypatch):
+    async def test_evidence_for_model(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             await client.post(
@@ -407,7 +421,7 @@ class TestSmallModelsEvidence:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_evidence_empty_for_unknown(self, monkeypatch):
+    async def test_evidence_empty_for_unknown(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.get(
@@ -422,7 +436,7 @@ class TestSmallModelsEvidence:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_evidence_all(self, monkeypatch):
+    async def test_evidence_all(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.get(
@@ -435,7 +449,7 @@ class TestSmallModelsEvidence:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_evidence_no_auth_returns_401(self, monkeypatch):
+    async def test_evidence_no_auth_returns_401(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.get("/admin/models/local/evidence")
@@ -445,9 +459,101 @@ class TestSmallModelsEvidence:
             await engine.dispose()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("engine_name", ["llamacpp", "vllm"])
+async def test_cli_local_serve_starts_configured_daemon_server(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    engine_name: str,
+) -> None:
+    """Forward the real CLI request to the daemon and witness owned startup."""
+    from general_ludd import cli
+    from general_ludd.infra.local_inference import LocalInferenceManager, LocalServer, LocalServerConfig
+
+    assert Path(cli.__file__).resolve() == Path(__file__).resolve().parents[2] / "src/general_ludd/cli.py"
+    monkeypatch.setenv("GLUDD_MODEL_DIR", str(tmp_path / "model-cache"))
+    model_path = tmp_path / "owned-model.gguf"
+    model_path.write_bytes(b"owned model input; engine launch is the controlled boundary")
+    engine, _factory, client, app = await _make_app(monkeypatch)
+    manager: LocalInferenceManager = app.state._local_inference_manager
+    started: list[LocalServerConfig] = []
+    requests: list[tuple[dict[str, object], float]] = []
+    loop = asyncio.get_running_loop()
+
+    async def start_owned_server(server_id: str) -> LocalServer:
+        server = manager.get_server(server_id)
+        assert server is not None
+        started.append(server.config)
+        server.status = "running"
+        return server
+
+    def post_to_daemon(
+        url: str,
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float = 10.0,
+    ) -> Response:
+        assert url == "http://127.0.0.1:19080/admin/models/local/serve"
+        assert json is not None
+        requests.append((dict(json), timeout))
+        # Authentication is supplied by the CLI; this bridge forwards it unchanged.
+        pending = asyncio.run_coroutine_threadsafe(
+            client.post(url, json=json, params=params, headers=headers), loop
+        )
+        return pending.result(timeout=timeout)
+
+    def invoke_cli() -> int:
+        try:
+            cli.main()
+        except SystemExit as exc:
+            return exc.code if isinstance(exc.code, int) else int(bool(exc.code))
+        return 0
+
+    monkeypatch.setattr(manager, "start_server", start_owned_server)
+    monkeypatch.setattr("httpx.post", post_to_daemon)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "gludd", "local-serve", "--engine", engine_name,
+            "--model", str(model_path), "--host", "127.0.0.1",
+            "--port", "19081", "--gpu-layers", "0", "--context-size", "512",
+            "--daemon-url", "http://127.0.0.1:19080",
+        ],
+    )
+    try:
+        exit_code = await asyncio.to_thread(invoke_cli)
+        captured = capsys.readouterr()
+        assert exit_code == 0, captured.err
+        result = json.loads(captured.out)
+        assert result["model_id"] == str(model_path)
+        assert result["engine"] == engine_name
+        assert result["status"] == "running"
+        assert result["endpoint_url"] == "http://127.0.0.1:19081/v1"
+        assert len(started) == len(requests) == 1
+        config = started[0]
+        body, request_timeout = requests[0]
+        assert body["model_id"] == body["model_name"] == body["model_path"] == str(model_path)
+        assert config.model_path == config.model_name == str(model_path)
+        assert config.engine == engine_name
+        assert config.host == "127.0.0.1"
+        assert config.port == 19081
+        assert config.gpu_layers == 0
+        assert config.context_size == 512
+        assert config.startup_timeout == LocalServerConfig().startup_timeout
+        assert request_timeout > config.startup_timeout > 0
+    finally:
+        await manager.stop_all()
+        await client.aclose()
+        await engine.dispose()
+
+
 class TestSmallModelsServe:
     @pytest.mark.asyncio
-    async def test_serve_creates_server(self, monkeypatch):
+    async def test_serve_creates_server(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -465,7 +571,7 @@ class TestSmallModelsServe:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_serve_missing_model_id_422(self, monkeypatch):
+    async def test_serve_missing_model_id_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -479,7 +585,7 @@ class TestSmallModelsServe:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_serve_invalid_port_422(self, monkeypatch):
+    async def test_serve_invalid_port_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -493,7 +599,7 @@ class TestSmallModelsServe:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_serve_no_auth_returns_401(self, monkeypatch):
+    async def test_serve_no_auth_returns_401(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -508,7 +614,7 @@ class TestSmallModelsServe:
 
 class TestSmallModelsStatus:
     @pytest.mark.asyncio
-    async def test_status_active(self, monkeypatch):
+    async def test_status_active(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             await client.post(
@@ -527,7 +633,7 @@ class TestSmallModelsStatus:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_status_empty(self, monkeypatch):
+    async def test_status_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.get("/admin/models/local/status", headers=AUTH)
@@ -538,7 +644,7 @@ class TestSmallModelsStatus:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_status_no_auth_returns_401(self, monkeypatch):
+    async def test_status_no_auth_returns_401(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.get("/admin/models/local/status")
@@ -550,7 +656,7 @@ class TestSmallModelsStatus:
 
 class TestSmallModelsRollout:
     @pytest.mark.asyncio
-    async def test_rollout_with_evidence(self, monkeypatch):
+    async def test_rollout_with_evidence(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             await client.post(
@@ -578,7 +684,7 @@ class TestSmallModelsRollout:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_rollout_without_evidence_412(self, monkeypatch):
+    async def test_rollout_without_evidence_412(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -597,7 +703,7 @@ class TestSmallModelsRollout:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_rollout_without_task_kind_allowed(self, monkeypatch):
+    async def test_rollout_without_task_kind_allowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -613,7 +719,7 @@ class TestSmallModelsRollout:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_rollout_missing_model_id_422(self, monkeypatch):
+    async def test_rollout_missing_model_id_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -627,7 +733,7 @@ class TestSmallModelsRollout:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_rollout_invalid_target_422(self, monkeypatch):
+    async def test_rollout_invalid_target_422(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -641,7 +747,7 @@ class TestSmallModelsRollout:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_rollout_no_auth_returns_401(self, monkeypatch):
+    async def test_rollout_no_auth_returns_401(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -656,7 +762,7 @@ class TestSmallModelsRollout:
 
 class TestSmallModelsRecommend:
     @pytest.mark.asyncio
-    async def test_recommend_ranked_by_pass_ratio(self, monkeypatch):
+    async def test_recommend_ranked_by_pass_ratio(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             await client.post(
@@ -703,7 +809,7 @@ class TestSmallModelsRecommend:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_recommend_empty_for_unknown_task(self, monkeypatch):
+    async def test_recommend_empty_for_unknown_task(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.get("/admin/models/recommend", params={"task": "unknown_task"}, headers=AUTH)
@@ -717,7 +823,7 @@ class TestSmallModelsRecommend:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_recommend_no_auth_returns_401(self, monkeypatch):
+    async def test_recommend_no_auth_returns_401(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.get("/admin/models/recommend", params={"task": "context_compaction"})
@@ -729,7 +835,7 @@ class TestSmallModelsRecommend:
 
 class TestSmallModelsTasks:
     @pytest.mark.asyncio
-    async def test_tasks_for_model(self, monkeypatch):
+    async def test_tasks_for_model(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             await client.post(
@@ -759,7 +865,7 @@ class TestSmallModelsTasks:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_tasks_empty_for_unknown_model(self, monkeypatch):
+    async def test_tasks_empty_for_unknown_model(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.get("/admin/models/tasks", params={"model": "nonexistent"}, headers=AUTH)
@@ -773,7 +879,7 @@ class TestSmallModelsTasks:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_tasks_deduplicates_duplicate_evidence(self, monkeypatch):
+    async def test_tasks_deduplicates_duplicate_evidence(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             await client.post(
@@ -795,7 +901,7 @@ class TestSmallModelsTasks:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_tasks_no_auth_returns_401(self, monkeypatch):
+    async def test_tasks_no_auth_returns_401(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.get("/admin/models/tasks", params={"model": "phi-2"})
@@ -807,7 +913,7 @@ class TestSmallModelsTasks:
 
 class TestSmallModelsCost:
     @pytest.mark.asyncio
-    async def test_cost_endpoint_returns_estimates(self, monkeypatch):
+    async def test_cost_endpoint_returns_estimates(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.get(
@@ -832,7 +938,7 @@ class TestSmallModelsCost:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_cost_endpoint_no_auth_returns_401(self, monkeypatch):
+    async def test_cost_endpoint_no_auth_returns_401(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.get("/admin/models/cost", params={"model": "phi-2"})
@@ -844,7 +950,7 @@ class TestSmallModelsCost:
 
 class TestSmallModelsBenchmark:
     @pytest.mark.asyncio
-    async def test_benchmark_runs_evaluation_and_stores_evidence(self, monkeypatch):
+    async def test_benchmark_runs_evaluation_and_stores_evidence(self, monkeypatch: pytest.MonkeyPatch) -> None:
         mock_results = {
             "results": {
                 "mmlu": {"acc,none": 0.55, "acc_norm,none": 0.57},
@@ -895,7 +1001,7 @@ class TestSmallModelsBenchmark:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_benchmark_defaults_tasks_when_not_specified(self, monkeypatch):
+    async def test_benchmark_defaults_tasks_when_not_specified(self, monkeypatch: pytest.MonkeyPatch) -> None:
         mock_results = {
             "results": {
                 "mmlu": {"acc,none": 0.55},
@@ -931,7 +1037,7 @@ class TestSmallModelsBenchmark:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_benchmark_not_available_returns_empty(self, monkeypatch):
+    async def test_benchmark_not_available_returns_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -949,7 +1055,7 @@ class TestSmallModelsBenchmark:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_benchmark_stores_results_in_capability_store(self, monkeypatch):
+    async def test_benchmark_stores_results_in_capability_store(self, monkeypatch: pytest.MonkeyPatch) -> None:
         mock_results = {"results": {"mmlu": {"acc,none": 0.55}}}
         mock_lm_eval = MagicMock()
         mock_lm_eval.simple_evaluate = MagicMock(return_value=mock_results)
@@ -983,7 +1089,7 @@ class TestSmallModelsBenchmark:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_benchmark_no_auth_returns_401(self, monkeypatch):
+    async def test_benchmark_no_auth_returns_401(self, monkeypatch: pytest.MonkeyPatch) -> None:
         engine, _factory, client, _app = await _make_app(monkeypatch)
         try:
             resp = await client.post(
@@ -996,7 +1102,7 @@ class TestSmallModelsBenchmark:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_benchmark_passed_and_failed_evidence(self, monkeypatch):
+    async def test_benchmark_passed_and_failed_evidence(self, monkeypatch: pytest.MonkeyPatch) -> None:
         mock_results = {
             "results": {
                 "mmlu": {"acc,none": 0.25},
@@ -1036,3 +1142,170 @@ class TestSmallModelsBenchmark:
             del sys.modules["lm_eval"]
             await client.aclose()
             await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("server_psk", "client_psk", "expected_status"),
+    [
+        pytest.param(PSK, "  " + PSK + "\t", 200, id="correct-stripped-key"),
+        pytest.param(PSK, "owned-wrong-client-key", 401, id="wrong-key"),
+        pytest.param(PSK, None, 401, id="missing-client-key"),
+        pytest.param(None, PSK, 503, id="server-key-unconfigured"),
+    ],
+)
+async def test_cli_local_serve_forwards_auth_to_real_daemon(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    server_psk: str | None,
+    client_psk: str | None,
+    expected_status: int,
+) -> None:
+    """The CLI owns its header; the native daemon accepts or rejects it."""
+    from general_ludd import cli
+    from general_ludd.infra.local_inference import LocalInferenceManager, LocalServer, LocalServerConfig
+
+    assert Path(cli.__file__).resolve() == Path(__file__).resolve().parents[2] / "src/general_ludd/cli.py"
+    monkeypatch.setenv("GLUDD_REQUIRE_AUTH", "1")
+    monkeypatch.delenv("GLUDD_ALLOW_NO_AUTH", raising=False)
+    monkeypatch.delenv("GLUDD_PSK_DISABLE", raising=False)
+    monkeypatch.setenv("GLUDD_MODEL_DIR", str(tmp_path / "auth-model-cache"))
+    model_path = tmp_path / "owned-auth-model.gguf"
+    model_path.write_bytes(b"owned model input; no native engine is launched")
+    engine, _factory, client, app = await _make_app(monkeypatch, server_psk=server_psk)
+    manager: LocalInferenceManager = app.state._local_inference_manager
+    started: list[LocalServerConfig] = []
+    request_headers: list[dict[str, str]] = []
+    responses: list[Response] = []
+    loop = asyncio.get_running_loop()
+    if client_psk is None:
+        monkeypatch.delenv("GLUDD_AUTH_PSK", raising=False)
+    else:
+        monkeypatch.setenv("GLUDD_AUTH_PSK", client_psk)
+
+    async def start_owned_server(server_id: str) -> LocalServer:
+        server = manager.get_server(server_id)
+        assert server is not None
+        started.append(server.config)
+        server.status = "running"
+        return server
+
+    def post_to_daemon(
+        url: str,
+        *,
+        json: dict[str, object] | None = None,
+        params: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float = 10.0,
+    ) -> Response:
+        assert url == "http://127.0.0.1:19080/admin/models/local/serve"
+        assert json is not None
+        request_headers.append(dict(headers or {}))
+        pending = asyncio.run_coroutine_threadsafe(
+            client.post(url, json=json, params=params, headers=headers), loop
+        )
+        response = pending.result(timeout=timeout)
+        responses.append(response)
+        return response
+
+    def invoke_cli() -> int:
+        try:
+            cli.main()
+        except SystemExit as exc:
+            return exc.code if isinstance(exc.code, int) else int(bool(exc.code))
+        return 0
+
+    monkeypatch.setattr(manager, "start_server", start_owned_server)
+    monkeypatch.setattr("httpx.post", post_to_daemon)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "gludd", "local-serve", "--engine", "llamacpp", "--model", str(model_path),
+            "--host", "127.0.0.1", "--port", "19081", "--gpu-layers", "0",
+            "--context-size", "512", "--daemon-url", "http://127.0.0.1:19080",
+        ],
+    )
+    try:
+        exit_code = await asyncio.to_thread(invoke_cli)
+        captured = capsys.readouterr()
+        assert len(responses) == len(request_headers) == 1
+        assert responses[0].status_code == expected_status
+        expected_authorization = "Bearer " + client_psk.strip() if client_psk else None
+        assert request_headers[0].get("Authorization") == expected_authorization
+        if expected_status == 200:
+            assert exit_code == 0, captured.err
+            result = json.loads(captured.out)
+            assert result["model_id"] == str(model_path)
+            assert result["status"] == "running"
+            assert len(started) == 1
+            assert started[0].model_path == str(model_path)
+            assert started[0].startup_timeout > 0
+        else:
+            assert exit_code == 1
+            assert f"Error: {expected_status}" in captured.err
+            assert started == []
+            assert manager.list_servers() == []
+    finally:
+        await manager.stop_all()
+        await client.aclose()
+        await engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("method", "dispatch"),
+    [
+        ("get", "get"), ("post", "post"), ("delete", "delete"),
+        ("put", "put"), ("patch", "patch"), ("OPTIONS", "request"),
+    ],
+)
+@pytest.mark.parametrize("client_psk", [None, "  owned-dispatch-psk\t"], ids=["missing-key", "stripped-key"])
+def test_generic_cli_http_auth_preserves_each_method_contract(
+    monkeypatch: pytest.MonkeyPatch,
+    method: str,
+    dispatch: str,
+    client_psk: str | None,
+) -> None:
+    """Header reuse preserves each existing dispatch and every non-auth input."""
+    from general_ludd import cli
+
+    if client_psk is None:
+        monkeypatch.delenv("GLUDD_AUTH_PSK", raising=False)
+    else:
+        monkeypatch.setenv("GLUDD_AUTH_PSK", client_psk)
+    monkeypatch.setenv("GLUDD_TEST_AUTH_OTHER_INPUT", "owned-unrelated-carrier")
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def owned_transport(*args: object, **kwargs: object) -> Response:
+        calls.append((args, kwargs))
+        return Response(201, json={"owned": "response"})
+
+    monkeypatch.setattr("httpx." + dispatch, owned_transport)
+    body = {"owned": "body"}
+    params = {"owned": "query"}
+    result = cli._http_call(
+        method, "http://owned.invalid/contract", json=body, params=params, timeout=13.0, ok_codes=(201,)
+    )
+    assert result == {"owned": "response"}
+    assert len(calls) == 1
+    args, kwargs = calls[0]
+    expected_args = (method, "http://owned.invalid/contract") if dispatch == "request" else ("http://owned.invalid/contract",)
+    assert args == expected_args
+    assert kwargs["params"] is params
+    assert kwargs["timeout"] == 13.0
+    if dispatch in {"post", "put", "patch", "request"}:
+        assert kwargs["json"] is body
+    else:
+        assert "json" not in kwargs
+    if client_psk is None:
+        assert "headers" not in kwargs
+        assert "GLUDD_AUTH_PSK" not in os.environ
+    else:
+        assert kwargs["headers"] == {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": "Bearer owned-dispatch-psk",
+        }
+        assert os.environ["GLUDD_AUTH_PSK"] == client_psk
+    assert os.environ["GLUDD_TEST_AUTH_OTHER_INPUT"] == "owned-unrelated-carrier"

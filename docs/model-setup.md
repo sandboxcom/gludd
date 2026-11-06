@@ -293,3 +293,28 @@ After editing, reload:
 ```bash
 curl -X POST http://localhost:8000/admin/reload -d '{"scope": "models"}'
 ```
+
+
+## Diagnostic CLI local-model source scope
+
+The CLI repair forwards --model as model_id, model_name and model_path,
+requests the manager's 120-second startup allowance, and gives that request a
+130-second HTTP timeout. These model-startup values are separate from the
+unchanged 90/60-second release-admission limits. Generic CLI requests reuse the
+existing stripped GLUDD_AUTH_PSK Bearer header; a missing client key retains
+the old request shape and the daemon keeps its authentication decision.
+
+The diagnostic/v012-cli-auth-20261105 branch starts independently at published
+baseline 82ec5170c173cfb52bb8bf3c6bbf7944cf3375e4. Its selected scope is the CLI
+payload/authentication repair plus quiet/EOF heartbeat test inputs. Those
+controls wait for real owner/child-bound status transitions and retain the
+original assertions and deadlines. The retained
+[pytest timer report](https://github.com/pytest-dev/pytest/issues/12939)
+is practitioner context for timing-sensitive tests, not evidence of this
+branch's native outcome or an upstream cause.
+
+The new regressions and private source repair still require native receiving
+and an accepted exact-SHA diagnostic Actions run. This partial source branch
+does not supply C8 candidate, canonical release, development/master integration,
+deployment or binary acceptance. C8 failures and required workflow repairs
+remain open. The separate proposed 120-second release limit remains unapproved.
