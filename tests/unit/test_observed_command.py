@@ -13,6 +13,12 @@ from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
+from tests.observed_command_native_fixtures import (
+    assert_native_import_shadow_control,
+    make_eof_heartbeat_case,
+    make_quiet_heartbeat_case,
+)
+
 if TYPE_CHECKING:
     import stream_command
 else:
@@ -311,18 +317,13 @@ def test_atomic_status_writer_fsyncs_then_replaces(
 
 
 def test_quiet_child_emits_heartbeats_and_updates_status(tmp_path: Path) -> None:
+    case = make_quiet_heartbeat_case(tmp_path, _command)
     completed = subprocess.run(
-        _command(
-            tmp_path,
-            "import time; time.sleep(0.22)",
-            "--heartbeat-secs",
-            "0.03",
-            "--max-secs",
-            "2",
-        ),
+        case.command,
         capture_output=True,
         check=False,
         timeout=5,
+        env=case.environment,
     )
 
     status = _current_status(tmp_path)
@@ -330,27 +331,51 @@ def test_quiet_child_emits_heartbeats_and_updates_status(tmp_path: Path) -> None
     assert completed.stdout.count(b"[observed demo] heartbeat") >= 2
     assert status["heartbeat_seq"] >= 2
     assert status["quiet_seconds"] >= 0.1
+    case.assert_released(status)
 
 
-def test_observer_keeps_monitoring_after_child_closes_output(tmp_path: Path) -> None:
+def test_quiet_heartbeat_guard_rejects_child_banners_without_native_ticks(tmp_path: Path) -> None:
+    case = make_quiet_heartbeat_case(tmp_path, _command, heartbeat_seconds="0", spoof_banners=True)
     completed = subprocess.run(
-        _command(
-            tmp_path,
-            "import os,time; os.close(1); os.close(2); time.sleep(0.15)",
-            "--heartbeat-secs",
-            "0.03",
-            "--max-secs",
-            "2",
-        ),
+        case.command,
         capture_output=True,
         check=False,
         timeout=5,
+        env=case.environment,
     )
+
+    status = _current_status(tmp_path)
+    assert completed.returncode == 124
+    assert completed.stdout.count(b"[observed demo] heartbeat") >= 2
+    case.assert_no_native_ticks(status)
+
+
+def test_quiet_heartbeat_metadata_has_active_native_import_shadow_control(tmp_path: Path) -> None:
+    case = make_quiet_heartbeat_case(tmp_path, _command)
+    assert_native_import_shadow_control(case, _command)
+
+
+def test_observer_keeps_monitoring_after_child_closes_output(tmp_path: Path) -> None:
+    case = make_eof_heartbeat_case(tmp_path, _command)
+    completed = subprocess.run(case.command, capture_output=True, check=False, timeout=5, env=case.environment)
 
     status = _current_status(tmp_path)
     assert completed.returncode == 0
     assert completed.stdout.count(b"[observed demo] heartbeat") >= 2
     assert status["state"] == "passed"
+    case.assert_released(status)
+
+
+def test_eof_heartbeat_guard_rejects_child_banners_without_native_ticks(tmp_path: Path) -> None:
+    case = make_eof_heartbeat_case(tmp_path, _command, heartbeat_seconds="0", spoof_banners=True)
+    completed = subprocess.run(case.command, capture_output=True, check=False, timeout=5, env=case.environment)
+    assert completed.stdout.count(b"[observed demo] heartbeat") >= 2
+    assert completed.returncode == 124
+    case.assert_no_native_ticks(_current_status(tmp_path))
+
+
+def test_post_eof_metadata_has_active_native_import_shadow_control(tmp_path: Path) -> None:
+    assert_native_import_shadow_control(make_eof_heartbeat_case(tmp_path, _command), _command)
 
 
 def test_quiet_mode_captures_without_streaming_child_output(tmp_path: Path) -> None:
