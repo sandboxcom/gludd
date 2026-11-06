@@ -820,3 +820,50 @@ independent exact-digest check and source review remain fixed historical evidenc
 Current Main acceptance and its exact-SHA/full-gate/deployment proofs remain
 pending until their native owners actually finish. No unchanged Build rerun,
 mutable image replacement, assertion waiver or manual current observation is used.
+
+
+## Diagnostic served-manifest repair - 2026-11-05
+
+Diagnostic source `a70ab3536f2d2f5ab1ba6a4eb825374c189c57d1` fails
+[Build42145741238, attempt1](https://github.com/sandboxcom/gludd/actions/runs/42145741238)
+at both gate jobs' Verify pinned image step. The registry returns HTTP404
+NOTFOUND for the configured immutable digest
+`sha256:6f8045fc4f552544d8a401d61848bafc8d06ca7c11897c5b54a2c37fc419a20a`.
+The branch's native CI ledger retains two OPEN failure families; a local
+registry repair does not close those hosted failures.
+
+Root runs the existing atomic refresh against the supported
+`quay.io/centos/centos:stream9` source. Native0/1.016s is retained under label
+`v012-ansible-base-atomic-refresh`, RID
+`v012-diagnostic-quay404-atomic-refresh311-root-20261105`.
+It pins `sha256:99a7748660352b7d87e5689805ddafa6209d6019d0c5b642b5354656dff02be3`
+in the EE definition and runtime lock. The separate exact-digest check returns
+native0/1.037s under label `v012-ansible-base-independent-check`, RID
+`v012-diagnostic-new-digest-independent-check311-root-20261105`.
+Both sessions are drained and their native observed states are inactive0.
+
+Only the independent CENTOS_STREAM9_INDEX test literal is conformed to that
+verified identity; its original YAML/lock equality assertions remain.
+The native runtime-boundary validator returns0 for all seven inputs, and the
+test's Ruff check returns0. No script, Make provider, workflow or budget changes.
+
+Complete six-owner acceptance plus the logical-Makefile AST guard passes174
+on each runtime: Python3.11 takes23.70s/native25.32s, RID
+`v012-diagnostic-99a-base-six-green311-root-20261105`; Python3.12 takes
+26.73s/native28.372s, RID
+`v012-diagnostic-99a-base-six-green312-root-20261105`.
+Exact sessions54874/11294 are drained, with both native observed states inactive0.
+
+Root reopened both existing forum links on 2026-11-06 UTC.
+[Quay1807](https://github.com/quay/quay/discussions/1807)'s2023 maintainer
+example queries tag metadata for digest discovery; it does not prove current
+manifest availability. [QIIME27926](https://forum.qiime2.org/t/qiime2-installation-via-docker-container-through-singularity-not-working/27926)
+covers historical unpublished, renamed or private images and cached-local-image
+confusion, with an independent-machine pull finally verified. These reports
+explain registry diagnostic boundaries, but establish no cause for this
+CentOS404. The refreshed pin's availability evidence is the retained native
+exact-digest check, not either discussion or its retrieval.
+
+Normal commit, new exact-SHA hosted success, native image build/warm checks,
+full gate and ZDD release proof remain pending. The C8 local90 failure remains
+separate; the proposed120-second release limit is still unapproved.
