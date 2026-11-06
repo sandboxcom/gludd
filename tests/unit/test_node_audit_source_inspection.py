@@ -45,7 +45,10 @@ def _run(
         f"capture = Path({str(capture)!r})\n"
         "number = len(capture.read_text().splitlines()) + 1 if capture.exists() else 1\n"
         "with capture.open('a', encoding='utf-8') as stream:\n"
-        "    stream.write(json.dumps({'argv': sys.argv[1:], 'env': dict(os.environ)}) + '\\n')\n"
+        "    stream.write(json.dumps({'argv': sys.argv[1:], 'env_keys': sorted(os.environ), "
+        "'env': {key: os.environ[key] for key in "
+        "('LC_ALL', 'NODE_AUDIT_SOURCE_VALIDATE_ONLY', 'GLUDD_NODE_SOURCE_UNRELATED') "
+        "if key in os.environ}}) + '\\n')\n"
         "print('OWNED_NODE_SOURCE_' + str(number), flush=True)\n"
         f"if number == {fail_at}:\n"
         "    print('native source transport refusal', file=sys.stderr)\n"
@@ -129,7 +132,7 @@ def test_node_source_live_uses_exact_bounded_public_argv(tmp_path: Path, overrid
         environment = cast(dict[str, str], call["env"])
         assert environment["LC_ALL"] == "C"
         assert not {"GH_TOKEN", "GITHUB_TOKEN", "CURL_HOME", "HTTPS_PROXY", "ALL_PROXY", MODE,
-                    "URL", "GLUDD_NODE_SOURCE_UNRELATED"} & environment.keys()
+                    "URL", "GLUDD_NODE_SOURCE_UNRELATED"} & set(cast(list[str], call["env_keys"]))
         assert f"OWNED_NODE_SOURCE_{index}" in result.stdout
     assert result.stdout.count("NODE_AUDIT_SOURCE_BEGIN ") == 9
     assert result.stdout.count("NODE_AUDIT_SOURCE_END ") == 9
@@ -230,3 +233,40 @@ def test_node_source_transport_requires_an_explicit_direct_goal(tmp_path: Path, 
     assert result.returncode != 0
     assert "inspect-node-audit-source must be invoked directly" in result.stderr
     assert calls == []
+
+
+@pytest.mark.parametrize("overrides", [False, True])
+def test_node_source_recorder_preserves_carrier_names_without_dumping_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, overrides: bool,
+) -> None:
+    """Use a bounded owned environment for the actual unrelated-target witness."""
+    owned_key = "GLUDD_NODE_SOURCE_OWNED_PRIVATE_CANARY"
+    owned_value = "owned-node-source-private-canary-value"
+    owned_environment = {
+        "PATH": os.environ.get("PATH", os.defpath),
+        "LC_ALL": "C",
+        "UV_PROJECT_ENVIRONMENT": sys.prefix,
+        "VIRTUAL_ENV": sys.prefix,
+        "UV_NO_SYNC": "1",
+        "UV_PYTHON": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "UV_PYTHON_DOWNLOADS": "never",
+        owned_key: owned_value,
+    }
+    parent_environment = os.environ
+    with monkeypatch.context() as scoped:
+        scoped.setattr(os, "environ", owned_environment)
+        result, calls = _run(
+            tmp_path, mode="unrelated-owned-value", overrides=overrides,
+            origin="environment", target="unrelated-node-source-probe",
+        )
+    assert os.environ is parent_environment
+    assert owned_environment[owned_key] == owned_value
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert len(calls) == 1 and calls[0]["argv"] == ["probe"]
+    recorded = (tmp_path / "curl.jsonl").read_text(encoding="utf-8")
+    assert owned_value not in recorded
+    assert owned_key in cast(list[str], calls[0]["env_keys"])
+    assert calls[0]["env"] == {
+        "LC_ALL": "C", MODE: "unrelated-owned-value",
+        "GLUDD_NODE_SOURCE_UNRELATED": "retained carrier",
+    }

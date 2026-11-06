@@ -42,9 +42,8 @@ assert.equal(value.safe_max, Number.MAX_SAFE_INTEGER);
 """),
     ("wide-integer", r"""
 content = "wide = 9007199254740993\n";
-const value = await parse();
-assert.equal(typeof value.wide, "number", "original Effect TOML consumer returns a Number");
-assert.equal(value.wide, Number("9007199254740993"));
+// Operator approved rejecting unsafe integers on 2026-10-26; the original rounding contract remains in feature history.
+await assert.rejects(parse(), /cannot be represented losslessly as a JavaScript number/);
 """),
     ("dates", r"""
 content = "offset = 1979-05-27T07:32:00Z\nlocal_date = 1979-05-27\nlocal_time = 07:32:00\n";

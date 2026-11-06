@@ -960,3 +960,96 @@ observation is separate from both575-case source receipts and all newer local
 source. Later failure or completion still needs the actual native result.
 The selected flag proof covers direct CLI/environment ordinary/-e inputs;
 prerequisite invocation and later file/target-specific settings are unproved.
+
+### Hosted Node audit receiving and scoped glob repair (2026-11-06)
+
+Diagnostic Build run `42149794954`, attempt 1, tested source
+`2a309c6c638337daa803fcec044393f779c1d7f5` and failed both
+`Audit locked Node build dependencies` steps. The actual report retained
+10 vulnerabilities: six moderate and four high. All eight downstream
+shards remain unknown behind the failed gate. The source branch had not received
+the completed TOML/Zod leaf overrides; that omission and the additional
+glob/minimatch findings are separate inputs.
+
+The existing TOML 5.0.1/Zod 4.6.7 repair was received with its exact plugin scope.
+The operator has since approved rejecting unsafe integers instead of silently
+rounding them. The real Effect compatibility case records that rejection while
+retaining the six other cases, the actual plugin/Effect entrypoints and native
+subprocess bounds. The prior failed wide-integer control and historical pending
+preference above remain evidence of their original source.
+
+The complete current audit also identified two additional affected leaves:
+
+| Primary advisory | Original locked copy | Affected range | Patched floor | Selected version |
+| --- | --- | --- | --- | --- |
+| [GHSA-3g3m-2fjr-6pw4](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4) | glob 13.0.6 | >=9.0.0, <=14.0.1 | 14.0.2 | 14.0.3 |
+| [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249) | minimatch 10.2.6 | >=7.0.0, <11.0.1 | 11.0.1 | 11.0.2 |
+
+Root re-read the existing nine public sources successfully: nine HTTP200 bodies,
+native exit0/2.685s. The long-lived Zod issue1872 finding above remains contextual
+user evidence; it is not a new Gludd runtime or performance measurement.
+Separate primary advisory and release metadata establish the new ranges and
+selected releases. A failed web-tool lookup for explicit minimatch npm metadata
+was not treated as an HTTP404 or package-absence result. The later native
+generation and sync selected the actual installed 11.0.2 artifact.
+
+The exact existing plugin override remains. The added overrides are confined to
+the c8 descendant graph for glob14.0.3/minimatch11.0.2 and the ESLint descendant
+graph for minimatch11.0.2. Plugin/SDK1.18.5, Effect4.0.0-beta.83 and every direct
+tool pin remain unchanged. No forced downgrade, configuration adapter or audit
+threshold change is used. The all-copy floor retains its seven predecessor
+range seeds and TOML/Zod digest checks, adding the two current ranges and exact
+scoped-map/version controls.
+
+The original source controls first retained four failures/six passes
+(19.16s pytest, native exit2/20.639s). After receiving the existing core repair,
+the new glob/minimatch controls retained four failures/eight passes
+(19.13s pytest, native exit2/20.293s). These failures expose the two affected
+versions and missing intended scopes without a fixture failure.
+
+Native `node-deps-relock` then completed with exit0/5.487s. It generates in an
+owned temporary directory before copying the lock; this record claims neither
+an atomic destination rename nor pre-copy validation. The resulting lock
+`550e8d76fe29add77f48e7590109b98e43794251ef2634b5a90800359a949f02`
+contains185 rows:170 unchanged,14 changed and one added versus retained
+core lock `c2beb051`. The full generated delta includes path-scurry3.0.0,
+msgpackr2.1.4, extractor platform records and the nonrecursive matcher. It is not
+described as a two-leaf-only lock update. Independent generated-lock source
+review `7b14f82d` retains the complete comparison and agrees with the selected
+installed package metadata.
+
+| Native owner | Actual result |
+| --- | --- |
+| `node-deps-sync` | exit0/3.667s,147 packages |
+| `node-deps-audit NODE_DEPS_AUDIT_LEVEL=low` | zero vulnerabilities, exit0/1.277s |
+| Hosted CSS glob inputs and existing ESLint config | exit0/2.030s |
+| Complete nine consumer owners plus logical-Makefile guard, Python3.11 | 228 PASS,59.63s pytest, native exit0/61.380s |
+| Same complete receiving, Python3.12 | 228 PASS,61.57s pytest, native exit0/63.3s |
+
+Both receiving sessions were drained and their terminal observations verified.
+The exact current manifest is `6446095e`; the all-copy floor, CSS contract and
+real Effect compatibility owners are respectively `4fecf613`, `69e1fe32` and
+`4f62a360`. These results include the real CSS boundary. The c8 unit command
+controls do not replace actual browser/c8 execution.
+
+The separately received research-recorder repair `434c05e3` retains all carrier
+names and only its three owned public values, instead of serializing inherited
+values. Its two scoped canary controls preserve the original assertions and
+ordinary/`-e` behavior. Ruff, strict typing, environment-write and tracked-line
+checks pass. Complete privacy-owner receiving plus the logical-Makefile guard
+passes on both installed runtimes:47 cases each, comprising46 privacy cases
+and the one guard.
+
+| Runtime | Pytest seconds | Native seconds | Exact observed receipt |
+| --- | ---: | ---: | --- |
+| Python3.11 | 23.72 | 25.158 | `.gate-logs/observed/v012-node-source-privacy/v012-node-source-privacy-complete311-root-20261106.json` |
+| Python3.12 | 25.35 | 26.9 | `.gate-logs/observed/v012-node-source-privacy/v012-node-source-privacy-complete312-root-20261106.json` |
+
+Both exact privacy sessions are terminal and verified. These results extend
+the selected receiving evidence without replacing actual browser/c8 acceptance.
+
+The earlier failed runs, source reviews and native receipts remain retained.
+Actual browser/c8 acceptance, normal source collection, ledger-owned repairs,
+the complete canonical gate, exact-SHA hosted success and deployment/release
+proof remain required. No all-consumer, performance, original90-second fit,
+canonical push, deployment or release completion follows from this appendix.

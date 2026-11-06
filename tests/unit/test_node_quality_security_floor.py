@@ -22,6 +22,8 @@ ROOT = Path(__file__).resolve().parents[2]
         ("katex", ">=0.11.0,<0.18.2"),
         ("toml", "<=5.0.0"),
         ("zod", "<4.6.6"),
+        ("glob", ">=9.0.0,<=14.0.1"),
+        ("minimatch", ">=7.0.0,<11.0.1"),
     ],
 )
 def test_quality_lock_excludes_versions_with_available_security_fixes(package: str, affected: str) -> None:
@@ -42,6 +44,8 @@ def test_advisory_leaf_overrides_preserve_existing_plugin_and_effect_inputs() ->
     assert manifest["dependencies"]["@opencode-ai/plugin"] == "1.18.5"
     assert manifest.get("overrides") == {
         "@opencode-ai/plugin": {"zod": "4.6.7", "effect": {"toml": "5.0.1"}},
+        "c8": {"glob": "14.0.3", "minimatch": "11.0.2"},
+        "eslint": {"minimatch": "11.0.2"},
     }
     packages = lock["packages"]
     for package, version in (
@@ -50,6 +54,8 @@ def test_advisory_leaf_overrides_preserve_existing_plugin_and_effect_inputs() ->
         ("effect", "4.0.0-beta.83"),
         ("toml", "5.0.1"),
         ("zod", "4.6.7"),
+        ("glob", "14.0.3"),
+        ("minimatch", "11.0.2"),
     ):
         assert packages[f"node_modules/{package}"]["version"] == version
     for package, expected_digest in (
