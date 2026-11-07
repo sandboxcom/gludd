@@ -74,6 +74,44 @@ and312 counterpart. The prior700-case source/test/configuration scope is
 unchanged and is retained without another unrelated replay. These local
 receipts neither turn the failed canonical attempt green nor establish CI.
 
+The next exact d2c22b26373fdb5e4df5945001accbe484267341 attempt passes the
+original runtime:MAIN2360PASS74.04s, HELP1PASS, TAIL191PASS73.23s, native0 at
+77.523s with actual60/90 limits. Its separately watched prerequisite passes
+at3.559s. Preserve batch-push-runtime-admission-93593 and
+batch-push-prerequisite-admission-93593 under their existing observed labels.
+This is runtime admission for that source, not a complete release gate.
+
+Normal Git pre-push then fails workflow-yaml Layer2 with pytest3. Mypy,
+collection and baseline verification finish; outer publication fails2 at
+164.757s. The original hook discards the inner traceback. Actual verify-remote
+confirms remote5a203e9b41644378247969a92b89b01bd878cbad rather than d2c22b2;
+there is no new source publication or hosted execution to observe.
+
+The minimal hook repair inventories native Git local-variable names at the
+canonical pytest child boundary, validates nonempty bounded Git-only names
+before unsetting them, and preserves unrelated carriers and native failures.
+It removes the old output discard so the existing publication owner retains
+future diagnostics. No new runner, observer, log store or deadline is added.
+The hook retains mode755 and passes native Bash syntax verification.
+
+Two actual Git pre-push controls fail first, native5.629s: enabled
+pytest-ansible reaches the confinement guard with a canonical-Main environment
+reference. The new hook passes all13 boundary controls, native18.790s,
+including8 inventory refusals,2 unrelated-reference refusals and an active
+missing-unset control. Complete four-owner receiving passes111 cases on each
+installed runtime:3.11 in52.08s/native53.714s and3.12 in54.57s/native56.368s.
+Exact receipts are v012-workflow-hook-complete311/
+v012-d2c2-workflow-hook-four311-root-20261108 and312 counterpart. Original
+547 test lines/103 assertions remain; copied environment values stay outside
+assertion explanations. Independent V3 source approval is bound to hook8c2c5f96
+and testaeb7f09d; earlier private privacy holds are retained.
+
+This native witness proves the repair's reproduced Git-local boundary; it
+does not recover the original suppressed traceback or certify a later push.
+The manifest remains181 families and the other deferred C9 repairs retain
+their separate integration scope. Source-only approval and111/BOTH do not
+supply exact-SHA hosted, deployment or release authority.
+
 Root owns normal source commit/collection and the next
 normal publisher with an explicit installed runtime in both outer watcher and
 actual command. Only an accepted exact-SHA hosted request supplies a run to

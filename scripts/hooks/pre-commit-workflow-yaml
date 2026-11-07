@@ -74,10 +74,33 @@ fi
 # read from the canonical BUILD_YML constant.
 if [ "$YML_PATH" = "$ROOT_DIR/.github/workflows/build.yml" ]; then
     cd "$ROOT_DIR"
+    GIT_LOCAL_ENV_OUTPUT=$(git rev-parse --local-env-vars) || exit "$?"
+    [ -n "$GIT_LOCAL_ENV_OUTPUT" ] && [ "${#GIT_LOCAL_ENV_OUTPUT}" -le 8192 ] || {
+        echo "workflow-yaml: Git-local environment inventory invalid" >&2; exit 2;
+    }
+    GIT_LOCAL_ENV_NAMES=()
+    GIT_LOCAL_ENV_COUNT=0
+    while IFS= read -r GIT_LOCAL_ENV_NAME; do
+        case "$GIT_LOCAL_ENV_NAME" in GIT_*) ;; *)
+            echo "workflow-yaml: Git-local environment name invalid" >&2; exit 2 ;;
+        esac
+        case "$GIT_LOCAL_ENV_NAME" in *[!A-Za-z0-9_]*)
+            echo "workflow-yaml: Git-local environment name invalid" >&2; exit 2 ;;
+        esac
+        GIT_LOCAL_ENV_COUNT=$((GIT_LOCAL_ENV_COUNT + 1))
+        [ "$GIT_LOCAL_ENV_COUNT" -le 64 ] || {
+            echo "workflow-yaml: Git-local environment inventory exceeds bound" >&2; exit 2;
+        }
+        GIT_LOCAL_ENV_NAMES+=("$GIT_LOCAL_ENV_NAME")
+    done <<< "$GIT_LOCAL_ENV_OUTPUT"
+    [ "$GIT_LOCAL_ENV_COUNT" -gt 0 ] || {
+        echo "workflow-yaml: Git-local environment inventory invalid" >&2; exit 2;
+    }
+    unset "${GIT_LOCAL_ENV_NAMES[@]}" || exit "$?"
     uv run python -m pytest \
         tests/unit/test_release_pipeline_structure.py \
         -q --no-header --tb=short -p no:cacheprovider \
-        >/dev/null 2>&1 || exit_code=$?
+        || exit_code=$?
     if [ "$exit_code" -ne 0 ]; then
         echo "workflow-yaml: layer 2 (structural pytest) failed — run:" >&2
         echo "  make test-specific TESTFILE='tests/unit/test_release_pipeline_structure.py'" >&2
