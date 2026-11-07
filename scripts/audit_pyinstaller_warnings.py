@@ -19,6 +19,7 @@ import ast
 import contextlib
 import hashlib
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass, replace
@@ -274,7 +275,8 @@ def _parse_allowlist(
             raise AuditError(
                 f"alternate digests for architecture {raw_architecture!r} must be a list of lowercase SHA-256 digests"
             )
-        alternate_digests.update(raw_digest_list)
+        if normalized == normalized_architecture:
+            alternate_digests.update(raw_digest_list)
 
     raw_entries = data["allowed_missing_imports"]
     if not isinstance(raw_entries, list):
@@ -616,6 +618,64 @@ def _audit(
     return failures
 
 
+_RAW_EXPORT_MAX_BYTES = 2 * 1024 * 1024
+_RAW_EXPORT_DESTINATION_RE = re.compile(
+    r"artifacts/(?P<name>pyinstaller-warning-[A-Za-z0-9_-]{1,96}\.txt)\Z"
+)
+
+
+def _export_raw_warning_file(warnings: Path, output: str, checkout: Path) -> tuple[int, str]:
+    """Atomically retain complete raw bytes inside this physical checkout."""
+    match = _RAW_EXPORT_DESTINATION_RE.fullmatch(output)
+    if match is None:
+        raise AuditError("raw export must name artifacts/pyinstaller-warning-<safe-token>.txt")
+    root = checkout.resolve(strict=True)
+    if not (root / "Makefile").is_file() or not (root / "make/00-foundation.mk").is_file():
+        raise AuditError("raw export requires the physical Make checkout")
+    if os.name != "posix":
+        raise AuditError("raw export requires native no-follow directory handles")
+    with warnings.open("rb") as source:
+        data = source.read(_RAW_EXPORT_MAX_BYTES + 1)
+    if len(data) > _RAW_EXPORT_MAX_BYTES:
+        raise AuditError(f"raw warning export exceeds {_RAW_EXPORT_MAX_BYTES} bytes")
+
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    root_fd = os.open(root, directory_flags)
+    try:
+        with contextlib.suppress(FileExistsError):
+            os.mkdir("artifacts", mode=0o700, dir_fd=root_fd)
+        artifact_fd = os.open("artifacts", directory_flags, dir_fd=root_fd)
+        try:
+            name = match["name"]
+            temporary = f".{name}.{os.urandom(8).hex()}.tmp"
+            descriptor = os.open(
+                temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                0o600, dir_fd=artifact_fd,
+            )
+            try:
+                try:
+                    remaining = memoryview(data)
+                    while remaining:
+                        written = os.write(descriptor, remaining)
+                        if written <= 0:
+                            raise OSError("raw warning export made no write progress")
+                        remaining = remaining[written:]
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+                os.link(
+                    temporary, name, src_dir_fd=artifact_fd, dst_dir_fd=artifact_fd,
+                    follow_symlinks=False,
+                )
+            finally:
+                os.unlink(temporary, dir_fd=artifact_fd)
+        finally:
+            os.close(artifact_fd)
+    finally:
+        os.close(root_fd)
+    return len(data), hashlib.sha256(data).hexdigest()
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--warnings", required=True, type=Path)
@@ -624,12 +684,22 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--architecture", required=True)
     parser.add_argument("--pyinstaller-version", required=True)
     parser.add_argument("--spec", required=True, type=Path)
+    parser.add_argument("--raw-export", help="Optional new raw report under artifacts/pyinstaller-warning-<token>.txt")
     return parser
 
 
 def main() -> int:
     """Audit one warning graph against its platform and architecture policy."""
     args = _build_parser().parse_args()
+    raw_export_failed = False
+    if args.raw_export is not None:
+        try:
+            byte_count, digest = _export_raw_warning_file(args.warnings, args.raw_export, Path.cwd())
+        except (AuditError, OSError) as exc:
+            print(f"FAIL: raw warning export: {exc}", file=sys.stderr)
+            raw_export_failed = True
+        else:
+            print(f"RAW-WARNING-EXPORTED path={args.raw_export} bytes={byte_count} sha256={digest}")
     try:
         warning_edges = _parse_warning_file(args.warnings)
         (
@@ -663,6 +733,8 @@ def main() -> int:
             print(f"FAIL: {failure}", file=sys.stderr)
         return 1
 
+    if raw_export_failed:
+        return 1
     warning_set = set(warning_edges)
     missing_count = len(_project_missing_edges(warning_set, baseline_modules))
     transitive_count = len(

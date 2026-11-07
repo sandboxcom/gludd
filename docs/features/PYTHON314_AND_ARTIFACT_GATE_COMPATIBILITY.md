@@ -36,6 +36,32 @@ PyInstaller/Molecule acceptance path.
 
 ### Linux release artifact
 
+#### Exact-run raw warning export
+
+The existing ci-pyinstaller-warning-audit can optionally retain its one raw
+warn-gludd.txt before the unchanged full audit. Set
+`CI_PYINSTALLER_WARNING_RAW_OUTPUT=artifacts/pyinstaller-warning-<token>.txt`;
+the token is 1 to 96 literal letters, digits, underscores or hyphens. The
+default is empty. Validate-only and native Make inspection perform no export.
+
+This narrow export reads the already downloaded exact-run artifact through the
+same exact-one-file owner. It copies at most 2 MiB without truncation, retains
+the raw SHA-256/byte count, and atomically creates a new file through physical
+checkout directory handles. Linked parents, existing evidence and unsafe
+destinations refuse. It never edits the downloaded report, normalizes away
+edges, updates policy or turns a failed warning audit green. An export error
+also remains nonzero, while the original full audit still executes.
+
+For the retained failed run, the Linux artifact is
+linux-pyinstaller-warning-x86_64; Build's Molecule shard 1 report is inside
+molecule-logs-shard-1. Export each to a different safe token. The ordinary
+artifact download remains confined to its resource namespace, and the context
+viewer keeps its bounded display limits. The explicit raw export supplies the
+complete input for the unchanged compare-linux-pyinstaller-warnings owner.
+Its before graph must still be an accepted primary/alternate graph; export,
+a successful build and a review receipt supply no accepted graph, binary smoke,
+full-gate or release proof.
+
 #### v0.1.2 native-build coordinate admission
 
 The retained raw warnings from Molecule runs `37963738773` and `38189779992`
@@ -177,3 +203,34 @@ These contracts address long-lived reports from real users:
   awakened after process exit. It supports a bounded terminate-then-kill path
   with one main-thread wait owner and an observable watchdog, rather than
   re-entrant signal-handler waits or abandoned child processes.
+
+## Architecture-scoped review and complete retained inputs (2026-11-07)
+
+An alternate warning digest authorizes only its selected canonical architecture.
+The reader still validates every architecture map, including foreign entries,
+before admission. Native aliases select the canonical architecture; a digest
+reviewed for x86_64 cannot authorize an aarch64 graph. Four native rejection
+controls failed before the architecture guard; all twelve boundary cases passed
+after it. The retained hosted x86_64 digest also remains rejected for aarch64.
+
+Run 42391330412, attempt 1, failed the Linux and Molecule warning gates on two
+915-edge graphs. The bounded context display could not supply their complete
+review inputs. The optional raw export now retains both complete reports while
+preserving the original audit failure. The existing exact-delta owner compares
+the retained accepted 866-edge report with each candidate: 50 additions and one
+removal require review, rather than an automatic update from a passing build.
+The two ordered policy commits preserve their historical review receipts.
+Replaying those retained inputs after policy review passed; no new hosted build
+or artifact deployment is established by that replay.
+
+Eight complete consumers passed 239 cases on each required installed runtime.
+The coverage-files receipts are
+20261107T191403Z-78427-7b00b8c8 (Python 3.11.14) and
+20261107T191930Z-82320-3e51f1a8 (Python 3.12.15).
+Both measure the actual auditor at 389/417 statements and 170/200 branches:
+93.3 percent line coverage and 85 percent branch coverage. Earlier malformed
+coverage-profile and insufficient-branch observations remain failed evidence;
+the six native invalid-policy controls cover real public CLI refusal branches.
+These receipts certify that source scope only. The complete canonical gate,
+final exact-SHA hosted run, built artifacts and deployment acceptance remain
+required.

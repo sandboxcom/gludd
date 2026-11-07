@@ -1370,12 +1370,20 @@ ci-artifact-context:
 	$(PYTHON) scripts/ci_shards_log_context.py --artifact-root "$$ARTIFACT_ROOT" --artifact-file "$(CI_ARTIFACT_FILE)" --pattern "$(PATTERN)" --before "$(or $(BEFORE),20)" --after "$(or $(AFTER),80)" --max-matches "$(or $(MAX_MATCHES),5)"
 
 CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY ?= 0
+CI_PYINSTALLER_WARNING_RAW_OUTPUT ?=
 ci-pyinstaller-warning-audit:
 	@case "$(RUN)" in ''|*[!0-9]*) echo "RUN must be a numeric GitHub Actions run ID"; exit 2 ;; esac
 	@case "$(ARTIFACT)" in ''|*[!A-Za-z0-9._-]*) echo "Refusing unsafe ARTIFACT: $(ARTIFACT)"; exit 2 ;; esac
 	@case "$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX)" in ''|*[!A-Za-z0-9_-]*) echo "PYINSTALLER_WARNING_ARCHITECTURE_LINUX must be explicit and safe"; exit 2 ;; esac
 	@case "$(PYINSTALLER_VERSION_LINUX)" in ''|*[!0-9.]*) echo "PYINSTALLER_VERSION_LINUX must be explicit and numeric"; exit 2 ;; esac
 	@case "$(CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY)" in 0|1) ;; *) echo "CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY must be 0 or 1"; exit 2 ;; esac
+	@if [ -n "$$GLUDD_CI_PYINSTALLER_WARNING_RAW_OUTPUT" ]; then \
+		case "$$GLUDD_CI_PYINSTALLER_WARNING_RAW_OUTPUT" in artifacts/pyinstaller-warning-*.txt) ;; *) echo "CI_PYINSTALLER_WARNING_RAW_OUTPUT must name artifacts/pyinstaller-warning-<token>.txt"; exit 2 ;; esac; \
+		raw_token="$${GLUDD_CI_PYINSTALLER_WARNING_RAW_OUTPUT#artifacts/pyinstaller-warning-}"; raw_token="$${raw_token%.txt}"; \
+		case "$$raw_token" in ''|*[!A-Za-z0-9_-]*) echo "CI_PYINSTALLER_WARNING_RAW_OUTPUT token must be literal alphanumeric, underscore or hyphen"; exit 2 ;; esac; \
+		if [ "$${#raw_token}" -gt 96 ]; then echo "CI_PYINSTALLER_WARNING_RAW_OUTPUT token is too long"; exit 2; fi; \
+		if [ -L artifacts ] || [ -e "$$GLUDD_CI_PYINSTALLER_WARNING_RAW_OUTPUT" ] || [ -L "$$GLUDD_CI_PYINSTALLER_WARNING_RAW_OUTPUT" ]; then echo "Refusing linked artifact parent or existing raw warning destination"; exit 2; fi; \
+	fi
 	@RESOURCE_ROOT="$$( $(PYTHON) scripts/resource_arbiter.py root )"; \
 	ARTIFACT_ROOT="$$RESOURCE_ROOT/ci-artifacts/run-$(RUN)/$(ARTIFACT)"; \
 	if [ "$(CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY)" = "1" ]; then echo "CI-PYINSTALLER-WARNING-AUDIT VALIDATED run=$(RUN) artifact=$(ARTIFACT) architecture=$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX) PyInstaller=$(PYINSTALLER_VERSION_LINUX)"; exit 0; fi; \
@@ -1384,7 +1392,8 @@ ci-pyinstaller-warning-audit:
 	if [ "$$COUNT" != "1" ]; then echo "Expected exactly one warn-gludd.txt in $$ARTIFACT_ROOT, found $$COUNT"; exit 1; fi; \
 	WARNING=$$(/usr/bin/find "$$ARTIFACT_ROOT" -type f -name warn-gludd.txt -print -quit); \
 	echo "CI-PYINSTALLER-WARNING-AUDIT START run=$(RUN) artifact=$(ARTIFACT) warning=$$WARNING"; \
-	$(UV) run python scripts/audit_pyinstaller_warnings.py --warnings "$$WARNING" --allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" --platform linux --architecture "$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX)" --pyinstaller-version "$(PYINSTALLER_VERSION_LINUX)" --spec gludd.spec
+	set --; if [ -n "$$GLUDD_CI_PYINSTALLER_WARNING_RAW_OUTPUT" ]; then set -- --raw-export "$$GLUDD_CI_PYINSTALLER_WARNING_RAW_OUTPUT"; fi; \
+	$(UV) run python scripts/audit_pyinstaller_warnings.py --warnings "$$WARNING" --allowlist "$(PYINSTALLER_WARNING_ALLOWLIST_LINUX)" --platform linux --architecture "$(PYINSTALLER_WARNING_ARCHITECTURE_LINUX)" --pyinstaller-version "$(PYINSTALLER_VERSION_LINUX)" --spec gludd.spec "$$@"
 
 CI_COVERAGE_RUN ?=
 CI_COVERAGE_ARTIFACT ?= coverage-merged

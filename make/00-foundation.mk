@@ -1,3 +1,10 @@
+# Keep optional raw warning export literal before startup/export expansion.
+ifneq ($(filter ci-pyinstaller-warning-audit,$(MAKECMDGOALS)),)
+override GLUDD_CI_PYINSTALLER_WARNING_RAW_OUTPUT := $(value CI_PYINSTALLER_WARNING_RAW_OUTPUT)
+export GLUDD_CI_PYINSTALLER_WARNING_RAW_OUTPUT
+unexport CI_PYINSTALLER_WARNING_RAW_OUTPUT
+endif
+
 # Keep expected publication identity literal before startup/export expansion.
 PUBLISH_EXPECTED_BRANCH ?=
 PUBLISH_EXPECTED_SHA ?=
@@ -1102,7 +1109,7 @@ help:
 		"  ci-job-failure-context  bounded authenticated failure context (RUN, JOB, PATTERN, BEFORE, AFTER, MAX_MATCHES)" \
 		"  ci-artifact-download    atomically download one exact run-bound GHA artifact (RUN, ARTIFACT, CI_ARTIFACT_OUTPUT_ROOT, CI_ARTIFACT_HEARTBEAT_SECS, CI_ARTIFACT_DOWNLOAD_VALIDATE_ONLY)" \
 		"  ci-artifact-context     bounded context from one downloaded exact-run artifact (RUN, ARTIFACT, CI_ARTIFACT_FILE, PATTERN, BEFORE, AFTER, MAX_MATCHES, CI_ARTIFACT_CONTEXT_VALIDATE_ONLY)" \
-		"  ci-pyinstaller-warning-audit replay the complete warning graph from one exact-run artifact (RUN, ARTIFACT, PYINSTALLER_WARNING_*, CI_PYINSTALLER_WARNING_AUDIT_VALIDATE_ONLY)" \
+		"  ci-pyinstaller-warning-audit replay one exact-run warning graph; optional CI_PYINSTALLER_WARNING_RAW_OUTPUT retains raw bytes under artifacts/" \
 		"  ci-coverage-artifact-audit audit one externally stored hosted Cobertura report (CI_COVERAGE_*)" \
 		"  ci-coverage-gap-plan       print a bounded exact-run line/branch remediation plan (CI_COVERAGE_*)" \
 		"  ci-run-summary RUN=<id> show one immutable CI run; CI_RUN_SUMMARY_VALIDATE_ONLY=0|1 CI_RUN_SUMMARY_SHARD_TIMINGS=0|1" \

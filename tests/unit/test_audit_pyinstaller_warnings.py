@@ -4,16 +4,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
 import tomllib
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
-from scripts import audit_pyinstaller_warnings as warning_audit
 from scripts.makefile_layout import compose_makefile
+
+if TYPE_CHECKING:
+    import audit_pyinstaller_warnings as warning_audit
+else:
+    from scripts import audit_pyinstaller_warnings as warning_audit
 
 _ROOT = Path(__file__).resolve().parents[2]
 _MAKEFILE = _ROOT / "Makefile"
@@ -94,6 +99,8 @@ def _run_audit(
     manifest_architecture_digests: dict[str, str] | None = None,
     baseline_pinned_project_modules: list[dict[str, str]] | None = None,
     manifest_alternate_digests: dict[str, list[str]] | None = None,
+    raw_export: str | None = None,
+    audit_cwd: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     warning_path = tmp_path / "warn-gludd.txt"
     if warning_body is not None:
@@ -138,12 +145,163 @@ def _run_audit(
             version,
             "--spec",
             str(spec_path),
+            *(["--raw-export", raw_export] if raw_export is not None else []),
         ],
-        cwd=_ROOT,
+        cwd=audit_cwd or _ROOT,
         text=True,
         capture_output=True,
         check=False,
     )
+
+
+def _raw_export_checkout(tmp_path: Path) -> Path:
+    root = tmp_path / "owned-export-checkout"
+    (root / "make").mkdir(parents=True)
+    (root / "Makefile").write_text("include make/00-foundation.mk\n", encoding="utf-8")
+    (root / "make/00-foundation.mk").write_text(".PHONY: owned\n", encoding="utf-8")
+    return root
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_status", "failure"),
+    [
+        ("", 0, ""),
+        ("missing module named optional_backend - imported by dependency.compat (optional)\n", 1,
+         "transitive warning digest mismatch"),
+        ("missing module named regression - imported by general_ludd.new_owner (top-level)\n", 1,
+         "actionable import edge"),
+    ],
+)
+def test_optional_raw_export_preserves_complete_bytes_and_full_audit(
+    tmp_path: Path, body: str, expected_status: int, failure: str,
+) -> None:
+    root = _raw_export_checkout(tmp_path)
+    relative = "artifacts/pyinstaller-warning-cli-owned.txt"
+    result = _run_audit(tmp_path, body, raw_export=relative, audit_cwd=root)
+    expected = (_WARNING_HEADER + body).encode("utf-8")
+    assert result.returncode == expected_status, result.stdout + result.stderr
+    assert (root / relative).read_bytes() == expected
+    assert (tmp_path / "warn-gludd.txt").read_bytes() == expected
+    assert hashlib.sha256(expected).hexdigest() in result.stdout
+    if failure:
+        assert failure in result.stderr
+        assert "PASS: audited" not in result.stdout
+    else:
+        assert "PASS: audited" in result.stdout
+
+
+@pytest.mark.parametrize("output", [
+    "../outside.txt", "/tmp/gludd-outside.txt", "artifacts/../outside.txt",
+    "artifacts/nested/pyinstaller-warning-owned.txt",
+    "artifacts/pyinstaller-warning-has.dot.txt", "artifacts/pyinstaller-warning-.txt",
+])
+def test_raw_export_invalid_destination_keeps_original_audit_failure(
+    tmp_path: Path, output: str,
+) -> None:
+    root = _raw_export_checkout(tmp_path)
+    result = _run_audit(
+        tmp_path, "missing module named new_dependency - imported by dependency (optional)\n",
+        raw_export=output, audit_cwd=root,
+    )
+    assert result.returncode == 1
+    assert "raw warning export" in result.stderr
+    assert "transitive warning digest mismatch" in result.stderr
+    assert "PASS: audited" not in result.stdout
+    assert not (root / "artifacts").exists()
+
+
+def test_raw_export_is_atomic_and_publishes_complete_bytes_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _raw_export_checkout(tmp_path)
+    warnings = tmp_path / "owned-full-warning.txt"
+    raw = b"complete raw warning line\n" * 4000
+    warnings.write_bytes(raw)
+    relative = "artifacts/pyinstaller-warning-" + "a" * 96 + ".txt"
+    native_link = os.link
+    publications: list[str] = []
+
+    def inspect_link(
+        source: str, destination: str, *, src_dir_fd: int, dst_dir_fd: int,
+        follow_symlinks: bool,
+    ) -> None:
+        assert not (root / relative).exists()
+        assert (root / "artifacts" / source).read_bytes() == raw
+        assert src_dir_fd == dst_dir_fd
+        assert follow_symlinks is False
+        publications.append(destination)
+        native_link(
+            source, destination, src_dir_fd=src_dir_fd, dst_dir_fd=dst_dir_fd,
+            follow_symlinks=follow_symlinks,
+        )
+
+    monkeypatch.setattr(os, "link", inspect_link)
+    size, digest = warning_audit._export_raw_warning_file(warnings, relative, root)
+    assert publications == ["pyinstaller-warning-" + "a" * 96 + ".txt"]
+    assert size == len(raw) and digest == hashlib.sha256(raw).hexdigest()
+    assert (root / relative).read_bytes() == raw
+    assert warnings.read_bytes() == raw
+    assert not list((root / "artifacts").glob(".*.tmp"))
+
+
+def test_raw_export_failed_publication_removes_only_its_owned_temporary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _raw_export_checkout(tmp_path)
+    artifact_dir = root / "artifacts"
+    artifact_dir.mkdir()
+    unrelated = artifact_dir / "keep-existing.json"
+    unrelated.write_text("owned retained evidence", encoding="utf-8")
+    warnings = tmp_path / "warning.txt"
+    warnings.write_bytes(b"retain exact raw bytes\n")
+
+    def fail_link(*_args: object, **_kwargs: object) -> None:
+        raise OSError("owned atomic publication failure")
+
+    monkeypatch.setattr(os, "link", fail_link)
+    with pytest.raises(OSError, match="owned atomic publication failure"):
+        warning_audit._export_raw_warning_file(
+            warnings, "artifacts/pyinstaller-warning-failed.txt", root,
+        )
+    assert list(artifact_dir.iterdir()) == [unrelated]
+    assert unrelated.read_text(encoding="utf-8") == "owned retained evidence"
+    assert warnings.read_bytes() == b"retain exact raw bytes\n"
+
+
+@pytest.mark.parametrize("linked_parent", [False, True])
+def test_raw_export_refuses_existing_evidence_and_linked_parent(
+    tmp_path: Path, linked_parent: bool,
+) -> None:
+    root = _raw_export_checkout(tmp_path)
+    outside = tmp_path / "owned-foreign-artifacts"
+    outside.mkdir()
+    relative = "artifacts/pyinstaller-warning-existing.txt"
+    if linked_parent:
+        (root / "artifacts").symlink_to(outside, target_is_directory=True)
+        retained = outside / "pyinstaller-warning-existing.txt"
+    else:
+        (root / "artifacts").mkdir()
+        retained = root / relative
+    retained.write_bytes(b"keep previous evidence")
+    warnings = tmp_path / "warning.txt"
+    warnings.write_bytes(b"candidate raw report")
+    with pytest.raises(OSError):
+        warning_audit._export_raw_warning_file(warnings, relative, root)
+    assert retained.read_bytes() == b"keep previous evidence"
+    assert warnings.read_bytes() == b"candidate raw report"
+    assert list(outside.iterdir()) == ([retained] if linked_parent else [])
+
+
+def test_raw_export_size_bound_refuses_before_destination_creation(tmp_path: Path) -> None:
+    root = _raw_export_checkout(tmp_path)
+    warnings = tmp_path / "oversized-warning.txt"
+    assert warning_audit._RAW_EXPORT_MAX_BYTES == 2 * 1024 * 1024
+    warnings.write_bytes(b"x" * (warning_audit._RAW_EXPORT_MAX_BYTES + 1))
+    with pytest.raises(warning_audit.AuditError, match="exceeds"):
+        warning_audit._export_raw_warning_file(
+            warnings, "artifacts/pyinstaller-warning-oversized.txt", root,
+        )
+    assert not (root / "artifacts").exists()
 
 
 def test_script_exists() -> None:
@@ -990,3 +1148,184 @@ def test_optional_gcp_sdk_import_is_locally_guarded() -> None:
     source = _CLOUD_COMPUTE_SOURCE.read_text(encoding="utf-8")
 
     assert ("try:\n            from google.cloud import billing\n        except ImportError as exc:") in source
+
+
+@pytest.mark.parametrize(
+    ("architecture", "canonical", "foreign"),
+    [
+        ("x86_64", "x86_64", "aarch64"),
+        ("amd64", "x86_64", "aarch64"),
+        ("aarch64", "aarch64", "x86_64"),
+        ("arm64", "aarch64", "x86_64"),
+    ],
+)
+def test_foreign_architecture_alternate_cannot_authorize_selected_graph(
+    tmp_path: Path,
+    architecture: str,
+    canonical: str,
+    foreign: str,
+) -> None:
+    result = _run_audit(
+        tmp_path,
+        "",
+        architecture=architecture,
+        manifest_architecture_digests={canonical: "f" * 64, foreign: "e" * 64},
+        manifest_alternate_digests={foreign: [_EMPTY_TRANSITIVE_DIGEST]},
+    )
+
+    assert result.returncode == 1, result.stdout
+    assert "transitive warning digest mismatch" in result.stderr
+    assert f"found {_EMPTY_TRANSITIVE_DIGEST}" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("architecture", "canonical", "foreign"),
+    [
+        ("x86_64", "x86_64", "aarch64"),
+        ("amd64", "x86_64", "aarch64"),
+        ("aarch64", "aarch64", "x86_64"),
+        ("arm64", "aarch64", "x86_64"),
+    ],
+)
+def test_selected_architecture_alternate_retains_native_alias_acceptance(
+    tmp_path: Path,
+    architecture: str,
+    canonical: str,
+    foreign: str,
+) -> None:
+    result = _run_audit(
+        tmp_path,
+        "",
+        architecture=architecture,
+        manifest_architecture_digests={canonical: "f" * 64, foreign: "e" * 64},
+        manifest_alternate_digests={
+            canonical: [_EMPTY_TRANSITIVE_DIGEST],
+            foreign: ["d" * 64],
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert f"architecture={canonical}" in result.stdout
+    assert "0 baseline-pinned transitive edges" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("architecture", "foreign"),
+    [("x86_64", "aarch64"), ("aarch64", "x86_64")],
+)
+def test_unreviewed_graph_stays_refused_with_both_architecture_alternate_maps(
+    tmp_path: Path,
+    architecture: str,
+    foreign: str,
+) -> None:
+    result = _run_audit(
+        tmp_path,
+        "",
+        architecture=architecture,
+        manifest_architecture_digests={architecture: "f" * 64, foreign: "e" * 64},
+        manifest_alternate_digests={
+            architecture: ["c" * 64],
+            foreign: ["d" * 64],
+        },
+    )
+
+    assert result.returncode == 1
+    assert "transitive warning digest mismatch" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("foreign", "digests", "message"),
+    [
+        ("aarch64", ["not-a-sha256"], "alternate digests for architecture 'aarch64'"),
+        ("arm64", [_EMPTY_TRANSITIVE_DIGEST], "'arm64' should be 'aarch64'"),
+    ],
+)
+def test_foreign_architecture_alternate_map_is_still_fully_validated(
+    tmp_path: Path,
+    foreign: str,
+    digests: list[str],
+    message: str,
+) -> None:
+    result = _run_audit(
+        tmp_path,
+        "",
+        architecture="x86_64",
+        manifest_architecture_digests={"x86_64": _EMPTY_TRANSITIVE_DIGEST},
+        manifest_alternate_digests={foreign: digests},
+    )
+
+    assert result.returncode == 1
+    assert message in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("architecture", "accepted"),
+    [("x86_64", True), ("aarch64", False)],
+)
+def test_current_hosted_observer_graph_is_reviewed_only_for_its_architecture(
+    architecture: str,
+    accepted: bool,
+) -> None:
+    _, _, primary, alternates, _ = warning_audit._parse_allowlist(
+        _LINUX_POLICY,
+        platform="linux",
+        architecture=architecture,
+        pyinstaller_version="6.22.3",
+    )
+
+    hosted_digest = "f3ba54937639296ef135b1218f0c53a3cea6fc647f801b6927840eb26f4b1962"
+    assert (hosted_digest in {primary, *alternates}) is accepted
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        pytest.param("missing-file", "allowlist file does not exist:", id="missing-file"),
+        pytest.param("malformed-json", "cannot parse allowlist", id="malformed-json"),
+        pytest.param("array-root", "allowlist root must be a JSON object", id="array-root"),
+        pytest.param("unexpected-root-key", "allowlist root keys must be exactly:", id="unexpected-root-key"),
+        pytest.param("unsupported-schema", "unsupported allowlist schema_version: 4", id="unsupported-schema"),
+        pytest.param(
+            "empty-architecture-map",
+            "transitive_warning_sha256_by_architecture must be a non-empty JSON object",
+            id="empty-architecture-map",
+        ),
+    ],
+)
+def test_public_cli_rejects_invalid_allowlist_envelope(
+    tmp_path: Path, mutation: str, message: str,
+) -> None:
+    """Refuse one invalid policy input after the same native CLI accepts it."""
+    baseline = _run_audit(tmp_path, "")
+    assert baseline.returncode == 0, baseline.stdout + baseline.stderr
+    assert baseline.stdout.startswith("PASS: audited ")
+    policy_path = tmp_path / "pyinstaller-warning-allowlist.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    assert isinstance(policy, dict)
+
+    if mutation == "missing-file":
+        policy_path.unlink()
+    elif mutation == "malformed-json":
+        policy_path.write_text("{", encoding="utf-8")
+    elif mutation == "array-root":
+        policy_path.write_text("[]", encoding="utf-8")
+    else:
+        if mutation == "unexpected-root-key":
+            policy["owned_unexpected_root_key"] = True
+        elif mutation == "unsupported-schema":
+            policy["schema_version"] = 4
+        else:
+            assert mutation == "empty-architecture-map"
+            policy["transitive_warning_sha256_by_architecture"] = {}
+        policy_path.write_text(json.dumps(policy), encoding="utf-8")
+
+    environment: dict[str, str] = dict(os.environ)
+    result = subprocess.run(
+        baseline.args, cwd=_ROOT, env=environment, text=True,
+        capture_output=True, check=False, timeout=30,
+    )
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert result.stderr.startswith("FAIL: " + message), result.stderr
+    assert result.stdout == ""
+    assert "PASS:" not in result.stdout + result.stderr
