@@ -57,7 +57,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
-from types import CodeType, TracebackType
+from types import CodeType, ModuleType, TracebackType
 from typing import Protocol, TypeVar
 
 logger = logging.getLogger(__name__)
@@ -83,6 +83,8 @@ _POLL_INTERVAL = 0.05
 # Guards the registry dict itself; held only for the dict lookup, never while
 # a per-repo lock is held (so it can never become a contention bottleneck).
 _registry_guard = threading.Lock()
+_observer_import_guard = threading.RLock()
+_observer_loading_module: ModuleType | None = None
 _repo_locks: dict[str, threading.RLock] = {}
 
 # Re-entrancy depth for the CROSS-PROCESS file lock, per repo key. flock is
@@ -127,7 +129,7 @@ _NativeResult = TypeVar("_NativeResult")
 
 def _reset_after_fork() -> None:
     """Discard parent-owned mutex state in a newly forked child."""
-    global _async_workers_guard, _registry_guard
+    global _async_workers_guard, _registry_guard, _observer_import_guard, _observer_loading_module
 
     for fd in tuple(_file_lock_fds.values()):
         with contextlib.suppress(OSError):
@@ -139,6 +141,10 @@ def _reset_after_fork() -> None:
     _async_workers.clear()
     _registry_guard = threading.Lock()
     _async_workers_guard = threading.Lock()
+    _observer_import_guard = threading.RLock()
+    if _observer_loading_module is not None and sys.modules.get("stream_command") is _observer_loading_module:
+        del sys.modules["stream_command"]
+    _observer_loading_module = None
 
 
 if hasattr(os, "register_at_fork"):
@@ -721,6 +727,38 @@ class _CommitObserver(Protocol):
         """Execute and drain the existing owned command."""
 
 
+def _default_observer() -> tuple[_CommitObserver, Callable[[], str]]:
+    """Bind the native observer atomically without changing import search paths."""
+    import importlib.util
+
+    # Frozen modules live in the bootloader archive, without repository script files.
+    if getattr(sys, "frozen", False):
+        frozen_observer = importlib.import_module("stream_command")
+        return frozen_observer.stream_command, frozen_observer._new_run_id
+
+    global _observer_loading_module
+    with _observer_import_guard:
+        observer_module = sys.modules.get("stream_command")
+        if observer_module is None:
+            observer_path = Path(__file__).resolve().parents[3] / "scripts" / "stream_command.py"
+            observer_spec = importlib.util.spec_from_file_location("stream_command", observer_path)
+            if observer_spec is None or observer_spec.loader is None:
+                raise ValueError("native observer requires a loadable scripts/stream_command.py")
+            observer_module = importlib.util.module_from_spec(observer_spec)
+            sys.modules["stream_command"] = observer_module
+            _observer_loading_module = observer_module
+            try:
+                observer_spec.loader.exec_module(observer_module)
+            except BaseException:
+                if sys.modules.get("stream_command") is observer_module:
+                    del sys.modules["stream_command"]
+                raise
+            finally:
+                _observer_loading_module = None
+        return observer_module.stream_command, observer_module._new_run_id
+
+
+
 def _run_make_transaction(
     target: str,
     make: str,
@@ -767,12 +805,7 @@ def _run_make_transaction(
     if (observer_fn is None) != (identity_fn is None):
         raise ValueError("native observer and identity owner must be bound together")
     if observer_fn is None or identity_fn is None:
-        source_scripts = str(Path(__file__).resolve().parents[3] / "scripts")
-        if not sys.path or sys.path[0] != source_scripts:
-            sys.path.insert(0, source_scripts)
-        from stream_command import _new_run_id, stream_command
-        observer_fn = stream_command
-        identity_fn = _new_run_id
+        observer_fn, identity_fn = _default_observer()
     observer_code = getattr(observer_fn, "__code__", None)
     if not isinstance(observer_code, CodeType):
         raise ValueError("native observer must bind its actual source function")
