@@ -122,7 +122,7 @@ ROSTER = (
     "tests/unit/test_xdist_trace_diagnostics.py::test_native_summary_cli_keeps_json_status_and_emits_guidance[trace_guidance_native_rows0-empty]",
     "tests/unit/test_presentation_browser_apt_source.py::test_apt_mode_is_literal_at_real_make_startup[environment-override]",
     "tests/unit/test_git_status_readonly.py::test_status_never_refreshes_native_index[inherited-one]",
-    "tests/unit/test_status_heartbeat_terminal.py", "tests/unit/test_task_ledger_validation.py",
+    "tests/unit/test_task_ledger_validation.py",
     "tests/unit/test_make_readonly_version.py", "tests/unit/test_make_help_audit.py",
     "tests/unit/test_clean_stale_resource_namespaces.py", "tests/unit/test_native_temp_artifact_target.py",
     "tests/unit/test_ci_run_summary_script.py", "tests/unit/test_ci_run_summary_target.py",
@@ -152,7 +152,6 @@ ROSTER = (
     "tests/unit/test_azure_containerapp_coverage_target.py",
     "tests/unit/test_ee_owned_collection_runtime_metadata.py",
     "tests/unit/test_no_sleep_subagent.py",
-    "tests/unit/test_ansible_ee_locked_consumer.py",
     "tests/unit/test_native_builder_optional_formats.py",
     "tests/unit/test_native_format_profile_sync_target.py",
     "tests/unit/test_ansible_ee_locked_consumer_admission.py",
@@ -160,7 +159,6 @@ ROSTER = (
     "tests/unit/test_release_ee_collection_closure.py",
     "tests/unit/test_mcp_topics_manifest.py::test_independent_topic_sizing_has_one_native_dump_per_topic",
     "tests/unit/test_mcp_tool_gen.py",
-    "tests/unit/test_observed_command.py",
     "tests/unit/test_observer_retention_concurrency.py",
     "tests/unit/test_ci_collect_all_stress.py",
     "tests/unit/test_admission_cold_start_selection.py::test_real_admission_filters_only_never_selected_main_siblings",
@@ -227,6 +225,9 @@ REVIEWED_FINALIZATION = (
     "tests/unit/test_makefile_audit_deep.py::TestScriptReferencesExist::test_all_scripts_exist",
     "tests/unit/test_task_watchdog.py::test_live_gate_bound_waiter_protects_the_complete_tree[make-pid]",
     "tests/unit/test_push_discipline_checks.py::TestVerifyRemoteAfterPush::test_verify_remote_compares_sha",
+    "tests/unit/test_ansible_ee_locked_consumer.py",
+    "tests/unit/test_observed_command.py",
+    "tests/unit/test_status_heartbeat_terminal.py",
     *NATIVE_MAKE_STDOUT_SELECTORS,
     "tests/unit/test_dependency_profiles.py::test_selected_profile_locks_preserve_controller_jsonpointer_requirement",
 )
@@ -281,7 +282,7 @@ def test_runtime_admission_retains_entire_roster_and_fresh_help(tmp_path: Path) 
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
     assert "tests/unit/test_makefile_audit_deep.py" not in str(rows[0]["files"])
     tail = rows[2]["files"]
-    assert isinstance(tail, list) and len(tail) == 14
+    assert isinstance(tail, list) and len(tail) == 17
     assert tail[-1] == (
         "tests/unit/test_dependency_profiles.py::"
         "test_selected_profile_locks_preserve_controller_jsonpointer_requirement"
@@ -1412,7 +1413,7 @@ def _assert_native_make_stdout_route(
     for node in NATIVE_MAKE_STDOUT_SELECTORS:
         assert [selection.count(node) for selection in selections] == [0, 0, 1]
         assert all(node.split("::", 1)[0] not in selection for selection in selections)
-    assert len(selections[2]) == 14
+    assert len(selections[2]) == 17
     assert selections[2][-3:-1] == list(NATIVE_MAKE_STDOUT_SELECTORS)
     assert selections[2][-1] == (
         "tests/unit/test_dependency_profiles.py::"

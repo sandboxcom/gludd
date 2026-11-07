@@ -1,6 +1,68 @@
 # GHA pipeline and agentic promotion audit
 
-## Latest implementation and proof inventory
+## Runtime admission scheduling without removing tests (2026-11-07 UTC)
+
+The actual source publication input was diagnostic/v012-cli-auth-20261105 at
+e587ff40f9ac27f9e273342857e7acc6505834d3. The first attempt refused the missing
+checkout-derived runtime before transport. Supplying the existing
+RUNTIME_PUBLISH_ENVIRONMENT with the installed3.11 prefix corrected that caller
+input. The exact pinned EE and separately watched promotion prerequisite passed;
+the unchanged runtime owner then failed124 at90.550s. Outer native publication
+failed2 at102.599s. No source transport or hosted request occurred.
+
+Retain the failed runtime receipt at
+.gate-logs/observed/batch-push-runtime-admission/batch-push-runtime-admission-7617.json
+and its matching pytest.jsonl. Native trace summary records4859 events,
+2424starts,2423paired finishes, one unfinished and zero failure reports.
+MAIN2535 was incomplete; HELP1 and TAIL16 passed. Paired worker wall spans are
+not CPU measurements, the critical path, predicted savings or a release result.
+
+The repair moves the complete existing ansible_ee_locked_consumer,
+observed_command and status_heartbeat_terminal test owners from MAIN to TAIL,
+in that order before the existing native Make stdout/version pair. Every
+remaining MAIN selector retains its order; the original final profile guard
+stays last. Raw selection changes142/1/14 to139/1/17 with the same157-selector
+multiset. It changes neither selected tests nor production behavior in those
+owners. Keep MAIN2 overlapping sequential HELP1/TAIL1, explicit child IDblank,
+fatal warnings, original90/60, joins, native statuses and descendant cleanup.
+The manifest remains181 families/21phases/2850seconds with full gate required;
+the six additional C9 families remain a separate receiving obligation.
+
+Two native routing controls fail before producer intake, then all eight
+check-gate-failure-promotions pins pass. The complete receiving union includes
+all three changed test owners, cold-start selection, Make contracts/deep targets
+and all three relocated complete owners, on both installed runtimes. Its first
+execution exposed an inert fixture mutation: splitting a whole-file selector at
+:: returns the same input. That failure is retained and must be repaired with a
+real broader selector, preserving the original negative assertion and every
+existing node-selector mutation. A separate finalization assertion still pinned
+14 TAIL selectors and is conformed to17 while retaining exact node multiplicity,
+recipe placement and90/60. First complete receiving retains9FAIL/691PASS on each
+runtime, native260.160s on3.11 and267.892s on3.12, at
+v012-runtime-route-complete311/v012-e587-tail-complete-nine311-root-20261108
+and its312 counterpart under .gate-logs/observed. These are failed receipts,
+not acceptance. An unchanged replay grants no new evidence.
+
+After both fixture inputs change, complete nine-owner receiving passes700 cases
+on each installed runtime:3.11 takes256.86s/native258.805s and3.12 takes
+264.03s/native265.914s. Exact receipts use the same labels with
+v012-e587-tail-fixtures-complete-nine311-root-20261108 and312 counterpart.
+Observed-status verifies each actual command, terminal0 and trace. Each native
+summary has739 paired protocols and zero unfinished; its39 nested controls
+include10 expected failure reports at three owned negative-control node IDs.
+Those nested reports are distinct from the700 successful outer tests. The
+combined five-file source has independent source-only approval. These focused
+results do not establish original90/60 runtime margin or any hosted result.
+
+Root owns normal source commit/collection and the next
+normal publisher with an explicit installed runtime in both outer watcher and
+actual command. Only an accepted exact-SHA hosted request supplies a run to
+observe. Focused acceptance, administrative work-item state, source review and
+publication signaling remain separate from the complete canonical gate,
+canonical push CI, development/master deployment and v0.1.2 artifact/tag proof.
+All seven release tasks remain open.
+
+## Historical implementation and proof inventory
 
 The [complete current-workstream status inventory](../releases/v0.1.2-implementation-status.md) is recorded at Main source ef3df16b1af11fa7afcd342ad59d3fc4db610b19. It separates all candidate/peer packets, actual874/BOTH local receiving, corrected3a hosted manifest/promotion passes followed by CSS failure, six-job Molecule success, incomplete history/summary validation and missing canonical release proofs. Branch integration is not complete. Read native current owners before acting; this manual snapshot is not generated current success. The earlier top section is retained below as history, not the latest hosted verdict.
 

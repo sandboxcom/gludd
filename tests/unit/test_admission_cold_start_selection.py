@@ -115,7 +115,11 @@ def test_admission_contracts_reject_mutated_promoted_selectors(
         replacement = promoted_selector + " " + selected
     else:
         assert mutation == "widening"
-        replacement = promoted_selector.split("::", 1)[0] + suffix
+        replacement = (
+            promoted_selector.split("::", 1)[0]
+            if "::" in promoted_selector
+            else Path(promoted_selector).parent.as_posix()
+        ) + suffix
     mutated_stanza = owner_stanza.replace(selected, replacement, 1)
     assert mutated_stanza != owner_stanza
     monkeypatch.setattr(

@@ -928,7 +928,13 @@ def test_publication_runtime_keeps_native_make_stdout_pair_in_tail(tmp_path: Pat
     for node in expected:
         assert [files.count(node) for files in selections] == [0, 0, 1]
         assert all(node.split("::", 1)[0] not in files for files in selections)
-    assert len(selections[2]) == 14 and selections[2][-3:-1] == expected
+    for owner in (
+        "tests/unit/test_ansible_ee_locked_consumer.py",
+        "tests/unit/test_observed_command.py",
+        "tests/unit/test_status_heartbeat_terminal.py",
+    ):
+        assert [files.count(owner) for files in selections] == [0, 0, 1]
+    assert len(selections[2]) == 17 and selections[2][-3:-1] == expected
     assert selections[2][-1] == (
         "tests/unit/test_dependency_profiles.py::"
         "test_selected_profile_locks_preserve_controller_jsonpointer_requirement"
