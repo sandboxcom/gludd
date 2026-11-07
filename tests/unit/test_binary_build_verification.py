@@ -244,3 +244,44 @@ class TestPlatformExclusions:
         assert body is not None
         m = re.search(r"console\s*=\s*(True|False)", body)
         assert m is not None, "EXE block must have a console= parameter"
+
+
+def test_native_commit_observer_is_in_the_compiled_analysis_call(
+    spec_text: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Capture actual compiled-spec inputs without running a PyInstaller build."""
+    import importlib.machinery
+    import sys
+    from types import ModuleType, SimpleNamespace
+    from unittest.mock import MagicMock
+
+    package = ModuleType("PyInstaller")
+    utilities = ModuleType("PyInstaller.utils")
+    hooks = ModuleType("PyInstaller.utils.hooks")
+    analysis = MagicMock(return_value=SimpleNamespace(
+        pure=[], zipped_data=[], scripts=[], binaries=[], zipfiles=[], datas=[],
+    ))
+    namespace: dict[str, object] = {
+        "Analysis": analysis,
+        "PYZ": MagicMock(),
+        "EXE": MagicMock(),
+    }
+    with monkeypatch.context() as modules:
+        modules.setattr(package, "__path__", [], raising=False)
+        modules.setattr(utilities, "__path__", [], raising=False)
+        modules.setattr(hooks, "collect_data_files", MagicMock(return_value=[]), raising=False)
+        modules.setitem(sys.modules, "PyInstaller", package)
+        modules.setitem(sys.modules, "PyInstaller.utils", utilities)
+        modules.setitem(sys.modules, "PyInstaller.utils.hooks", hooks)
+        exec(compile(spec_text, str(SPEC_PATH), "exec"), namespace)
+
+    analysis.assert_called_once()
+    inputs = analysis.call_args.kwargs
+    hiddenimports = inputs["hiddenimports"]
+    assert "general_ludd.git_automation.locking" in hiddenimports
+    assert "stream_command" in hiddenimports
+    assert "stream_command" not in inputs["excludes"]
+    pathex = [str(REPO_ROOT / item) for item in inputs["pathex"]]
+    observer = importlib.machinery.PathFinder.find_spec("stream_command", pathex)
+    assert observer is not None and observer.origin is not None
+    assert Path(observer.origin).resolve() == (REPO_ROOT / "scripts" / "stream_command.py").resolve()
