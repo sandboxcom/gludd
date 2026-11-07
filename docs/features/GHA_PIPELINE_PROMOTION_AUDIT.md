@@ -54,6 +54,26 @@ Those nested reports are distinct from the700 successful outer tests. The
 combined five-file source has independent source-only approval. These focused
 results do not establish original90/60 runtime margin or any hosted result.
 
+The first canonical replay of cf39f6cd64187edcdec2539d38bd6933da95e7dc
+reaches terminal children inside the unchanged bound but remains failed:
+MAIN1FAIL/2359PASS74.69s, HELP1PASS and TAIL191PASS73.41s. Runtime native2 at
+78.156s and outer publication2 at89.697s are retained at
+batch-push-runtime-admission/batch-push-runtime-admission-73828 and
+v012-canonical-source-publish/v012-cf39-three-owner-canonical-publish-root-20261108.
+Transport did not start. The sole failed node is
+test_ansible_ee_locked_consumer_admission::test_locked_ee_consumer_runs_before_publication_without_replacing_full_gate:
+it still requires the relocated EE consumer in MAIN.
+
+The narrow conformance now requires exactly three child assignments and exact
+EE-consumer multiplicities0/0/1, while its admission test remains1/0/0.
+Native Make plan/status/20s and exact family/full-gate assertions remain.
+Independent source review approves68c844f5; the complete changed owner passes
+one case per runtime:3.11 in1.37s/native2.684s and3.12 in1.61s/native3.033s,
+at v012-ee-route-complete311/v012-cf39-ee-route-complete311-root-20261108
+and312 counterpart. The prior700-case source/test/configuration scope is
+unchanged and is retained without another unrelated replay. These local
+receipts neither turn the failed canonical attempt green nor establish CI.
+
 Root owns normal source commit/collection and the next
 normal publisher with an explicit installed runtime in both outer watcher and
 actual command. Only an accepted exact-SHA hosted request supplies a run to
