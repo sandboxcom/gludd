@@ -26,7 +26,7 @@ ci-wait:
 # Usage: make ci-await BRANCH=development TIMEOUT=3600 SHA=... CI_AWAIT_WORKFLOW='Build and Release' CI_AWAIT_EVENT=push CI_AWAIT_INTERVAL=10 CI_AWAIT_AFTER_RUN_ID=0 CI_AWAIT_VALIDATE_ONLY=0 CI_AWAIT_SNAPSHOT_ONLY=0
 CI_AWAIT_OBSERVATION_OUTPUT ?= .gludd/ci-await.json
 ci-await:
-	@$(PYTHON) scripts/ci_await.py --ref "$(or $(BRANCH),master)" --timeout "$(or $(TIMEOUT),3600)" --sha "$(SHA)" --workflow "$(CI_AWAIT_WORKFLOW)" --event "$(CI_AWAIT_EVENT)" --poll-interval "$(or $(CI_AWAIT_INTERVAL),60)" --after-run-id "$(or $(CI_AWAIT_AFTER_RUN_ID),0)" $(if $(and $(SHA),$(CI_AWAIT_OBSERVATION_OUTPUT)),--observation-output "$(CI_AWAIT_OBSERVATION_OUTPUT)",) $(if $(filter 1,$(CI_AWAIT_VALIDATE_ONLY)),--validate-only,) $(if $(filter 1,$(CI_AWAIT_SNAPSHOT_ONLY)),--snapshot-only,)
+	@$(PYTHON) scripts/ci_await.py --ref "$(or $(BRANCH),master)" $(if $(and $(filter file,$(origin TIMEOUT)),$(filter recursive,$(flavor TIMEOUT)),$(findstring $$(_CI_AWAIT_LEGACY_TIMEOUT_DEFAULT),$(value TIMEOUT)),$(findstring $(value TIMEOUT),$$(_CI_AWAIT_LEGACY_TIMEOUT_DEFAULT))),,--timeout "$(or $(TIMEOUT),3600)") --sha "$(SHA)" --workflow "$(CI_AWAIT_WORKFLOW)" --event "$(CI_AWAIT_EVENT)" --poll-interval "$(or $(CI_AWAIT_INTERVAL),60)" --after-run-id "$(or $(CI_AWAIT_AFTER_RUN_ID),0)" $(if $(and $(SHA),$(CI_AWAIT_OBSERVATION_OUTPUT)),--observation-output "$(CI_AWAIT_OBSERVATION_OUTPUT)",) $(if $(filter 1,$(CI_AWAIT_VALIDATE_ONLY)),--validate-only,) $(if $(filter 1,$(CI_AWAIT_SNAPSHOT_ONLY)),--snapshot-only,)
 
 git-pull-sandboxcom:
 	@BRANCH=$$(git branch --show-current); \

@@ -46,7 +46,14 @@ def test_agents_md_rule_5_mentions_ci_await() -> None:
     """AGENTS.md rule 5 says ci-await is for release-cut only."""
     text = _agents_text()
     assert "`make ci-wait` and `make ci-await` are for release-cut only" in text
-    assert "`ci-await` uses a 3600s default timeout" in text
+    assert "`ci-await` retains a 3600s legacy fallback" in text
+    assert (
+        "its native default derives a bounded reporting allowance from the selected literal "
+        "workflow dependency waves when available."
+    ) in text
+    assert (
+        "Explicit caller deadlines and every execution gate remain unchanged; queue time stays unknown."
+    ) in text
 
 
 # ── enforce-no-wait.ts assertions ────────────────────────────────────────

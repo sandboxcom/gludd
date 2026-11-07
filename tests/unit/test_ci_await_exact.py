@@ -1046,3 +1046,368 @@ def test_diagnostic_cli_rechecks_push_ownership_after_actual_query_boundary(tmp_
     assert workspace.restart.read_text() == "4"
     assert not workspace.state.exists()
     assert "history_recorded=true" not in result.stdout + result.stderr
+
+
+def _observation_budget_workflow() -> dict[str, object]:
+    """Keep literal cap/wave expectations independent of the planner."""
+    return {
+        "name": "Build and Release",
+        "jobs": {
+            "version": {"timeout-minutes": 20},
+            "gate": {"needs": "version", "timeout-minutes": 15,
+                     "strategy": {"max-parallel": 1, "matrix": {"python": ["3.11", "3.12"]}}},
+            "upstream": {"needs": ["version", "gate"], "timeout-minutes": 60,
+                         "strategy": {"max-parallel": 1, "matrix": {"node": ["20", "22"]}}},
+            "test-shard": {"needs": ["version", "gate"], "timeout-minutes": 120,
+                           "strategy": {"max-parallel": 3, "matrix": {
+                               "python": ["3.11"],
+                               "shard": ["unit-2", "other", "unit-3a", "unit-3b",
+                                         "unit-1b", "unit-1d", "unit-1a2", "unit-1a1"],
+                               "include": [{"shard": "unit-1a1", "isolated": "owned metadata"}]}}},
+            "coverage": {"needs": ["version", "test-shard"], "timeout-minutes": 10},
+            "release": {"needs": ["upstream", "coverage"], "timeout-minutes": 20},
+        },
+    }
+
+
+def _write_observation_budget_workflow(root: Path, payload: dict[str, object]) -> Path:
+    directory = root / ".github" / "workflows"
+    directory.mkdir(parents=True)
+    path = directory / "build.yml"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def test_default_wait_uses_declared_dependency_waves_without_reclassifying_native_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_observation_budget_workflow(tmp_path, _observation_budget_workflow())
+    monkeypatch.setattr(await_module, "ROOT", tmp_path, raising=False)
+    monkeypatch.delenv("CI_AWAIT_TIMEOUT", raising=False)
+    captured: list[int] = []
+
+    def wait(selector: object, timeout: int, *, poll_interval: float) -> int:
+        captured.append(timeout)
+        assert poll_interval == 10
+        return 7
+
+    monkeypatch.setattr(await_module, "ci_await", wait)
+    result = await_module.main(["--ref", TAG, "--workflow", "Build and Release", "--poll-interval", "10"])
+    assert result == 7
+    assert captured == [26400]
+
+
+def test_observation_plan_retains_eight_shards_serial_upstream_and_unknown_queue() -> None:
+    plan = await_module.workflow_observation_plan(_observation_budget_workflow())
+    assert plan["execution_allowance_seconds"] == 26400
+    assert plan["critical_cap_path"] == ["version", "gate", "test-shard", "coverage", "release"]
+    assert plan["jobs"]["test-shard"] == {
+        "job_cap_seconds": 7200, "matrix_jobs_upper_bound": 8, "max_parallel": 3,
+        "waves": 3, "execution_allowance_seconds": 21600,
+    }
+    assert plan["jobs"]["upstream"]["waves"] == 2
+    assert plan["jobs"]["upstream"]["execution_allowance_seconds"] == 7200
+    assert plan["queue_seconds"] is None
+    assert plan["observed_durations"] is None
+    assert plan["gate_evidence"] is False and plan["release_ready"] is False
+
+
+@pytest.mark.parametrize("explicit", [90, 3600, 21600])
+def test_explicit_observation_timeout_is_never_replaced_by_a_cap_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, explicit: int,
+) -> None:
+    _write_observation_budget_workflow(tmp_path, _observation_budget_workflow())
+    monkeypatch.setattr(await_module, "ROOT", tmp_path, raising=False)
+    selected = await_module.select_observation_budget(
+        await_module.RunSelector(ref=TAG, workflow="Build and Release"), explicit
+    )
+    assert selected.timeout == explicit
+    assert selected.source == "explicit"
+    assert selected.workflow_plan is None
+
+
+def test_existing_environment_timeout_and_legacy_positionals_keep_their_precedence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_observation_budget_workflow(tmp_path, _observation_budget_workflow())
+    monkeypatch.setattr(await_module, "ROOT", tmp_path, raising=False)
+    monkeypatch.setenv("CI_AWAIT_TIMEOUT", "77")
+    monkeypatch.setattr(await_module, "DEFAULT_TIMEOUT", 77)
+    selector = await_module.RunSelector(ref=TAG, workflow="Build and Release")
+    environment = await_module.select_observation_budget(selector)
+    assert (environment.timeout, environment.source) == (77, "environment")
+    captured: list[int] = []
+
+    def wait(selected: object, timeout: int, *, poll_interval: float) -> int:
+        captured.append(timeout)
+        return 7
+
+    monkeypatch.setattr(await_module, "ci_await", wait)
+    assert await_module.main([TAG, "90", "--workflow", "Build and Release"]) == 7
+    assert captured == [90]
+
+
+@pytest.mark.parametrize(
+    ("matrix", "expected"),
+    [
+        ({"axis": ["a", "b"]}, 2),
+        ({"axis": ["a", "b"], "include": [{"axis": "a", "extra": "metadata"}]}, 2),
+        ({"axis": ["a", "b"], "include": [{"axis": "c"}]}, 3),
+        ({"include": [{"axis": "a"}, {"axis": "b"}]}, 2),
+        ({"axis": ["a"], "exclude": [{"axis": "a"}],
+          "include": [{"axis": "a", "x": 1}, {"axis": "a", "x": 2}]}, 3),
+    ],
+)
+def test_literal_matrix_budget_is_conservative_without_dropping_include_rows(
+    matrix: dict[str, object], expected: int,
+) -> None:
+    plan = await_module.workflow_observation_plan({
+        "jobs": {"owned": {"timeout-minutes": 2, "strategy": {"max-parallel": 1, "matrix": matrix}}}
+    })
+    assert plan["jobs"]["owned"]["matrix_jobs_upper_bound"] == expected
+    assert plan["execution_allowance_seconds"] == expected * 120
+
+
+@pytest.mark.parametrize("cap", [None, True, False, 0, -1, 1.5, "1.5", "\u0024{{ expression }}"])
+def test_observation_budget_refuses_unknown_or_lossy_caps(cap: object) -> None:
+    with pytest.raises(ValueError, match="literal positive integer"):
+        await_module.workflow_observation_plan({"jobs": {"owned": {"timeout-minutes": cap}}})
+
+
+@pytest.mark.parametrize(
+    "jobs",
+    [
+        {"owned": {"timeout-minutes": 1, "needs": "absent"}},
+        {"a": {"timeout-minutes": 1, "needs": "b"}, "b": {"timeout-minutes": 1, "needs": "a"}},
+        {"owned": {"timeout-minutes": 1, "strategy": {"matrix": "\u0024{{ fromJSON(needs.seed.outputs.matrix) }}"}}},
+        {"owned": {"timeout-minutes": 1, "strategy": {"max-parallel": 0, "matrix": {"x": ["a"]}}}},
+    ],
+)
+def test_unknown_dependency_or_dynamic_matrix_cannot_supply_a_cap_plan(jobs: dict[str, object]) -> None:
+    with pytest.raises(ValueError):
+        await_module.workflow_observation_plan({"jobs": jobs})
+
+
+def test_budget_validate_only_is_offline_and_snapshot_stdout_stays_a_bare_run_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    _write_observation_budget_workflow(tmp_path, _observation_budget_workflow())
+    monkeypatch.setattr(await_module, "ROOT", tmp_path, raising=False)
+    monkeypatch.delenv("CI_AWAIT_TIMEOUT", raising=False)
+    monkeypatch.setattr(await_module, "get_latest_run", lambda _selector: pytest.fail("offline plan queried GitHub"))
+    assert await_module.main(["--ref", TAG, "--workflow", "Build and Release", "--validate-only"]) == 0
+    output = capsys.readouterr()
+    assert "timeout=26400s" in output.out
+    assert "CI-AWAIT-BUDGET-PLAN" in output.err and '"queue_seconds": null' in output.err
+    monkeypatch.setattr(await_module, "get_latest_run", lambda _selector: None)
+    assert await_module.main(["--ref", TAG, "--workflow", "Build and Release", "--snapshot-only"]) == 0
+    snapshot = capsys.readouterr()
+    assert snapshot.out == "0\n"
+    assert "CI-AWAIT-BUDGET-PLAN" not in snapshot.err
+
+
+def test_unknown_or_foreign_workflow_keeps_a_visible_legacy_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(await_module, "ROOT", tmp_path, raising=False)
+    monkeypatch.delenv("CI_AWAIT_TIMEOUT", raising=False)
+    selector = await_module.RunSelector(ref=TAG, workflow="Missing", repo="another/project")
+    budget = await_module.select_observation_budget(selector)
+    assert budget.timeout == await_module.DEFAULT_TIMEOUT
+    assert budget.source == "legacy-default"
+    assert budget.workflow_plan is None
+
+
+
+@pytest.mark.parametrize("kind", ["explicit", "environment"])
+def test_supplied_observation_deadline_does_not_read_local_workflows(
+    monkeypatch: pytest.MonkeyPatch, kind: str,
+) -> None:
+    def forbidden(_selector: object) -> None:
+        raise RecursionError("explicit deadline evaluated unrelated YAML")
+
+    monkeypatch.setattr(await_module, "_local_workflow_observation_plan", forbidden)
+    monkeypatch.delenv("CI_AWAIT_TIMEOUT", raising=False)
+    explicit = 90 if kind == "explicit" else None
+    if kind == "environment":
+        monkeypatch.setenv("CI_AWAIT_TIMEOUT", "77")
+        monkeypatch.setattr(await_module, "DEFAULT_TIMEOUT", 77)
+    budget = await_module.select_observation_budget(_selector(), explicit)
+    assert budget.timeout == (90 if kind == "explicit" else 77)
+    assert budget.source == kind and budget.workflow_plan is None
+
+
+@pytest.mark.parametrize("kind", ["deep-yaml", "deep-dependencies"])
+def test_native_deep_workflow_failure_cannot_abort_a_reporting_wait(
+    tmp_path: Path, kind: str,
+) -> None:
+    if kind == "deep-yaml":
+        raw = (
+            '{"name":"Build and Release","jobs":{"owned":{"timeout-minutes":1}},"padding":'
+            + "[" * 1024 + "0" + "]" * 1024 + "}"
+        )
+    else:
+        jobs = {
+            f"job_{index}": {"timeout-minutes": 1, "needs": [f"job_{index - 1}"] if index else []}
+            for index in reversed(range(350))
+        }
+        raw = json.dumps({"name": "Build and Release", "jobs": jobs})
+    directory = tmp_path / ".github" / "workflows"
+    directory.mkdir(parents=True)
+    (directory / "build.yml").write_text(raw, encoding="utf-8")
+    program = (
+        "import sys\nfrom pathlib import Path\n"
+        "sys.path.insert(0, sys.argv[1])\n"
+        "import ci_await as owner\nimport yaml\n"
+        "owner.ROOT = Path(sys.argv[2])\n"
+        "selector = owner.RunSelector(ref='v0.1.1', workflow='build.yml')\n"
+        "sys.setrecursionlimit(256)\n"
+        "try:\n    owner._local_workflow_observation_plan(selector)\n"
+        "except RecursionError:\n    pass\n"
+        "else:\n    raise AssertionError('owned recursive input was inert')\n"
+        "automatic = owner.select_observation_budget(selector)\n"
+        "assert automatic.source == 'legacy-default'\n"
+        "assert automatic.timeout == owner.DEFAULT_TIMEOUT\n"
+        "assert automatic.workflow_plan is None and automatic.reason == 'RecursionError'\n"
+        "explicit = owner.select_observation_budget(selector, 90)\n"
+        "assert explicit.timeout == 90 and explicit.source == 'explicit'\n"
+        "assert explicit.workflow_plan is None\n"
+    )
+    environment = os.environ.copy()
+    environment.pop("CI_AWAIT_TIMEOUT", None)
+    result = subprocess.run(
+        [sys.executable, "-c", program, str(ROOT / "scripts"), str(tmp_path)],
+        cwd=ROOT, env=environment, text=True, capture_output=True, check=False, timeout=10,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def _write_complete_observation_make_context(
+    tmp_path: Path, *, file_definition: str | None = None,
+) -> tuple[Path, Path, Path]:
+    import re
+
+    source = compose_makefile(ROOT / "Makefile")
+    logical_source = re.sub(r"\\\n[ \t]*", " ", source)
+    phony = "\n".join(line for line in logical_source.splitlines() if line.startswith(".PHONY:"))
+    timeout_provider = re.search(
+        r"(?m)^override _CI_AWAIT_LEGACY_TIMEOUT_DEFAULT := 3600\n"
+        r"unexport _CI_AWAIT_LEGACY_TIMEOUT_DEFAULT\n"
+        r"TIMEOUT \?= \$\(_CI_AWAIT_LEGACY_TIMEOUT_DEFAULT\)$",
+        source,
+    )
+    output_provider = re.search(r"(?m)^CI_AWAIT_OBSERVATION_OUTPUT\s*\?=.*$", source)
+    assert phony and timeout_provider is not None and output_provider is not None
+    captured = tmp_path / "owned-wait-argv.json"
+    recorder = tmp_path / "owned_wait_recorder.py"
+    recorder.write_text(
+        "import json,os,sys\nfrom pathlib import Path\n"
+        + f"Path({str(captured)!r}).write_text(json.dumps({{"
+        + "'arguments':sys.argv[1:],'private_constant':os.environ.get('_CI_AWAIT_LEGACY_TIMEOUT_DEFAULT')}))\n",
+        encoding="utf-8",
+    )
+    owner = tmp_path / "owned-wait.mk"
+    owner.write_text(
+        phony + "\n" + timeout_provider.group(0) + "\n" + output_provider.group(0)
+        + "\n" + (file_definition + "\n" if file_definition is not None else "")
+        + _recipe("ci-await") + "\n" + _recipe("test-spawner-e2e") + "\n",
+        encoding="utf-8",
+    )
+    return owner, recorder, captured
+
+
+@pytest.mark.parametrize("environment_override", [False, True], ids=["ordinary", "environment-override"])
+@pytest.mark.parametrize(
+    ("file_definition", "command_value", "environment_value", "ordinary_expected", "override_expected"),
+    [
+        (None, None, None, None, None),
+        (None, "90", None, "90", "90"), (None, "0", None, "0", "0"),
+        (None, "", None, "3600", "3600"), (None, None, "90", "90", "90"),
+        (None, None, "0", "0", "0"), (None, None, "", "3600", "3600"),
+        (None, "90", "45", "90", "90"),
+        ("TIMEOUT = 90", None, None, "90", "90"),
+        ("TIMEOUT = 3600", None, None, "3600", "3600"),
+        ("TIMEOUT =", None, None, "3600", "3600"),
+        ("TIMEOUT = 0", None, None, "0", "0"),
+        ("TIMEOUT = 90", None, "45", "90", "45"),
+        ("override TIMEOUT = 120", "90", "45", "120", "120"),
+        ("TIMEOUT := 3600", None, None, "3600", "3600"),
+        ("TIMEOUT = $(_CI_AWAIT_LEGACY_TIMEOUT_DEFAULT) extra", None, None, "3600 extra", "3600 extra"),
+        ("TIMEOUT = $(_CI_AWAIT_LEGACY_TIMEOUT_DEFAULT) $(_CI_AWAIT_LEGACY_TIMEOUT_DEFAULT)",
+         None, None, "3600 3600", "3600 3600"),
+        ("TIMEOUT = $(_CI_AWAIT_LEGACY_TIMEOUT_DEFAULT) ", None, None, "3600 ", "3600 "),
+        ("override TIMEOUT = $(_CI_AWAIT_LEGACY_TIMEOUT_DEFAULT)", None, None, "3600", "3600"),
+    ],
+    ids=[
+        "native-provider", "cli", "cli-zero", "cli-empty", "environment", "environment-zero",
+        "environment-empty", "cli-precedence", "file", "file-legacy-value", "file-empty",
+        "file-zero", "file-environment-precedence", "file-override", "file-simple",
+        "tag-extra", "tag-repeated", "tag-trailing-space", "tag-file-override",
+    ],
+)
+def test_native_make_wait_delegates_only_the_exact_native_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, environment_override: bool,
+    file_definition: str | None, command_value: str | None, environment_value: str | None,
+    ordinary_expected: str | None, override_expected: str | None,
+) -> None:
+    owner, recorder, captured = _write_complete_observation_make_context(
+        tmp_path, file_definition=file_definition,
+    )
+    for key in ("MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "PYTEST_ARGS"):
+        monkeypatch.setenv(key, "")
+    monkeypatch.delenv("_CI_AWAIT_LEGACY_TIMEOUT_DEFAULT", raising=False)
+    if environment_value is None:
+        monkeypatch.delenv("TIMEOUT", raising=False)
+    else:
+        monkeypatch.setenv("TIMEOUT", environment_value)
+    command = ["make", "--no-print-directory", "-f", str(owner)]
+    if environment_override:
+        command.append("-e")
+    command.extend([
+        "ci-await", f"PYTHON={shlex.quote(sys.executable)} {shlex.quote(str(recorder))}",
+        "SHA=", "CI_AWAIT_WORKFLOW=Build and Release", "CI_AWAIT_EVENT=workflow_dispatch",
+        "CI_AWAIT_VALIDATE_ONLY=1", "CI_AWAIT_SNAPSHOT_ONLY=0",
+    ])
+    if command_value is not None:
+        command.append("TIMEOUT=" + command_value)
+    result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True, check=False, timeout=10)
+    assert result.returncode == 0, result.stdout + result.stderr
+    record = json.loads(captured.read_text(encoding="utf-8"))
+    arguments = record["arguments"]
+    assert record["private_constant"] is None
+    assert arguments[0] == "scripts/ci_await.py" and "--validate-only" in arguments
+    expected = override_expected if environment_override else ordinary_expected
+    if expected is None:
+        assert "--timeout" not in arguments
+    else:
+        assert arguments[arguments.index("--timeout") + 1] == expected
+
+
+@pytest.mark.parametrize("environment_override", [False, True], ids=["ordinary", "environment-override"])
+@pytest.mark.parametrize("private_origin", ["absent", "environment", "command"])
+def test_reserved_budget_tag_preserves_other_native_timeout_consumers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, environment_override: bool, private_origin: str,
+) -> None:
+    owner, recorder, captured = _write_complete_observation_make_context(tmp_path)
+    for key in ("MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "PYTEST_ARGS"):
+        monkeypatch.setenv(key, "")
+    monkeypatch.delenv("TIMEOUT", raising=False)
+    monkeypatch.delenv("_CI_AWAIT_LEGACY_TIMEOUT_DEFAULT", raising=False)
+    if private_origin == "environment":
+        monkeypatch.setenv("_CI_AWAIT_LEGACY_TIMEOUT_DEFAULT", "9")
+    command = ["make", "--no-print-directory", "-f", str(owner)]
+    if environment_override:
+        command.append("-e")
+    command.extend([
+        "test-spawner-e2e", f"UV={shlex.quote(sys.executable)} {shlex.quote(str(recorder))}", "PROGRESS=15",
+    ])
+    if private_origin == "command":
+        command.append("_CI_AWAIT_LEGACY_TIMEOUT_DEFAULT=9")
+    result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True, check=False, timeout=10)
+    assert result.returncode == 0, result.stdout + result.stderr
+    record = json.loads(captured.read_text(encoding="utf-8"))
+    assert record["private_constant"] is None
+    assert record["arguments"] == [
+        "run", "python", "tests/opencode_e2e/run_spawner_test.py",
+        "--timeout", "3600", "--progress-interval", "15", "--no-cleanup",
+    ]

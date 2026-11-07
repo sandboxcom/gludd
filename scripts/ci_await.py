@@ -32,6 +32,7 @@ else:
     from scripts.proof_observations import write_snapshot
 
 DEFAULT_REPO = "sandboxcom/gludd"
+ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_TIMEOUT = int(os.environ.get("CI_AWAIT_TIMEOUT", "3600"))
 DEFAULT_POLL_INTERVAL = 60.0
 SHA_RE = re.compile(r"[0-9a-fA-F]{40}\Z")
@@ -70,6 +71,164 @@ class RunSelector:
     event: str = ""
     repo: str = DEFAULT_REPO
     after_run_id: int = 0
+
+
+@dataclass(frozen=True)
+class ObservationBudget:
+    """One bounded reporting choice; execution and queue timing stay unproved."""
+
+    timeout: int
+    source: str
+    workflow_plan: dict[str, Any] | None = None
+    reason: str = ""
+
+
+def _budget_integer(value: object, field: str) -> int:
+    """Accept literal positive integers without rounding or evaluating expressions."""
+    if type(value) is int and value > 0:
+        return value
+    if isinstance(value, str) and re.fullmatch(r"[1-9][0-9]*", value):
+        return int(value)
+    raise ValueError(f"{field} needs a literal positive integer")
+
+
+def _matrix_job_bound(strategy: object) -> int:
+    """Count literal axes conservatively, including independent include entries."""
+    if strategy is None:
+        return 1
+    if not isinstance(strategy, dict):
+        raise ValueError("strategy needs literal mapping input")
+    matrix = strategy.get("matrix")
+    if matrix is None:
+        return 1
+    if not isinstance(matrix, dict):
+        raise ValueError("matrix needs literal mapping input")
+    axes = {key: value for key, value in matrix.items() if key not in {"include", "exclude"}}
+    if any(not isinstance(values, list) or not values for values in axes.values()):
+        raise ValueError("matrix axes need nonempty literal lists")
+    includes, excludes = matrix.get("include", []), matrix.get("exclude", [])
+    if not isinstance(includes, list) or not all(isinstance(item, dict) for item in includes):
+        raise ValueError("matrix include needs literal mappings")
+    if not isinstance(excludes, list) or not all(isinstance(item, dict) for item in excludes):
+        raise ValueError("matrix exclude needs literal mappings")
+    if not axes:
+        if not includes:
+            raise ValueError("matrix has no statically countable jobs")
+        return len(includes)
+    count = 1
+    for values in axes.values():
+        count *= len(values)
+    # Ignoring exclusions deliberately overestimates; include entries can revive
+    # excluded combinations, so count every include separately in that case.
+    if excludes:
+        return count + len(includes)
+    return count + sum(
+        any(key in axes and value not in axes[key] for key, value in item.items())
+        for item in includes
+    )
+
+
+def workflow_observation_plan(payload: object) -> dict[str, Any]:
+    """Model declared job-cap waves and dependencies, with queue delay unknown."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("jobs"), dict) or not payload["jobs"]:
+        raise ValueError("workflow needs a nonempty literal jobs mapping")
+    jobs = payload["jobs"]
+    costs: dict[str, int] = {}
+    dependencies: dict[str, list[str]] = {}
+    rows: dict[str, dict[str, int]] = {}
+    for name, job in jobs.items():
+        if not isinstance(name, str) or not isinstance(job, dict):
+            raise ValueError("workflow jobs need named literal mappings")
+        cap = _budget_integer(job.get("timeout-minutes"), "timeout-minutes") * 60
+        strategy = job.get("strategy")
+        count = _matrix_job_bound(strategy)
+        parallel = _budget_integer(
+            strategy.get("max-parallel", count) if isinstance(strategy, dict) else count, "max-parallel"
+        )
+        waves = (count + parallel - 1) // parallel
+        needs = job.get("needs", [])
+        needs = [needs] if isinstance(needs, str) else needs
+        if not isinstance(needs, list) or not all(isinstance(item, str) for item in needs):
+            raise ValueError("needs must name literal workflow jobs")
+        dependencies[name] = needs
+        costs[name] = cap * waves
+        rows[name] = {"job_cap_seconds": cap, "matrix_jobs_upper_bound": count,
+                      "max_parallel": parallel, "waves": waves, "execution_allowance_seconds": costs[name]}
+    finished: dict[str, tuple[int, tuple[str, ...]]] = {}
+    visiting: set[str] = set()
+
+    def finish(name: str) -> tuple[int, tuple[str, ...]]:
+        if name not in jobs or name in visiting:
+            raise ValueError("workflow dependency is missing or cyclic")
+        if name in finished:
+            return finished[name]
+        visiting.add(name)
+        seconds, path = max((finish(parent) for parent in dependencies[name]), default=(0, ()))
+        visiting.remove(name)
+        finished[name] = (seconds + costs[name], (*path, name))
+        return finished[name]
+
+    seconds, path = max(finish(name) for name in jobs)
+    return {"execution_allowance_seconds": seconds, "critical_cap_path": list(path), "jobs": rows,
+            "queue_seconds": None, "observed_durations": None, "conditions": "conservatively included",
+            "authority": "observation planning only", "gate_evidence": False, "release_ready": False}
+
+
+def _local_workflow_observation_plan(selector: RunSelector) -> dict[str, Any] | None:
+    """Read owned local workflow configuration, never remote jobs or observations."""
+    if selector.repo != DEFAULT_REPO or not selector.workflow:
+        return None
+    import hashlib
+
+    import yaml
+
+    matches: list[tuple[Path, bytes, dict[str, Any]]] = []
+    directory = ROOT / ".github" / "workflows"
+    directory.resolve().relative_to(ROOT.resolve())
+    for path in sorted((*directory.glob("*.yml"), *directory.glob("*.yaml"))):
+        if path.is_symlink():
+            continue
+        raw = path.read_bytes()
+        if len(raw) > 2 * 1024 * 1024:
+            raise ValueError("workflow budget source exceeds the bounded read")
+        try:
+            payload = yaml.load(raw, Loader=yaml.BaseLoader)
+        except yaml.YAMLError:
+            if path.name == selector.workflow:
+                raise ValueError("selected workflow budget YAML is invalid") from None
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if selector.workflow in {path.name, str(path.relative_to(ROOT))} or payload.get("name") == selector.workflow:
+            matches.append((path, raw, payload))
+    if len(matches) > 1:
+        raise ValueError("workflow budget source is ambiguous")
+    if not matches:
+        return None
+    path, raw, payload = matches[0]
+    plan = workflow_observation_plan(payload)
+    plan.update(workflow_source=str(path.relative_to(ROOT)), workflow_source_sha256=hashlib.sha256(raw).hexdigest())
+    return plan
+
+
+def select_observation_budget(selector: RunSelector, explicit: int | None = None) -> ObservationBudget:
+    """Preserve explicit choices without reading unrelated workflow input."""
+    if explicit is not None:
+        return ObservationBudget(explicit, "explicit")
+    if "CI_AWAIT_TIMEOUT" in os.environ:
+        return ObservationBudget(DEFAULT_TIMEOUT, "environment")
+    plan: dict[str, Any] | None = None
+    reason = ""
+    try:
+        plan = _local_workflow_observation_plan(selector)
+    except (ImportError, OSError, RecursionError, ValueError) as exc:
+        reason = type(exc).__name__
+    if plan is not None:
+        seconds = plan["execution_allowance_seconds"]
+        if not isinstance(seconds, int) or isinstance(seconds, bool) or seconds <= 0:
+            raise ValueError("workflow reporting allowance is not a positive integer")
+        return ObservationBudget(seconds, "workflow-job-caps", plan)
+    return ObservationBudget(DEFAULT_TIMEOUT, "legacy-default", reason=reason or "workflow-source-unavailable")
 
 
 def _run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -438,6 +597,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     if args.observation_output is not None and not selector.sha:
         parser.error("observation output requires a full exact SHA")
+
+    if not args.snapshot_only or args.validate_only:
+        explicit = args.timeout if args.timeout is not None else args.legacy_timeout
+        budget = select_observation_budget(selector, explicit)
+        timeout = budget.timeout
+        planned = budget.workflow_plan["execution_allowance_seconds"] if budget.workflow_plan is not None else "unknown"
+        print(
+            f"CI-AWAIT-BUDGET timeout={timeout}s source={budget.source} "
+            f"fresh_workflow_execution_allowance={planned} queue_seconds=unknown "
+            f"observed_durations=unknown plan_reason={budget.reason or 'none'} "
+            "gate_evidence=false release_ready=false; explicit deadlines remain caller-owned",
+            file=sys.stderr,
+        )
+        if args.validate_only and budget.workflow_plan is not None:
+            print("CI-AWAIT-BUDGET-PLAN " + json.dumps(budget.workflow_plan, sort_keys=True), file=sys.stderr)
 
     if args.validate_only:
         print(

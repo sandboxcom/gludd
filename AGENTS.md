@@ -879,7 +879,7 @@ Launch observable -background(<1s), IMMEDIATELY resume useful disjoint work; ins
 
 ### CI-Poll Subagents Are Forbidden
 
-CI-poll subagents FORBIDDEN. NEVER dispatch a "poll CI until terminal" task; `make ci-await` must NEVER be dispatched to a subagent. `make ci-wait` and `make ci-await` are for release-cut only. `ci-await` uses a 3600s default timeout. No verdict loop until terminal. Push fire-and-forget via batch-push+verify-remote; never hold non-release work for green.
+CI-poll subagents FORBIDDEN. NEVER dispatch a "poll CI until terminal" task; `make ci-await` must NEVER be dispatched to a subagent. `make ci-wait` and `make ci-await` are for release-cut only. `ci-await` retains a 3600s legacy fallback; its native default derives a bounded reporting allowance from the selected literal workflow dependency waves when available. Explicit caller deadlines and every execution gate remain unchanged; queue time stays unknown. No verdict loop until terminal. Push fire-and-forget via batch-push+verify-remote; never hold non-release work for green.
 Original exception permits one gate-wait-report call then inspection/redispatch only if unfinished, never “every N seconds” loops. This scoped exception and forbidden polling-task phrases remain, not new permission.
 
 ### Machine-Enforced CI Check Cooldown (2026-07-08)
