@@ -1048,3 +1048,65 @@ ZDD rollout changes only these control-plane child environments; no serving
 process or hook configuration restarts. Rollback reverts the recipe and its
 controls together after admission owners finish, knowingly restoring inherited
 index behavior. Required release and deployment checks remain unchanged.
+
+## Native Make stdout failures in early admission (2026-11-07 UTC)
+
+The actual Diag source starts with180 manifest families,166 owned by the
+runtime compatibility admission, and MAIN/HELP/TAIL selector counts142/1/12.
+The original GNU4.3 complete54-owner diagnostic finished with2 failures,
+7823 passes and46 skips: recursive Make directory output reached the JSON
+decoder's last stdout line and surrounded the correct exact version text.
+The original artifact remains
+`.gate-logs/observed/v012-hosted-native-complete/v012-hosted-gnu43-repairs-complete311-root-20261107.log`.
+
+The existing caller repair requests `--no-print-directory` on the actual
+Azure, Runpod and version children. Its owned Make-control fixture sets
+`w -- OWNED=retained` after isolating only the four Make-control carriers;
+unrelated environment fields remain, and pytest restores parent state.
+The real same-entrypoint witness removes only that option and must print
+both directory messages before the original native JSON/version assertions.
+Root records focused3pass20.05s/native21.547s and complete87pass91.21s/
+native92.712s on GNU4.3/Python3.11. These are leaf receiving results, without
+full-gate, coverage or exact-SHA release authority.
+
+The additive `native-make-stdout-contract` family brings this source to181.
+The schema's single representative node is the existing
+`test_azure_and_runpod_wrappers_use_declared_variables`; independent literal
+routing contracts also require the existing
+`TestMakefileTargets::test_make_version_passes` companion. Both exact nodes
+execute once in TAIL immediately before the unchanged final profile guard;
+neither complete owner is widened into the runtime phase. MAIN142 and fresh
+HELP1 remain unchanged while TAIL becomes14. Every predecessor family and
+selector remains in order.
+
+The new routing guards fail without the family/pair and reject missing,
+duplicate, widened, misplaced or budget-mutated proof. Existing cold-start
+mutation controls include both new exact selectors, and the complete runtime
+publication consumer checks their actual child argv. All eight current
+promotion pins must finish successfully before broader receiving. The original
+90/60 phase,2/1/1 workers,21 phases/2850 ceiling, fatal warnings,85/75 coverage
+and mandatory canonical full gate remain. This control-plane promotion starts
+no serving daemon and changes no application state. Both-runtime admission,
+complete receiving, full gate and exact-SHA hosted/promotion proofs remain open.
+
+The primary [GNU Make release-candidate discussion from October2022](https://lists.gnu.org/r/help-make/2022-10/msg00011.html)
+documents the directory-printing option precedence change in4.4 and changes to
+MAKEFLAGS. It explains why the active fixture must control inherited Make
+options before its same-entrypoint print witness; it does not establish a Gludd
+speed improvement. Root retained the original assertions and tested actual
+GNU4.3 and4.4.1.
+
+Tests-first routing produced2FAIL/1PASS in21.41s/native23.007s. The repaired
+native promotion owner then completed all eight pins in1.77s/native3.769s.
+The first14-owner GNU4.3/Python3.11 receiving union finished784PASS/1FAIL
+in277.48s/native279.413s: the remaining failure was the complete target-contract
+example omitting its newly documented raw-output argument. Adding that exact
+argument to the full expected example preserves every assertion; the complete
+warning-tool owner and previously unreceived docstring consumer pass44 in3.26s/
+native4.537s. These compatible receipts retain the original failed whole result.
+
+The complete15-owner GNU4.4.1/Python3.12 union passes791 in354.16s/native356.342s
+at .gate-logs/observed/v012-diag-compatible-receiving/v012-native-stdout-warning-fifteen-complete-gnu441-312-root-20261107.log.
+This is receiving, without canonical90/60 completion, full gate or exact-SHA
+hosted/deployment authority. Later architecture-policy changes retain their
+own acceptance and coverage requirements.

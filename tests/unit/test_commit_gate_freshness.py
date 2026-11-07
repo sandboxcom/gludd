@@ -36,16 +36,16 @@ def _recipe(target: str) -> str:
 class TestCommitTargetsEnforceGate:
     """Every commit-shaped target must enforce the fresh+green gate check."""
 
-    def test_commit_no_verify_recipe_exists(self):
+    def test_commit_no_verify_recipe_exists(self) -> None:
         assert _recipe("git-commit-no-verify"), "git-commit-no-verify target must exist"
 
-    def test_commit_bootstrap_recipe_exists(self):
+    def test_commit_bootstrap_recipe_exists(self) -> None:
         assert _recipe("commit-bootstrap"), "commit-bootstrap target must exist"
 
-    def test_git_commit_recipe_exists(self):
+    def test_git_commit_recipe_exists(self) -> None:
         assert _recipe("git-commit"), "git-commit target must exist"
 
-    def test_git_commit_does_not_hide_hooks_or_stage_unrelated_changes(self):
+    def test_git_commit_does_not_hide_hooks_or_stage_unrelated_changes(self) -> None:
         """A green gate cannot be followed by a suppressed pre-commit failure."""
         recipe = _recipe("git-commit")
 
@@ -53,9 +53,9 @@ class TestCommitTargetsEnforceGate:
         assert "2>/dev/null || true" not in recipe
         assert "git diff --name-only | xargs" not in recipe
         assert "git diff --cached --name-only -z" in recipe
-        assert "$(UV) run pre-commit run --files" in recipe
+        assert "$(UV) run --active pre-commit run --files" in recipe
 
-    def test_commit_no_verify_enforces_gate(self):
+    def test_commit_no_verify_enforces_gate(self) -> None:
         """git-commit-no-verify must check .gate-status freshness.
 
         Before: `git commit --no-verify` ran with no gate check — an agent
@@ -71,7 +71,7 @@ class TestCommitTargetsEnforceGate:
         gate_enforced = ".gate-status" in recipe or "_gate-fresh-check" in recipe
         assert gate_enforced, "git-commit-no-verify must check .gate-status — it cannot silently bypass the gate"
 
-    def test_commit_bootstrap_enforces_gate(self):
+    def test_commit_bootstrap_enforces_gate(self) -> None:
         """commit-bootstrap (feature-branch commit) must also enforce the gate.
 
         The 'feature branch' rationalization is exactly how a red-gate bypass
@@ -82,7 +82,7 @@ class TestCommitTargetsEnforceGate:
         gate_enforced = ".gate-status" in recipe or "_gate-fresh-check" in recipe
         assert gate_enforced, "commit-bootstrap must check .gate-status — it cannot bypass the gate"
 
-    def test_git_amend_msg_enforces_gate(self):
+    def test_git_amend_msg_enforces_gate(self) -> None:
         """git-amend-msg must check .gate-status — cannot bypass via --amend.
 
         Incident: git-amend-msg invoked `git commit --amend --no-verify` with
@@ -94,7 +94,7 @@ class TestCommitTargetsEnforceGate:
         gate_enforced = ".gate-status" in recipe or "_gate-fresh-check" in recipe
         assert gate_enforced, "git-amend-msg must check .gate-status — it cannot bypass the gate"
 
-    def test_no_commit_target_lacks_gate_check(self):
+    def test_no_commit_target_lacks_gate_check(self) -> None:
         """No commit-shaped target may call git commit without a gate check.
 
         This is the structural guard: scan the Makefile for any target whose
@@ -159,7 +159,7 @@ class TestCommitTargetsEnforceGate:
 class TestCommitLintGuard:
     """AB030: _commit-lint-guard must be wired into every commit target."""
 
-    def test_lint_guard_exists_in_all_commit_targets(self):
+    def test_lint_guard_exists_in_all_commit_targets(self) -> None:
         """Verify _commit-lint-guard appears in every commit target prerequisite."""
         content = compose_makefile(MAKEFILE)
         commit_targets = ["repo-commit", "ship-commit", "git-commit", "commit-no-verify"]
@@ -175,7 +175,7 @@ class TestCommitLintGuard:
                 missing.append(target)
         assert not missing, "These commit targets lack _commit-lint-guard: " + ", ".join(missing)
 
-    def test_no_commit_target_skips_lint(self):
+    def test_no_commit_target_skips_lint(self) -> None:
         """No commit target that invokes 'git commit' may escape the lint guard."""
         content = compose_makefile(MAKEFILE)
         blocks = content.split("\n\n")
@@ -221,7 +221,7 @@ class TestCommitLintGuard:
 class TestMakeGateStatusFile:
     """The gate itself must write .gate-status with the expected fields."""
 
-    def test_gate_status_path_constant(self):
+    def test_gate_status_path_constant(self) -> None:
         """The gate status filename must be the same everywhere it's referenced."""
         content = compose_makefile(MAKEFILE)
         # All references should use the literal ".gate-status" filename.

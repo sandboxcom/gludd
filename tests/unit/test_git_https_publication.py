@@ -145,9 +145,10 @@ def https_publication_repo(tmp_path: Path) -> HttpsFixture:
     environment = {
         key: value for key, value in os.environ.items()
         if not key.startswith(("GIT_", "GH_", "GITHUB_"))
-        and key not in {"MAKEFLAGS", "MFLAGS", "MAKELEVEL"}
+        and key not in {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES"}
     }
     environment.update({
+        "SYSTEM_PYTHON": sys.executable,
         "HOME": str(home), "XDG_CONFIG_HOME": str(home),
         "GH_CONFIG_DIR": str(home / "gh"), "GIT_CONFIG_GLOBAL": str(global_config),
         "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_SYSTEM": os.devnull,

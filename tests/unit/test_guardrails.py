@@ -102,9 +102,25 @@ class TestMakefileTargets:
         )
         assert result.returncode == 0, f"make healthcheck failed:\n{result.stderr}\n{result.stdout}"
 
-    def test_make_version_passes(self) -> None:
+    def test_make_version_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for name in ("MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "GNUMAKEFLAGS"):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv("MAKEFLAGS", "w -- OWNED=retained")
+        command = ["make", "--no-print-directory", "version"]
+        witness_command = command.copy()
+        witness_command.remove("--no-print-directory")
+        witness = subprocess.run(
+            witness_command,
+            capture_output=True,
+            text=True,
+            cwd=str(ROOT),
+            timeout=30,
+        )
+        assert witness.returncode == 0, witness.stdout + witness.stderr
+        assert "Entering directory" in witness.stdout
+        assert "Leaving directory" in witness.stdout
         result = subprocess.run(
-            ["make", "version"],
+            command,
             capture_output=True,
             text=True,
             cwd=str(ROOT),
@@ -352,7 +368,8 @@ class TestGuardrailIntegrity:
 class TestCommitAfterGreenGuardrail:
     def test_makefile_test_and_commit_runs_tests_first(self) -> None:
         content = compose_makefile(MAKEFILE)
-        tac_start = content.index("\ntest-and-commit:")
+        # The public command delegates to the native locked implementation.
+        tac_start = content.index("\n_commit-locked-test-and-commit:")
         tac_end = content.index("\n\n", tac_start) if "\n\n" in content[tac_start:] else len(content)
         tac_section = content[tac_start:tac_end]
         # test-and-commit now routes its test phase through the RAM-bounded
@@ -375,7 +392,7 @@ class TestCommitAfterGreenGuardrail:
 
     def test_makefile_test_and_commit_rejects_if_tests_fail(self) -> None:
         content = compose_makefile(MAKEFILE)
-        tac_start = content.index("\ntest-and-commit:")
+        tac_start = content.index("\n_commit-locked-test-and-commit:")
         tac_end = content.index("\n\n", tac_start) if "\n\n" in content[tac_start:] else len(content)
         tac_section = content[tac_start:tac_end]
         lines = tac_section.split("\n")
@@ -392,7 +409,7 @@ class TestCommitAfterGreenGuardrail:
     def test_makefile_test_and_commit_supports_custom_msg(self) -> None:
         content = compose_makefile(MAKEFILE)
         assert "MSG" in content, "test-and-commit should support MSG variable"
-        tac_start = content.index("test-and-commit:")
+        tac_start = content.index("\n_commit-locked-test-and-commit:")
         tac_end = content.index("\n\n", tac_start) if "\n\n" in content[tac_start:] else len(content)
         tac_section = content[tac_start:tac_end]
         assert "$(MSG)" in tac_section

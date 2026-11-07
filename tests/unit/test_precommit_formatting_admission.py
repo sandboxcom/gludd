@@ -73,6 +73,8 @@ def test_existing_guard_routes_formatter_failure_before_later_checks(
     stub.write_text(
         "import json, os, pathlib, sys\n"
         "args = sys.argv[1:]\n"
+        "if args[:2] == ['run', '--active']:\n"
+        "    args = ['run'] + args[2:]\n"
         "if args[:2] == ['run', 'python']:\n"
         "    os.execve(sys.executable, [sys.executable, *args[2:]], dict(os.environ))\n"
         f"trace = pathlib.Path({str(trace)!r})\n"
@@ -194,9 +196,24 @@ def _native_calls(adapter: Path) -> list[dict[str, object]]:
     trace = adapter.parent / "native-precommit-argv.jsonl"
     if not trace.exists():
         return []
+
+    def _normalize(argv: list[str]) -> list[str]:
+        # The guard passes --active to uv so it uses the active environment; strip
+        # it from the recorded argv so existing assertions remain stable.
+        if (
+            len(argv) >= 4
+            and argv[0] == "run"
+            and argv[1] == "--active"
+            and argv[2] == "pre-commit"
+            and argv[3] == "run"
+        ):
+            return ["run", "pre-commit", "run", *argv[4:]]
+        return argv
+
     return [
-        json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines()
-        if json.loads(line)["argv"][:3] == ["run", "pre-commit", "run"]
+        {**json.loads(line), "argv": _normalize(json.loads(line)["argv"])}
+        for line in trace.read_text(encoding="utf-8").splitlines()
+        if _normalize(json.loads(line)["argv"])[:3] == ["run", "pre-commit", "run"]
     ]
 
 
@@ -464,6 +481,8 @@ def test_native_hook_status_and_signal_stop_before_later_hooks(
     stub.write_text(
         "import json, os, sys\n"
         "args = sys.argv[1:]\n"
+        "if args[:2] == ['run', '--active']:\n"
+        "    args = ['run'] + args[2:]\n"
         "if args[:2] == ['run', 'python']:\n"
         "    os.execve(sys.executable, [sys.executable, *args[2:]], dict(os.environ))\n"
         f"with open({str(trace)!r}, 'a') as stream:\n"
@@ -714,3 +733,37 @@ def test_native_guard_does_not_import_untracked_implicit_cwd_modules(
     assert all(event["pythonpath"] == str(carrier) for event in bootstrap)
     assert all(event["carrier"] == "explicit carrier  n q t must remain" for event in bootstrap)
     assert all(event["safe_path"] is True for event in bootstrap)
+
+
+@pytest.mark.parametrize("environment_override", (False, True))
+def test_native_guard_uses_active_runtime_without_creating_a_fixture_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, environment_override: bool,
+) -> None:
+    """The real UV must use the installed active runtime in an independent project."""
+    active_runtime = str(Path(sys.prefix).resolve())
+    monkeypatch.setenv("VIRTUAL_ENV", active_runtime)
+    monkeypatch.setenv("UV_NO_SYNC", "1")
+    monkeypatch.delenv("UV_PROJECT_ENVIRONMENT", raising=False)
+    root, adapter = _native_workspace(tmp_path)
+    filename = "active runtime staged.txt"
+    (root / filename).write_text("owned active-runtime input\n", encoding="utf-8")
+    _native_git(root, "add", "--", filename)
+
+    result = _native_guard(root, adapter, environment_override=environment_override)
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert not (root / ".venv").exists()
+    assert "does not match the project environment path" not in output
+    calls = _native_calls(adapter)
+    assert [cast(list[str], call["argv"])[3] for call in calls] == list(NATIVE_HOOKS)
+    trace = adapter.parent / "native-precommit-argv.jsonl"
+    raw_calls = [
+        json.loads(line)["argv"]
+        for line in trace.read_text(encoding="utf-8").splitlines()
+    ]
+    uv_calls = [arguments for arguments in raw_calls if arguments[:1] == ["run"]]
+    assert len(uv_calls) == 4
+    assert all(arguments[:2] == ["run", "--active"] for arguments in uv_calls)
+    assert os.environ["VIRTUAL_ENV"] == active_runtime
+    assert "UV_PROJECT_ENVIRONMENT" not in os.environ

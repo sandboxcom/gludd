@@ -89,6 +89,8 @@ if Path(sys.argv[0]).name == "git":
     os.execve(os.environ["TRANSACTION_REAL_GIT"], ["git", *args], dict(os.environ))
 if args and args[0] == "run":
     args = args[1:]
+    if args and args[0] == "--active":
+        args = args[1:]
     if args and args[0] == "pre-commit":
         event("pre-commit")
         raise SystemExit(0)
@@ -1092,17 +1094,37 @@ def test_publication_inspection_guard_has_native_unguarded_mutation_witness(
     assert macro is not None
     condition = "$(filter execute,$(_commit-native-mode))"
     assert macro.group().count(condition) == 1
-    unguarded = macro.group().replace(condition, "execute", 1)
-    source = source.replace(macro.group(), unguarded, 1)
-    # A literal recursive envelope supplies the native q/t witness as well as n.
     assert source.count("\t$(call _commit-publication)\n") == 4
-    source = source.replace("\t$(call _commit-publication)\n", "\t+$(call _commit-publication)\n")
-    # Query must also pass the preceding mutation noop to reach the post recipe.
     assert source.count("\t$(call _commit-transaction)\n") == 12
-    source = source.replace("\t$(call _commit-transaction)\n", "\t+$(call _commit-transaction)\n")
-    entrypoint.write_text(source, encoding="utf-8")
+    assert re.search(r"^\.PHONY:[^\n]*\bship-commit-files\b", source, re.MULTILINE)
+
+    # GNU query mode must reach the macro through a prerequisite-free leaf.
+    # Keep the complete provider/PHONY context and use the identical native
+    # recursive envelope for the guarded and unguarded macro in every mode.
+    publication_target = _block(source, "ship-commit-files")
+    assert publication_target is not None
+    assert source.count(publication_target) == 1
+    assert publication_target.count("$(call _commit-publication)") == 1
+    source = source.replace(
+        publication_target,
+        "ship-commit-files:\n\t+$(call _commit-publication)\n",
+        1,
+    )
+    unguarded = macro.group().replace(condition, "execute", 1)
+    unguarded_source = source.replace(macro.group(), unguarded, 1)
     before = _git(fixture.root, "rev-parse", "HEAD").stdout
     index = (fixture.root / ".git/index").read_bytes()
+
+    entrypoint.write_text(source, encoding="utf-8")
+    guarded_process = fixture.start(case="inspection", push="1", make_flags=(*make_flags, flag))
+    guarded_stdout, guarded_stderr = _drain(guarded_process)
+    assert _publication_events(fixture) == [], (guarded_stdout, guarded_stderr)
+    assert "inspection:collect" not in fixture.events() and "inspection:commit" not in fixture.events()
+    assert _git(fixture.root, "rev-parse", "HEAD").stdout == before
+    assert (fixture.root / ".git/index").read_bytes() == index
+    assert not (fixture.root / ".gate-logs").exists()
+
+    entrypoint.write_text(unguarded_source, encoding="utf-8")
     process = fixture.start(case="inspection", push="1", make_flags=(*make_flags, flag))
     stdout, stderr = _drain(process)
     assert _publication_events(fixture) == ["batch-push"], (stdout, stderr)
@@ -1110,6 +1132,140 @@ def test_publication_inspection_guard_has_native_unguarded_mutation_witness(
     assert _git(fixture.root, "rev-parse", "HEAD").stdout == before
     assert (fixture.root / ".git/index").read_bytes() == index
     assert not (fixture.root / ".gate-logs").exists()
+
+
+def _native_recursive_query_exit_one_status(
+    fixture: NativeTransaction, make_flags: tuple[str, ...],
+) -> int:
+    """Measure native query handling of a real failing forced-recursive shell."""
+    entrypoint = fixture.root / "Makefile"
+    source = entrypoint.read_text(encoding="utf-8")
+    controls = "".join(
+        "\n.PHONY: owned-docguard-exit-" + str(code)
+        + "\nowned-docguard-exit-" + str(code) + ":\n"
+        + "\t+@printf '%s\\n' owned-docguard-exit-" + str(code)
+        + " >&2; exit " + str(code) + "\n"
+        for code in (1, 7)
+    )
+    before_events = fixture.events()
+    observed_exit_one: int | None = None
+    entrypoint.write_text(source + controls, encoding="utf-8")
+    try:
+        for code in (1, 7):
+            target = "owned-docguard-exit-" + str(code)
+            control = fixture.start(target=target, case="exit-oracle", make_flags=make_flags)
+            stdout, stderr = _drain(control)
+            assert stdout == "", (stdout, stderr)
+            assert stderr.splitlines().count(target) == 1, (stdout, stderr)
+            assert fixture.events() == before_events
+            assert not (fixture.root / target).exists()
+            if code == 7:
+                assert control.returncode == 2, (stdout, stderr)
+                assert "Error 7" in stderr
+            else:
+                observed_exit_one = control.returncode
+                if "Error 1" in stderr:
+                    assert observed_exit_one == 2, (stdout, stderr)
+                else:
+                    assert observed_exit_one == 1, (stdout, stderr)
+    finally:
+        entrypoint.write_text(source, encoding="utf-8")
+    assert observed_exit_one is not None
+    return observed_exit_one
+
+
+@pytest.mark.parametrize("flag,mode", [
+    ("", "execute"), ("-n", "dry-run"), ("-q", "query"), ("-t", "touch"),
+])
+@pytest.mark.parametrize("make_flags", [(), ("-e",)])
+def test_real_docstring_guard_keeps_native_failure_and_active_inspection_witness(
+    tmp_path: Path, flag: str, mode: str, make_flags: tuple[str, ...],
+) -> None:
+    fixture = _fixture(tmp_path / "repo", tmp_path / "state")
+    entrypoint = fixture.root / "Makefile"
+    source = entrypoint.read_text(encoding="utf-8")
+    stub = _block(source, "_commit-docstring-guard")
+    production = (ROOT / "make/50-development-and-guardrails.mk").read_text(encoding="utf-8")
+    guard = _block(production, "_commit-docstring-guard")
+    assert stub is not None and guard is not None
+    assert source.count(stub) == 1
+    foundation = (ROOT / "make/00-foundation.mk").read_text(encoding="utf-8")
+    phony = re.search(r"^\.PHONY: \\\n(?:[^\n]*\\\n)*[^\n]*\n", foundation, re.MULTILINE)
+    assert phony is not None, "real guard controls require the complete native PHONY provider"
+    assert "_commit-docstring-guard" in phony.group() and "lint-docstrings" in phony.group()
+    helper = shlex.join((sys.executable, str(fixture.state / "adapter.py")))
+    source = (
+        source.replace(stub, guard, 1)
+        + "\n" + phony.group()
+        + "\nlint-docstrings:\n\t+@" + helper + " guard docstring-lint\n"
+    )
+    git_adapter = fixture.state / "bin/git"
+    adapter_source = git_adapter.read_text(encoding="utf-8")
+    original_trace = 'args[0] in {"add", "commit"}'
+    assert adapter_source.count(original_trace) == 1
+    git_adapter.write_text(
+        adapter_source.replace(original_trace, 'args[0] in {"add", "commit", "diff"}', 1),
+        encoding="utf-8",
+    )
+    staged = fixture.root / "src/general_ludd/owned_docguard.py"
+    staged.write_text('"""Owned staged production source."""\n', encoding="utf-8")
+    _git(fixture.root, "add", "-f", "src/general_ludd/owned_docguard.py")
+    before_head = _git(fixture.root, "rev-parse", "HEAD").stdout
+    before_index = (fixture.root / ".git/index").read_bytes()
+    before_source = staged.read_bytes()
+    flags = (*make_flags, flag) if flag else make_flags
+    entrypoint.write_text(source, encoding="utf-8")
+    process = fixture.start(
+        case="guarded", target="_commit-docstring-guard", make_flags=flags,
+        state={"TRANSACTION_FAIL_GUARD": "docstring-lint"},
+    )
+    stdout, stderr = _drain(process)
+    if mode == "execute":
+        assert process.returncode == 2, (stdout, stderr)
+        assert fixture.events() == ["guarded:diff", "guarded:guard-docstring-lint"]
+        assert "Error 75" in stderr
+        assert "_commit-docstring-guard: FAIL" in stdout
+    else:
+        assert process.returncode in ({0, 1} if mode == "query" else {0}), (stdout, stderr)
+        assert fixture.events() == [], (stdout, stderr)
+        assert f"target=_commit-docstring-guard outcome=planned mode={mode}" in stderr
+        assert "gate_evidence=false release_ready=false" in stderr
+    assert _git(fixture.root, "rev-parse", "HEAD").stdout == before_head
+    assert (fixture.root / ".git/index").read_bytes() == before_index
+    assert staged.read_bytes() == before_source
+    assert not (fixture.root / ".gate-logs").exists()
+    assert not (fixture.root / "_commit-docstring-guard").exists()
+    assert not (fixture.root / "lint-docstrings").exists()
+
+    inspection = re.search(
+        r'case "\$\(_commit-native-mode\)" in query\|dry-run\|touch\).*?;; esac; ',
+        guard,
+    )
+    assert inspection is not None and guard.count(inspection.group()) == 1
+    unguarded = guard.replace(inspection.group(), "", 1)
+    assert source.count(guard) == 1
+    entrypoint.write_text(source.replace(guard, unguarded, 1), encoding="utf-8")
+    events_before = fixture.events()
+    expected_witness_status = 2
+    if mode == "query":
+        expected_witness_status = _native_recursive_query_exit_one_status(fixture, flags)
+    witness = fixture.start(
+        case="unguarded", target="_commit-docstring-guard", make_flags=flags,
+        state={"TRANSACTION_FAIL_GUARD": "docstring-lint"},
+    )
+    witness_stdout, witness_stderr = _drain(witness)
+    assert witness.returncode == expected_witness_status, (witness_stdout, witness_stderr)
+    assert fixture.events()[len(events_before):] == [
+        "unguarded:diff", "unguarded:guard-docstring-lint",
+    ], "the same native recipe/flags/provider must reach the real lookup and failing lint"
+    assert "Error 75" in witness_stderr
+    assert "_commit-docstring-guard: FAIL" in witness_stdout
+    assert _git(fixture.root, "rev-parse", "HEAD").stdout == before_head
+    assert (fixture.root / ".git/index").read_bytes() == before_index
+    assert staged.read_bytes() == before_source
+    assert not (fixture.root / ".gate-logs").exists()
+    assert not (fixture.root / "_commit-docstring-guard").exists()
+    assert not (fixture.root / "lint-docstrings").exists()
 
 
 def _mode_classification_source() -> str:

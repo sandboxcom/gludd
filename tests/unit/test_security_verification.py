@@ -89,8 +89,15 @@ def test_security_make_target_exists(target: str) -> None:
 
 
 def test_secrets_scan_uses_detect_secrets() -> None:
-    """SEC.14: secrets-scan must invoke detect-secrets against the baseline."""
-    _assert_target_recipe_runs("secrets-scan", "detect-secrets")
+    """SEC.14: secrets-scan runs the readonly baseline owner with full-scan inputs."""
+    source = compose_makefile(MAKEFILE_PATH)
+    pattern = re.compile(r"^secrets-scan:\s*\n((?:\t[^\n]*\n)+)", re.MULTILINE)
+    match = pattern.search(source)
+    assert match, "target 'secrets-scan' recipe not found"
+    recipe = match.group(1)
+    assert "scripts/detect_secrets_readonly.py" in recipe
+    assert "--scan-cores" in recipe
+    assert "--baseline" in recipe
 
 
 def test_secrets_scrub_invokes_audit() -> None:

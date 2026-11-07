@@ -33,12 +33,12 @@ class TestG01G02GateMustPassBeforeCommit:
         "ship-commit",
     ]
 
-    def test_gate_fresh_check_target_exists(self):
+    def test_gate_fresh_check_target_exists(self) -> None:
         content = compose_makefile(MAKEFILE)
         recipe = _find_recipe(content, "_gate-fresh-check")
         assert recipe, "G01: _gate-fresh-check target must exist"
 
-    def test_gate_fresh_check_is_fail_closed(self):
+    def test_gate_fresh_check_is_fail_closed(self) -> None:
         content = compose_makefile(MAKEFILE)
         recipe = _find_recipe(content, "_gate-fresh-check")
         if not recipe:
@@ -47,7 +47,7 @@ class TestG01G02GateMustPassBeforeCommit:
             "G02: _gate-fresh-check must enforce freshness (check must be fail-closed)"
         )
 
-    def test_commit_targets_reference_gate_fresh_check(self):
+    def test_commit_targets_reference_gate_fresh_check(self) -> None:
         content = compose_makefile(MAKEFILE)
         checked = 0
         missing = []
@@ -66,9 +66,11 @@ class TestG01G02GateMustPassBeforeCommit:
             f"Missing: {', '.join(missing)}"
         )
 
-    def test_test_and_commit_is_allowlisted(self):
+    def test_test_and_commit_is_allowlisted(self) -> None:
         content = compose_makefile(MAKEFILE)
-        recipe = _find_recipe(content, "test-and-commit")
-        if not recipe:
+        public = _find_recipe(content, "test-and-commit")
+        if not public:
             return
-        assert "pytest" in recipe, "G01: test-and-commit must run pytest as its own micro-gate"
+        assert "_commit-transaction" in public, "G01: test-and-commit must delegate to the native commit transaction"
+        locked = _find_recipe(content, "_commit-locked-test-and-commit")
+        assert locked and "pytest" in locked, "G01: test-and-commit must run pytest as its own micro-gate"

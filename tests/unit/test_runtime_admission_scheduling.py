@@ -18,7 +18,7 @@ from scripts import makefile_layout
 from tests.unit.test_observed_command import _command, _current_status
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 180
+EXPECTED_FAMILY_COUNT = 181
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 EXPECTED_MAIN_PYTEST_FLAGS = (
@@ -209,6 +209,12 @@ ROSTER = (
 )
 
 
+NATIVE_MAKE_STDOUT_SELECTORS = (
+    "tests/unit/test_make_target_contract.py::test_azure_and_runpod_wrappers_use_declared_variables",
+    "tests/unit/test_guardrails.py::TestMakefileTargets::test_make_version_passes",
+)
+
+
 REVIEWED_FINALIZATION = (
     "tests/unit/test_reviewed_head_inputs.py::test_historical_focus_binds_candidate_adapter_blobs_not_inspecting_files",
     "tests/unit/test_reviewed_head_inputs.py::test_finalization_accepts_actual_native_background_producer_command",
@@ -221,6 +227,7 @@ REVIEWED_FINALIZATION = (
     "tests/unit/test_makefile_audit_deep.py::TestScriptReferencesExist::test_all_scripts_exist",
     "tests/unit/test_task_watchdog.py::test_live_gate_bound_waiter_protects_the_complete_tree[make-pid]",
     "tests/unit/test_push_discipline_checks.py::TestVerifyRemoteAfterPush::test_verify_remote_compares_sha",
+    *NATIVE_MAKE_STDOUT_SELECTORS,
     "tests/unit/test_dependency_profiles.py::test_selected_profile_locks_preserve_controller_jsonpointer_requirement",
 )
 
@@ -274,7 +281,7 @@ def test_runtime_admission_retains_entire_roster_and_fresh_help(tmp_path: Path) 
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
     assert "tests/unit/test_makefile_audit_deep.py" not in str(rows[0]["files"])
     tail = rows[2]["files"]
-    assert isinstance(tail, list) and len(tail) == 12
+    assert isinstance(tail, list) and len(tail) == 14
     assert tail[-1] == (
         "tests/unit/test_dependency_profiles.py::"
         "test_selected_profile_locks_preserve_controller_jsonpointer_requirement"
@@ -1030,7 +1037,7 @@ def test_coverage_suite_provenance_failure_has_one_exact_native_route(tmp_path: 
         if index:
             assert node not in selection
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 181
     assert payload["families"][149]["id"] == "native-full-scan-success-inventory"
     assert payload["families"][150] == {
         "id": "coverage-native-suite-provenance",
@@ -1094,7 +1101,7 @@ def test_uv_prune_native_failure_has_one_exact_native_route(tmp_path: Path) -> N
         assert node.split("::", 1)[0] not in selection
     assert counts == [1, 0, 0]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 181
     assert payload["families"][150]["id"] == "coverage-native-suite-provenance"
     assert payload["families"][151] == {
         "id": "uv-prune-native-failure-status",
@@ -1130,7 +1137,7 @@ def test_uv_prune_inherited_policy_has_one_exact_native_route(tmp_path: Path) ->
     assert counts == [1, 0, 0]
     assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 181
     assert payload["families"][151]["id"] == "uv-prune-native-failure-status"
     assert payload["families"][152] == {
         "id": "uv-prune-inherited-policy-context", "owner_target": OWNER,
@@ -1161,7 +1168,7 @@ def test_shared_uv_inventory_has_one_exact_native_route(tmp_path: Path) -> None:
     assert all(node.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 181
     assert payload["families"][152]["id"] == "uv-prune-inherited-policy-context"
     assert payload["families"][153] == {
         "id": "shared-uv-cache-inventory-exposure", "owner_target": OWNER,
@@ -1201,7 +1208,7 @@ def test_git_handoff_failures_have_exact_native_routes(
     assert all(node_selector.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 181
     assert payload["families"][153]["id"] == "shared-uv-cache-inventory-exposure"
     assert payload["families"][154:156] == [
         {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
@@ -1295,6 +1302,8 @@ CANDIDATE_PROOF_PROMOTIONS = (
      "test_live_gate_bound_waiter_protects_the_complete_tree[make-pid]"),
     ("verify-remote-recipe-boundary", "tests/unit/test_push_discipline_checks.py::"
      "TestVerifyRemoteAfterPush::test_verify_remote_compares_sha"),
+    ("native-make-stdout-contract", "tests/unit/test_make_target_contract.py::"
+     "test_azure_and_runpod_wrappers_use_declared_variables"),
 )
 
 WORK_ITEM_PROMOTIONS = (
@@ -1322,12 +1331,13 @@ def test_make_safety_and_guidance_have_exact_native_routes(
         selections.append(selection)
     expected = [0, 0, 1] if promoted_family in {
         "make-local-script-reference-boundary", "watchdog-bound-gate-waiter", "verify-remote-recipe-boundary",
+        "native-make-stdout-contract",
     } else [1, 0, 0]
     assert [selection.count(node_selector) for selection in selections] == expected
     assert all(node_selector.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 180
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 181
     assert [family["id"] for family in payload["families"][154:156]] == [
         "git-async-live-owner-handoff", "git-async-completed-owner-adoption",
     ]
@@ -1378,6 +1388,94 @@ def test_make_safety_and_guidance_have_exact_native_routes(
     assert len(payload["runtime_contract"]["phases"]) == 21
     assert sum(item["max_seconds"] for item in payload["runtime_contract"]["phases"]) == 2850
     assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
+
+
+def _assert_native_make_stdout_route(
+    payload: dict[str, object], rows: list[dict[str, object]],
+) -> None:
+    """Keep both witnessed native stdout failures in one exact serial tail."""
+    expected = {
+        "id": "native-make-stdout-contract", "owner_target": OWNER, "node_kind": "pytest_node",
+        "node": NATIVE_MAKE_STDOUT_SELECTORS[0], "full_gate_phase": "test",
+    }
+    families = payload["families"]
+    assert isinstance(families, list)
+    assert [family for family in families if family["id"] == expected["id"]] == [expected]
+    assert len(families) == EXPECTED_FAMILY_COUNT == 181 and families[-1] == expected
+    assert len(rows) == 3 and [row["phase"] for row in rows] == ["full", "help", "reviewed"]
+    selections: list[list[object]] = []
+    for row in rows:
+        selected = row["files"]
+        assert isinstance(selected, list)
+        selections.append(selected)
+    assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
+    for node in NATIVE_MAKE_STDOUT_SELECTORS:
+        assert [selection.count(node) for selection in selections] == [0, 0, 1]
+        assert all(node.split("::", 1)[0] not in selection for selection in selections)
+    assert len(selections[2]) == 14
+    assert selections[2][-3:-1] == list(NATIVE_MAKE_STDOUT_SELECTORS)
+    assert selections[2][-1] == (
+        "tests/unit/test_dependency_profiles.py::"
+        "test_selected_profile_locks_preserve_controller_jsonpointer_requirement"
+    )
+    assert [(row["nproc"], row["workers"]) for row in rows] == [("2", "2"), ("1", "1"), ("1", "1")]
+    runtime = payload["runtime_contract"]
+    assert isinstance(runtime, dict)
+    phases = runtime["phases"]
+    assert isinstance(phases, list)
+    phase = next(item for item in phases if item["target"] == OWNER)
+    assert (phase["max_seconds"], phase["quiet_seconds"]) == (90, 60)
+    assert len(phases) == 21 and sum(item["max_seconds"] for item in phases) == 2850
+    assert payload["full_gate_target"] == "gate" and payload["full_gate_required"] is True
+
+
+def test_native_make_stdout_pair_executes_once_in_serial_tail(tmp_path: Path) -> None:
+    result, rows = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
+    _assert_native_make_stdout_route(payload, rows)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("missing-family", "wrong-node", "missing-json", "missing-version", "duplicate-version",
+     "whole-version", "main-copy", "after-profile", "budget"),
+)
+def test_native_make_stdout_route_rejects_missing_or_widened_proof(
+    tmp_path: Path, mutation: str,
+) -> None:
+    result, captured = _capture_owner(tmp_path, "")
+    assert result.returncode == 0, result.stdout + result.stderr
+    original = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
+    _assert_native_make_stdout_route(original, captured)
+    payload, rows = deepcopy(original), deepcopy(captured)
+    families = payload["families"]
+    family = next(item for item in families if item["id"] == "native-make-stdout-contract")
+    tail = rows[2]["files"]
+    assert isinstance(tail, list)
+    json_node, version_node = NATIVE_MAKE_STDOUT_SELECTORS
+    if mutation == "missing-family":
+        families.remove(family)
+    elif mutation == "wrong-node":
+        family["node"] = version_node
+    elif mutation in {"missing-json", "missing-version"}:
+        tail.remove(json_node if mutation == "missing-json" else version_node)
+    elif mutation == "duplicate-version":
+        tail.append(version_node)
+    elif mutation == "whole-version":
+        tail[tail.index(version_node)] = version_node.split("::", 1)[0]
+    elif mutation == "main-copy":
+        main = rows[0]["files"]
+        assert isinstance(main, list)
+        main.append(json_node)
+    elif mutation == "after-profile":
+        tail.append(tail.pop(tail.index(version_node)))
+    else:
+        assert mutation == "budget"
+        phase = next(item for item in payload["runtime_contract"]["phases"] if item["target"] == OWNER)
+        phase["max_seconds"] = 91
+    with pytest.raises(AssertionError):
+        _assert_native_make_stdout_route(payload, rows)
 
 
 # Native scheduling controls use the actual owner and actual test-files recipe.

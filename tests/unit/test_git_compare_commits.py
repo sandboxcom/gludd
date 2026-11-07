@@ -397,3 +397,91 @@ def test_native_stdin_refuses_implicit_cwd_import_shadow_with_carrier(
     assert fixture.environment["PYTHONPATH"] == str(carrier)
     assert fixture.environment["COMPARE_CARRIER"] == "preserve unrelated environment"
     assert fixture.snapshot() == before
+
+
+@pytest.mark.parametrize("origin", ("cli", "env", "env-e"))
+@pytest.mark.parametrize("candidate_carrier", ("absent", "empty", "pinned"))
+def test_comparison_does_not_capture_implicit_gate_head(
+    comparison_repo: ComparisonRepository,
+    origin: str,
+    candidate_carrier: str,
+) -> None:
+    """Explicit immutable inputs must not depend on a copied gate candidate."""
+    fixture = comparison_repo
+    candidate = None if candidate_carrier == "absent" else (fixture.second if candidate_carrier == "pinned" else "")
+    if candidate is None:
+        fixture.environment.pop("GATE_CANDIDATE_SHA", None)
+    else:
+        fixture.environment["GATE_CANDIDATE_SHA"] = candidate
+    before = fixture.snapshot()
+
+    result = fixture.invoke(fixture.first, fixture.first, origin=origin)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == ""
+    assert "outcome=identical native_status=0" in result.stderr
+    assert fixture.calls() == [
+        [*PREFIX, "cat-file", "-t", fixture.first],
+        [*PREFIX, "cat-file", "-t", fixture.first],
+        [*PREFIX, *DIFF_FLAGS, fixture.first, fixture.first, "--"],
+    ]
+    assert fixture.snapshot() == before
+    assert fixture.environment.get("GATE_CANDIDATE_SHA") == candidate
+    assert fixture.environment["COMPARE_CARRIER"] == "preserve unrelated environment"
+
+
+@pytest.mark.parametrize("environment_override", (False, True))
+@pytest.mark.parametrize("candidate_carrier", ("absent", "empty", "pinned"))
+def test_noncomparison_gate_config_retains_native_candidate_capture(
+    comparison_repo: ComparisonRepository,
+    candidate_carrier: str,
+    environment_override: bool,
+) -> None:
+    """The ordinary native gate owner still captures HEAD or retains its carrier."""
+    fixture = comparison_repo
+    environment = fixture.environment.copy()
+    candidate = None if candidate_carrier == "absent" else (fixture.second if candidate_carrier == "pinned" else "")
+    if candidate is None:
+        environment.pop("GATE_CANDIDATE_SHA", None)
+    else:
+        environment["GATE_CANDIDATE_SHA"] = candidate
+    environment.pop("GATE_PREFLIGHT_TARGETS", None)
+    before = fixture.snapshot()
+
+    result = subprocess.run(
+        [
+            MAKE,
+            "--no-print-directory",
+            *(["-e"] if environment_override else []),
+            "gate-admission-config",
+            f"PYTHON={sys.executable}",
+            f"SYSTEM_PYTHON={sys.executable}",
+            "GLUDD_XDIST_WORKERS=1",
+            "GATE_TEST_PROFILE=release",
+            "GATE_EXACT_SHA_RESUME=0",
+            "GATE_MAX_FILES_PER_BATCH=16",
+            "GATE_BATCH_WORKERS=1",
+            "PYTEST_CMD=",
+            "PYTEST_ARGS=",
+            "PYTEST_ADDOPTS=",
+            "ALLOW_DIRTY_CI_REPLICA=0",
+            "ALLOW_DIRTY_FOCUSED_REPRO=0",
+            "DUAL_TRACK_LOCAL_VALIDATE_ONLY=0",
+            "MYPY_MAX=0",
+        ],
+        cwd=fixture.root,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=20,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (
+        "GATE-ADMISSION-CONFIG profile=release exact_sha_resume=0 max_files_per_batch=16 workers=1 coverage=85/75"
+    ) in result.stdout
+    assert fixture.calls() == ([] if candidate_carrier == "pinned" else [["rev-parse", "HEAD"]])
+    assert fixture.snapshot() == before
+    assert environment.get("GATE_CANDIDATE_SHA") == candidate
+    assert environment["COMPARE_CARRIER"] == "preserve unrelated environment"

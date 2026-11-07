@@ -82,7 +82,10 @@ def test_real_recipe_preserves_quoted_make_arguments_without_shell_diagnostics(
     result = _run_recipe(tmp_path, command)
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert result.stderr == ""
+    prompts = [line for line in result.stderr.splitlines() if line.startswith("AGENT_NEXT target=run-watched ")]
+    assert len(prompts) == 1, result.stdout + result.stderr
+    assert "outcome=passed " in prompts[0] and "native_status=0 " in prompts[0]
+    assert [line for line in result.stderr.splitlines() if line not in prompts] == [], result.stderr
     assert json.loads((tmp_path / "arguments.json").read_text()) == [
         "tests/unit/first.py tests/unit/second.py", "-W error -q --tb=short",
     ]

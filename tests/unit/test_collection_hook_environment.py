@@ -9,7 +9,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
@@ -30,7 +30,7 @@ class HookFixture:
     linked: Path
     remote: Path
     native_git: str
-    environment: dict[str, str]
+    environment: dict[str, str] = field(repr=False)
     hook_snapshot: Path
     collection_snapshot: Path
 
@@ -371,6 +371,71 @@ def test_native_hook_control_detects_mutated_missing_unset(local_hook: HookFixtu
 
 
 
+@pytest.mark.parametrize("collection_carrier_e", [False, True])
+def test_pre_push_receives_explicit_ledger_makeflags_carrier(
+    tmp_path: Path, collection_carrier_e: bool,
+) -> None:
+    """The native hook receives the actual owned duplicate, before confinement."""
+    fixture = _create_local_hook(tmp_path)
+    ledger = fixture.main / ".gludd" / "ci-failure-ledger.json"
+    transport = tmp_path / "carrier-transport.json"
+    recorder = tmp_path / "record-carrier-transport.py"
+    recorder.write_text(
+        "import json, os, sys\nfrom pathlib import Path\n"
+        f"canonical = {str(fixture.main)!r}\nexpected = {str(ledger)!r}\n"
+        "keys = sorted(key for key, value in os.environ.items() if canonical in value)\n"
+        f"Path({str(transport)!r}).write_text(json.dumps({{\n"
+        "    'keys': keys, 'MAKEFLAGS_origin': sys.argv[1],\n"
+        "    'CI_FAILURE_LEDGER_origin': sys.argv[2],\n"
+        "    'same_ledger': os.environ.get('CI_FAILURE_LEDGER') == expected,\n"
+        "}), encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    makefile = fixture.linked / "Makefile"
+    source = makefile.read_text(encoding="utf-8")
+    uv_line = source.splitlines()[0]
+    assert uv_line.startswith("UV := ")
+    source += (
+        "\n.PHONY: owned-ledger-publication collect-check\n"
+        "owned-ledger-publication collect-check: override MAKEFLAGS = $(MFLAGS) -- $(MAKEOVERRIDES)\n"
+        "owned-ledger-publication:\n\t@"
+        + shlex.quote(sys.executable) + " " + shlex.quote(str(recorder))
+        + ' "$(origin MAKEFLAGS)" "$(origin CI_FAILURE_LEDGER)"\n\t@'
+        + shlex.quote(fixture.native_git) + " push "
+        + shlex.quote(str(fixture.remote)) + " HEAD:refs/heads/ledger-probe\n"
+    )
+    makefile.write_text(source, encoding="utf-8")
+    environment = dict(fixture.environment)
+    environment["MAKEFLAGS"] = "-- CI_FAILURE_LEDGER=" + str(ledger)
+    result = subprocess.run(
+        ["make", "--no-print-directory", *(["-e"] if collection_carrier_e else []),
+         "owned-ledger-publication", "CI_FAILURE_LEDGER=" + str(ledger),
+         "UV=" + uv_line.removeprefix("UV := ")],
+        cwd=fixture.linked, env=environment,
+        check=False, capture_output=True, text=True, timeout=30,
+    )
+    output = result.stdout + result.stderr
+    assert transport.is_file(), output
+    received = json.loads(transport.read_text(encoding="utf-8"))
+    hook = json.loads(fixture.hook_snapshot.read_text(encoding="utf-8"))
+    collected = json.loads(fixture.collection_snapshot.read_text(encoding="utf-8"))
+    print("OWNED_LEDGER_NATIVE_TRANSPORT " + json.dumps({
+        "early_environment": collection_carrier_e, **received,
+        "hook_keys": hook["canonical_keys"], "collection_keys": collected["canonical_keys"],
+    }, sort_keys=True))
+    assert received["same_ledger"] is True
+    assert received["CI_FAILURE_LEDGER_origin"] == "command line"
+    assert received["MAKEFLAGS_origin"] not in ("undefined", "default")
+    assert "MAKEFLAGS" in received["keys"] and "CI_FAILURE_LEDGER" in received["keys"]
+    assert "MAKEFLAGS" in hook["canonical_keys"] and "CI_FAILURE_LEDGER" in hook["canonical_keys"]
+    assert "MAKEFLAGS" in collected["canonical_keys"] and "CI_FAILURE_LEDGER" in collected["canonical_keys"]
+    assert hook["parent_unchanged"] is True
+    assert collected["preserved"] == {key: fixture.environment.get(key) for key in PRESERVED_KEYS}
+    assert result.returncode != 0 and "pytest worktree confinement denied subprocess environment" in output
+    assert received["MAKEFLAGS_origin"] == "override", (
+        "the deliberate duplicate must be an explicit native fixture input"
+    )
+
 @pytest.mark.parametrize("collection_ledger_location", ["canonical", "active"])
 @pytest.mark.parametrize("collection_ledger_e", [False, True])
 def test_pre_push_collection_retains_ledger_path_confinement_with_real_ansible(
@@ -406,20 +471,24 @@ def test_pre_push_collection_retains_ledger_path_confinement_with_real_ansible(
     uv_line = source.splitlines()[0]
     assert uv_line.startswith("UV := ")
     source += (
-        "\n.PHONY: owned-ledger-publication\nowned-ledger-publication:\n\t@"
+        "\n.PHONY: owned-ledger-publication collect-check\n"
+        "owned-ledger-publication collect-check: override MAKEFLAGS = $(MFLAGS) -- $(MAKEOVERRIDES)\n"
+        "owned-ledger-publication:\n\t@"
         + shlex.quote(fixture.native_git) + " push "
         + shlex.quote(str(fixture.remote)) + " HEAD:refs/heads/ledger-probe\n"
     )
     makefile.write_text(source, encoding="utf-8")
     ledger_root = fixture.main if collection_ledger_location == "canonical" else fixture.linked
     ledger = ledger_root / ".gludd" / "ci-failure-ledger.json"
+    environment = dict(fixture.environment)
+    environment["MAKEFLAGS"] = "-- CI_FAILURE_LEDGER=" + str(ledger)
     environment_before = dict(os.environ)
     authority_before = _git_authority_bytes(fixture.main)
     result = subprocess.run(
         ["make", "--no-print-directory", *(["-e"] if collection_ledger_e else []),
          "owned-ledger-publication", "CI_FAILURE_LEDGER=" + str(ledger),
          "UV=" + uv_line.removeprefix("UV := ")],
-        cwd=fixture.linked, env=dict(fixture.environment),
+        cwd=fixture.linked, env=environment,
         check=False, capture_output=True, text=True, timeout=30,
     )
     hook = json.loads(fixture.hook_snapshot.read_text(encoding="utf-8"))
@@ -458,3 +527,21 @@ def test_pre_push_collection_retains_ledger_path_confinement_with_real_ansible(
         remote = fixture.git("--git-dir", str(fixture.remote), "rev-parse", "--verify", "refs/heads/ledger-probe")
         assert remote.returncode == 0
         assert remote.stdout == fixture.git("rev-parse", "HEAD").stdout
+
+
+def test_hook_fixture_repr_keeps_owned_environment_private(tmp_path: Path) -> None:
+    environment = {
+        "GLUDD_FAKE_PRIVATE_CARRIER": "owned-hook-private-repr-marker",
+        "GLUDD_FAKE_RETAINED_CARRIER": "owned-hook-retained-repr-marker",
+    }
+    fixture = HookFixture(
+        tmp_path / "main", tmp_path / "linked", tmp_path / "remote.git",
+        "owned-native-git", environment, tmp_path / "hook", tmp_path / "collection",
+    )
+
+    rendered = repr(fixture)
+
+    assert all(name not in rendered and value not in rendered for name, value in environment.items())
+    assert fixture.environment is environment
+    assert str(fixture.main) in rendered and str(fixture.linked) in rendered
+    assert str(fixture.hook_snapshot) in rendered and str(fixture.collection_snapshot) in rendered

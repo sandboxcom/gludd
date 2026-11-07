@@ -861,7 +861,7 @@ _commit-lint-guard:
 
 # AB031 - progressively require maintained docstring rules on touched source.
 _commit-docstring-guard:
-	@STAGED_SRC_PY=$$(git diff --cached --name-only --diff-filter=ACM | grep '^src/general_ludd/.*\.py$$' | tr '\n' ' ' || true); 	if [ -z "$$STAGED_SRC_PY" ]; then 		echo "_commit-docstring-guard: SKIP - no staged production Python files."; 		exit 0; 	fi; 	if $(MAKE) --no-print-directory lint-docstrings DOCSTRING_FILES="$$STAGED_SRC_PY"; then 		echo "_commit-docstring-guard: PASS"; 	else 		echo "_commit-docstring-guard: FAIL - add or repair Google-style docstrings in staged source files."; 		exit 1; 	fi
+	@case "$(_commit-native-mode)" in query|dry-run|touch) echo "AGENT_NEXT target=_commit-docstring-guard outcome=planned mode=$(_commit-native-mode) gate_evidence=false release_ready=false: Native inspection starts no staged-source lookup or docstring lint." >&2; exit 0 ;; esac; STAGED_SRC_PY=$$(git diff --cached --name-only --diff-filter=ACM | grep '^src/general_ludd/.*\.py$$' | tr '\n' ' ' || true); 	if [ -z "$$STAGED_SRC_PY" ]; then 		echo "_commit-docstring-guard: SKIP - no staged production Python files."; 		exit 0; 	fi; 	if $(MAKE) --no-print-directory lint-docstrings DOCSTRING_FILES="$$STAGED_SRC_PY"; then 		echo "_commit-docstring-guard: PASS"; 	else 		echo "_commit-docstring-guard: FAIL - add or repair Google-style docstrings in staged source files."; 		exit 1; 	fi
 
 # AA029 — refresh the exact named remote branch before admitting a normal push.
 # Fetch/lookup failures must not fall back to stale refs or zero divergence.

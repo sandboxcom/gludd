@@ -297,6 +297,41 @@ def development_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Develop
 
 
 
+@pytest.mark.parametrize("publication_controller_e", [False, True])
+def test_native_auth_helper_uses_controller_instead_of_application_python(
+    development_repo: DevelopmentFixture,
+    publication_controller_e: bool,
+) -> None:
+    """Credential metadata must execute in the installed controller runtime."""
+    fixture = development_repo
+    marker = fixture.root.parent / "owned-application-python-used"
+    application = fixture.root.parent / "owned-application-python"
+    application.write_text(
+        f"#!{sys.executable}\n"
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('unexpected application runtime', encoding='utf-8')\n"
+        "raise SystemExit(79)\n",
+        encoding="utf-8",
+    )
+    application.chmod(0o700)
+    environment = dict(fixture.environment)
+    environment["PYTHON"] = str(application)
+    environment["SYSTEM_PYTHON"] = sys.executable
+    config = fixture.root / ".git/config"
+    before_config = config.read_bytes()
+    result = fixture.invoke(
+        "_require-sandboxcom-git-auth",
+        environment=environment,
+        early_environment=publication_controller_e,
+    )
+    assert not marker.exists(), result.stdout + result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert config.read_bytes() == before_config
+    _not_started(fixture, "runtime", "transport", "hook", "dispatch")
+    assert environment["PYTHON"] == str(application)
+    assert environment["SYSTEM_PYTHON"] == sys.executable
+
+
 def _install_native_recorder(fixture: DevelopmentFixture) -> tuple[Path, Path]:
     """Use actual source and state owner while keeping every persistent path confined."""
     runner = shlex.quote(sys.executable) + " " + shlex.quote(str(fixture.root / "native-boundary.py"))
@@ -641,6 +676,59 @@ def test_feature_inputs_remain_literal_with_same_origin_native_witness(
     _not_started(fixture, "runtime", "transport", "hook", "dispatch")
 
 
+def _native_query_control(
+    fixture: DevelopmentFixture,
+    early_environment: bool,
+    *,
+    recursive: bool = True,
+    exit_status: int = 0,
+) -> subprocess.CompletedProcess[str]:
+    control = fixture.root.parent / "owned-native-query-control.mk"
+    control.write_text(
+        fixture.makefile.read_text(encoding="utf-8")
+        + "\n.PHONY: owned-native-query-control\nowned-native-query-control:\n"
+        + "\t@printf '%s\\n' owned-native-query-control >&2; "
+        + f"exit {exit_status}; \\\n"
+        + ("\t$(MAKE) --no-print-directory owned-never-reached\n" if recursive else "\t:\n"),
+        encoding="utf-8",
+    )
+    return fixture.invoke(
+        "owned-native-query-control",
+        mode="-q",
+        early_environment=early_environment,
+        makefile=control,
+    )
+
+
+def _accepted_native_query_status(result: subprocess.CompletedProcess[str]) -> int:
+    assert result.returncode in {0, 1}, "native query status must be 0 or 1: " + result.stdout + result.stderr
+    assert result.stdout == ""
+    assert result.stderr == "owned-native-query-control\n"
+    return result.returncode
+
+
+@pytest.mark.parametrize("early_environment", (False, True))
+def test_native_query_oracle_retains_phony_recursion_and_active_error_status(
+    feature_repo: DevelopmentFixture,
+    early_environment: bool,
+) -> None:
+    fixture = feature_repo
+    _accepted_native_query_status(_native_query_control(fixture, early_environment))
+    ordinary = _native_query_control(fixture, early_environment, recursive=False)
+    assert ordinary.returncode == 1, ordinary.stdout + ordinary.stderr
+    assert ordinary.stdout == ordinary.stderr == ""
+    error = _native_query_control(fixture, early_environment, exit_status=7)
+    assert error.returncode == 2, error.stdout + error.stderr
+    assert "owned-native-query-control\n" in error.stderr
+    assert "Error 7" in error.stderr
+    with pytest.raises(AssertionError, match="native query status must be 0 or 1"):
+        _accepted_native_query_status(error)
+    assert fixture.rows() == []
+    assert not (fixture.root / "owned-native-query-control").exists()
+    assert not Path(fixture.environment["GLUDD_CI_HISTORY_FILE"]).exists()
+    assert not Path(fixture.environment["GLUDD_GHA_SIGNAL_STATE_DIR"]).exists()
+
+
 @pytest.mark.parametrize("goal", ("git-push-sandboxcom", "ci-trigger-committed-head", "ci-trigger"))
 @pytest.mark.parametrize("mode", ("-n", "-q", "-t"))
 @pytest.mark.parametrize("early_environment", (False, True))
@@ -652,11 +740,16 @@ def test_feature_native_inspection_runs_no_auth_git_hook_dispatch_or_touch(
         goal, *_feature_arguments(fixture), "REF=" + fixture.environment["FEATURE_BRANCH"],
         mode=mode, early_environment=early_environment,
     )
-    assert result.returncode == (1 if mode == "-q" else 0), result.stdout + result.stderr
+    expected_status = 1 if mode == "-q" else 0
+    if mode == "-q" and goal == "ci-trigger-committed-head":
+        expected_status = _accepted_native_query_status(_native_query_control(fixture, early_environment))
+        assert "outcome=planned mode=query" in result.stderr
+    assert result.returncode == expected_status, result.stdout + result.stderr
     assert fixture.rows() == []
     assert not (fixture.root / goal).exists()
     assert not Path(fixture.environment["GLUDD_CI_HISTORY_FILE"]).exists()
     assert not Path(fixture.environment["GLUDD_GHA_SIGNAL_STATE_DIR"]).exists()
+    assert "GHA_RUN_URL=" not in result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("origin", ("argv", "environment", "environment-e"))

@@ -7,6 +7,7 @@ import shlex
 import subprocess
 from pathlib import Path
 
+import pytest
 from scripts.check_make_target_contract import (
     load_contract,
     validate_contract,
@@ -69,12 +70,24 @@ def test_contract_documents_prompting_rules() -> None:
         assert phrase in agent_rules_lower
 
 
-def test_azure_and_runpod_wrappers_use_declared_variables() -> None:
+def test_azure_and_runpod_wrappers_use_declared_variables(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "GNUMAKEFLAGS"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("MAKEFLAGS", "w -- OWNED=retained")
     cases = (
-        ["make", "azure-harness", "AZURE_SUBSCRIPTION_ID=sub-123", "AZURE_TENANT_ID=tenant-456"],
-        ["make", "runpod-harness", "RUNPOD_API_KEY=placeholder", "RUNPOD_BUDGET_USD=5"],
+        [
+            "make", "--no-print-directory", "azure-harness",
+            "AZURE_SUBSCRIPTION_ID=sub-123", "AZURE_TENANT_ID=tenant-456",
+        ],
+        ["make", "--no-print-directory", "runpod-harness", "RUNPOD_API_KEY=placeholder", "RUNPOD_BUDGET_USD=5"],
     )
     for command in cases:
+        witness_command = command.copy()
+        witness_command.remove("--no-print-directory")
+        witness = subprocess.run(witness_command, cwd=ROOT, capture_output=True, text=True, timeout=60)
+        assert witness.returncode == 0, witness.stdout + witness.stderr
+        assert "Entering directory" in witness.stdout
+        assert "Leaving directory" in witness.stdout
         result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=60)
         assert result.returncode == 0, result.stdout + result.stderr
         payload = json.loads(result.stdout.strip().splitlines()[-1])

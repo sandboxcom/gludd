@@ -433,7 +433,7 @@ def test_makefile_signs_final_gate_and_checks_before_commit() -> None:
     assert "scripts/gate_status_attestation.py verify .gate-status" in makefile
     assert "@echo run python scripts/gate_fresh_check.py check" not in makefile
     commit_recipe = makefile.split("\ngit-commit:", 1)[1].split("\n\n", 1)[0]
-    assert "check-gate-fresh" in commit_recipe
+    assert "_gate-fresh-check" in commit_recipe
 
 
 def test_cli_sign_and_verify_use_one_private_key_and_exact_state(

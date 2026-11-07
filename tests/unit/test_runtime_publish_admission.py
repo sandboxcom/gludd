@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -367,7 +368,8 @@ def test_canonical_normal_publisher_keeps_manifest_failure_before_runtime_and_tr
     assert result.returncode != 0
     assert [row["kind"] for row in rows] == ["runtime-identity", "manifest"]
     assert "Pinned Ansible base manifest admission failed" in result.stdout + result.stderr
-    assert "[check-ansible-base-image] Error 81" in result.stderr
+    assert result.returncode == 2
+    _assert_native_make_target_failure(result.stderr, "check-ansible-base-image", 81)
     assert not any(row["kind"] in {"observer", "runtime", "transport", "verdict"} for row in rows)
 
 
@@ -906,3 +908,72 @@ def test_failed_publication_observer_retains_its_owned_native_trace(
     runtime = [row for row in rows if row["kind"] == "runtime"]
     assert len(runtime) == (3 if watched_trace_failure == "full" else 2)
     assert all(row["trace_path"] == trace_path for row in runtime)
+
+
+def test_publication_runtime_keeps_native_make_stdout_pair_in_tail(tmp_path: Path) -> None:
+    result, rows, _ = _publish(tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    _assert_owned_once(rows, [("full", "2"), ("help", "1"), ("full", "1")])
+    runtime = [row for row in rows if row["kind"] == "runtime"]
+    assert len(runtime) == 3
+    expected = [
+        "tests/unit/test_make_target_contract.py::test_azure_and_runpod_wrappers_use_declared_variables",
+        "tests/unit/test_guardrails.py::TestMakefileTargets::test_make_version_passes",
+    ]
+    selections: list[list[object]] = []
+    for row in runtime:
+        files = row["files"]
+        assert isinstance(files, list)
+        selections.append(files)
+    for node in expected:
+        assert [files.count(node) for files in selections] == [0, 0, 1]
+        assert all(node.split("::", 1)[0] not in files for files in selections)
+    assert len(selections[2]) == 14 and selections[2][-3:-1] == expected
+    assert selections[2][-1] == (
+        "tests/unit/test_dependency_profiles.py::"
+        "test_selected_profile_locks_preserve_controller_jsonpointer_requirement"
+    )
+
+
+def _assert_native_make_target_failure(stderr: str, target: str, code: int) -> None:
+    """Assert the exact failed target/status in legacy or file:line GNU output."""
+    pattern = (
+        r"(?m)^[^\r\n]*?:[ \t]+\*\*\*[ \t]+\[(?:[^\]\r\n]+:\d+:[ \t]*)?"
+        + re.escape(target)
+        + r"\][ \t]+Error[ \t]+"
+        + str(code)
+        + r"[ \t]*\r?$"
+    )
+    assert re.search(pattern, stderr) is not None
+
+
+@pytest.mark.parametrize(
+    "diagnostic",
+    (
+        "make[2]: *** [check-ansible-base-image] Error 81\n",
+        "make: *** [check-ansible-base-image] Error 81\n",
+        "make[2]: *** [/tmp/owned workspace/Makefile:320: check-ansible-base-image] Error 81\n",
+        "make: *** [Makefile:320: check-ansible-base-image] Error 81\n",
+    ),
+)
+def test_manifest_native_make_failure_accepts_complete_legacy_and_hosted_fields(diagnostic: str) -> None:
+    """File/line forms reproduce the actual D unit-3a GNU diagnostic field."""
+    _assert_native_make_target_failure(diagnostic, "check-ansible-base-image", 81)
+
+
+@pytest.mark.parametrize(
+    "diagnostic",
+    (
+        "make: *** [owned-neighbor] Error 81\n",
+        "make: *** [pre-check-ansible-base-image] Error 81\n",
+        "make: *** [check-ansible-base-image-extra] Error 81\n",
+        "make: *** [check-ansible-base-image] Error 810\n",
+        "make: *** [check-ansible-base-image] Error 80\n",
+        "make: *** [check-ansible-base-image] Error 81 (ignored)\n",
+        "check-ansible-base-image exited 81\n",
+        "[check-ansible-base-image] Error 81\n",
+    ),
+)
+def test_manifest_native_make_failure_rejects_foreign_or_inexact_fields(diagnostic: str) -> None:
+    with pytest.raises(AssertionError):
+        _assert_native_make_target_failure(diagnostic, "check-ansible-base-image", 81)

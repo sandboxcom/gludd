@@ -11,7 +11,8 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def test_git_commit_does_not_store_nul_delimited_paths_in_a_shell_variable() -> None:
     makefile = compose_makefile(ROOT / "Makefile")
-    recipe = makefile.split("\ngit-commit:", 1)[1].split("\n\n", 1)[0]
+    # The public command delegates staged-path handling to this native body.
+    recipe = makefile.split("\n_commit-locked-git-commit:", 1)[1].split("\n\n", 1)[0]
 
     assert 'STAGED_FILES="$$(git diff --cached --name-only -z)"' not in recipe
     assert recipe.count("git diff --cached --name-only -z | xargs -0") == 2

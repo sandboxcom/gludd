@@ -193,7 +193,7 @@ def test_git_diff_honors_explicit_files_scope() -> None:
 
 
 def test_ship_commit_emits_observable_phase_markers() -> None:
-    body = _target_block("ship-commit")
+    body = _target_block("_commit-locked-ship-commit")
 
     assert "Running pre-commit collection check" in body
     assert "Committing staged changes" in body

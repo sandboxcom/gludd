@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
+import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 from scripts.worktree_state_guard import (
@@ -45,7 +48,7 @@ def test_parse_worktree_paths_empty() -> None:
 
 
 def test_list_worktree_paths_uses_run() -> None:
-    def fake_run(argv: list[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
+    def fake_run(argv: Sequence[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
         assert argv == ["git", "worktree", "list", "--porcelain"]
         return _completed_process(SAMPLE_PORCELAIN)
 
@@ -55,6 +58,10 @@ def test_list_worktree_paths_uses_run() -> None:
 def test_current_state_returns_worktree_state(tmp_path: Path) -> None:
     # current_state is exercised against a real git repo created in tmp_path.
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Owned worktree state fixture"],
+                   cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "state-fixture@example.invalid"],
+                   cwd=tmp_path, check=True, capture_output=True)
     (tmp_path / "file.txt").write_text("hello")
     subprocess.run(["git", "add", "file.txt"], cwd=tmp_path, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True, capture_output=True)
@@ -71,14 +78,57 @@ def test_current_state_returns_worktree_state(tmp_path: Path) -> None:
     assert state.status == []
 
 
+
+def test_current_state_fixture_owns_identity_without_global_configuration(tmp_path: Path) -> None:
+    """The real case must supply identity before its native initial commit."""
+    configuration = tmp_path / "owned-global.gitconfig"
+    configuration.write_text("[user]\n    useConfigOnly = true\n", encoding="utf-8")
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    environment = dict(os.environ)
+    for key in (
+        "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
+        "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT",
+        "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL",
+    ):
+        environment.pop(key, None)
+    environment.update({
+        "GIT_CONFIG_GLOBAL": str(configuration), "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_OPTIONAL_LOCKS": "0", "GIT_TERMINAL_PROMPT": "0",
+    })
+    root = Path(__file__).resolve().parents[2]
+    inherited = environment.get("PYTHONPATH")
+    environment["PYTHONPATH"] = os.pathsep.join([
+        str(root), str(root / "src"), str(root / "scripts"),
+        *([inherited] if inherited else []),
+    ])
+    program = (
+        "import runpy, subprocess, sys\nfrom pathlib import Path\n"
+        "case = runpy.run_path(sys.argv[1])['test_current_state_returns_worktree_state']\n"
+        "try:\n    case(Path(sys.argv[2]))\n"
+        "except subprocess.CalledProcessError as error:\n"
+        "    print('OWNED_GIT_NATIVE_FAILURE returncode=' + str(error.returncode), file=sys.stderr)\n"
+        "    if error.stderr:\n"
+        "        print(error.stderr.decode('utf-8', errors='replace') if isinstance(error.stderr, bytes)\n"
+        "              else error.stderr, file=sys.stderr)\n"
+        "    raise SystemExit(error.returncode)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-P", "-c", program, str(Path(__file__).resolve()), str(repository)],
+        cwd=root, env=environment, check=False, capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_all_worktree_states_survives_missing_directory() -> None:
     """A worktree whose directory was removed must not crash the inventory."""
 
-    def fake_run(argv: list[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
+    def fake_run(argv: Sequence[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
         if argv[:3] == ["git", "worktree", "list"]:
             return _completed_process(SAMPLE_PORCELAIN)
         if argv[:3] == ["git", "rev-parse", "--show-toplevel"]:
-            return _completed_process(cwd)
+            return _completed_process(cwd or "")
         if argv[:2] == ["git", "branch"]:
             return _completed_process("feature-branch")
         if argv[:3] == ["git", "rev-parse", "--verify"]:
@@ -102,7 +152,7 @@ def test_all_worktree_states_survives_missing_directory() -> None:
 
 
 def test_all_worktree_states_survives_git_failure() -> None:
-    def fake_run(argv: list[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
+    def fake_run(argv: Sequence[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
         if argv[:3] == ["git", "worktree", "list"]:
             return _completed_process(SAMPLE_PORCELAIN)
         if cwd == "/private/tmp/gludd-worktrees/feature/v012-checkpoint-link-repair-20261024" and argv[:3] == [
@@ -112,7 +162,7 @@ def test_all_worktree_states_survives_git_failure() -> None:
         ]:
             return _completed_process("fatal: not a git repo", returncode=128)
         if argv[:3] == ["git", "rev-parse", "--show-toplevel"]:
-            return _completed_process(cwd)
+            return _completed_process(cwd or "")
         if argv[:2] == ["git", "branch"]:
             return _completed_process("feature-branch")
         if argv[:3] == ["git", "rev-parse", "--verify"]:
