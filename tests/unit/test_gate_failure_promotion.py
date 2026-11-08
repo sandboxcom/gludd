@@ -20,7 +20,7 @@ import yaml
 from scripts.makefile_layout import compose_makefile
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 181
+EXPECTED_FAMILY_COUNT = 187
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "config" / "gate_failure_promotions.json"
 CONTRACT = ROOT / "config" / "make_target_contract.json"
@@ -44,13 +44,7 @@ EXPECTED_RUNTIME_PHASES = [
     ("worktree-guard", "worktree-guard", "fast", 90, 60),
     ("check-gate-failure-promotions", "check-gate-failure-promotions", "fast", 90, 60),
     ("check-duplicate-code", "check-duplicate-code", "standard", 180, 120),
-    (
-        "pytest-runtime-compatibility",
-        "_pytest-runtime-compatibility-admission",
-        "fast",
-        90,
-        60,
-    ),
+    ("pytest-runtime-compatibility", "_pytest-runtime-compatibility-admission", "fast", 90, 60),
     ("ansible-role-variable-prefix", "_ansible-role-variable-prefix", "fast", 90, 60),
     ("cloud-iam-generation-parity", "_cloud-iam-generation-parity", "fast", 90, 60),
     (
@@ -61,13 +55,7 @@ EXPECTED_RUNTIME_PHASES = [
         60,
     ),
     ("check-coverage-gaps", "check-coverage-gaps", "fast", 90, 60),
-    (
-        "check-resource-ownership",
-        "check-resource-ownership",
-        "fast",
-        90,
-        60,
-    ),
+    ("check-resource-ownership", "check-resource-ownership", "fast", 90, 60),
     ("validate-task-ledger", "validate-task-ledger", "fast", 90, 60),
     ("check-task-registration", "check-task-registration", "fast", 90, 60),
     ("check-task-integrity", "check-task-integrity", "fast", 90, 60),
@@ -229,7 +217,7 @@ def test_native_reviewed_finalization_executes_in_bounded_early_admission(test_n
     recipes = executable.split("$(MAKE) --no-print-directory test-files")
     assert len(recipes) == 4
     selectors = recipes[3].split('TESTFILES="', 1)[1].split('"', 1)[0].split()
-    assert len(selectors) == 17 and selectors.count(node) == 1
+    assert len(selectors) == 24 and selectors.count(node) == 1
     assert node not in recipes[1] and node not in recipes[2]
     phase = next(item for item in manifest["runtime_contract"]["phases"] if item["target"] == family["owner_target"])
     assert (phase["budget_class"], phase["max_seconds"], phase["quiet_seconds"]) == ("fast", 90, 60)
@@ -1833,6 +1821,12 @@ def test_repository_manifest_seeds_each_promoted_failure_family() -> None:
         "presentation-hosted-apt-literal-mode", "git-status-native-index-readonly",
         "publication-native-command-envelope", "make-local-script-reference-boundary", "watchdog-bound-gate-waiter",
         "verify-remote-recipe-boundary", "native-make-stdout-contract",
+        "runtime-archive-lf-counter-contract",
+        "runtime-fixture-input-and-tail-count",
+        "https-auth-bootstrap-owned-interpreter",
+        "workflow-prepush-native-git-local-environment",
+        "pytest-collection-count-config-boundary",
+        "coverage-ci-signal-profile-source-identity",
     ]
     families = {family["id"]: family for family in payload["families"]}
     assert families["mcp-workspace-containment"]["node"] == (
@@ -2076,6 +2070,8 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
         "test_observer_trace_contains_real_matching_protocol_pairs[pass-serial] "
         "tests/unit/test_xdist_trace_diagnostics.py::"
         "test_native_summary_cli_keeps_json_status_and_emits_guidance[trace_guidance_native_rows0-empty] "
+        "tests/unit/test_xdist_trace_diagnostics.py::"
+        "test_collection_finish_records_only_the_bounded_count "
         "tests/unit/test_presentation_browser_apt_source.py::"
         "test_apt_mode_is_literal_at_real_make_startup[environment-override] "
         "tests/unit/test_git_status_readonly.py::test_status_never_refreshes_native_index[inherited-one] "
@@ -2185,7 +2181,7 @@ def test_make_wiring_and_target_contract_are_explicit() -> None:
     assert "GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json" in admission_contract["behavior"]
 
 
-def test_target_and_feature_document_preserve_full_gate_boundary() -> None:
+def test_target_and_feature_document_preserve_full_gate_boundary(tmp_path: Path) -> None:
     result = subprocess.run(
         [
             "make",
@@ -2197,6 +2193,10 @@ def test_target_and_feature_document_preserve_full_gate_boundary() -> None:
         check=False,
         text=True,
         timeout=30,
+        env={**os.environ,
+             "GLUDD_XDIST_TRACE_TRUNCATE": "1",
+             "GLUDD_XDIST_TRACE_LOG": str(tmp_path / "promotion-trace.jsonl"),
+             "GLUDD_XDIST_TRACE_RUN_ID": "promotion-probe"},
     )
     content = FEATURE_DOC.read_text(encoding="utf-8")
 

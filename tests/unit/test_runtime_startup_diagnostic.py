@@ -102,7 +102,7 @@ def _run(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
         "schema_version": 1, "kind": "observed_command", "label": "profile",
         "run_id": "run-1", "state": "passed", "exit_code": 0,
         "elapsed_seconds": 21.694, "log_path": str(log), "trace_path": None,
-        "bytes_written": log.stat().st_size, "lines_written": len(_segments().splitlines()),
+        "bytes_written": log.stat().st_size, "lines_written": log.read_bytes().count(b"\n"),
     }) + "\n", encoding="utf-8")
     return repository, root, status, log
 
@@ -157,7 +157,7 @@ def test_malformed_or_interleaved_import_segments_are_explicit(
     log.write_text(mutation(_segments()))
     value = json.loads(status.read_text())
     value["bytes_written"] = log.stat().st_size
-    value["lines_written"] = len(log.read_text().splitlines())
+    value["lines_written"] = log.read_bytes().count(b"\n")
     status.write_text(json.dumps(value))
     report = owner.runtime_startup_report(repository, root, "profile", "run-1")
     assert "Import analysis incomplete:" in report
@@ -968,3 +968,325 @@ def test_startup_path_refuses_unknown_tmp_alias_and_relative_escape(
         owner._startup_file_path(Path("/tmp/input"))
     with pytest.raises(ValueError, match="absolute confined"):
         owner._startup_file_path(Path("../input"))
+
+
+def _native_timeout_archive_inputs(
+    tmp_path: Path, payload: bytes,
+) -> tuple[Path, Path, Path, Path]:
+    """Produce owned terminal inputs through the real observer and Python child."""
+    repository = tmp_path / "native-checkout"
+    repository.mkdir()
+    root = repository / ".gate-logs/observed"
+    log = repository / ".gate-logs/partial-output.log"
+    assert Path(owner.__file__).resolve() == ROOT / "scripts/stream_command.py"
+    code = owner.stream_command(
+        [
+            sys.executable, "-P", "-u", "-W", "error", "-c",
+            f"import os,time; os.write(1, {payload!r}); time.sleep(5)",
+        ],
+        log, observed_root=root, label="partial-output", run_id="native-timeout",
+        heartbeat_seconds=0, quiet_seconds=0, max_seconds=0.5,
+        termination_grace_seconds=0.05, quiet=True,
+        environment=os.environ.copy(), cwd=repository,
+    )
+    status = root / "partial-output/native-timeout.json"
+    value = json.loads(status.read_text())
+    assert code == 124
+    assert value["state"] == "timed_out" and value["exit_code"] == 124
+    assert value["termination_reason"] == "max-runtime-timeout"
+    assert log.read_bytes() == payload
+    assert value["bytes_written"] == len(payload)
+    assert value["lines_written"] == payload.count(b"\n")
+    return repository, root, status, log
+
+
+@pytest.mark.parametrize("payload", [
+    b"complete\n",
+    b"complete\nunterminated",
+    b"progress\rstill unfinished",
+    b"complete\r\nunterminated",
+    b"",
+])
+def test_native_timeout_archive_preserves_complete_lf_record_contract(
+    tmp_path: Path, payload: bytes,
+) -> None:
+    """A valid timeout envelope preserves every byte without inventing a final LF."""
+    repository, root, status, log = _native_timeout_archive_inputs(tmp_path, payload)
+    before = {"status": status.read_bytes(), "log": log.read_bytes()}
+    destination = tmp_path / "archive"
+    result = owner.runtime_startup_archive(
+        repository, root, "partial-output", "native-timeout",
+        destination=destination, validate_only=False,
+    )
+    assert result["validate_only"] is False
+    assert before == {"status": status.read_bytes(), "log": log.read_bytes()}
+    manifest = json.loads((destination / "manifest.json").read_text())
+    assert manifest["diagnostic_only"] is True
+    assert manifest["label"] == "partial-output" and manifest["run_id"] == "native-timeout"
+    for entry in manifest["files"]:
+        archived = (destination / entry["path"]).read_bytes()
+        assert len(archived) == entry["size"]
+        assert hashlib.sha256(archived).hexdigest() == entry["sha256"]
+        if entry["role"] in before:
+            assert archived == before[entry["role"]]
+    replay = owner.runtime_startup_report(
+        repository, root, "partial-output", "native-timeout", archive=destination,
+    )
+    assert "state: timed_out; rc: 124" in replay
+    assert "Diagnostic only; never admission or release evidence." in replay
+
+
+@pytest.mark.parametrize("mutation", [
+    "visual-line-count", "extra-lf-count", "byte-count", "appended-byte",
+    "bool-lf-counter", "float-lf-counter", "bool-byte-counter", "float-byte-counter",
+])
+def test_native_timeout_archive_refuses_forged_counters_or_appended_bytes(
+    tmp_path: Path, mutation: str,
+) -> None:
+    """Native fixture tampering must fail strict validation before publication."""
+    payload = b"" if mutation in {"bool-byte-counter", "float-byte-counter"} else b"unterminated"
+    repository, root, status, log = _native_timeout_archive_inputs(tmp_path, payload)
+    value = json.loads(status.read_text())
+    if mutation == "visual-line-count":
+        value["lines_written"] = len(log.read_bytes().splitlines())
+    elif mutation == "extra-lf-count":
+        value["lines_written"] += 2
+    elif mutation == "byte-count":
+        value["bytes_written"] += 1
+    elif mutation == "bool-lf-counter":
+        value["lines_written"] = False
+    elif mutation == "float-lf-counter":
+        value["lines_written"] = float(value["lines_written"])
+    elif mutation == "bool-byte-counter":
+        value["bytes_written"] = False
+    elif mutation == "float-byte-counter":
+        value["bytes_written"] = float(value["bytes_written"])
+    else:
+        log.write_bytes(log.read_bytes() + b"\n")
+    if mutation != "appended-byte":
+        status.write_text(json.dumps(value) + "\n")
+    destination = tmp_path / "rejected-archive"
+    with pytest.raises(ValueError, match="startup log size/count"):
+        owner.runtime_startup_archive(
+            repository, root, "partial-output", "native-timeout",
+            destination=destination, validate_only=False,
+        )
+    assert not destination.exists()
+
+
+def test_archive_unit_inputs_require_exact_integer_lf_counters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Check owned unit inputs; native producer controls remain independent."""
+    def forbidden(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("archive input validation launched a process")
+
+    monkeypatch.setattr(subprocess, "run", forbidden)
+    monkeypatch.setattr(subprocess, "Popen", forbidden)
+    repository, root, status, log = _run(tmp_path)
+    value = json.loads(status.read_text())
+    value.update(state="timed_out", exit_code=124)
+    for index, payload in enumerate((
+        b"complete\n", b"complete\nunterminated", b"progress\rstill unfinished",
+        b"complete\r\nunterminated", b"x",
+    )):
+        log.write_bytes(payload)
+        value.update(bytes_written=len(payload), lines_written=payload.count(b"\n"))
+        status.write_text(json.dumps(value))
+        before = (status.read_bytes(), log.read_bytes())
+        destination = tmp_path / f"accepted-{index}"
+        result = owner.runtime_startup_archive(
+            repository, root, "profile", "run-1",
+            destination=destination, validate_only=False,
+        )
+        assert result["validate_only"] is False
+        assert json.loads((destination / "manifest.json").read_text())["diagnostic_only"] is True
+        assert (destination / "child.log").read_bytes() == payload
+        assert before == (status.read_bytes(), log.read_bytes())
+
+    # The final one-byte/zero-LF fixture makes bool and float equality active.
+    baseline = value.copy()
+    for name, key, counter in (
+        ("visual", "lines_written", 1), ("extra-lf", "lines_written", 2),
+        ("extra-byte", "bytes_written", 2), ("bool-lf", "lines_written", False),
+        ("float-lf", "lines_written", 0.0), ("bool-byte", "bytes_written", True),
+        ("float-byte", "bytes_written", 1.0),
+    ):
+        status.write_text(json.dumps({**baseline, key: counter}))
+        before = (status.read_bytes(), log.read_bytes())
+        destination = tmp_path / f"refused-{name}"
+        with pytest.raises(ValueError, match="startup log size/count"):
+            owner.runtime_startup_archive(
+                repository, root, "profile", "run-1",
+                destination=destination, validate_only=False,
+            )
+        assert not destination.exists()
+        assert before == (status.read_bytes(), log.read_bytes())
+    status.write_text(json.dumps(baseline))
+    log.write_bytes(b"x\n")
+    destination = tmp_path / "refused-appended-byte"
+    before = (status.read_bytes(), log.read_bytes())
+    with pytest.raises(ValueError, match="startup log size/count"):
+        owner.runtime_startup_archive(
+            repository, root, "profile", "run-1",
+            destination=destination, validate_only=False,
+        )
+    assert not destination.exists()
+    assert before == (status.read_bytes(), log.read_bytes())
+
+
+@pytest.mark.parametrize(
+    ("mutation", "reason"),
+    [
+        ("path-escape", "startup archive path escape"),
+        ("hidden-log-role", "startup archive lacks required roles"),
+    ],
+)
+def test_native_archive_replay_refuses_escaped_or_unclaimed_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str, reason: str,
+) -> None:
+    """Reject escaped log bytes and absent mandatory roles after valid earlier gates."""
+    repository, observed, status, log = _native_timeout_archive_inputs(
+        tmp_path, b"retained native archive log\n",
+    )
+    archive = tmp_path / "native-archive"
+    owner.runtime_startup_archive(
+        repository, observed, "partial-output", "native-timeout",
+        destination=archive, validate_only=False,
+    )
+    report = owner.runtime_startup_report(
+        repository, observed, "partial-output", "native-timeout", archive=archive,
+    )
+    assert "state: timed_out; rc: 124" in report
+    manifest_path = archive / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    entries = manifest["files"]
+    assert len(entries) == 3
+    assert {entry["role"] for entry in entries} == {"status", "log", "report"}
+    status_entry = next(entry for entry in entries if entry["role"] == "status")
+    assert status_entry["path"] == "status/partial-output/native-timeout.json"
+    log_entry = next(entry for entry in entries if entry["role"] == "log")
+    outside = tmp_path / "outside-native.log"
+    outside.write_bytes((archive / log_entry["path"]).read_bytes())
+    outside_before = outside.read_bytes()
+    if mutation == "path-escape":
+        log_entry["path"] = "../outside-native.log"
+    else:
+        log_entry["role"] = "unclaimed-log"
+    manifest_path.write_text(json.dumps(manifest) + "\n")
+    preserved = {path: path.read_bytes() for path in archive.rglob("*") if path.is_file()}
+    preserved.update({status: status.read_bytes(), log: log.read_bytes()})
+    with monkeypatch.context() as read_only:
+        read_only.setattr(
+            subprocess, "Popen", lambda *a, **k: pytest.fail("archive replay launched a child"),
+        )
+        read_only.setattr(
+            subprocess, "run", lambda *a, **k: pytest.fail("archive replay ran a command"),
+        )
+        with pytest.raises(ValueError, match=reason):
+            owner.runtime_startup_report(
+                repository, observed, "partial-output", "native-timeout", archive=archive,
+            )
+    assert {path: path.read_bytes() for path in preserved} == preserved
+    assert outside.read_bytes() == outside_before
+
+
+@pytest.mark.parametrize(("python", "heartbeat", "error"), [
+    ("3.11", 10, "requires exact source and hosted ci Python"),
+    ("3.12.15", 0, "heartbeat/retention is outside native bounded policy"),
+], ids=("exact-runtime", "bounded-heartbeat"))
+def test_applied_startup_refuses_invalid_runtime_policy_before_native_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, python: str, heartbeat: int, error: str,
+) -> None:
+    repository, root, status, log = _run(tmp_path)
+    before = (status.read_bytes(), log.read_bytes(), set(tmp_path.rglob("*")))
+
+    def unexpected_work(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("invalid startup policy reached native work")
+
+    monkeypatch.setattr(subprocess, "run", unexpected_work)
+    monkeypatch.setattr(subprocess, "Popen", unexpected_work)
+    monkeypatch.setattr(owner, "stream_command", unexpected_work)
+    with pytest.raises(ValueError, match=error):
+        owner.runtime_startup_diagnostic(
+            repository, root, "profile", "policy-refusal", source_sha="f" * 40,
+            environment=None, python=python, profile_set="ci",
+            log_path=repository / ".gate-logs/new.log", validate_only=False, heartbeat=heartbeat,
+        )
+    assert before == (status.read_bytes(), log.read_bytes(), set(tmp_path.rglob("*")))
+
+
+@pytest.mark.parametrize("destination_kind", ("outside-temp", "inside-checkout", "linked-parent", "foreign-checkout"))
+def test_applied_archive_refuses_unsafe_output_namespaces_before_snapshot_or_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, destination_kind: str,
+) -> None:
+    repository, root, status, log = _run(tmp_path)
+    if destination_kind == "outside-temp":
+        destination, error = Path(tmp_path.anchor), "external temporary namespace"
+    elif destination_kind == "inside-checkout":
+        destination, error = repository / "unsafe-output", "outside the checkout"
+    elif destination_kind == "linked-parent":
+        target = tmp_path / "owned-target"
+        target.mkdir()
+        link = tmp_path / "linked"
+        link.symlink_to(target, target_is_directory=True)
+        destination, error = link / "unsafe-output", "must not contain symbolic links"
+    else:
+        assert destination_kind == "foreign-checkout"
+        other = tmp_path / "other-checkout"
+        (other / ".git").mkdir(parents=True)
+        destination, error = other / "unsafe-output", "inside another checkout"
+    before = (status.read_bytes(), log.read_bytes(), set(tmp_path.rglob("*")))
+
+    def unexpected_work(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("unsafe archive output reached a snapshot or native work")
+
+    monkeypatch.setattr(owner, "_startup_inputs", unexpected_work)
+    monkeypatch.setattr(subprocess, "run", unexpected_work)
+    monkeypatch.setattr(subprocess, "Popen", unexpected_work)
+    with pytest.raises(ValueError, match=error):
+        owner.runtime_startup_archive(
+            repository, root, "profile", "run-1", destination=destination,
+            source_sha="f" * 40, validate_only=False,
+        )
+    assert before == (status.read_bytes(), log.read_bytes(), set(tmp_path.rglob("*")))
+
+
+@pytest.mark.parametrize("native_stdout", [
+    "[]",
+    '{"resource_observability": []}',
+    '{"resource_observability": {"collection_lease": []}}',
+], ids=("status-envelope", "resource-observability", "collection-lease"))
+def test_native_capacity_refuses_malformed_shapes_before_later_owners(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], native_stdout: str,
+) -> None:
+    from dataclasses import dataclass, field
+
+    @dataclass(frozen=True)
+    class CapacityEnvironment:
+        values: dict[str, str] = field(repr=False)
+
+    monkeypatch.setenv("GLUDD_STARTUP_CAPACITY_BOUNDARY", "owned")
+    environment = CapacityEnvironment(dict(os.environ))
+    calls: list[str] = []
+
+    def native(command: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+        assert command[:2] == ["make", "--no-print-directory"]
+        target = command[2]
+        calls.append(target)
+        assert target in ("ps", "active-work-status"), "malformed capacity reached a later native owner"
+        environment_preserved = options.get("env") == environment.values
+        assert environment_preserved, "native capacity changed copied environment carriers"
+        actual_cwd, checked, timeout = options.get("cwd"), options.get("check"), options.get("timeout")
+        assert actual_cwd == tmp_path
+        assert checked is True and timeout == 120
+        output = native_stdout if target == "active-work-status" else ""
+        diagnostic = "owned capacity diagnostic\n" if target == "ps" else ""
+        return subprocess.CompletedProcess(command, 0, output, diagnostic)
+
+    monkeypatch.setattr(subprocess, "run", native)
+    with pytest.raises(ValueError, match="malformed"):
+        owner._startup_capacity(tmp_path, environment.values)
+    assert calls == ["ps", "active-work-status"]
+    assert "owned capacity diagnostic" in capsys.readouterr().err
+    assert list(tmp_path.iterdir()) == []

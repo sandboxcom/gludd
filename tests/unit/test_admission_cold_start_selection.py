@@ -27,6 +27,22 @@ from tests.unit.test_runtime_admission_scheduling import (
 )
 
 FIXTURE_PLUGIN = ROOT / "tests/fixtures/admission_cold_start/snapshot_plugin.py"
+
+
+C9_REQUIRED_GUARDS = (
+    ("runtime-archive-lf-counter-contract",
+     "tests/unit/test_runtime_startup_diagnostic.py::test_archive_unit_inputs_require_exact_integer_lf_counters"),
+    ("runtime-fixture-input-and-tail-count",
+     "tests/unit/test_admission_cold_start_selection.py::test_cold_start_call_owns_trace_inputs_without_starting_a_child"),
+    ("https-auth-bootstrap-owned-interpreter",
+     "tests/unit/test_git_https_publication.py::test_https_auth_bootstrap_ignores_implicit_cwd_and_preserves_carriers[True]"),
+    ("workflow-prepush-native-git-local-environment",
+     "tests/unit/test_collection_hook_environment.py::test_real_pre_push_workflow_isolates_only_native_git_local_environment[True]"),
+    ("pytest-collection-count-config-boundary",
+     "tests/unit/test_xdist_trace_diagnostics.py::test_collection_finish_records_only_the_bounded_count"),
+    ("coverage-ci-signal-profile-source-identity",
+     "tests/unit/test_pipeline_coverage_source_boundary.py::test_ci_signal_profile_keeps_physical_identity_across_native_child_cwd"),
+)
 STRUCTURAL_NODE = (
     "tests/unit/test_admission_cold_start_selection.py::test_real_admission_filters_only_never_selected_main_siblings"
 )
@@ -37,6 +53,11 @@ def test_real_admission_filters_only_never_selected_main_siblings(tmp_path: Path
     result, rows = _capture_owner(tmp_path, "")
     assert result.returncode == 0, result.stdout + result.stderr
     assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
+    selections = [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
+    for family_id, node in C9_REQUIRED_GUARDS:
+        expected = [1, 0, 0] if family_id == "pytest-collection-count-config-boundary" else [0, 0, 1]
+        assert [selected.count(node) for selected in selections] == expected
+        assert all(node.split("::", 1)[0] not in selected for selected in selections)
     assert ROSTER.count(STRUCTURAL_NODE) == 1
     assert not any(
         node.split("::", 1)[0] == STRUCTURAL_NODE.split("::", 1)[0] and node != STRUCTURAL_NODE for node in ROSTER
@@ -66,6 +87,13 @@ def test_real_admission_filters_only_never_selected_main_siblings(tmp_path: Path
             )
         )
     manifest = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
+    assert len(manifest["families"]) == scheduling.EXPECTED_FAMILY_COUNT == 187
+    assert manifest["families"][180]["id"] == "native-make-stdout-contract"
+    assert manifest["families"][181:] == [
+        {"id": family_id, "owner_target": scheduling.OWNER, "node_kind": "pytest_node",
+         "node": node, "full_gate_phase": "test"}
+        for family_id, node in C9_REQUIRED_GUARDS
+    ]
     assert manifest["full_gate_target"] == "gate" and manifest["full_gate_required"] is True
     assert {
         "id": "runtime-admission-initial-path-sibling-collection",
@@ -85,7 +113,9 @@ def test_real_admission_filters_only_never_selected_main_siblings(tmp_path: Path
 @pytest.mark.parametrize(
     "promoted_selector",
     (*APPROVED_PROMOTION_SELECTORS, *PLUGIN_ISOLATION_SELECTORS,
-     scheduling.PRESENTATION_MANIFEST_SELECTOR, *REVIEWED_FINALIZATION),
+     scheduling.PRESENTATION_MANIFEST_SELECTOR,
+     "tests/unit/test_xdist_trace_diagnostics.py::test_collection_finish_records_only_the_bounded_count",
+     *REVIEWED_FINALIZATION),
 )
 @pytest.mark.parametrize("mutation", ("omission", "duplication", "widening"))
 @pytest.mark.parametrize(
@@ -234,27 +264,34 @@ def _run(
     flags = "-W error -q -n 2 --maxprocesses 2"
     if candidate:
         flags += " --ignore-glob=" + str(tmp_path / "admission_native_package" / "*")
-    environment = {
-        **os.environ,
-        "UV_NO_SYNC": "1",
-        "UV_PYTHON_DOWNLOADS": "never",
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PYTHONPATH": os.pathsep.join([str(tmp_path), str(ROOT), str(ROOT / "src")]),
-        "PYTEST_PLUGINS": ",".join(
-            filter(
-                None,
-                (
-                    os.environ.get("PYTEST_PLUGINS", ""),
-                    "tests.fixtures.admission_cold_start.snapshot_plugin",
-                    "admission_fixture_plugin",
-                ),
-            )
-        ),
-        "COLD_START_PROBE_ROOT": str(tmp_path / "admission_native_package"),
-        "COLD_START_PROBE_LOG": str(events),
-        "COLD_START_SNAPSHOT_ROOT": str(snapshots),
-        "COLD_START_LIFECYCLE": str(lifecycle),
-    }
+    environment = dict(os.environ)
+    for key in ("GLUDD_XDIST_TRACE_LOG", "GLUDD_XDIST_TRACE_RUN_ID", "GLUDD_XDIST_TRACE_TRUNCATE"):
+        environment.pop(key, None)
+    environment.update(
+        {
+            "UV_NO_SYNC": "1",
+            "UV_PYTHON_DOWNLOADS": "never",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONPATH": os.pathsep.join([str(tmp_path), str(ROOT), str(ROOT / "src")]),
+            "PYTEST_PLUGINS": ",".join(
+                filter(
+                    None,
+                    (
+                        os.environ.get("PYTEST_PLUGINS", ""),
+                        "tests.fixtures.admission_cold_start.snapshot_plugin",
+                        "admission_fixture_plugin",
+                    ),
+                )
+            ),
+            "COLD_START_PROBE_ROOT": str(tmp_path / "admission_native_package"),
+            "COLD_START_PROBE_LOG": str(events),
+            "COLD_START_SNAPSHOT_ROOT": str(snapshots),
+            "COLD_START_LIFECYCLE": str(lifecycle),
+            "GLUDD_XDIST_TRACE_LOG": str(tmp_path / f"pytest-trace-{run_id}.jsonl"),
+            "GLUDD_XDIST_TRACE_RUN_ID": "admission-cold-start-" + run_id,
+            "GLUDD_XDIST_TRACE_TRUNCATE": "0",
+        }
+    )
     result = subprocess.run(
         [
             "make",
@@ -428,3 +465,199 @@ def test_native_glob_is_derived_from_each_invocation_directory(
         assert str(rows[0]["flags"]).split().count(expected) == 1
         assert str(rows[2]["flags"]).split().count(expected) == 1
         assert "--ignore-glob" not in str(rows[1]["flags"])
+
+
+@pytest.mark.parametrize("candidate", (False, True))
+def test_native_cold_start_child_trace_does_not_write_parent_carriers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    candidate: bool,
+) -> None:
+    """Keep the real original/filtered two-node child out of its parent's trace."""
+    from dataclasses import dataclass, field
+
+    @dataclass(frozen=True)
+    class ParentEnvironment:
+        values: dict[str, str] = field(repr=False)
+
+    sentinel = tmp_path / "owned parent trace.sentinel"
+    sentinel.write_bytes(b"owned parent trace sentinel\n")
+    retained = sentinel.read_bytes()
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_LOG", str(sentinel))
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_RUN_ID", "v3-owned-parent")
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_TRUNCATE", "0")
+    parent = ParentEnvironment(os.environ.copy())
+    first, _second, _outside = _fixture_tree(tmp_path)
+    (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    run_id = "v3-candidate" if candidate else "v3-original"
+    result, snapshots, _calls = _run(
+        tmp_path,
+        [str(first) + "::test_selected_a"],
+        candidate=candidate,
+        run_id=run_id,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert re.search(r"\b2 passed\b", result.stdout), result.stdout + result.stderr
+    parent_same = os.environ.copy() == parent.values
+    assert parent_same, "the native fixture changed its parent environment"
+    assert sentinel.read_bytes() == retained
+    assert len(snapshots) == 2
+    expected_nodes = {str(row["nodeid"]) for row in cast(list[dict[str, object]], snapshots[0]["nodes"])}
+    assert len(expected_nodes) == 2
+    assert all(
+        {str(row["nodeid"]) for row in cast(list[dict[str, object]], snapshot["nodes"])} == expected_nodes
+        for snapshot in snapshots
+    )
+    pids = scheduling._assert_v3_owned_native_child_trace(
+        tmp_path / f"pytest-trace-{run_id}.jsonl",
+        "admission-cold-start-" + run_id,
+        {"test_selected_a[0]", "test_selected_a[1]"},
+        {"test_selected_a.py"},
+        workers=2,
+        expected_nodes=expected_nodes,
+    )
+    assert pids == {str(snapshot["worker"]): cast(int, snapshot["pid"]) for snapshot in snapshots}
+
+
+@pytest.mark.parametrize("candidate", [False, True])
+def test_cold_start_call_owns_trace_inputs_without_starting_a_child(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    candidate: bool,
+) -> None:
+    """Inspect the real caller's inputs and stop at its process boundary."""
+    from dataclasses import dataclass, field
+    from typing import NoReturn
+
+    @dataclass(frozen=True)
+    class PrivateEnvironment:
+        values: dict[str, str] = field(repr=False)
+
+    @dataclass(frozen=True)
+    class BoundaryInputs:
+        argv: object = field(repr=False)
+        options: dict[str, object] = field(repr=False)
+
+    class Captured(Exception):
+        """The actual native command was captured before execution."""
+
+    captured: list[BoundaryInputs] = []
+
+    def capture(argv: object, **options: object) -> NoReturn:
+        captured.append(BoundaryInputs(argv, options))
+        raise Captured
+
+    def forbidden(*_args: object, **_options: object) -> NoReturn:
+        pytest.fail("the cheap caller-input control started a process")
+
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_LOG", str(tmp_path / "owned parent trace.sentinel"))
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_RUN_ID", "cheap-parent")
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_TRUNCATE", "0")
+    monkeypatch.setenv("GLUDD_V4_UNRELATED_CARRIER", "owned-unrelated-value")
+    parent = PrivateEnvironment(os.environ.copy())
+    probe = tmp_path / "test_caller_probe.py"
+    probe.write_text("def test_caller_probe():\n    pass\n", encoding="utf-8")
+    files = [str(probe) + "::test_caller_probe"]
+    run_id = "cheap-candidate" if candidate else "cheap-original"
+    with monkeypatch.context() as boundary:
+        boundary.setattr(subprocess, "run", capture)
+        boundary.setattr(subprocess, "Popen", forbidden)
+        with pytest.raises(Captured):
+            _run(tmp_path, files, candidate=candidate, run_id=run_id)
+    assert len(captured) == 1
+    inputs = captured[0]
+    environment_is_dict = isinstance(inputs.options.get("env"), dict)
+    assert environment_is_dict, "the real caller must supply its copied environment"
+    child = PrivateEnvironment(cast(dict[str, str], inputs.options["env"]))
+    trace_inputs_owned = (
+        child.values.get("GLUDD_XDIST_TRACE_LOG"),
+        child.values.get("GLUDD_XDIST_TRACE_RUN_ID"),
+        child.values.get("GLUDD_XDIST_TRACE_TRUNCATE"),
+    ) == (str(tmp_path / f"pytest-trace-{run_id}.jsonl"), "admission-cold-start-" + run_id, "0")
+    assert trace_inputs_owned, "the actual child inputs must own all three trace carriers"
+    owned = {
+        "UV_NO_SYNC",
+        "UV_PYTHON_DOWNLOADS",
+        "PYTHONDONTWRITEBYTECODE",
+        "PYTHONPATH",
+        "PYTEST_PLUGINS",
+        "COLD_START_PROBE_ROOT",
+        "COLD_START_PROBE_LOG",
+        "COLD_START_SNAPSHOT_ROOT",
+        "COLD_START_LIFECYCLE",
+        "GLUDD_XDIST_TRACE_LOG",
+        "GLUDD_XDIST_TRACE_RUN_ID",
+        "GLUDD_XDIST_TRACE_TRUNCATE",
+    }
+    unrelated_child = PrivateEnvironment({key: value for key, value in child.values.items() if key not in owned})
+    unrelated_parent = PrivateEnvironment({key: value for key, value in parent.values.items() if key not in owned})
+    carriers_preserved = unrelated_child.values == unrelated_parent.values
+    assert carriers_preserved, "the native caller must retain unrelated carriers"
+    flags = "-W error -q -n 2 --maxprocesses 2"
+    if candidate:
+        flags += " --ignore-glob=" + str(tmp_path / "admission_native_package" / "*")
+    argv_preserved = inputs.argv == [
+        "make",
+        "--no-print-directory",
+        "test-files",
+        "TESTFILES=" + " ".join(files),
+        "PYTEST_ARGS=" + flags,
+        "NPROC=2",
+        "GLUDD_XDIST_WORKERS=2",
+        "UV_PROJECT_ENVIRONMENT=" + parent.values.get("VIRTUAL_ENV", str(ROOT / ".venv")),
+    ]
+    assert argv_preserved, "the existing native command and selected runtime must stay intact"
+    native_options_preserved = (
+        inputs.options.get("cwd"),
+        inputs.options.get("timeout"),
+        inputs.options.get("capture_output"),
+        inputs.options.get("text"),
+    ) == (ROOT, 35, True, True)
+    assert native_options_preserved, "the original native CWD and subprocess bound must stay intact"
+    parent_preserved = os.environ.copy() == parent.values
+    assert parent_preserved, "the input control must preserve its parent environment"
+
+
+@pytest.mark.parametrize("candidate", (False, True))
+def test_native_cold_child_does_not_append_to_parent_focus_trace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    candidate: bool,
+) -> None:
+    """Keep both real cold-start variants out of the parent focus trace."""
+    parent_trace = tmp_path / "parent-trace.jsonl"
+    sentinel = b"owned-cold-parent-trace-sentinel\n"
+    parent_trace.write_bytes(sentinel)
+    trace_keys = ("GLUDD_XDIST_TRACE_LOG", "GLUDD_XDIST_TRACE_RUN_ID", "GLUDD_XDIST_TRACE_TRUNCATE")
+    parent_fields = (str(parent_trace), "owned-cold-parent-trace", "0")
+    for key, value in zip(trace_keys, parent_fields, strict=True):
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("GLUDD_NATIVE_COLD_TRACE_BOUNDARY_CONTROL", "owned-cold-carrier")
+    first, second, outside = _fixture_tree(tmp_path)
+    marker = tmp_path / "native-cold-carrier.txt"
+    plugin = tmp_path / "admission_fixture_plugin.py"
+    plugin.write_text(
+        plugin.read_text(encoding="utf-8") + "\nimport os\nfrom pathlib import Path\n"
+        "@pytest.fixture(autouse=True)\ndef native_trace_boundary_control():\n"
+        "    carrier = os.environ.get('GLUDD_NATIVE_COLD_TRACE_BOUNDARY_CONTROL')\n"
+        "    assert carrier == 'owned-cold-carrier'\n"
+        f"    with Path({str(marker)!r}).open('a', encoding='utf-8') as stream:\n"
+        "        stream.write('native-cold-carrier\\n')\n",
+        encoding="utf-8",
+    )
+    result, snapshots, _calls = _run(
+        tmp_path,
+        [str(first), str(second) + "::TestExplicit::test_selected_b", str(outside)],
+        candidate=candidate,
+        run_id="owned-parent-trace",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "5 passed" in result.stdout
+    assert len(snapshots) == 2
+    assert all(len(cast(list[object], snapshot["nodes"])) == 5 for snapshot in snapshots)
+    assert marker.read_text(encoding="utf-8").splitlines() == ["native-cold-carrier"] * 5
+    parent_carrier = os.environ.get("GLUDD_NATIVE_COLD_TRACE_BOUNDARY_CONTROL")
+    current_parent_fields = tuple(os.environ.get(key) for key in trace_keys)
+    assert parent_carrier == "owned-cold-carrier"
+    assert current_parent_fields == parent_fields
+    assert parent_trace.read_bytes() == sentinel

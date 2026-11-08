@@ -18,7 +18,7 @@ from scripts import makefile_layout
 from tests.unit.test_observed_command import _command, _current_status
 
 # Independent expected inventory: never derive this value from the manifest under test.
-EXPECTED_FAMILY_COUNT = 181
+EXPECTED_FAMILY_COUNT = 187
 ROOT = Path(makefile_layout.__file__).resolve().parents[1]
 OWNER = "_pytest-runtime-compatibility-admission"
 EXPECTED_MAIN_PYTEST_FLAGS = (
@@ -120,6 +120,7 @@ ROSTER = (
     "tests/unit/test_release_pipeline_structure.py::TestReleaseCandidateHostedValidation::test_candidate_push_filters_preserve_existing_routes",
     "tests/unit/test_test_files_native_trace.py::test_observer_trace_contains_real_matching_protocol_pairs[pass-serial]",
     "tests/unit/test_xdist_trace_diagnostics.py::test_native_summary_cli_keeps_json_status_and_emits_guidance[trace_guidance_native_rows0-empty]",
+    "tests/unit/test_xdist_trace_diagnostics.py::test_collection_finish_records_only_the_bounded_count",
     "tests/unit/test_presentation_browser_apt_source.py::test_apt_mode_is_literal_at_real_make_startup[environment-override]",
     "tests/unit/test_git_status_readonly.py::test_status_never_refreshes_native_index[inherited-one]",
     "tests/unit/test_task_ledger_validation.py",
@@ -225,6 +226,20 @@ REVIEWED_FINALIZATION = (
     "tests/unit/test_makefile_audit_deep.py::TestScriptReferencesExist::test_all_scripts_exist",
     "tests/unit/test_task_watchdog.py::test_live_gate_bound_waiter_protects_the_complete_tree[make-pid]",
     "tests/unit/test_push_discipline_checks.py::TestVerifyRemoteAfterPush::test_verify_remote_compares_sha",
+    "tests/unit/test_runtime_startup_diagnostic.py::"
+    "test_archive_unit_inputs_require_exact_integer_lf_counters",
+    "tests/unit/test_git_https_publication.py::"
+    "test_https_auth_bootstrap_ignores_implicit_cwd_and_preserves_carriers[True]",
+    "tests/unit/test_collection_hook_environment.py::"
+    "test_real_pre_push_workflow_isolates_only_native_git_local_environment[True]",
+    "tests/unit/test_admission_cold_start_selection.py::"
+    "test_cold_start_call_owns_trace_inputs_without_starting_a_child",
+    "tests/unit/test_runtime_admission_scheduling.py::"
+    "test_scheduling_calls_own_trace_inputs_without_starting_a_child",
+    "tests/unit/test_gate_failure_promotion.py::"
+    "test_native_reviewed_finalization_executes_in_bounded_early_admission",
+    "tests/unit/test_pipeline_coverage_source_boundary.py::"
+    "test_ci_signal_profile_keeps_physical_identity_across_native_child_cwd",
     "tests/unit/test_ansible_ee_locked_consumer.py",
     "tests/unit/test_observed_command.py",
     "tests/unit/test_status_heartbeat_terminal.py",
@@ -282,7 +297,7 @@ def test_runtime_admission_retains_entire_roster_and_fresh_help(tmp_path: Path) 
     assert [row["phase"] for row in rows] == ["full", "help", "reviewed"]
     assert "tests/unit/test_makefile_audit_deep.py" not in str(rows[0]["files"])
     tail = rows[2]["files"]
-    assert isinstance(tail, list) and len(tail) == 17
+    assert isinstance(tail, list) and len(tail) == 24
     assert tail[-1] == (
         "tests/unit/test_dependency_profiles.py::"
         "test_selected_profile_locks_preserve_controller_jsonpointer_requirement"
@@ -322,10 +337,22 @@ def test_runtime_admission_propagates_each_owner_failure_without_replay(
 def _native_test_files(
     paths: list[Path], workers: int, *, environment: dict[str, str] | None = None,
     extra_pytest_args: str = "",
+    owned_trace: tuple[Path, str] | None = None,
+    owned_trace_truncate: str = "1",
 ) -> subprocess.CompletedProcess[str]:
     flags = f"-W error -q -n {workers} --maxprocesses {workers}"
     if extra_pytest_args:
         flags += " " + extra_pytest_args
+    child_environment = dict(os.environ if environment is None else environment)
+    for key in ("GLUDD_XDIST_TRACE_LOG", "GLUDD_XDIST_TRACE_RUN_ID", "GLUDD_XDIST_TRACE_TRUNCATE"):
+        child_environment.pop(key, None)
+    if owned_trace is not None:
+        trace_path, run_id = owned_trace
+        child_environment.update({
+            "GLUDD_XDIST_TRACE_LOG": str(trace_path),
+            "GLUDD_XDIST_TRACE_RUN_ID": run_id,
+            "GLUDD_XDIST_TRACE_TRUNCATE": owned_trace_truncate,
+        })
     return subprocess.run(
         [
             "make", "--no-print-directory", "test-files",
@@ -334,7 +361,7 @@ def _native_test_files(
             "PYTEST_ARGS=" + flags,
             "UV_PROJECT_ENVIRONMENT=" + os.environ.get("VIRTUAL_ENV", str(ROOT / ".venv")),
         ],
-        cwd=ROOT, text=True, capture_output=True, timeout=45, env=environment,
+        cwd=ROOT, text=True, capture_output=True, timeout=45, env=child_environment,
     )
 
 
@@ -371,7 +398,14 @@ def test_existing_group_owner_isolates_shared_state_and_preserves_exact_once_out
         )
         result = _native_test_files(
             [shared, independent], workers,
-            environment={**os.environ, "GLUDD_RUNTIME_SCHEDULING_RECORD": str(record)},
+            environment={
+                **os.environ, "GLUDD_RUNTIME_SCHEDULING_RECORD": str(record),
+                "GLUDD_XDIST_TRACE_LOG": str(tmp_path / f"shared-state-{workers}.pytest.jsonl"),
+                "GLUDD_XDIST_TRACE_RUN_ID": f"runtime-shared-state-{workers}",
+                "GLUDD_XDIST_TRACE_TRUNCATE": "0",
+            },
+            owned_trace=(tmp_path / f"shared-state-{workers}.pytest.jsonl", f"runtime-shared-state-{workers}"),
+            owned_trace_truncate="0",
         )
         assert result.returncode == 0, result.stdout + result.stderr
         assert "8 passed" in result.stdout
@@ -390,7 +424,15 @@ def test_two_worker_native_admission_keeps_warnings_fatal(tmp_path: Path) -> Non
         "    warnings.warn('runtime-admission-warning', UserWarning)\n",
         encoding="utf-8",
     )
-    result = _native_test_files([probe], 2)
+    result = _native_test_files(
+        [probe], 2,
+        environment={
+            **os.environ, "GLUDD_XDIST_TRACE_LOG": str(tmp_path / "warning-control.pytest.jsonl"),
+            "GLUDD_XDIST_TRACE_RUN_ID": "runtime-warning-control", "GLUDD_XDIST_TRACE_TRUNCATE": "0",
+        },
+        owned_trace=(tmp_path / "warning-control.pytest.jsonl", "runtime-warning-control"),
+        owned_trace_truncate="0",
+    )
     assert result.returncode != 0
     assert "FAILED" in result.stdout and "test_original_warning" in result.stdout
     assert "UserWarning: runtime-admission-warning" in result.stdout
@@ -469,7 +511,7 @@ def test_compact_native_reporting_preserves_inventory_failures_and_terminal_tota
             options.extend(("-o", "verbosity_test_cases=-2"))
         result = _native_test_files(
             paths, 2, environment=environment,
-            extra_pytest_args=shlex.join(options),
+            extra_pytest_args=shlex.join(options), owned_trace=(trace, variant),
         )
         outputs.append(result)
         assert (result.returncode == 0) == (mode == "success"), result.stdout + result.stderr
@@ -1038,7 +1080,7 @@ def test_coverage_suite_provenance_failure_has_one_exact_native_route(tmp_path: 
         if index:
             assert node not in selection
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 181
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 187
     assert payload["families"][149]["id"] == "native-full-scan-success-inventory"
     assert payload["families"][150] == {
         "id": "coverage-native-suite-provenance",
@@ -1102,7 +1144,7 @@ def test_uv_prune_native_failure_has_one_exact_native_route(tmp_path: Path) -> N
         assert node.split("::", 1)[0] not in selection
     assert counts == [1, 0, 0]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 181
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 187
     assert payload["families"][150]["id"] == "coverage-native-suite-provenance"
     assert payload["families"][151] == {
         "id": "uv-prune-native-failure-status",
@@ -1138,7 +1180,7 @@ def test_uv_prune_inherited_policy_has_one_exact_native_route(tmp_path: Path) ->
     assert counts == [1, 0, 0]
     assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 181
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 187
     assert payload["families"][151]["id"] == "uv-prune-native-failure-status"
     assert payload["families"][152] == {
         "id": "uv-prune-inherited-policy-context", "owner_target": OWNER,
@@ -1169,7 +1211,7 @@ def test_shared_uv_inventory_has_one_exact_native_route(tmp_path: Path) -> None:
     assert all(node.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 181
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 187
     assert payload["families"][152]["id"] == "uv-prune-inherited-policy-context"
     assert payload["families"][153] == {
         "id": "shared-uv-cache-inventory-exposure", "owner_target": OWNER,
@@ -1209,7 +1251,7 @@ def test_git_handoff_failures_have_exact_native_routes(
     assert all(node_selector.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 181
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 187
     assert payload["families"][153]["id"] == "shared-uv-cache-inventory-exposure"
     assert payload["families"][154:156] == [
         {"id": family_id, "owner_target": OWNER, "node_kind": "pytest_node",
@@ -1305,6 +1347,18 @@ CANDIDATE_PROOF_PROMOTIONS = (
      "TestVerifyRemoteAfterPush::test_verify_remote_compares_sha"),
     ("native-make-stdout-contract", "tests/unit/test_make_target_contract.py::"
      "test_azure_and_runpod_wrappers_use_declared_variables"),
+    ("runtime-archive-lf-counter-contract", "tests/unit/test_runtime_startup_diagnostic.py::"
+     "test_archive_unit_inputs_require_exact_integer_lf_counters"),
+    ("runtime-fixture-input-and-tail-count", "tests/unit/test_admission_cold_start_selection.py::"
+     "test_cold_start_call_owns_trace_inputs_without_starting_a_child"),
+    ("https-auth-bootstrap-owned-interpreter", "tests/unit/test_git_https_publication.py::"
+     "test_https_auth_bootstrap_ignores_implicit_cwd_and_preserves_carriers[True]"),
+    ("workflow-prepush-native-git-local-environment", "tests/unit/test_collection_hook_environment.py::"
+     "test_real_pre_push_workflow_isolates_only_native_git_local_environment[True]"),
+    ("pytest-collection-count-config-boundary", "tests/unit/test_xdist_trace_diagnostics.py::"
+     "test_collection_finish_records_only_the_bounded_count"),
+    ("coverage-ci-signal-profile-source-identity", "tests/unit/test_pipeline_coverage_source_boundary.py::"
+     "test_ci_signal_profile_keeps_physical_identity_across_native_child_cwd"),
 )
 
 WORK_ITEM_PROMOTIONS = (
@@ -1333,12 +1387,17 @@ def test_make_safety_and_guidance_have_exact_native_routes(
     expected = [0, 0, 1] if promoted_family in {
         "make-local-script-reference-boundary", "watchdog-bound-gate-waiter", "verify-remote-recipe-boundary",
         "native-make-stdout-contract",
+        "runtime-archive-lf-counter-contract",
+        "runtime-fixture-input-and-tail-count",
+        "https-auth-bootstrap-owned-interpreter",
+        "workflow-prepush-native-git-local-environment",
+        "coverage-ci-signal-profile-source-identity",
     } else [1, 0, 0]
     assert [selection.count(node_selector) for selection in selections] == expected
     assert all(node_selector.split("::", 1)[0] not in selection for selection in selections)
     assert selections == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     payload = json.loads((ROOT / "config/gate_failure_promotions.json").read_text())
-    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 181
+    assert len(payload["families"]) == EXPECTED_FAMILY_COUNT == 187
     assert [family["id"] for family in payload["families"][154:156]] == [
         "git-async-live-owner-handoff", "git-async-completed-owner-adoption",
     ]
@@ -1402,7 +1461,7 @@ def _assert_native_make_stdout_route(
     families = payload["families"]
     assert isinstance(families, list)
     assert [family for family in families if family["id"] == expected["id"]] == [expected]
-    assert len(families) == EXPECTED_FAMILY_COUNT == 181 and families[-1] == expected
+    assert len(families) == EXPECTED_FAMILY_COUNT == 187 and families[180] == expected
     assert len(rows) == 3 and [row["phase"] for row in rows] == ["full", "help", "reviewed"]
     selections: list[list[object]] = []
     for row in rows:
@@ -1413,7 +1472,7 @@ def _assert_native_make_stdout_route(
     for node in NATIVE_MAKE_STDOUT_SELECTORS:
         assert [selection.count(node) for selection in selections] == [0, 0, 1]
         assert all(node.split("::", 1)[0] not in selection for selection in selections)
-    assert len(selections[2]) == 17
+    assert len(selections[2]) == 24
     assert selections[2][-3:-1] == list(NATIVE_MAKE_STDOUT_SELECTORS)
     assert selections[2][-1] == (
         "tests/unit/test_dependency_profiles.py::"
@@ -1708,3 +1767,198 @@ def test_existing_observer_drains_both_overlap_branches_and_descendants(
             capture_output=True, text=True, check=False, timeout=5,
         )
         assert inspected.returncode == 1 and not inspected.stdout.strip(), inspected.stderr
+
+
+def _assert_v3_owned_native_child_trace(
+    path: Path,
+    run_id: str,
+    expected_suffixes: set[str],
+    expected_files: set[str],
+    *,
+    workers: int,
+    failed: bool = False,
+    expected_nodes: set[str] | None = None,
+) -> dict[str, int]:
+    """Assert native child identities and reuse the existing strict pair reader."""
+    from typing import TYPE_CHECKING, cast
+    if TYPE_CHECKING:
+        from summarize_xdist_trace import summarize_log
+    else:
+        from scripts.summarize_xdist_trace import summarize_log
+    events: list[dict[str, object]] = [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert events and {event["run_id"] for event in events} == {run_id}
+    controller = [
+        event for event in events
+        if event["event"] == "RUN_START" and event.get("role") == "controller"
+    ]
+    native_workers = [
+        event for event in events
+        if event["event"] == "RUN_START" and event.get("role") == "worker"
+    ]
+    assert len(controller) == 1 and controller[0]["worker"] == "controller"
+    assert len(native_workers) == workers
+    pids = {str(event["worker"]): cast(int, event["pid"]) for event in native_workers}
+    assert set(pids) == {f"gw{index}" for index in range(workers)}
+    controller_pid = cast(int, controller[0]["pid"])
+    all_pids = [controller_pid, *pids.values()]
+    assert len(set(all_pids)) == workers + 1
+    assert all(type(pid) is int and pid > 0 and pid != os.getpid() for pid in all_pids)
+    finished_roles = [event for event in events if event["event"] == "RUN_FINISH"]
+    assert {
+        (str(event["role"]), str(event["worker"]), cast(int, event["pid"]))
+        for event in finished_roles
+    } == {
+        ("controller", "controller", controller_pid),
+        *(("worker", key, pid) for key, pid in pids.items()),
+    }
+    controller_finish = [event for event in finished_roles if event["role"] == "controller"]
+    assert len(controller_finish) == 1 and controller_finish[0]["exitstatus"] == (1 if failed else 0)
+    starts = [event for event in events if event["event"] == "START"]
+    finishes = [event for event in events if event["event"] == "FINISH"]
+    start_keys = Counter(
+        (str(event["run_id"]), str(event["worker"]), cast(int, event["pid"]), str(event["nodeid"]))
+        for event in starts
+    )
+    finish_keys = Counter(
+        (str(event["run_id"]), str(event["worker"]), cast(int, event["pid"]), str(event["nodeid"]))
+        for event in finishes
+    )
+    assert start_keys == finish_keys and set(start_keys.values()) == {1}
+    assert len(start_keys) == len(expected_suffixes)
+    assert {str(event["nodeid"]).split("::")[-1] for event in starts} == expected_suffixes
+    assert {Path(str(event["nodeid"]).split("::", 1)[0]).name for event in starts} == expected_files
+    assert all(
+        str(event["worker"]) in pids and event["pid"] == pids[str(event["worker"])]
+        for event in starts
+    )
+    if expected_nodes is not None:
+        assert {str(event["nodeid"]) for event in starts} == expected_nodes
+    summary = summarize_log(path, run_id=run_id)
+    assert summary["started"] == summary["finished"] == len(expected_suffixes)
+    assert summary["timings"]["paired_count"] == len(expected_suffixes)
+    assert summary["timings"]["issue_count"] == 0 and summary["unfinished"] == []
+    if failed:
+        assert summary["failure_nodeid_count"] == 1 and summary["failure_report_count"] >= 1
+        reports = [
+            event
+            for event in events
+            if event["event"] == "REPORT"
+            and event.get("outcome") == "failed" and event.get("when") == "call"
+        ]
+        assert any(
+            str(event["worker"]) in pids
+            and event["pid"] == pids[str(event["worker"])]
+            and str(event["nodeid"]).endswith("::test_original_warning")
+            for event in reports
+        )
+    else:
+        assert summary["failure_report_count"] == 0
+    return pids
+
+
+@pytest.mark.parametrize("control", ["shared-state", "fatal-warning"])
+def test_scheduling_calls_own_trace_inputs_without_starting_a_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, control: str
+) -> None:
+    """Capture each real caller before its original native helper can execute."""
+    from dataclasses import dataclass, field
+    from typing import NoReturn, cast
+    @dataclass(frozen=True)
+    class PrivateEnvironment:
+        values: dict[str, str] = field(repr=False)
+    @dataclass(frozen=True)
+    class BoundaryInputs:
+        paths: tuple[Path, ...] = field(repr=False)
+        workers: int
+        environment: dict[str, str] | None = field(repr=False)
+        extra_pytest_args: str = field(repr=False)
+        owned_trace: tuple[Path, str] | None = field(repr=False)
+        owned_trace_truncate: str = field(repr=False)
+
+    class Captured(Exception):
+        """The actual native helper call was captured before execution."""
+
+    captured: list[BoundaryInputs] = []
+
+    def capture(
+        paths: list[Path],
+        workers: int,
+        *,
+        environment: dict[str, str] | None = None,
+        extra_pytest_args: str = "",
+        owned_trace: tuple[Path, str] | None = None,
+        owned_trace_truncate: str = "1",
+    ) -> NoReturn:
+        captured.append(
+            BoundaryInputs(
+                tuple(paths), workers, environment, extra_pytest_args, owned_trace, owned_trace_truncate,
+            )
+        )
+        raise Captured
+
+    def forbidden(*_args: object, **_options: object) -> NoReturn:
+        pytest.fail("the cheap caller-input control started a process")
+
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_LOG", str(tmp_path / "owned parent trace.sentinel"))
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_RUN_ID", "cheap-parent")
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_TRUNCATE", "0")
+    monkeypatch.setenv("GLUDD_V4_UNRELATED_CARRIER", "owned-unrelated-value")
+    parent = PrivateEnvironment(os.environ.copy())
+    with monkeypatch.context() as boundary:
+        boundary.setattr(sys.modules[__name__], "_native_test_files", capture)
+        boundary.setattr(subprocess, "run", forbidden)
+        boundary.setattr(subprocess, "Popen", forbidden)
+        with pytest.raises(Captured):
+            if control == "shared-state":
+                test_existing_group_owner_isolates_shared_state_and_preserves_exact_once_outcomes(tmp_path)
+            else:
+                test_two_worker_native_admission_keeps_warnings_fatal(tmp_path)
+    assert len(captured) == 1
+    inputs = captured[0]
+    environment_is_dict = isinstance(inputs.environment, dict)
+    assert environment_is_dict, "the actual native caller must supply its copied environment"
+    child = PrivateEnvironment(cast(dict[str, str], inputs.environment))
+    if control == "shared-state":
+        expected = PrivateEnvironment(
+            {
+                **parent.values,
+                "GLUDD_RUNTIME_SCHEDULING_RECORD": str(tmp_path / "events-1.jsonl"),
+                "GLUDD_XDIST_TRACE_LOG": str(tmp_path / "shared-state-1.pytest.jsonl"),
+                "GLUDD_XDIST_TRACE_RUN_ID": "runtime-shared-state-1",
+                "GLUDD_XDIST_TRACE_TRUNCATE": "0",
+            }
+        )
+        arguments_preserved = (inputs.paths, inputs.workers, inputs.extra_pytest_args) == (
+            (tmp_path / "test_shared.py", tmp_path / "test_independent.py"),
+            1,
+            "",
+        )
+    else:
+        expected = PrivateEnvironment(
+            {
+                **parent.values,
+                "GLUDD_XDIST_TRACE_LOG": str(tmp_path / "warning-control.pytest.jsonl"),
+                "GLUDD_XDIST_TRACE_RUN_ID": "runtime-warning-control",
+                "GLUDD_XDIST_TRACE_TRUNCATE": "0",
+            }
+        )
+        arguments_preserved = (inputs.paths, inputs.workers, inputs.extra_pytest_args) == (
+            (tmp_path / "test_warning.py",),
+            2,
+            "",
+        )
+    trace_inputs_and_carriers_preserved = child.values == expected.values
+    assert trace_inputs_and_carriers_preserved, (
+        "the real caller must own trace inputs and preserve other carriers"
+    )
+    assert arguments_preserved, "the original native helper inputs must stay intact"
+    parent_preserved = os.environ.copy() == parent.values
+    assert parent_preserved, "the input control must preserve its parent environment"
+    expected_owned_trace = (
+        (tmp_path / "shared-state-1.pytest.jsonl", "runtime-shared-state-1")
+        if control == "shared-state"
+        else (tmp_path / "warning-control.pytest.jsonl", "runtime-warning-control")
+    )
+    assert (inputs.owned_trace, inputs.owned_trace_truncate) == (expected_owned_trace, "0")

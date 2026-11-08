@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import cast
@@ -208,6 +208,8 @@ def test_controller_sessionstart_truncates_trace_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from scripts import xdist_trace_plugin as trace
+    for key in ("_ACTIVE_TRACE_PATH", "_ACTIVE_RUN_ID", "_ACTIVE_TRACE_CONFIG"):
+        monkeypatch.setattr(trace, key, getattr(trace, key))
 
     log_path = tmp_path / "trace.jsonl"
     log_path.write_text("stale" + chr(10), encoding="utf-8")
@@ -619,6 +621,8 @@ def test_trace_path_is_stable_after_session_start(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from scripts import xdist_trace_plugin as trace
+    for key in ("_ACTIVE_TRACE_PATH", "_ACTIVE_RUN_ID", "_ACTIVE_TRACE_CONFIG"):
+        monkeypatch.setattr(trace, key, getattr(trace, key))
 
     first_log = tmp_path / "first.jsonl"
     second_log = tmp_path / "second.jsonl"
@@ -1381,3 +1385,128 @@ def test_summary_recipe_retains_native_quoted_run_and_log_arguments(
     result = _run(tmp_path, values, trace_environment_overrides=trace_guidance_make_e)
     assert result.returncode == 0, result.stdout + result.stderr
     _assert_call(tmp_path, values)
+
+
+@pytest.mark.parametrize("trace_fixture_case", ("controller", "stable"))
+def test_direct_sessionstart_controls_restore_the_live_native_binding(
+    tmp_path: Path,
+    trace_fixture_case: str,
+) -> None:
+    from scripts import xdist_trace_plugin as trace
+
+    names = ("_ACTIVE_TRACE_PATH", "_ACTIVE_RUN_ID", "_ACTIVE_TRACE_CONFIG")
+    previous: tuple[object, ...] = tuple(getattr(trace, name) for name in names)
+    with pytest.MonkeyPatch.context() as cleanup:
+        for name, value in zip(names, previous, strict=True):
+            cleanup.setattr(trace, name, value)
+        with pytest.MonkeyPatch.context() as control:
+            if trace_fixture_case == "controller":
+                test_controller_sessionstart_truncates_trace_once(tmp_path, control)
+            else:
+                test_trace_path_is_stable_after_session_start(tmp_path, control)
+        observed: tuple[object, ...] = tuple(getattr(trace, name) for name in names)
+        assert observed == previous
+
+
+def test_native_promotion_child_keeps_the_inherited_trace_witness_owned(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import inspect
+
+    from tests.unit import test_gate_failure_promotion as promotion
+
+    outside = tmp_path / "outside-owned-child"
+    outside.mkdir()
+    witness = outside / "trace.jsonl"
+    before = b"owned-outside-trace-witness"
+    witness.write_bytes(before)
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_LOG", str(witness))
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_RUN_ID", "outside-owned-child")
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_TRUNCATE", "1")
+    owned = tmp_path / "native-child"
+    owned.mkdir()
+    target = promotion.test_target_and_feature_document_preserve_full_gate_boundary
+    if "tmp_path" in inspect.signature(target).parameters:
+        cast(Callable[[Path], None], target)(owned)
+    else:
+        cast(Callable[[], None], target)()
+    assert witness.read_bytes() == before
+    trace = owned / "promotion-trace.jsonl"
+    assert trace.is_file()
+    events = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines()]
+    assert events and all(event["run_id"] == "promotion-probe" for event in events)
+
+
+
+def test_promotion_call_owns_trace_inputs_without_starting_a_child(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Capture the existing promotion caller before its native process boundary."""
+    import inspect
+    import os
+    from dataclasses import dataclass, field
+    from typing import NoReturn
+
+    from tests.unit import test_gate_failure_promotion as promotion
+
+    @dataclass(frozen=True)
+    class PrivateEnvironment:
+        values: dict[str, str] = field(repr=False)
+
+    @dataclass(frozen=True)
+    class BoundaryInputs:
+        argv: object = field(repr=False)
+        options: dict[str, object] = field(repr=False)
+
+    class Captured(Exception):
+        """The actual subprocess input was captured without execution."""
+
+    captured: list[BoundaryInputs] = []
+
+    def capture(argv: object, **options: object) -> NoReturn:
+        captured.append(BoundaryInputs(argv, options))
+        raise Captured
+
+    def forbidden(*_args: object, **_options: object) -> NoReturn:
+        pytest.fail("the promotion caller-input control started a process")
+
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_LOG", str(tmp_path / "parent-trace.sentinel"))
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_RUN_ID", "promotion-parent")
+    monkeypatch.setenv("GLUDD_XDIST_TRACE_TRUNCATE", "0")
+    monkeypatch.setenv("GLUDD_PROMOTION_CALLER_CARRIER", "owned-promotion-carrier")
+    parent = PrivateEnvironment(dict(os.environ))
+    target = promotion.test_target_and_feature_document_preserve_full_gate_boundary
+    with monkeypatch.context() as boundary:
+        boundary.setattr(promotion.subprocess, "run", capture)
+        boundary.setattr(promotion.subprocess, "Popen", forbidden)
+        with pytest.raises(Captured):
+            if "tmp_path" in inspect.signature(target).parameters:
+                cast(Callable[[Path], None], target)(tmp_path)
+            else:
+                cast(Callable[[], None], target)()
+    assert len(captured) == 1
+    inputs = captured[0]
+    environment_is_dict = isinstance(inputs.options.get("env"), dict)
+    assert environment_is_dict, "the actual promotion caller must own its child environment"
+    child = PrivateEnvironment(cast(dict[str, str], inputs.options["env"]))
+    expected = PrivateEnvironment({
+        **parent.values,
+        "GLUDD_XDIST_TRACE_TRUNCATE": "1",
+        "GLUDD_XDIST_TRACE_LOG": str(tmp_path / "promotion-trace.jsonl"),
+        "GLUDD_XDIST_TRACE_RUN_ID": "promotion-probe",
+    })
+    child_inputs_preserved = child.values == expected.values
+    assert child_inputs_preserved, "only the three owned trace carriers may change"
+    argv_preserved = inputs.argv == [
+        "make", "check-gate-failure-promotions",
+        "GATE_FAILURE_PROMOTION_MANIFEST=config/gate_failure_promotions.json",
+    ]
+    assert argv_preserved
+    options_preserved = (
+        inputs.options.get("cwd"), inputs.options.get("timeout"),
+        inputs.options.get("capture_output"), inputs.options.get("check"), inputs.options.get("text"),
+    ) == (promotion.ROOT, 30, True, False, True)
+    assert options_preserved
+    parent_preserved = dict(os.environ) == parent.values
+    assert parent_preserved

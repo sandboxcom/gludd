@@ -1426,6 +1426,48 @@
       "node_kind": "pytest_node",
       "node": "tests/unit/test_make_target_contract.py::test_azure_and_runpod_wrappers_use_declared_variables",
       "full_gate_phase": "test"
+    },
+    {
+      "id": "runtime-archive-lf-counter-contract",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_runtime_startup_diagnostic.py::test_archive_unit_inputs_require_exact_integer_lf_counters",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "runtime-fixture-input-and-tail-count",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_admission_cold_start_selection.py::test_cold_start_call_owns_trace_inputs_without_starting_a_child",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "https-auth-bootstrap-owned-interpreter",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_git_https_publication.py::test_https_auth_bootstrap_ignores_implicit_cwd_and_preserves_carriers[True]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "workflow-prepush-native-git-local-environment",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_collection_hook_environment.py::test_real_pre_push_workflow_isolates_only_native_git_local_environment[True]",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "pytest-collection-count-config-boundary",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_xdist_trace_diagnostics.py::test_collection_finish_records_only_the_bounded_count",
+      "full_gate_phase": "test"
+    },
+    {
+      "id": "coverage-ci-signal-profile-source-identity",
+      "owner_target": "_pytest-runtime-compatibility-admission",
+      "node_kind": "pytest_node",
+      "node": "tests/unit/test_pipeline_coverage_source_boundary.py::test_ci_signal_profile_keeps_physical_identity_across_native_child_cwd",
+      "full_gate_phase": "test"
     }
   ]
 }

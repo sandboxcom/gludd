@@ -1110,3 +1110,87 @@ at .gate-logs/observed/v012-diag-compatible-receiving/v012-native-stdout-warning
 This is receiving, without canonical90/60 completion, full gate or exact-SHA
 hosted/deployment authority. Later architecture-policy changes retain their
 own acceptance and coverage requirements.
+
+## Six deferred runtime families in existing admission (2026-11-08 UTC)
+
+The receiving source is the diagnostic branch at
+`73f74f20ca06e96a571917c2b751c017491b9360`. Its workflow hook already owns the
+native Git-local environment boundary. This integration preserves that hook and
+its tests, the bounded collection-count producer, the HTTPS interpreter owner,
+and the cold-start guard's whole-file widening to its parent directory.
+
+The archive input reader now accepts only exact integer counters, comparing
+bytes with their length and complete records with the native LF count. An
+unterminated final fragment is retained without inventing a line. Real bounded
+timeout/archive controls and forged-counter negatives accompany the unit guard.
+Native cold-start, scheduling and promotion callers own their three trace fields
+in copied child environments. The direct session-hook controls restore the live
+native binding. Parent and unrelated carriers remain, with active child/sentinel
+controls rather than inherited labels as proof. The two-provider CI-signal
+coverage profile uses the required physical source root; executed external
+namesakes, a real changed-CWD child and missing-root refusal test that boundary.
+
+The manifest appends six families to the existing181, retaining
+`native-make-stdout-contract` at index180. The exact admission route retains
+every current157 selector occurrence and adds eight, giving MAIN140, freshHELP1
+and TAIL24. The stdout/version pair and final profile guard retain their order;
+the last six TAIL entries are unchanged. The original90/60 boundary,21 phases,
+2850-second ceiling, fatal warnings, native failure/cleanup, ZDD and85/75
+coverage remain. No runtime-budget machinery or CI-stress relocation is added.
+
+The GNU Make discussion linked in the preceding section remains historical
+context for inherited Make options. It supplies no current Gludd acceptance or
+performance evidence. Genuine defects require causal native RED/GREEN; existing
+compliant guards require preservation and actual receiving rather than a
+fabricated failure. The eight promotion pins, complete affected owners on both
+installed runtimes, coverage, original-bound runtime, full gate and exact-SHA
+hosted/deployment/release proofs remain required. A Source packet or a green
+diagnostic run cannot supply those other proofs.
+
+Actual receiving retains the11 causal failures before the six-family repair,
+then22 focused/pin passes and the native187-family/eight-pin success. The
+complete16-owner cohort passes1119 test bodies on both installed runtimes:
+3.11 in503.00s (its native505.824s owner fails only branch coverage), and3.12
+in361.69s/native364.667s. The unchanged physical stream profile measures
+1178 statements and462 branch outcomes. The first complete cohort's373/462
+branch coverage is80.7percent and is a retained failed audit, not acceptance.
+
+The changed8-owner physical-caller cohort passes758 bodies in620.51s/
+native623.284s but its audit still fails: line88.2percent, branch385/462
+(83.3333333333percent). The exact native receipt is
+`.gate-logs/observed/coverage-files/20261108T005610Z-5523-bc78470b.json`;
+its audit is `.gate-logs/coverage-20261108T010632Z.json`. Actual missing-arc
+intersection with the first audit gives only386 covered outcomes even for their
+union; a larger unchanged replay cannot meet the required393. This is diagnostic
+set comparison, not a manually combined coverage receipt.
+
+The independently reviewed additive boundary controls preserve both complete
+original test prefixes. Fourteen cases exercise actual observer CLI refusals,
+applied startup policy and archive-namespace refusals, and malformed capacity
+envelope/resource/lease responses before a later owner. Each retains its owned
+no-child/no-artifact or original evidence-preservation assertion. Capacity
+responses are controlled unit inputs, not evidence of a live malformed host.
+The14 pass on3.11 in0.79s/native2.1s; the same14 plus the logical-Makefile guard
+pass on3.12 in20.01s/native21.4s. Ruff, strict startup-owner typing, test environment
+writes and line limits pass. The full physical stream source, include profile,
+1178/462 denominators, original900/60 receiving bounds and85/75 thresholds remain
+unchanged. Changed whole-owner coverage receiving remains pending; a narrow
+pass supplies no threshold, original-runtime, hosted or release proof.
+
+Superseding receiving result: the complete changed8-owner cohort now passes772
+on each installed runtime. Python3.11 takes613.74s/native616.3s, with receipt
+`.gate-logs/observed/coverage-files/20261108T012223Z-62289-cbfd52da.json`;
+Python3.12 takes735.29s/native739.193s, with receipt
+`.gate-logs/observed/coverage-files/20261108T013341Z-89352-9ab3f5ac.json`.
+Both unchanged physical-source audits pass: line89.5percent and branch400/462
+(86.6percent), preserving1178/462 and85/75. All37 pinned source/test/profile
+inputs match after both exact sessions drain. Earlier failed audits remain.
+
+The published73f diagnostic Build42425417266/a1 finishes26PASS/1FAIL/3SKIP;
+unit-3b job128565855113 has11 native collection-fixture failures. Its first
+capture rejects the real UV run --active python -P -c guard before collection.
+The exact local case reproduces that failure in0.95s/native2.3s at
+`.gate-logs/observed/v012-native-collection-red/v012-73f-native-secrets-bootstrap-fixture-red-root-20261108.json`.
+This separate caller repair and its early admission family remain pending.
+Diagnostic dispatch remains distinct from the still-missing canonical push,
+full-gate, deployment and release proof.

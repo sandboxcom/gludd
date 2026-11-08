@@ -2367,3 +2367,26 @@ def test_tail_reads_only_a_bounded_snapshot_from_current_run(tmp_path: Path) -> 
         "line-98",
         "line-99",
     ]
+
+
+@pytest.mark.parametrize(("argv", "error"), [
+    (("--runtime-startup", "report", "--", "owned-child"), "startup facades do not accept arbitrary commands"),
+    (("--status",), "--label is required for status and tail modes"),
+    (("--status", "--label", "owned", "--", "owned-child"), "status and tail modes do not accept a command"),
+    (("--label", "owned"), "a command is required after --"),
+    (("--", "owned-child"), "--log is required unless --label enables observed mode"),
+], ids=("startup-command", "status-label", "status-command", "missing-command", "missing-log"))
+def test_real_observer_cli_refuses_invalid_modes_before_child_or_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    argv: tuple[str, ...], error: str,
+) -> None:
+    def unexpected_child(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("invalid observer CLI reached a native child")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(subprocess, "Popen", unexpected_child)
+    with pytest.raises(SystemExit) as refused:
+        stream_command.main(argv)
+    assert refused.value.code == 2
+    assert error in capsys.readouterr().err
+    assert list(tmp_path.iterdir()) == []
