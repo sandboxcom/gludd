@@ -2,23 +2,33 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import shlex
 import subprocess
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypedDict
 
 import pytest
+from scripts.makefile_layout import compose_makefile
 
 
 class CaptureEvent(TypedDict):
     kind: str
     args: list[str]
+    raw_args: list[str]
+    carrier_is_owned: bool
     ansible_tmp: str
     tmp_exists: bool
+
+
+@dataclass(frozen=True)
+class _PrivateEnvironment:
+    values: dict[str, str] = field(repr=False)
 
 
 ROOT = Path(os.environ.get("GLUDD_SINGLE_COLLECTION_SOURCE_ROOT", Path.cwd()))
@@ -41,24 +51,31 @@ import os
 import sys
 from pathlib import Path
 
-args = sys.argv[1:]
+raw_args = sys.argv[1:]
+args = list(raw_args)
 name = Path(sys.argv[0]).name
 kind = "git" if name == "git" else "uv"
 if args and args[0] == "guard":
     kind = "guard"
 elif "scripts/stream_command.py" in args:
     kind = "tail" if "--tail" in args else "observe"
+if kind == "uv" and args[:2] == ["run", "--active"]:
+    args = ["run", *args[2:]]
 if kind == "uv" and args[:2] == ["run", "python"]:
-    child_environment = dict(os.environ)
-    child_environment["CAPTURE_GUARD_CHILD"] = "1"
-    os.execve(sys.executable, [sys.executable, *args[2:]], child_environment)
+    kind = "bootstrap"
 if kind == "git" and os.environ.get("CAPTURE_GUARD_CHILD") == "1" and args[:1] != ["--no-optional-locks"]:
     kind = "guard-git"
 temp = os.environ.get("ANSIBLE_LOCAL_TEMP", "")
-event = {"kind": kind, "args": args, "ansible_tmp": temp,
-         "tmp_exists": bool(temp and Path(temp).is_dir())}
+event = {"kind": kind, "args": args, "raw_args": raw_args, "ansible_tmp": temp,
+         "tmp_exists": bool(temp and Path(temp).is_dir()),
+         "carrier_is_owned": os.environ.get("GLUDD_SINGLE_COLLECTION_TEST_CARRIER") == "owned-carrier"}
 with Path(os.environ["CAPTURE_LOG"]).open("a", encoding="utf-8") as stream:
     stream.write(json.dumps(event) + "\n")
+if kind == "bootstrap":
+    assert raw_args[:3] == ["run", "--active", "python"]
+    child_environment = dict(os.environ)
+    child_environment["CAPTURE_GUARD_CHILD"] = "1"
+    os.execve(sys.executable, [sys.executable, *args[2:]], child_environment)
 if kind == "guard":
     raise SystemExit(1 if args[1] == os.environ.get("FAIL_GUARD") else 0)
 if kind == "observe":
@@ -117,7 +134,28 @@ def _source() -> str:
             "_commit-locked-ship-commit", "_commit-locked-ship-commit-files",
         )
     )
-    return "\n".join(blocks)
+    # Compose the real include graph, then retain its declarative context without
+    # executing unrelated recipes or parse-time metadata probes in this fixture.
+    native = compose_makefile(ROOT / "Makefile")
+    declarations: list[str] = []
+    lines = iter(native.splitlines(keepends=True))
+    for line in lines:
+        if line.startswith(".PHONY:"):
+            declaration = line
+            while declaration.endswith("\\\n"):
+                declaration += next(lines)
+            declarations.append(declaration)
+    defaults = re.findall(
+        r"(?m)^(?:FILE_LINE_LIMIT_POLICY|DUPLICATE_CODE_(?:CONFIG|ENGINE|SOURCE|BASE_REF|"
+        r"CURRENT_REF|VALIDATE_ONLY)) \?=[^\n]*\n",
+        native,
+    )
+    providers = re.findall(
+        r"(?m)^(?:test-count|check-duplicate-code): override (?:UV|MAKEFLAGS) [^\n]*\n",
+        native,
+    )
+    assert declarations and len(defaults) == 7 and len(providers) == 4
+    return "\n".join([*declarations, *defaults, *providers, *blocks])
 
 
 def _run(
@@ -142,19 +180,24 @@ def _run(
         "git-add:\n\t@git add $(FILES)\n" + guard_blocks + "\n" + (text or _source()),
         encoding="utf-8",
     )
-    env = {
+    private_environment = _PrivateEnvironment({
         key: value for key, value in os.environ.items()
-        if key not in {"MAKEFLAGS", "MFLAGS", "MAKELEVEL", "CAPTURE_GUARD_CHILD"}
-    }
+        if key not in {
+            "MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES", "GNUMAKEFLAGS", "CAPTURE_GUARD_CHILD",
+        }
+    })
+    env = private_environment.values
     log = tmp_path / "capture.jsonl"
     env.update({"PATH": f"{tmp_path}{os.pathsep}{env['PATH']}", "CAPTURE_LOG": str(log)})
     env.update(state or {})
+    env["PRE_COMMIT_HOME"] = str(tmp_path / "pre-commit-home")
     # The native mutex is measured by test_make_commit_transaction. This existing
     # capture seam still owns the unchanged guard/body/collection assertions.
     selected_target = "_commit-locked-" + target if target in {"ship-commit", "ship-commit-files"} else target
     result = subprocess.run(
         [
             "make", "--no-print-directory", selected_target, "MSG=collection admission",
+            "UV=" + helper, "PYTHON=" + shlex.quote(sys.executable),
             f"OBSERVED_ROOT={tmp_path / 'observed'}", "OBSERVED_HEARTBEAT_SECS=13",
             "OBSERVED_QUIET_SECS=901", "OBSERVED_MAX_SECS=3601",
             "OBSERVED_RETAIN_RUNS=7", "OBSERVED_TAIL_LINES=80",
@@ -214,6 +257,12 @@ def _success_contract(
     assert [event["args"] for event in events if event["kind"] == "uv"] == [
         ["run", "pre-commit", "run", hook, "--files", *FILES.split()] for hook in hooks
     ]
+    assert [event["raw_args"] for event in events if event["kind"] == "uv"] == [
+        ["run", "--active", "pre-commit", "run", hook, "--files", *FILES.split()] for hook in hooks
+    ]
+    bootstraps = [event for event in events if event["kind"] == "bootstrap"]
+    assert len(bootstraps) == 1
+    assert bootstraps[0]["raw_args"][:5] == ["run", "--active", "python", "-P", "-c"]
     trees = [
         index for index, event in enumerate(events)
         if event["kind"] == "git" and event["args"] == ["write-tree"]
@@ -388,6 +437,14 @@ def test_every_existing_content_secret_and_commit_guard_still_refuses_failure(tm
     result, events = _run(tmp_path, state={"FAIL_GUARD": guard})
     assert result.returncode != 0
     assert not _observes(events) and not _commits(events)
+    if guard in GUARDS:
+        assert any(event["kind"] == "guard" and event["args"] == ["guard", guard] for event in events)
+    else:
+        assert any(
+            event["kind"] == "uv"
+            and event["raw_args"] == ["run", "--active", "pre-commit", "run", guard, "--files", *FILES.split()]
+            for event in events
+        )
 
 
 def test_staged_scope_drift_refuses_collection_and_commit(tmp_path: Path) -> None:
@@ -437,3 +494,114 @@ def test_capture_contract_detects_owner_and_guard_mutations(tmp_path: Path, old:
     result, events = _run(tmp_path, text=text.replace(old, new))
     with pytest.raises((AssertionError, ValueError)):
         _success_contract(result, events, tmp_path)
+
+def _environment_fingerprint() -> bytes:
+    return hashlib.sha256(json.dumps(dict(os.environ), sort_keys=True).encode()).digest()
+
+
+@pytest.mark.parametrize("guard_fixture_early_environment", [False, True])
+def test_current_guard_bootstrap_keeps_native_context_and_recursive_carriers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, guard_fixture_early_environment: bool,
+) -> None:
+    """Exercise current native argv, its real context and a private Store."""
+    parent_before = _environment_fingerprint()
+    with monkeypatch.context() as owned:
+        owned.setenv("MAKEOVERRIDES", "UV=/usr/bin/false")
+        owned.setenv("GNUMAKEFLAGS", "--warn-undefined-variables")
+        owned.setenv("UV", "/usr/bin/false")
+        owned.setenv("GLUDD_SINGLE_COLLECTION_TEST_CARRIER", "owned-carrier")
+        controlled_before = _environment_fingerprint()
+        result, events = _run(
+            tmp_path, state={"MAKEFLAGS": "e" if guard_fixture_early_environment else ""},
+        )
+        _success_contract(result, events, tmp_path)
+        assert (tmp_path / "pre-commit-home").is_dir()
+        measured = [event for event in events if event["kind"] in {"bootstrap", "uv", "guard-git"}]
+        assert measured and all(event["carrier_is_owned"] for event in measured)
+        controlled_after = _environment_fingerprint()
+        assert controlled_after == controlled_before
+    parent_after = _environment_fingerprint()
+    assert parent_after == parent_before
+
+
+def test_current_guard_fixture_keeps_native_phony_namesake_behavior(tmp_path: Path) -> None:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    for target in (
+        "git-add", "test-count", "_pre-commit-secrets-guard",
+        "check-file-line-limits", "check-duplicate-code",
+    ):
+        (tmp_path / target).write_text("owned target namesake\n", encoding="utf-8")
+    result, events = _run(tmp_path)
+    _success_contract(result, events, tmp_path)
+
+
+@pytest.mark.parametrize("guard_fixture_early_environment", [False, True])
+@pytest.mark.parametrize("guard_fixture_shadow_module", ["pre_commit", "subprocess"])
+def test_current_guard_fixture_executes_active_safe_path_boundary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    guard_fixture_early_environment: bool, guard_fixture_shadow_module: str,
+) -> None:
+    """The same guard must activate the CWD shadow only when its -P is removed."""
+    parent_before = _environment_fingerprint()
+    carrier = tmp_path / "explicit python carrier"
+    carrier.mkdir()
+    startup = tmp_path / "owned-python-startups.jsonl"
+    (carrier / "sitecustomize.py").write_text(
+        "import json, os, sys\n"
+        f"with open({str(startup)!r}, 'a', encoding='utf-8') as stream:\n"
+        "    stream.write(json.dumps({'argv': sys.argv, 'cwd': os.getcwd(),\n"
+        "        'pythonpath': os.environ.get('PYTHONPATH'),\n"
+        "        'carrier': os.environ.get('GLUDD_SINGLE_COLLECTION_TEST_CARRIER'),\n"
+        "        'safe_path': sys.flags.safe_path}) + '\\n')\n",
+        encoding="utf-8",
+    )
+    native_source = _source()
+    assert native_source.count("python -P -c") == 1
+    project = tmp_path / "same-native-entrypoint"
+    project.mkdir()
+    entered = project / "owned-shadow-entered"
+    shadow = project / f"{guard_fixture_shadow_module}.py"
+    shadow.write_text(
+        "from pathlib import Path\n"
+        f"Path({str(entered)!r}).write_text('owned shadow executed', encoding='utf-8')\n"
+        "raise SystemExit(79)\n",
+        encoding="utf-8",
+    )
+    shadow_bytes = shadow.read_bytes()
+    with monkeypatch.context() as owned:
+        owned.setenv("PYTHONPATH", str(carrier))
+        owned.setenv("GLUDD_SINGLE_COLLECTION_TEST_CARRIER", "owned-carrier")
+        if os.environ.get("PYTHONSAFEPATH"):
+            owned.delenv("PYTHONSAFEPATH")
+        controlled_before = _environment_fingerprint()
+        for guarded in (False, True):
+            selected = native_source if guarded else native_source.replace("python -P -c", "python -c")
+            result, events = _run(
+                project, text=selected,
+                state={"MAKEFLAGS": "e" if guard_fixture_early_environment else ""},
+            )
+            rows = [json.loads(line) for line in startup.read_text(encoding="utf-8").splitlines()]
+            bootstraps = [
+                row for row in rows if row["argv"][0] == "-c" and row["cwd"] == str(project)
+            ]
+            assert len(bootstraps) == 1
+            assert bootstraps[0]["safe_path"] is guarded
+            assert bootstraps[0]["pythonpath"] == str(carrier)
+            assert bootstraps[0]["carrier"] == "owned-carrier"
+            assert shadow.read_bytes() == shadow_bytes
+            if guarded:
+                _success_contract(result, events, project)
+                assert not entered.exists()
+                assert (project / "pre-commit-home").is_dir()
+            else:
+                assert result.returncode != 0
+                assert "Error 79" in result.stderr
+                assert entered.read_text(encoding="utf-8") == "owned shadow executed"
+                assert not _observes(events) and not _commits(events)
+                entered.unlink()
+                (project / "capture.jsonl").rename(project / "unguarded-capture.jsonl")
+                startup.rename(tmp_path / "unguarded-python-startups.jsonl")
+        controlled_after = _environment_fingerprint()
+        assert controlled_after == controlled_before
+    parent_after = _environment_fingerprint()
+    assert parent_after == parent_before

@@ -43,6 +43,11 @@ C9_REQUIRED_GUARDS = (
     ("coverage-ci-signal-profile-source-identity",
      "tests/unit/test_pipeline_coverage_source_boundary.py::test_ci_signal_profile_keeps_physical_identity_across_native_child_cwd"),
 )
+COMMIT_COLLECTION_GUARD = (
+    "native-commit-collection-current-guard-bootstrap",
+    "tests/unit/test_single_native_commit_collection.py::"
+    "test_ship_commit_owns_one_fresh_native_count_and_all_admission_guards",
+)
 STRUCTURAL_NODE = (
     "tests/unit/test_admission_cold_start_selection.py::test_real_admission_filters_only_never_selected_main_siblings"
 )
@@ -54,7 +59,7 @@ def test_real_admission_filters_only_never_selected_main_siblings(tmp_path: Path
     assert result.returncode == 0, result.stdout + result.stderr
     assert [row["files"] for row in rows] == [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
     selections = [list(ROSTER), [HELP], list(REVIEWED_FINALIZATION)]
-    for family_id, node in C9_REQUIRED_GUARDS:
+    for family_id, node in (*C9_REQUIRED_GUARDS, COMMIT_COLLECTION_GUARD):
         expected = [1, 0, 0] if family_id == "pytest-collection-count-config-boundary" else [0, 0, 1]
         assert [selected.count(node) for selected in selections] == expected
         assert all(node.split("::", 1)[0] not in selected for selected in selections)
@@ -87,13 +92,17 @@ def test_real_admission_filters_only_never_selected_main_siblings(tmp_path: Path
             )
         )
     manifest = json.loads((ROOT / "config/gate_failure_promotions.json").read_text(encoding="utf-8"))
-    assert len(manifest["families"]) == scheduling.EXPECTED_FAMILY_COUNT == 187
+    assert len(manifest["families"]) == scheduling.EXPECTED_FAMILY_COUNT == 188
     assert manifest["families"][180]["id"] == "native-make-stdout-contract"
-    assert manifest["families"][181:] == [
+    assert manifest["families"][181:187] == [
         {"id": family_id, "owner_target": scheduling.OWNER, "node_kind": "pytest_node",
          "node": node, "full_gate_phase": "test"}
         for family_id, node in C9_REQUIRED_GUARDS
     ]
+    assert manifest["families"][187:] == [{
+        "id": COMMIT_COLLECTION_GUARD[0], "owner_target": scheduling.OWNER, "node_kind": "pytest_node",
+        "node": COMMIT_COLLECTION_GUARD[1], "full_gate_phase": "test",
+    }]
     assert manifest["full_gate_target"] == "gate" and manifest["full_gate_required"] is True
     assert {
         "id": "runtime-admission-initial-path-sibling-collection",

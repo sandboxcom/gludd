@@ -1194,3 +1194,58 @@ The exact local case reproduces that failure in0.95s/native2.3s at
 This separate caller repair and its early admission family remain pending.
 Diagnostic dispatch remains distinct from the still-missing canonical push,
 full-gate, deployment and release proof.
+
+## Native commit collection fixture follows the current guard (2026-11-08 UTC)
+
+The preceding187 checkpoint retains the actual hosted unit-3b failure and
+local reproduction of the obsolete capture argv. This repair follows that
+recorded cause; the checkpoint's receiving/coverage result has its own source
+and cannot certify the corrected fixture or later hosted input.
+
+The fixture now executes that real inline program with the installed Python,
+preserving the native Git inventory and mature staged-files-only context. Its
+Store lives under the fixture's private `PRE_COMMIT_HOME`. Harmless Git and hook
+shims remain the existing measurement boundary: normalized hook records keep
+every predecessor assertion, while separate raw records require the exact
+`run --active pre-commit run` sequence. Failure cases also prove that their
+requested guard was reached, so an earlier bootstrap failure cannot pass them.
+
+The existing canonical Make include owner supplies complete native PHONY
+declarations and the selected target/default providers to the confined
+fixture. Namesake and ordinary/-e controls retain that actual context. Copied
+environment fields use `repr=False`; assertions compare owned values or
+precomputed digests. The same CWD shadow bytes, marker and actual Make entrypoint
+are exercised first with only `-P` removed, then with the native guard retained.
+The unguarded witness executes; the guarded path must preserve the explicit
+PYTHONPATH carrier and avoid that shadow. Only its owned witness is removed;
+the unguarded capture/startup records remain private evidence.
+
+The existing pre-commit installation discussions linked above remain historical
+background for native package/index ownership, not proof of this fixture cause.
+The native failing argv and Source recipe establish the measured incompatibility.
+No hook implementation, plugin policy, production commit recipe or mutex is
+replaced. The separate native transaction and real hook owners retain their
+own required acceptance.
+
+One additive `native-commit-collection-current-guard-bootstrap` family brings
+the manifest to188. Its original success node runs once in TAIL before the
+unchanged last six entries, leaving MAIN140/freshHELP1/TAIL25 and166 raw
+selectors. Every current165 occurrence, stdout/version ordering, final profile
+guard, original90/60,21 phases/2850 ceiling, fatal warnings, ZDD and85/75 remain.
+The eight pins, complete affected owners/BOTH, full gate and exact-SHA
+hosted/deployment/release proofs remain required; Source approval and the prior
+binary or coverage results do not supply those other outcomes.
+
+Root's native family188 promotion owner passes all eight pins in1.87s. The
+logical-Makefile AST owner passes separately. The original causal success case
+and seven new controls pass8 in8.16s/native9.4s on Python3.11. The complete
+12-owner receiving union then passes846 on each installed runtime:3.11 takes
+392.44s/native395.623s and3.12 takes402.56s/native405.988s, both within the unchanged
+900/60 receiving boundary. The exact20 source/config/test inputs are unchanged
+after both runs. Each native trace contains846 matching protocol pairs, zero
+failure reports and zero unfinished nodes. Receipts are
+`.gate-logs/observed/v012-ci188-complete12-311/v012-ci188-complete-twelve-native311-root-20261108.log`
+and its312 counterpart. These are complete local receiving results for this
+repair. The earlier hosted run42425417266 remains failed; a normal commit,
+publication and a newly accepted exact-SHA diagnostic run are still required.
+Canonical push CI, full gate, integration and deployment/release remain pending.
