@@ -781,13 +781,14 @@ approve Source scope only. The original workflow's eight native controls retain
 3FAIL/5PASS15.60s (watcher16.867s); the received workflow gives8PASS15.34s
 (watcher16.492s). The latter trace has19events/eight matched pairs, zero issues,
 unfinished cases or failures. Both use installed3.11, outer/child runtime bindings,
-the same60/60 narrow diagnostic bound, native fixture input0 and workflow CLI1.
+the same60/60 narrow diagnostic bound and owned native fixture input0. Workflow
+CLI1 belongs to GREEN and the private explicit control; RED retains the omission.
 The actual runtime-stage assertions still require90/60; neither execution replays
 that admission. YAML, Ruff, strict typing, environment/line and Markdown checks pass.
 Receipts are under `.gate-logs/observed/v012-hosted-runtime-diagnostic-{red,green}/`,
 with run IDs `v012-90cd-hosted-diagnostics-eight-red311-root-20261108` and
-`v012-hosted-diagnostics-eight-green311-root-20261108` respectively. Complete affected
-owners on both installed runtimes and normal publication remain pending. Keep the
+`v012-hosted-diagnostics-eight-green311-root-20261108` respectively. At that focused stage, complete affected
+owners on both installed runtimes and normal publication were still pending. Keep the
 failed hosted attempt; this diagnostic change establishes no performance repair,
 full gate, exact-SHA hosted success, deployment or release evidence.
 
