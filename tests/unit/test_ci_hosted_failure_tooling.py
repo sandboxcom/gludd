@@ -671,3 +671,67 @@ def test_native_warning_export_input_is_literal_with_active_same_entrypoint_witn
     marker.unlink()
     assert witness.returncode == 0, witness.stdout + witness.stderr
     assert not (fixture.root / "artifacts").exists()
+
+
+def test_hosted_gate_runtime_diagnostics_retain_exact_native_evidence() -> None:
+    from typing import cast
+
+    import yaml
+
+    workflow = cast(dict[str, object], yaml.safe_load(
+        (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8"),
+    ))
+    jobs = cast(dict[str, object], workflow["jobs"])
+    gate = cast(dict[str, object], jobs["gate"])
+    steps = cast(list[dict[str, object]], gate["steps"])
+    runtime = next(step for step in steps if step.get("name") == "Known runtime and handoff regression admission")
+    collect = next(step for step in steps if step.get("name") == (
+        "Collect failure diagnostics (gate, Python ${{ matrix.python-version }})"
+    ))
+    upload = next(step for step in steps if step.get("name") == (
+        "Upload failure diagnostics (gate, Python ${{ matrix.python-version }})"
+    ))
+    run = str(runtime["run"])
+    assert "RUN_WATCHED_PYTEST_TRACE=1" in shlex.split(run)
+    assert "STALL_SECS=60 MAX_SECS=90" in run
+    assert runtime.get("continue-on-error") is None
+    assert collect["if"] == "failure()"
+    assert upload["if"] == "always() && failure()"
+    assert collect.get("continue-on-error") is None and upload.get("continue-on-error") is None
+    assert steps.index(collect) + 1 == steps.index(upload)
+    assert collect["env"] == {
+        "UV_PROJECT_ENVIRONMENT": "${{ github.workspace }}/.venv",
+        "VIRTUAL_ENV": "${{ github.workspace }}/.venv",
+        "UV_NO_SYNC": "1", "UV_PYTHON": "${{ matrix.python-version }}",
+        "UV_PYTHON_DOWNLOADS": "never",
+    }
+    body = str(collect["run"])
+    identity = "runtime-admission-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}"
+    assert 'RUNTIME_ID="' + identity + '"' in body
+    assert "make --no-print-directory observed-status OBSERVED_ROOT=.gate-logs/observed" in body
+    assert "OBSERVED_LABEL=ci-runtime-regression-admission" in body
+    assert body.count('RUN_ID="$RUNTIME_ID"') == 2
+    assert 'test -s ".gate-logs/observed/ci-runtime-regression-admission/$RUNTIME_ID.pytest.jsonl"' in body
+    assert "make --no-print-directory test-xdist-trace-summary" in body
+    assert 'LOG=".gate-logs/observed/ci-runtime-regression-admission/$RUNTIME_ID.pytest.jsonl"' in body
+    assert "TRACE_SUMMARY_TIMINGS=1 TRACE_SUMMARY_MEMORY=1" in body
+    assert "status_rc=$?" in body and "summary_rc=$?" in body
+    assert "no terminal proof" in body and "raw trace retained" in body
+    assert "tee" in body and 'test -s "$DIAG_PATH"' in body
+    assert upload["uses"] == "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f"
+    options = cast(dict[str, object], upload["with"])
+    assert options["name"] == (
+        "failure-diag-gate-${{ matrix.python-version }}-${{ github.run_id }}-${{ github.run_attempt }}"
+    )
+    assert options["include-hidden-files"] is True
+    assert options["if-no-files-found"] == "error"
+    assert options["retention-days"] == 3
+    assert str(options["path"]).splitlines() == [
+        "gate-failure-diagnostics-${{ matrix.python-version }}.log",
+        ".github/workflows/build.yml",
+        ".gate-logs/ci-runtime-regression-admission.log",
+        ".gate-logs/ci-runtime-regression-admission-status.json",
+        ".gate-logs/ci-runtime-regression-admission-trace-summary.json",
+        ".gate-logs/observed/ci-runtime-regression-admission/" + identity + ".json",
+        ".gate-logs/observed/ci-runtime-regression-admission/" + identity + ".pytest.jsonl",
+    ]

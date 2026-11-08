@@ -756,3 +756,53 @@ Keep required local admission/full gate and exact-SHA hosted/deployment proof
 pending. Resume each blocked owner only after its actual input changes;retain
 the existing capacity and selected-account consent requests. Use interruptible
 host input waits no longer than60s when independent authorized work is drained.
+
+
+## Hosted runtime evidence retention after90cd5c2 (2026-11-08 UTC)
+
+Root's exact Build42438838634/attempt1, source90cd5c2e0f5f0cf7026e804e60d484c0987fcc35,
+gate3.11 job128603523378 retains native124 at90.5seconds. TAIL208 passes84.27s;
+MAIN progress reaches100percent without terminal summary/join. The matching local
+publication passes MAIN2361/75.43s, TAIL208/77.37s and HELP1/.52s; watcher80.228s.
+Neither comparison establishes CPU, teardown cause, speed benefit or hosted repair.
+The existing artifact read reports zero artifacts; all eight downstream shard
+intervals stay unknown while the gate barrier has not admitted them.
+
+The hosted runtime call omitted RUN_WATCHED_PYTEST_TRACE while its native default
+is0; local publication explicitly owns1. Bind mode1 on that same hosted call,
+retaining its command,90/60,2/1/1 roster, statuses and cleanup. Extend the existing
+gate failure diagnostics with exact run/attempt/runtime status and native trace
+summary, and upload only their fixed paths plus the checked workflow source.
+Native reader errors and absent/empty traces remain explicit missing evidence.
+This is diagnostic Source wiring, not a performance repair or release proof.
+Independent Source review V2 (54c43c448c3b95af20e515afe0355246164ba33ee87ca32899ff8143b87ae624)
+and exact lambda-binding conformance (c030415a0d1d54b45452443364737d5bec4abbe222e5280903cfed5570a84a36)
+approve Source scope only. The original workflow's eight native controls retain
+3FAIL/5PASS15.60s (watcher16.867s); the received workflow gives8PASS15.34s
+(watcher16.492s). The latter trace has19events/eight matched pairs, zero issues,
+unfinished cases or failures. Both use installed3.11, outer/child runtime bindings,
+the same60/60 narrow diagnostic bound, native fixture input0 and workflow CLI1.
+The actual runtime-stage assertions still require90/60; neither execution replays
+that admission. YAML, Ruff, strict typing, environment/line and Markdown checks pass.
+Receipts are under `.gate-logs/observed/v012-hosted-runtime-diagnostic-{red,green}/`,
+with run IDs `v012-90cd-hosted-diagnostics-eight-red311-root-20261108` and
+`v012-hosted-diagnostics-eight-green311-root-20261108` respectively. Complete affected
+owners on both installed runtimes and normal publication remain pending. Keep the
+failed hosted attempt; this diagnostic change establishes no performance repair,
+full gate, exact-SHA hosted success, deployment or release evidence.
+
+The qualified Source inventory selects14 complete semantic/security consumers
+(31459c8184754170cb46543302e40bd5b65c8775f5ab4026179ef3348d94970c),
+with the existing parameter-fixture guard as the fifteenth owner. Their disjoint
+native receiving cohorts pass188+574=762 cases on EACH installed runtime:
+311138.44s/native140.251s and81.57s/native83.283s;
+312140.99s/native142.822s and85.60s/native87.308s. Every terminal receipt is
+inactive/passed0 and matches its actual runtime-bearing command and900/60 bound.
+Each runtime retains379events/188pairs plus1151events/574pairs, with no failures,
+issues or unfinished cases. Labels are `v012-hosted-complete3-{311,312}` and
+`v012-hosted-consumers12-{311,312}`; IDs are
+`v012-hosted-diagnostic-three-complete{311,312}-root-20261108` and
+`v012-hosted-diagnostic-twelve-consumers{311,312}-root-20261108`.
+These are affected-owner acceptance, not a full gate or hosted performance result.
+Normal fresh collection, source publication and changed-source hosted execution
+remain next; original90/60 admission, coverage and deployment guards are unchanged.

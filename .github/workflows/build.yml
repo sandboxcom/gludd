@@ -285,6 +285,7 @@ jobs:
             CMD='make _pytest-runtime-compatibility-admission' \
             RUN_ID="runtime-admission-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}" \
             OBSERVED_LABEL=ci-runtime-regression-admission \
+            RUN_WATCHED_PYTEST_TRACE=1 \
             STALL_SECS=60 MAX_SECS=90 \
             LOG=.gate-logs/ci-runtime-regression-admission.log \
             OBSERVED_ROOT=.gate-logs/observed OBSERVED_RETAIN_RUNS=2 \
@@ -512,23 +513,75 @@ jobs:
 
       - name: Collect failure diagnostics (gate, Python ${{ matrix.python-version }})
         if: failure()
+        env:
+          UV_PROJECT_ENVIRONMENT: ${{ github.workspace }}/.venv
+          VIRTUAL_ENV: ${{ github.workspace }}/.venv
+          UV_NO_SYNC: "1"
+          UV_PYTHON: ${{ matrix.python-version }}
+          UV_PYTHON_DOWNLOADS: never
         run: |
-          echo "::group::Gate failure diagnostics"
-          echo "--- Disk usage ---"
-          df -h
-          echo "--- Memory ---"
-          if command -v free >/dev/null 2>&1; then free -h; else echo "(free unavailable)"; fi
-          echo "--- Runner OOM kills ---"
-          dmesg 2>/dev/null | grep -i -E 'oom|out of memory|killed process' | tail -50 || echo "(dmesg unavailable)"
-          echo "--- Top processes by memory ---"
-          ps aux --sort=-%mem 2>/dev/null | head -30 || ps aux | head -30
-          echo "--- Git status ---"
-          git status
-          echo "--- Python version ---"
-          python --version
-          echo "--- uv lock status ---"
-          uv lock --check 2>/dev/null || echo "uv lock check failed (deps may be stale)"
-          echo "::endgroup::"
+          mkdir -p .gate-logs
+          DIAG_PATH="gate-failure-diagnostics-${{ matrix.python-version }}.log"
+          RUNTIME_ID="runtime-admission-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}"
+          {
+            echo "::group::Gate failure diagnostics"
+            echo "--- Disk usage ---"
+            df -h
+            echo "--- Memory ---"
+            if command -v free >/dev/null 2>&1; then free -h; else echo "(free unavailable)"; fi
+            echo "--- Runner OOM kills ---"
+            dmesg 2>/dev/null | grep -i -E 'oom|out of memory|killed process' | tail -50 || echo "(dmesg unavailable)"
+            echo "--- Top processes by memory ---"
+            ps aux --sort=-%mem 2>/dev/null | head -30 || ps aux | head -30
+            echo "--- Git status ---"
+            git status
+            echo "--- Python version ---"
+            python --version
+            echo "--- uv lock status ---"
+            uv lock --check 2>/dev/null || echo "uv lock check failed (deps may be stale)"
+            echo "--- Exact runtime observer (diagnostic only) ---"
+            echo "GATE_DIAGNOSTIC_SOURCE_SHA=$GITHUB_SHA"
+            printf '%s\n' 'workflow command: make _pytest-runtime-compatibility-admission;90total/60quiet unchanged'
+            if make --no-print-directory observed-status OBSERVED_ROOT=.gate-logs/observed \
+              OBSERVED_LABEL=ci-runtime-regression-admission RUN_ID="$RUNTIME_ID" \
+              > .gate-logs/ci-runtime-regression-admission-status.json; then
+              cat .gate-logs/ci-runtime-regression-admission-status.json
+            else
+              status_rc=$?
+              echo "runtime observer read unavailable (native_status=$status_rc); no terminal proof"
+            fi
+            if test -s ".gate-logs/observed/ci-runtime-regression-admission/$RUNTIME_ID.pytest.jsonl"; then
+              if make --no-print-directory test-xdist-trace-summary \
+                LOG=".gate-logs/observed/ci-runtime-regression-admission/$RUNTIME_ID.pytest.jsonl" \
+                RUN_ID="$RUNTIME_ID" TRACE_SUMMARY_TIMINGS=1 TRACE_SUMMARY_MEMORY=1 \
+                > .gate-logs/ci-runtime-regression-admission-trace-summary.json; then
+                cat .gate-logs/ci-runtime-regression-admission-trace-summary.json
+              else
+                summary_rc=$?
+                echo "runtime trace summary unavailable (native_status=$summary_rc); raw trace retained"
+              fi
+            else
+              echo "(runtime pytest trace missing or empty; no protocol or timing proof)"
+            fi
+            echo "::endgroup::"
+          } 2>&1 | tee "$DIAG_PATH"
+          test -s "$DIAG_PATH"
+      - name: Upload failure diagnostics (gate, Python ${{ matrix.python-version }})
+        if: always() && failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+        with:
+          name: failure-diag-gate-${{ matrix.python-version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            gate-failure-diagnostics-${{ matrix.python-version }}.log
+            .github/workflows/build.yml
+            .gate-logs/ci-runtime-regression-admission.log
+            .gate-logs/ci-runtime-regression-admission-status.json
+            .gate-logs/ci-runtime-regression-admission-trace-summary.json
+            .gate-logs/observed/ci-runtime-regression-admission/runtime-admission-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}.json
+            .gate-logs/observed/ci-runtime-regression-admission/runtime-admission-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.python-version }}.pytest.jsonl
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
       - name: CI Summary
         if: always()
         run: |

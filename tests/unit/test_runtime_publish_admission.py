@@ -648,6 +648,7 @@ def _hosted(
     promotion_status: int = 0,
     pins_status: int = 0,
     failure: str = "",
+    early_environment: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], list[dict[str, object]], Path]:
     plan, rows, _ = _publish(
         tmp_path,
@@ -697,10 +698,13 @@ def _hosted(
         UV_PYTHON_DOWNLOADS="never",
         MAKEFLAGS="",
         MFLAGS="",
+        MAKEOVERRIDES="",
         MAKELEVEL="0",
+        RUN_WATCHED_PYTEST_TRACE="0",
     )
     result = subprocess.run(
-        ["make", "--no-print-directory", "-f", str(recipe), "hosted-probe"],
+        ["make", "--no-print-directory", *(["-e"] if early_environment else []),
+         "-f", str(recipe), "hosted-probe"],
         cwd=tmp_path,
         env=environment,
         capture_output=True,
@@ -832,6 +836,7 @@ def test_hosted_native_stages_stop_at_first_failure(
     if stage in {"", "runtime"}:
         _assert_prerequisite_once(rows, label="ci-gate-failure-promotions")
         arguments = _observer_arguments(rows, "ci-runtime-regression-admission")
+        assert "--pytest-trace" in arguments
         assert _observed_make_arguments(arguments) == [OWNER]
         assert arguments[arguments.index("--max-secs") + 1] == "90"
         assert arguments[arguments.index("--quiet-secs") + 1] == "60"
@@ -983,3 +988,96 @@ def test_manifest_native_make_failure_accepts_complete_legacy_and_hosted_fields(
 def test_manifest_native_make_failure_rejects_foreign_or_inexact_fields(diagnostic: str) -> None:
     with pytest.raises(AssertionError):
         _assert_native_make_target_failure(diagnostic, "check-ansible-base-image", 81)
+
+
+@pytest.mark.parametrize("hosted_trace_environment_override", [False, True], ids=["ordinary", "environment-override"])
+def test_hosted_trace_requirement_is_not_supplied_by_inherited_make_inputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, hosted_trace_environment_override: bool,
+) -> None:
+    """Use the same native fixture to distinguish inherited and workflow trace inputs."""
+    from copy import deepcopy
+    from dataclasses import dataclass, field
+    from typing import Any
+
+    @dataclass(frozen=True)
+    class PrivateEnvironment:
+        values: dict[str, str] = field(repr=False)
+
+    monkeypatch.setenv("RUN_WATCHED_PYTEST_TRACE", "1")
+    monkeypatch.setenv("MAKEFLAGS", "-- RUN_WATCHED_PYTEST_TRACE=1")
+    monkeypatch.setenv("MFLAGS", "-e")
+    monkeypatch.setenv("MAKEOVERRIDES", "RUN_WATCHED_PYTEST_TRACE=1")
+    monkeypatch.setenv("HOSTED_TRACE_INPUT_UNRELATED", "owned unrelated inherited trace carrier")
+    parent = PrivateEnvironment(dict(os.environ))
+    steps = _hosted_steps()
+    runtime = next(step for step in steps if step.get("name") == "Known runtime and handoff regression admission")
+    body = str(runtime["run"])
+    trace_binding = "RUN_WATCHED_PYTEST_TRACE=1"
+    assert body.count(trace_binding) in {0, 1}
+    omitted = body.replace(trace_binding, "", 1)
+    anchor = "OBSERVED_ROOT=.gate-logs/observed"
+    assert omitted.count(anchor) == 1
+    explicit = omitted.replace(anchor, trace_binding + " " + anchor, 1)
+    inherited_trace = parent.values["RUN_WATCHED_PYTEST_TRACE"]
+    assert inherited_trace == "1"
+    native_run = subprocess.run
+    captured: list[tuple[str, PrivateEnvironment]] = []
+    scenario = ""
+
+    def capture_native(command: list[str], **options: Any) -> subprocess.CompletedProcess[str]:
+        if command[-1:] == ["hosted-probe"]:
+            environment_is_dict = isinstance(options.get("env"), dict)
+            assert environment_is_dict
+            environment = dict(cast(dict[str, str], options["env"]))
+            if scenario == "unguarded-inherited":
+                # Restore only the omitted baseline at this exact native env boundary.
+                environment["RUN_WATCHED_PYTEST_TRACE"] = inherited_trace
+            captured.append((scenario, PrivateEnvironment(environment)))
+            options = {**options, "env": environment}
+        return native_run(command, **options)
+
+    for scenario, selected_body, expected_trace in (
+        ("unguarded-inherited", omitted, True),
+        ("guarded-omitted", omitted, False),
+        ("guarded-explicit", explicit, True),
+    ):
+        selected = deepcopy(steps)
+        selected_runtime = next(
+            step for step in selected if step.get("name") == "Known runtime and handoff regression admission"
+        )
+        selected_runtime["run"] = selected_body
+        owned = tmp_path / scenario
+        owned.mkdir()
+        with monkeypatch.context() as boundary:
+            boundary.setattr(sys.modules[__name__], "_hosted_steps", lambda selected=selected: selected)
+            boundary.setattr(subprocess, "run", capture_native)
+            result, rows, _ = _hosted(owned, early_environment=hosted_trace_environment_override)
+        assert result.returncode == 0, result.stdout + result.stderr
+        arguments = _observer_arguments(rows, "ci-runtime-regression-admission")
+        assert arguments.count("--pytest-trace") == int(expected_trace)
+        assert arguments[arguments.index("--max-secs") + 1] == "90"
+        assert arguments[arguments.index("--quiet-secs") + 1] == "60"
+        assert _observed_make_arguments(arguments) == [OWNER]
+    assert [name for name, _ in captured] == [
+        "unguarded-inherited", "guarded-omitted", "guarded-explicit",
+    ]
+    owned_keys = {
+        "UV_PROJECT_ENVIRONMENT", "VIRTUAL_ENV", "UV_NO_SYNC", "UV_PYTHON",
+        "UV_PYTHON_DOWNLOADS", "MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES",
+        "MAKELEVEL", "RUN_WATCHED_PYTEST_TRACE",
+    }
+    expected_unrelated = PrivateEnvironment({
+        key: value for key, value in parent.values.items() if key not in owned_keys
+    })
+    for name, child in captured:
+        owned_fields = tuple(child.values.get(key) for key in (
+            "MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "RUN_WATCHED_PYTEST_TRACE",
+        ))
+        assert owned_fields == ("", "", "", "1" if name == "unguarded-inherited" else "0")
+        actual_unrelated = PrivateEnvironment({
+            key: value for key, value in child.values.items() if key not in owned_keys
+        })
+        unrelated_preserved = actual_unrelated.values == expected_unrelated.values
+        assert unrelated_preserved, "the hosted fixture may change only its owned inputs"
+    parent_preserved = dict(os.environ) == parent.values
+    assert parent_preserved, "the hosted controls changed their parent environment"
